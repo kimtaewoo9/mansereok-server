@@ -10,7 +10,6 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import java.time.LocalDateTime;
 import lombok.AccessLevel;
-import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.ToString;
@@ -45,12 +44,14 @@ public class Payment {
 	@Column(updatable = false)
 	private LocalDateTime createdAt;
 
-	@Builder
-	public Payment(String paymentId, String orderId, Long amount, PaymentStatus status) {
-		this.paymentId = paymentId;
-		this.orderId = orderId;
-		this.amount = amount;
-		this.status = status;
-		this.createdAt = LocalDateTime.now();
+	public static Payment create(String paymentId, String orderId, Long amount,
+		PaymentStatus status) {
+		Payment payment = new Payment();
+		payment.paymentId = paymentId;
+		payment.orderId = orderId;
+		payment.amount = amount;
+		payment.status = status;
+		payment.createdAt = LocalDateTime.now();
+		return payment;
 	}
 }

@@ -32,7 +32,7 @@ public class PaymentService {
 	public Payment completePayment(PaymentCompleteRequest request) {
 		// 1. 포트원 결제내역 단건조회 API 호출
 		PortOnePaymentResponse paymentResponse = fetchPaymentDataFromPortOne(
-			request.getPaymentId());
+			request.getPaymentId()); // paymentId를 가지고 포트원에 이 결제건의 실제 정보를 물어봄 .
 
 		// 2. 주문 데이터의 가격과 실제 지불된 금액 비교 (위변조 검증)
 		// 실제 운영시에는 DB에서 주문 정보를 조회해야 합니다.
@@ -49,19 +49,19 @@ public class PaymentService {
 		PaymentStatus status = PaymentStatus.fromPortOneStatus(paymentResponse.getStatus());
 		if (status == PaymentStatus.PAID || status == PaymentStatus.VIRTUAL_ACCOUNT_ISSUED) {
 			// 4. 결제 정보를 우리 DB에 저장
-			Payment payment = Payment.builder()
-				.paymentId(paymentResponse.getId())
-				.orderId(request.getOrderId())
-				.amount(paymentResponse.getAmount().getTotal())
-				.status(status)
-				.build();
+			Payment payment = Payment.create(
+				paymentResponse.getId(),
+				request.getOrderId(),
+				paymentResponse.getAmount().getTotal(),
+				status
+			);
 			return paymentRepository.save(payment);
 		} else {
-			// PAID, VIRTUAL_ACCOUNT_ISSUED 외 다른 상태는 일단 실패로 간주
 			throw new PaymentException("결제가 완료되지 않았습니다. 상태: " + paymentResponse.getStatus());
 		}
 	}
 
+	// paymentId 로 포트원에서 결제 정보를 가져옴 .
 	private PortOnePaymentResponse fetchPaymentDataFromPortOne(String paymentId) {
 		try {
 			String url = "https://api.portone.io/payments/" + paymentId;
