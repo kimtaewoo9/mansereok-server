@@ -11,7 +11,6 @@ import com.mansereok.server.service.RefreshTokenService;
 import com.mansereok.server.service.UserService;
 import com.mansereok.server.util.JwtUtil;
 import jakarta.servlet.http.Cookie;
-import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
 import java.util.Map;
@@ -62,7 +61,7 @@ public class AuthController {
 			// 성공하면 인증된 Authentication 객체 반환 !. 인증 실패하면 AuthenticationException 발생시킴 .
 			Authentication authentication = authenticationManager.authenticate(
 				new UsernamePasswordAuthenticationToken(
-					loginRequest.getUsername(),
+					loginRequest.getEmail(),
 					loginRequest.getPassword()
 				)
 			);
@@ -127,15 +126,14 @@ public class AuthController {
 	public ResponseEntity<?> register(@Valid @RequestBody RegisterRequest registerRequest) {
 		try {
 			User user = userService.createUser(
+				registerRequest.getName(), // 사용자 본명 .
 				registerRequest.getEmail(),
-				registerRequest.getEmail(),
-				registerRequest.getPassword(),
-				registerRequest.getRole()
+				registerRequest.getPassword()
 			);
 
 			return ResponseEntity.ok(Map.of(
 				"message", "회원가입이 완료되었습니다.",
-				"username", user.getUsername(),
+				"name", user.getName(),
 				"email", user.getEmail(),
 				"role", user.getRole().name()
 			));
@@ -228,9 +226,7 @@ public class AuthController {
 	}
 
 	@GetMapping("/api/auth/csrf-token")
-	public ResponseEntity<Map<String, String>> getCsrfToken(HttpServletRequest request) {
-		CsrfToken csrfToken = (CsrfToken) request.getAttribute(CsrfToken.class.getName());
-
+	public ResponseEntity<Map<String, String>> getCsrfToken(CsrfToken csrfToken) {
 		// 요청을 보내기 전에 먼저 서버로 부터 CSRF 토큰을 달라고 요청을 보냄 .
 		// 사용자는 요청을 보낼때 csrf token 을 헤더 같은 곳에 넣어서 요청과 같이 보냄 .
 		// 서버는 CSRF 토큰이 있는 요청만 유효하다고 판단하고 처리를 한다 .
@@ -239,7 +235,6 @@ public class AuthController {
 		// 서버가 자동으로 토큰을 생성하고 .. session 에 저장함 . 그래서 요청마다 이제 token 을 검증
 
 		// 그러면 모든 요청에 대해서 csrf 토큰을 검증을 해야함 session 사용해서 .. -> 그럼 jwt 사용하는 의미가 없잖아.
-
 		if (csrfToken != null) {
 			return ResponseEntity.ok(Map.of(
 				"token", csrfToken.getToken(), // body 에 csrf 토큰 전달 .
@@ -247,6 +242,7 @@ public class AuthController {
 				"parameterName", csrfToken.getParameterName()
 			));
 		}
+		log.error("[AuthController.getCsrfToken] csrf token is null");
 		return ResponseEntity.status(401).build();
 	}
 }

@@ -37,18 +37,19 @@ public class User {
 
 	private LocalDateTime createdAt;
 	private LocalDateTime updatedAt;
-
-	public User(String username, String password, String email, Role role, boolean enabled) {
-		this.username = username;
-		this.password = password;
-		this.email = email; // 이메일 정보 강제 ..해야함
-		this.role = role;
-		this.enabled = enabled;
-		this.createdAt = LocalDateTime.now();
-		this.updatedAt = LocalDateTime.now();
+	
+	public static User create(String name, String password, String email, boolean enabled) {
+		User user = new User();
+		user.name = name;
+		user.password = password;
+		user.email = email; // 이메일 정보 강제 ..해야함
+		user.enabled = enabled;
+		user.createdAt = LocalDateTime.now();
+		user.updatedAt = LocalDateTime.now();
+		return user;
 	}
 
-	public static User create(String username, String name, String email, String socialId,
+	public static User createByOauth(String username, String name, String email, String socialId,
 		SocialType socialType) {
 		User user = new User();
 		user.username = username; // 아이디

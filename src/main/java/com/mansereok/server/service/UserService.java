@@ -1,6 +1,5 @@
 package com.mansereok.server.service;
 
-import com.mansereok.server.entity.Role;
 import com.mansereok.server.entity.SocialType;
 import com.mansereok.server.entity.User;
 import com.mansereok.server.repository.UserRepository;
@@ -23,26 +22,20 @@ public class UserService {
 	 * @param name     사용자명
 	 * @param password 평문 비밀번호 (암호화되어 저장됨)
 	 * @param email    이메일
-	 * @param role     사용자 역할
 	 * @return 생성된 사용자 엔티티
 	 */
-	public User createUser(String name, String email, String password, Role role) {
-		if (userRepository.existsByUsername(name)) {
-			throw new RuntimeException("이미 존재하는 사용자명입니다: " + name);
-		}
+	public User createUser(String name, String email, String password) {
 		if (userRepository.existsByEmail(email)) {
 			throw new RuntimeException("이미 존재하는 이메일 입니다: " + email);
 		}
 
-		User user = new User(
-			name,
-			passwordEncoder.encode(password),
-			email,
-			role != null ? role : Role.USER,
-			true
-		);
-
-		return userRepository.save(user);
+		return userRepository.save(
+			User.create(
+				name,
+				passwordEncoder.encode(password),
+				email,
+				true
+			));
 	}
 
 	public User findByUsername(String username) {
@@ -55,11 +48,14 @@ public class UserService {
 			.orElse(null);
 	}
 
-	// Oauth를 통한 회원가입 !.
+	// Oauth를 통한 회원가입
 	public User registerWithOauth(String username, String email, String name,
 		String sub, SocialType socialType) {
+		if (userRepository.existsByEmail(email)) {
+			throw new RuntimeException("이미 존재하는 이메일 입니다: " + email);
+		}
 		return userRepository.save(
-			User.create(
+			User.createByOauth(
 				sub, // id 로 social id 를 사용함 .
 				name, // 사용자 이름
 				email,
