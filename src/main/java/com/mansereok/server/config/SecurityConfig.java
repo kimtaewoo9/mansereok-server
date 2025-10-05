@@ -8,6 +8,7 @@ import java.util.Collections;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
@@ -19,8 +20,6 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
-import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
-import org.springframework.security.web.csrf.CsrfTokenRequestAttributeHandler;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
@@ -39,12 +38,10 @@ public class SecurityConfig {
 	public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
 		http
 //			.csrf(csrf -> csrf.disable())
-//
-			// CSRF 설정
-			.csrf(csrf -> csrf
-				.csrfTokenRepository(CookieCsrfTokenRepository.withHttpOnlyFalse())
-				.csrfTokenRequestHandler(new CsrfTokenRequestAttributeHandler())
-			)
+
+//			 CSRF 설정
+			.csrf(csrf -> {
+			})
 
 			// CORS 설정 적용
 			.cors(cors -> cors.configurationSource(corsConfigurationSource()))
@@ -56,6 +53,8 @@ public class SecurityConfig {
 			// 인증이 필요한 경로 설정
 			.authorizeHttpRequests(auth -> auth
 					// 특정 경로를 먼저 허용
+					.requestMatchers(HttpMethod.OPTIONS, "/**")
+					.permitAll() // preflight 는 csrf 토큰 검증 없이 ..
 					.requestMatchers("/api/auth/**").permitAll()
 					.requestMatchers("/api/public/**").permitAll()
 					.requestMatchers("/h2-console/**").permitAll()
@@ -95,6 +94,7 @@ public class SecurityConfig {
 //			)
 //		);
 
+		// 일단 모든 도메인에서 가능하게 변경 .
 		configuration.setAllowedOriginPatterns(Collections.singletonList("*"));
 
 		// 허용할 HTTP 메서드

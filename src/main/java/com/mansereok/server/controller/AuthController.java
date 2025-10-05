@@ -236,13 +236,13 @@ public class AuthController {
 		// 서버는 CSRF 토큰이 있는 요청만 유효하다고 판단하고 처리를 한다 .
 
 		// 서버가 이 csrf 토큰이 공격자가 보낸건지 사용자가 보낸건지 어떻게 알지 ?
-		// 서버가 자동으로 토큰을 생성하고 .. session 에 저장함 . 그래서 요청마다 이제 token 을 검증하는거지 .
+		// 서버가 자동으로 토큰을 생성하고 .. session 에 저장함 . 그래서 요청마다 이제 token 을 검증
 
 		// 그러면 모든 요청에 대해서 csrf 토큰을 검증을 해야함 session 사용해서 .. -> 그럼 jwt 사용하는 의미가 없잖아.
 
 		if (csrfToken != null) {
 			return ResponseEntity.ok(Map.of(
-				"token", csrfToken.getToken(),
+				"token", csrfToken.getToken(), // body 에 csrf 토큰 전달 .
 				"headerName", csrfToken.getHeaderName(),
 				"parameterName", csrfToken.getParameterName()
 			));
