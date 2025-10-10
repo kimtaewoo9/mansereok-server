@@ -25,7 +25,7 @@ import lombok.ToString;
 public class Order {
 
 	@Id
-	@GeneratedValue(strategy = GenerationType.AUTO)
+	@GeneratedValue(strategy = GenerationType.IDENTITY)
 	private Long id;
 	private String merchantUid;  // 주문번호
 	private String paymentId; // 포트원 결제 ID (결제 후 저장)
