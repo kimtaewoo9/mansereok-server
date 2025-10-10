@@ -164,6 +164,36 @@ CREATE TABLE payments (
                           created_at DATETIME(6) NOT NULL
 );
 
+-- orders 테이블
+CREATE TABLE `orders` (
+                          `id` BIGINT NOT NULL AUTO_INCREMENT,
+                          `merchant_uid` VARCHAR(255) NOT NULL UNIQUE,
+                          `payment_id` VARCHAR(255),
+                          `user_id` BIGINT,
+                          `sub_category_id` BIGINT NOT NULL,
+                          `amount` INT NOT NULL,
+                          `status` ENUM('PENDING', 'PAID', 'FAILED', 'CANCELLED') NOT NULL DEFAULT 'PENDING',
+                          `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                          `paid_at` TIMESTAMP NULL DEFAULT NULL,
+
+                          PRIMARY KEY (`id`),
+                          INDEX `idx_orders_merchant_uid` (`merchant_uid`),
+                          INDEX `idx_orders_user_id` (`user_id`),
+                          FOREIGN KEY (`user_id`) REFERENCES `users`(`id`) ON DELETE SET NULL
+);
+
+-- subcategories 테이블
+CREATE TABLE `subcategories` (
+                                 `id` BIGINT NOT NULL AUTO_INCREMENT,
+                                 `title` VARCHAR(255) NOT NULL,
+                                 `description` TEXT,
+                                 `price` INT NOT NULL,
+                                 `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                                 `updated_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+
+                                 PRIMARY KEY (`id`)
+);
+
 -- 인덱스 생성 (검색 성능 최적화)
 CREATE INDEX idx_manses_solar_date ON manses(solar_date);
 CREATE INDEX idx_manses_lunar_date ON manses(lunar_date);
