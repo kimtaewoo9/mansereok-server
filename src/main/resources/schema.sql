@@ -155,14 +155,16 @@ CREATE TABLE compatibility_results
     INDEX idx_compatibility_results_user_id (user_id)
 );
 
-CREATE TABLE payments (
-                          id BIGINT AUTO_INCREMENT PRIMARY KEY,
-                          payment_id VARCHAR(255) NOT NULL UNIQUE,
-                          order_id VARCHAR(255) NOT NULL,
-                          amount BIGINT NOT NULL,
-                          status VARCHAR(255) NOT NULL,
-                          created_at DATETIME(6) NOT NULL
-);
+-- payments 테이블
+CREATE TABLE `payments` (
+                            `id` BIGINT NOT NULL AUTO_INCREMENT,
+                            `imp_uid` VARCHAR(255) NOT NULL UNIQUE,
+                            `merchant_uid` VARCHAR(255) NOT NULL,
+                            `amount` BIGINT NOT NULL,
+                            `status` VARCHAR(50) NOT NULL, -- ENUM('READY', 'PAID', 'CANCELLED', 'FAILED') 등으로 변경 가능
+                            `created_at` DATETIME NOT NULL,
+                            PRIMARY KEY (`id`)
+)
 
 -- orders 테이블
 CREATE TABLE `orders` (
