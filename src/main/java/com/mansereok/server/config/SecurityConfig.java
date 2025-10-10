@@ -43,6 +43,11 @@ public class SecurityConfig {
 			.csrf(csrf -> csrf
 				// CSRF 토큰을 쿠키로 생성하고, Javascript가 읽을 수 있도록 HttpOnly=false 설정
 				.csrfTokenRepository(CookieCsrfTokenRepository.withHttpOnlyFalse())
+				.requireCsrfProtectionMatcher(request ->
+					!request.getMethod().equals("GET") &&
+						!request.getMethod().equals("HEAD") &&
+						!request.getMethod().equals("OPTIONS")  // OPTIONS 제외
+				)
 			)
 
 			// CORS 설정 적용
@@ -55,8 +60,7 @@ public class SecurityConfig {
 			// 인증이 필요한 경로 설정
 			.authorizeHttpRequests(auth -> auth
 					// 특정 경로를 먼저 허용
-					.requestMatchers(HttpMethod.OPTIONS, "/**")
-					.permitAll() // preflight 는 csrf 토큰 검증 없이 ..
+					.requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
 					.requestMatchers("/api/auth/**").permitAll()
 					.requestMatchers("/api/public/**").permitAll()
 					.requestMatchers("/h2-console/**").permitAll()
@@ -92,7 +96,8 @@ public class SecurityConfig {
 		configuration.setAllowedOrigins(
 			Arrays.asList(
 				"http://localhost:3000",
-				"https://namedsaju.com" // 도메인 생성 후 변경 예정
+				"https://namedsaju.com",
+				"https://www.namedsaju.com"
 			)
 		);
 
