@@ -93,7 +93,8 @@ server:
 portone:
   api:
     secret: ${PORTONE_API_SECRET}  # 포트원 콘솔에서 발급받은 V2 API Secret
-    base-url: https://api.portone.io
+    webhook:
+      secret: ${PORTONE_WEBHOOK_SECRET}
 
 # 결제 관련 설정
 payment:

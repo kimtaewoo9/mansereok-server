@@ -148,7 +148,8 @@ logging:
 portone:
   api:
     secret: ${PORTONE_API_SECRET}
-    base-url: https://api.portone.io
+    webhook:
+      secret: ${PORTONE_WEBHOOK_SECRET}
 
 # 결제 관련 설정
 payment:

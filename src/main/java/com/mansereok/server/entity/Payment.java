@@ -28,10 +28,10 @@ public class Payment {
 	private Long id;
 
 	@Column(unique = true, nullable = false)
-	private String paymentId; // 포트원 결제 ID
+	private String impUid;
 
 	@Column(nullable = false)
-	private String orderId; // 우리 시스템의 주문 ID
+	private String merchantUid; // 우리 시스템의 주문 ID
 
 	@Column(nullable = false)
 	private Long amount; // 검증을 위해 필수
@@ -47,8 +47,8 @@ public class Payment {
 	public static Payment create(String paymentId, String orderId, Long amount,
 		PaymentStatus status) {
 		Payment payment = new Payment();
-		payment.paymentId = paymentId;
-		payment.orderId = orderId;
+		payment.impUid = paymentId;
+		payment.merchantUid = orderId;
 		payment.amount = amount;
 		payment.status = status;
 		payment.createdAt = LocalDateTime.now();

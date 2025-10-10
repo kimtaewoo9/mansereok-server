@@ -40,7 +40,6 @@ dependencies {
 
     // Test
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
-    testImplementation 'org.springframework.kafka:spring-kafka-test'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 
     // swagger-ui
@@ -56,6 +55,9 @@ dependencies {
 
     // Actuator
     implementation 'org.springframework.boot:spring-boot-starter-actuator'
+
+    // 포트원 API 호출
+    implementation 'io.portone:server-sdk:0.21.0'
 
 }
 

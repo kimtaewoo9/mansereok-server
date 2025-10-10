@@ -1,13 +1,22 @@
 package com.mansereok.server.service;
 
 
-import com.mansereok.server.entity.Payment;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.mansereok.server.entity.Order;
+import com.mansereok.server.entity.OrderStatus;
 import com.mansereok.server.entity.PaymentStatus;
+import com.mansereok.server.entity.SubCategory;
 import com.mansereok.server.exception.PaymentException;
-import com.mansereok.server.repository.PaymentRepository;
+import com.mansereok.server.repository.OrderRepository;
+import com.mansereok.server.repository.SubCategoryRepository;
+import com.mansereok.server.service.request.OrderCreateRequest;
 import com.mansereok.server.service.request.PaymentCompleteRequest;
+import com.mansereok.server.service.response.OrderCreateResponse;
 import com.mansereok.server.service.response.PortOnePaymentResponse;
+import com.mansereok.server.service.response.PortoneWebhookDto;
+import java.time.LocalDateTime;
 import java.util.Objects;
+import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -23,45 +32,176 @@ import org.springframework.web.client.RestClient;
 @Slf4j
 public class PaymentService {
 
-	private final PaymentRepository paymentRepository;
+	private final OrderRepository orderRepository;
+	private final SubCategoryRepository subCategoryRepository;
 	private final RestClient restClient = RestClient.create();
+
+	private final ObjectMapper objectMapper;
 
 	@Value("${portone.api.secret}")
 	private String portOneApiSecret;
 
-	public Payment completePayment(PaymentCompleteRequest request) {
-		// 1. 포트원 결제내역 단건조회 API 호출
-		PortOnePaymentResponse paymentResponse = fetchPaymentDataFromPortOne(
-			request.getPaymentId()); // paymentId를 가지고 포트원에 이 결제건의 실제 정보를 물어봄 .
+	// 1단계: 주문 생성 (결제 전)
+	public OrderCreateResponse createOrder(OrderCreateRequest request) {
+		log.info("주문 생성 요청: subCategoryId={}", request.getSubCategoryId());
 
-		// 2. 주문 데이터의 가격과 실제 지불된 금액 비교 (위변조 검증)
-		// 실제 운영시에는 DB에서 주문 정보를 조회해야 합니다.
-		// Long expectedAmount = orderService.getOrderAmount(request.getOrderId());
-		Long expectedAmount = 1000L; // 예시: 실제로는 DB에서 해당 주문(orderId)의 금액을 가져와야 함
+		SubCategory subCategory = subCategoryRepository.findById(request.getSubCategoryId())
+			.orElseThrow(() -> new PaymentException("존재하지 않는 상품입니다."));
 
-		if (!Objects.equals(paymentResponse.getAmount().getTotal(), expectedAmount)) {
-			log.error("결제 금액 불일치: paymentId={}, 기대값={}, 실제값={}",
-				request.getPaymentId(), expectedAmount, paymentResponse.getAmount().getTotal());
-			throw new PaymentException("결제 금액이 일치하지 않아 위변조가 의심됩니다.");
+		Integer amount = subCategory.getPrice(); // 2. 금액 계산 .
+
+		// TODO  중복 구매 체크
+		// Long currentUserId = getCurrentUserId();
+		// boolean alreadyPurchased = orderRepository.existsByUserIdAndSubCategoryIdAndStatus(
+		//     currentUserId, subCategory.getId(), OrderStatus.PAID
+		// );
+		// if (alreadyPurchased) {
+		//     throw new PaymentException("이미 구매한 항목입니다.");
+		// }
+
+		// 4. 주문 번호 생성
+		String merchantUid =
+			"order_" + System.currentTimeMillis() + "_" + UUID.randomUUID().toString()
+				.substring(0, 8);
+
+		// 5. 주문을 DB에 저장함 .
+		Order savedOrder = orderRepository.save(
+			Order.create(
+				merchantUid,
+				null,
+				subCategory.getId(),
+				amount,
+				OrderStatus.PENDING
+			)
+		);
+
+		log.info("주문 생성 완료: orderId={}, merchantUid={}, amount={}",
+			savedOrder.getId(), merchantUid, amount);
+
+		return new OrderCreateResponse(
+			savedOrder.getId(),
+			merchantUid,
+			amount,
+			subCategory.getTitle()
+		);
+	}
+
+	// 2단계. 결제 완료 후 검증단계
+	public Order completePayment(PaymentCompleteRequest request) {
+		log.info("결제 검증 요청: paymentId={}, orderId={}",
+			request.getPaymentId(), request.getMerchantUid());
+
+		// 1. 먼저 merchantUid 를 통해 Order(주문정보)를 가지고옴 .
+		Order order = orderRepository.findByMerchantUid(request.getMerchantUid())
+			.orElseThrow(() -> new PaymentException("주문을 찾을 수 없습니다."));
+
+		if (order.getStatus() == OrderStatus.PAID) {
+			log.warn("이미 결제 완료된 주문: merchantUid={}", request.getMerchantUid());
+			throw new PaymentException("이미 처리된 결제입니다.");
 		}
 
-		// 3. 결제 상태에 따른 처리
+		// 2. 포트원에서 결제 정보를 가져옴 .
+		PortOnePaymentResponse paymentResponse =
+			fetchPaymentDataFromPortOne(request.getPaymentId());
+
+		// 3. ** 주문 정보랑 포트원에서 가져온 정보랑 비교해서 금액을 검증함 **
+		if (!Objects.equals(paymentResponse.getAmount().getTotal(), order.getAmount())) {
+			order.setStatus(OrderStatus.FAILED); // 주문 상태 변경하고 .
+			orderRepository.save(order); // DB에 저장
+			throw new PaymentException("‼️결제 금액이 일치하지 않습니다. 위변조 의심️‼️");
+		}
+
+		// 4. 결제 상태 확인 .. response로 받은 String 형식의 Status를 Enum으로 바꿈
 		PaymentStatus status = PaymentStatus.fromPortOneStatus(paymentResponse.getStatus());
-		if (status == PaymentStatus.PAID || status == PaymentStatus.VIRTUAL_ACCOUNT_ISSUED) {
-			// 4. 결제 정보를 우리 DB에 저장
-			Payment payment = Payment.create(
-				paymentResponse.getId(),
-				request.getOrderId(),
-				paymentResponse.getAmount().getTotal(),
-				status
-			);
-			return paymentRepository.save(payment);
+
+		if (status == PaymentStatus.PAID) {
+			// 결제 완료 .. order 업데이트 후 DB에 저장
+			order.setStatus(OrderStatus.PAID);
+			order.setPaymentId(request.getPaymentId());
+			order.setPaidAt(LocalDateTime.now());
+
+			Order savedOrder = orderRepository.save(order); //
+			log.info("결제 완료 처리 성공: orderId={}, paymentId={}",
+				savedOrder.getId(), request.getPaymentId());
+
+			processOrder(savedOrder);
+
+			return savedOrder; // 결제 성공시 주문 내역 반환 .
 		} else {
-			throw new PaymentException("결제가 완료되지 않았습니다. 상태: " + paymentResponse.getStatus());
+			log.error("결제 실패: paymentId={}, status={}", request.getPaymentId(),
+				paymentResponse.getStatus());
+
+			order.setStatus(OrderStatus.FAILED);
+			orderRepository.save(order);
+
+			throw new PaymentException("결제에 실패했습니다.");
 		}
 	}
 
-	// paymentId 로 포트원에서 결제 정보를 가져옴 .
+	public void processWebhook(String body) {
+
+		try {
+			PortoneWebhookDto webhook = objectMapper.readValue(body, PortoneWebhookDto.class);
+
+			log.info("웹훅 수신: type={}, paymentId={}",
+				webhook.getType(), webhook.getData().getPaymentId());
+
+			String paymentId = webhook.getData().getPaymentId();
+			String merchantUid = webhook.getData().getOrderDetail().getOrderNo();
+			String webhookType = webhook.getType();
+
+			if (!"Transaction.Paid".equals(webhookType)) {
+				log.info("결제 완료 이벤트가 아님: type={}", webhookType);
+				return;
+			}
+
+			// 1. 주문 조회
+			Order order = orderRepository.findByMerchantUid(merchantUid)
+				.orElseThrow(() -> new PaymentException("주문을 찾을 수 없습니다: " + merchantUid));
+			if (order.getStatus() == OrderStatus.PAID) {
+				log.info("이미 처리된 주문: merchantUid={}", merchantUid);
+				return;
+			}
+
+			PortOnePaymentResponse paymentResponse = fetchPaymentDataFromPortOne(
+				order.getPaymentId());
+
+			// 2. 금액 검증
+			if (!Objects.equals(paymentResponse.getAmount().getTotal(), order.getAmount())) {
+				log.error("웹훅 금액 불일치: expected={}, actual={}",
+					order.getAmount(), paymentResponse.getAmount().getTotal());
+				order.setStatus(OrderStatus.FAILED);
+				orderRepository.save(order);
+				throw new PaymentException("결제 금액이 일치하지 않습니다.");
+			}
+
+			PaymentStatus status = PaymentStatus.fromPortOneStatus(paymentResponse.getStatus());
+
+			if (status == PaymentStatus.PAID) {
+				order.setStatus(OrderStatus.PAID);
+				order.setPaymentId(paymentId);
+				order.setPaidAt(LocalDateTime.now());
+
+				Order savedOrder = orderRepository.save(order);
+				log.info("웹훅으로 결제 완료 처리: orderId={}, paymentId={}",
+					savedOrder.getId(), paymentId);
+
+				processOrder(savedOrder);
+			} else {
+				log.error("웹훅 결제 실패: paymentId={}, status={}", paymentId, status);
+				order.setStatus(OrderStatus.FAILED);
+				orderRepository.save(order);
+				throw new PaymentException("결제 실패 상태입니다.");
+			}
+
+
+		} catch (Exception e) {
+			log.error("웹훅 처리 중 에러", e); // json 파싱 에러일 수 있음 .
+			throw new PaymentException("웹훅 처리 실패: " + e.getMessage());
+		}
+
+	}
+
 	private PortOnePaymentResponse fetchPaymentDataFromPortOne(String paymentId) {
 		try {
 			String url = "https://api.portone.io/payments/" + paymentId;
@@ -75,5 +215,14 @@ public class PaymentService {
 			log.error("포트원 API 호출 실패: paymentId={}", paymentId, e);
 			throw new PaymentException("결제 정보를 조회하는 중 오류가 발생했습니다.");
 		}
+	}
+
+	private void processOrder(Order order) {
+		// TODO: 실제 비즈니스 로직 구현
+		// - 이메일 발송
+		// - 해석 정보 전달 등등 ..
+
+		log.info("주문 처리 완료: orderId={}, subCategoryId={}",
+			order.getId(), order.getSubCategoryId());
 	}
 }
