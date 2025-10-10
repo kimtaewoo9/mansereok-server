@@ -85,7 +85,6 @@ public class AuthController {
 				"accessToken", accessToken,
 				"type", "Bearer",
 				"user", Map.of(
-					"username", user.getUsername(),
 					"email", user.getEmail(),
 					"role", user.getRole().name()
 				)
@@ -103,14 +102,16 @@ public class AuthController {
 			response.addCookie(refreshCookie);
 
 			return ResponseEntity.ok(responseBody);
-
 		} catch (BadCredentialsException e) {
+			log.error("로그인 처리 중 오류 발생: {}", e.getMessage(), e);
 			return ResponseEntity.badRequest()
 				.body(Map.of("error", "잘못된 사용자명 또는 비밀번호입니다."));
 		} catch (AuthenticationException e) {
+			log.error("로그인 처리 중 오류 발생: {}", e.getMessage(), e);
 			return ResponseEntity.badRequest()
 				.body(Map.of("error", "인증에 실패했습니다."));
 		} catch (Exception e) {
+			log.error("로그인 처리 중 오류 발생: {}", e.getMessage(), e);
 			return ResponseEntity.internalServerError()
 				.body(Map.of("error", "로그인 처리 중 오류가 발생했습니다."));
 		}
