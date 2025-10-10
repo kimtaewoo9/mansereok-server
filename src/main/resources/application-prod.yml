@@ -154,7 +154,7 @@ portone:
 # 결제 관련 설정
 payment:
   webhook:
-    url: ${PAYMENT_WEBHOOK_URL:https://yourdomain.com/api/payment/webhook}  # 포트원 웹훅 URL
+    url: ${PAYMENT_WEBHOOK_URL:https://namedsaju.com/api/payment/webhook}  # 포트원 웹훅 URL
   test-mode: ${PAYMENT_TEST_MODE:true}  # 테스트 모드 여부
 
 # 상품 가격 설정 (원화)
