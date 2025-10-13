@@ -137,17 +137,7 @@ public class PaymentService {
 			log.info("결제 완료 처리 성공: orderId={}, paymentId={}",
 				savedOrder.getId(), request.getPaymentId());
 
-			// Payment 엔티티 저장 .
-			paymentRepository.save(
-				Payment.create(
-					request.getPaymentId(),
-					request.getMerchantUid(),
-					paymentResponse.getAmount().getTotal(),
-					status,
-					savedOrder.getId(),
-					savedOrder.getUserId()
-				)
-			);
+			// 금액 검증만하고 PaymentEntity 는 생성하지 않음 .
 
 			processOrder(savedOrder);
 			return savedOrder; // 결제 성공시 주문 내역 반환 .
