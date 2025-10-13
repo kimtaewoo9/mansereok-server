@@ -19,7 +19,6 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
-import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
@@ -38,15 +37,18 @@ public class SecurityConfig {
 	public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
 		http
 //			 CSRF 설정
-			.csrf(csrf -> csrf
-				// CSRF 토큰을 쿠키로 생성하고, Javascript가 읽을 수 있도록 HttpOnly=false 설정
-				.csrfTokenRepository(CookieCsrfTokenRepository.withHttpOnlyFalse())
-				.requireCsrfProtectionMatcher(request ->
-					!request.getMethod().equals("GET") &&
-						!request.getMethod().equals("HEAD") &&
-						!request.getMethod().equals("OPTIONS")  // OPTIONS 제외
-				)
-			)
+
+			// 일단 모두 허용 .
+			.csrf(csrf -> csrf.disable())
+
+//			.csrf(csrf -> csrf
+//				.csrfTokenRepository(CookieCsrfTokenRepository.withHttpOnlyFalse())
+//				.requireCsrfProtectionMatcher(request ->
+//					!request.getMethod().equals("GET") &&
+//						!request.getMethod().equals("HEAD") &&
+//						!request.getMethod().equals("OPTIONS")  // OPTIONS 제외
+//				)
+//			)
 
 			// CORS 설정 적용
 			.cors(cors -> cors.configurationSource(corsConfigurationSource()))
@@ -62,7 +64,6 @@ public class SecurityConfig {
 					.requestMatchers("/api/auth/**").permitAll()
 					.requestMatchers("/api/public/**").permitAll()
 					.requestMatchers("/h2-console/**").permitAll()
-
 					// 일단 모든 요청을 인증 없이 허용
 					.anyRequest().permitAll()
 

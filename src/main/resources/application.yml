@@ -110,3 +110,7 @@ product:
     compatibility: 20000   # 궁합 분석
     monthly-pass: 50000    # 월간 이용권
     yearly-pass: 300000    # 연간 이용권
+
+logging:
+  level:
+    org.springframework.security: DEBUG

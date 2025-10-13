@@ -2,12 +2,15 @@ package com.mansereok.server.service;
 
 import com.mansereok.server.entity.Manse;
 import com.mansereok.server.repository.ManseRepository;
+import com.mansereok.server.service.calculator.SinsalCalculator;
+import com.mansereok.server.service.calculator.UnseongCalculator;
 import com.mansereok.server.service.request.ManseryeokCalculationRequest;
 import com.mansereok.server.service.response.ManseryeokCalculationResponse;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.temporal.ChronoUnit;
+import java.util.List;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -20,6 +23,8 @@ public class ManseCalculationService {
 
 	private final ManseRepository manseRepository;
 	private final SajuDataService sajuDataService;
+	private final UnseongCalculator unseongCalculator;
+	private final SinsalCalculator sinsalCalculator;
 
 	public ManseryeokCalculationResponse calculate(ManseryeokCalculationRequest request) {
 		try {
@@ -51,7 +56,29 @@ public class ManseCalculationService {
 			// 6. 시주 가져오기
 			TimePillarResult timePillar = getTimePillar(samju.getDaySky(), request.getSolarTime());
 
-			// 7. 응답 생성
+			// 7. 일간 한자
+			String ilganChinese = samju.getDaySky();
+
+			// 8. 신살 계산
+			Map<String, List<String>> sinsalInfo = sinsalCalculator.analyzeAllSinsal(
+				ilganChinese,
+				samju.getYearGround(),
+				samju.getMonthGround(),
+				samju.getDayGround(),
+				timePillar.getTimeGround()
+			);
+
+			// 9. 괴강살 체크
+			boolean hasGoegang = sinsalCalculator.hasGoegang(ilganChinese, samju.getDayGround());
+
+			// 10. 백호대살 체크
+			boolean hasBaekho = sinsalCalculator.hasBaekho(ilganChinese, samju.getDayGround());
+
+			// 11. 공망 계산
+			List<String> gongmang = sinsalCalculator.calculateGongmang(ilganChinese,
+				samju.getDayGround());
+
+			// 12. 응답 생성
 			return ManseryeokCalculationResponse.builder()
 				.input(ManseryeokCalculationResponse.InputInfo.builder()
 					.solarDate(request.getSolarDate())
@@ -63,16 +90,33 @@ public class ManseCalculationService {
 					.bigFortuneNumber(bigFortune.getBigFortuneNumber())
 					.bigFortuneStartYear(bigFortune.getBigFortuneStart())
 					.seasonStartTime(samju.getSeasonStartTime())
+
+					// 운성 포함
 					.yearSky(formatChinese(samju.getYearSky(), samju.getDaySky(), false))
-					.yearGround(formatChinese(samju.getYearGround(), samju.getDaySky(), true))
+					.yearGround(formatChineseWithUnseong(
+						samju.getYearGround(), ilganChinese, samju.getDaySky(), true))
+
 					.monthSky(formatChinese(samju.getMonthSky(), samju.getDaySky(), false))
-					.monthGround(formatChinese(samju.getMonthGround(), samju.getDaySky(), true))
+					.monthGround(formatChineseWithUnseong(
+						samju.getMonthGround(), ilganChinese, samju.getDaySky(), true))
+
 					.daySky(formatChinese(samju.getDaySky(), samju.getDaySky(), false))
-					.dayGround(formatChinese(samju.getDayGround(), samju.getDaySky(), true))
+					.dayGround(formatChineseWithUnseong(
+						samju.getDayGround(), ilganChinese, samju.getDaySky(), true))
+
 					.timeSky(timePillar.getTimeSky() != null ?
 						formatChinese(timePillar.getTimeSky(), samju.getDaySky(), false) : null)
 					.timeGround(timePillar.getTimeGround() != null ?
-						formatChinese(timePillar.getTimeGround(), samju.getDaySky(), true) : null)
+						formatChineseWithUnseong(
+							timePillar.getTimeGround(), ilganChinese, samju.getDaySky(), true)
+						: null)
+
+					// 신살 정보
+					.sinsalInfo(sinsalInfo)
+					.hasGoegang(hasGoegang)
+					.hasBaekho(hasBaekho)
+					.gongmang(gongmang)
+
 					.build())
 				.build();
 
@@ -80,6 +124,73 @@ public class ManseCalculationService {
 			log.error("만세력 계산 중 오류 발생", e);
 			throw new RuntimeException("만세력 계산 중 오류가 발생했습니다: " + e.getMessage());
 		}
+	}
+
+	/**
+	 * 운성을 포함한 지지 정보 포맷팅
+	 */
+	private ManseryeokCalculationResponse.PillarElement formatChineseWithUnseong(
+		String chinese, String ilganChinese, String daySky, boolean isGround) {
+
+		ManseryeokCalculationResponse.PillarElement.PillarElementBuilder builder =
+			formatChineseToBuilder(chinese, daySky, isGround);
+
+		// 운성 계산 및 추가
+		if (isGround) {
+			String unseong = unseongCalculator.calculate(ilganChinese, chinese);
+			if (unseong != null) {
+				builder.unseong(unseong);
+				builder.unseongDescription(unseongCalculator.getUnseongDescription(unseong));
+			}
+		}
+
+		return builder.build();
+	}
+
+	/**
+	 * 기존 formatChinese를 Builder 패턴으로 분리
+	 */
+	private ManseryeokCalculationResponse.PillarElement.PillarElementBuilder formatChineseToBuilder(
+		String chinese, String daySky, boolean isGround) {
+
+		Map<String, String> koreanData = sajuDataService.convertChineseToKorean();
+		Map<String, Map<String, String>> tenStarData = sajuDataService.getTenStar();
+		Map<String, String> minusPlusData = sajuDataService.getMinusPlus();
+
+		Map<String, String> tenStar = tenStarData.get(daySky);
+		if (tenStar == null) {
+			throw new RuntimeException("일간 " + daySky + "의 십성 데이터를 찾을 수 없습니다");
+		}
+
+		String tenStarInfo = tenStar.get(chinese);
+		if (tenStarInfo == null) {
+			throw new RuntimeException("간지 " + chinese + "의 십성 정보를 찾을 수 없습니다");
+		}
+
+		String[] tenStarParts = tenStarInfo.split(",");
+		if (tenStarParts.length != 2) {
+			throw new RuntimeException("십성 정보 형식이 올바르지 않습니다: " + tenStarInfo);
+		}
+
+		ManseryeokCalculationResponse.PillarElement.PillarElementBuilder builder =
+			ManseryeokCalculationResponse.PillarElement.builder()
+				.chinese(chinese)
+				.korean(koreanData.get(chinese))
+				.fiveCircle(tenStarParts[1])
+				.fiveCircleColor(getColor(tenStarParts[1]))
+				.tenStar(tenStarParts[0])
+				.minusPlus(minusPlusData.get(chinese));
+
+		if (isGround) {
+			builder.jijanggan(getJijangganInfo(chinese));
+		}
+
+		return builder;
+	}
+
+	private ManseryeokCalculationResponse.PillarElement formatChinese(
+		String chinese, String daySky, boolean isGround) {
+		return formatChineseToBuilder(chinese, daySky, isGround).build();
 	}
 
 	/**
@@ -155,7 +266,6 @@ public class ManseCalculationService {
 			throw new RuntimeException("연간 " + yearSky + "의 음양 정보를 찾을 수 없습니다");
 		}
 
-		// 남양여음 순행, 남음여양 역행
 		boolean result;
 		if (("MALE".equals(gender) && "양".equals(minusPlus)) ||
 			("FEMALE".equals(gender) && "음".equals(minusPlus))) {
@@ -177,12 +287,10 @@ public class ManseCalculationService {
 		Manse manse;
 
 		if (direction) {
-			// 순행: 생년월일 뒤에 오는 절입 시간
 			manse = manseRepository.findFirstBySeasonStartTimeGreaterThanEqualOrderBySolarDateAsc(
 					solarDatetime)
 				.orElseThrow(() -> new RuntimeException("순행 절입 시간을 찾을 수 없습니다"));
 		} else {
-			// 역행: 생년월일 앞에 오는 절입 시간
 			manse = manseRepository.findFirstBySeasonStartTimeLessThanEqualOrderBySolarDateDesc(
 					solarDatetime)
 				.orElseThrow(() -> new RuntimeException("역행 절입 시간을 찾을 수 없습니다"));
@@ -202,10 +310,8 @@ public class ManseCalculationService {
 		long diffDays;
 
 		if (direction) {
-			// 순행
 			diffDays = ChronoUnit.DAYS.between(solarDatetime, seasonStartTime);
 		} else {
-			// 역행
 			diffDays = ChronoUnit.DAYS.between(seasonStartTime, solarDatetime);
 		}
 
@@ -290,47 +396,6 @@ public class ManseCalculationService {
 		}
 
 		return null;
-	}
-
-	/**
-	 * 중국어 간지를 포맷팅된 정보로 변환
-	 */
-	private ManseryeokCalculationResponse.PillarElement formatChinese(String chinese, String daySky,
-		boolean isGround) {
-		Map<String, String> koreanData = sajuDataService.convertChineseToKorean();
-		Map<String, Map<String, String>> tenStarData = sajuDataService.getTenStar();
-		Map<String, String> minusPlusData = sajuDataService.getMinusPlus();
-
-		// daySky 기준으로 십성 데이터 가져오기
-		Map<String, String> tenStar = tenStarData.get(daySky);
-		if (tenStar == null) {
-			throw new RuntimeException("일간 " + daySky + "의 십성 데이터를 찾을 수 없습니다");
-		}
-
-		String tenStarInfo = tenStar.get(chinese);
-		if (tenStarInfo == null) {
-			throw new RuntimeException("간지 " + chinese + "의 십성 정보를 찾을 수 없습니다 (일간: " + daySky + ")");
-		}
-
-		String[] tenStarParts = tenStarInfo.split(",");
-		if (tenStarParts.length != 2) {
-			throw new RuntimeException("십성 정보 형식이 올바르지 않습니다: " + tenStarInfo);
-		}
-
-		ManseryeokCalculationResponse.PillarElement.PillarElementBuilder builder =
-			ManseryeokCalculationResponse.PillarElement.builder()
-				.chinese(chinese)
-				.korean(koreanData.get(chinese))
-				.fiveCircle(tenStarParts[1])  // 오행
-				.fiveCircleColor(getColor(tenStarParts[1]))
-				.tenStar(tenStarParts[0])     // 십성
-				.minusPlus(minusPlusData.get(chinese));
-
-		if (isGround) {
-			builder.jijanggan(getJijangganInfo(chinese));
-		}
-
-		return builder.build();
 	}
 
 	private String getColor(String value) {

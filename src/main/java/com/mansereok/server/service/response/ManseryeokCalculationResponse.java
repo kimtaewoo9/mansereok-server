@@ -4,6 +4,8 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import io.swagger.v3.oas.annotations.media.Schema;
 import java.time.LocalDate;
 import java.time.LocalTime;
+import java.util.List;
+import java.util.Map;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -84,6 +86,22 @@ public class ManseryeokCalculationResponse {
 		@JsonProperty("time_ground")
 		@Schema(description = "시지 정보")
 		private PillarElement timeGround;
+
+		@JsonProperty("sinsal_info")
+		@Schema(description = "신살 정보")
+		private Map<String, List<String>> sinsalInfo;
+
+		@JsonProperty("has_goegang")
+		@Schema(description = "괴강살 유무")
+		private Boolean hasGoegang;
+
+		@JsonProperty("has_baekho")
+		@Schema(description = "백호대살 유무")
+		private Boolean hasBaekho;
+
+		@JsonProperty("gongmang")
+		@Schema(description = "공망 지지 목록")
+		private List<String> gongmang;
 	}
 
 	@Data
@@ -117,6 +135,15 @@ public class ManseryeokCalculationResponse {
 		@JsonProperty("jijanggan")
 		@Schema(description = "지장간 (지지에만 존재)")
 		private JijangganInfo jijanggan;
+
+		// 운성 정보 추가 .
+		@JsonProperty("unseong")
+		@Schema(description = "12운성 (지지에만 존재)", example = "제왕")
+		private String unseong;
+
+		@JsonProperty("unseong_description")
+		@Schema(description = "운성 설명", example = "최고의 전성기, 완성")
+		private String unseongDescription;
 	}
 
 	@Data
