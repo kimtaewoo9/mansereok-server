@@ -11,14 +11,13 @@ import org.springframework.stereotype.Repository;
 @Repository
 public interface PaymentRepository extends JpaRepository<Payment, Long> {
 
-	// ✅ 추가 필요!
 	Optional<Payment> findByImpUid(String impUid);
-	
+
 	@Query(
-		value = "select * "
-			+ "from payments "
-			+ "where user_id =:userId "
-			+ "order by created_at desc",
+		value = "SELECT * "
+			+ "FROM payments "
+			+ "WHERE user_id = :userId "
+			+ "ORDER BY created_at desc",
 		nativeQuery = true
 	)
 	List<Payment> findAllByUserIdOrderByCreatedAtDesc(
