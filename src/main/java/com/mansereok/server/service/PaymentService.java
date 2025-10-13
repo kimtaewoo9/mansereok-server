@@ -177,6 +177,20 @@ public class PaymentService {
 				return;
 			}
 
+			// ✅ 중복 처리 방지
+			if (order.getStatus() == OrderStatus.PAID && order.getPaymentId() != null) {
+				// Payment가 이미 있는지 확인
+				boolean paymentExists = paymentRepository
+					.findByImpUid(paymentId)  // ⚠️ 이 메서드 추가 필요!
+					.isPresent();
+
+				if (paymentExists) {
+					log.info("이미 처리된 웹훅: merchantUid={}, paymentId={}",
+						merchantUid, paymentId);
+					return;
+				}
+			}
+
 			PortOnePaymentResponse paymentResponse = fetchPaymentDataFromPortOne(
 				order.getPaymentId());
 
