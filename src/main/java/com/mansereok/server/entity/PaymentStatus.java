@@ -10,7 +10,7 @@ public enum PaymentStatus {
 	VIRTUAL_ACCOUNT_ISSUED("VIRTUAL_ACCOUNT_ISSUED", "가상계좌 발급"),
 	FAILED("FAILED", "결제실패"),
 	CANCELLED("CANCELLED", "결제취소"),
-	READY("READY", "미결제");
+	READY("READY", "미결제"); // 결제 진행중 .
 
 	private final String portOneStatus;
 	private final String description;

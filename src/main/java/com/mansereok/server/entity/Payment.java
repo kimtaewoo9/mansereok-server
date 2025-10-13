@@ -1,6 +1,5 @@
 package com.mansereok.server.entity;
 
-import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
@@ -26,32 +25,28 @@ public class Payment {
 	@Id
 	@GeneratedValue(strategy = GenerationType.IDENTITY)
 	private Long id;
+	private String impUid; // 포트원 고유 거래 번호
 
-	@Column(unique = true, nullable = false)
-	private String impUid;
+	private String merchantUid; // PG사와 통신용 ID ..
+	private Long orderId;
+	private Long userId; // user는 여러 결제 정보를 가질 수 있음 .
 
-	@Column(nullable = false)
-	private String merchantUid; // 우리 시스템의 주문 ID
-
-	@Column(nullable = false)
 	private Long amount; // 검증을 위해 필수
-
 	@Enumerated(EnumType.STRING)
-	@Column(nullable = false)
 	private PaymentStatus status; // 결제 상태
-
 	@CreatedDate
-	@Column(updatable = false)
 	private LocalDateTime createdAt;
 
-	public static Payment create(String paymentId, String orderId, Long amount,
-		PaymentStatus status) {
+	public static Payment create(String paymentId, String merchantUid, Long amount,
+		PaymentStatus status, Long orderId, Long userId) {
 		Payment payment = new Payment();
 		payment.impUid = paymentId;
-		payment.merchantUid = orderId;
+		payment.merchantUid = merchantUid;
 		payment.amount = amount;
 		payment.status = status;
 		payment.createdAt = LocalDateTime.now();
+		payment.orderId = orderId;
+		payment.userId = userId;
 		return payment;
 	}
 }

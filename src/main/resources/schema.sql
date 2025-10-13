@@ -156,15 +156,18 @@ CREATE TABLE compatibility_results
 );
 
 -- payments 테이블
-CREATE TABLE `payments` (
-                            `id` BIGINT NOT NULL AUTO_INCREMENT,
-                            `imp_uid` VARCHAR(255) NOT NULL UNIQUE,
-                            `merchant_uid` VARCHAR(255) NOT NULL,
-                            `amount` BIGINT NOT NULL,
-                            `status` VARCHAR(50) NOT NULL, -- ENUM('READY', 'PAID', 'CANCELLED', 'FAILED') 등으로 변경 가능
-                            `created_at` DATETIME NOT NULL,
-                            PRIMARY KEY (`id`)
-)
+CREATE TABLE payments (
+                          id BIGINT AUTO_INCREMENT PRIMARY KEY,
+                          imp_uid VARCHAR(255) NOT NULL UNIQUE,
+                          merchant_uid VARCHAR(255) NOT NULL,
+                          order_id BIGINT NOT NULL,
+                          user_id BIGINT NOT NULL,
+                          amount BIGINT NOT NULL,
+                          status VARCHAR(255),
+                          created_at DATETIME(6),
+                          INDEX idx_order_id (order_id),
+                          INDEX idx_user_id (user_id)
+);
 
 -- orders 테이블
 CREATE TABLE `orders` (

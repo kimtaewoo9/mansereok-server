@@ -5,11 +5,15 @@ import com.mansereok.server.service.PaymentService;
 import com.mansereok.server.service.request.OrderCreateRequest;
 import com.mansereok.server.service.request.PaymentCompleteRequest;
 import com.mansereok.server.service.response.OrderCreateResponse;
+import com.mansereok.server.service.response.PaymentResponseDto;
 import io.portone.sdk.server.webhook.WebhookVerifier;
+import java.util.List;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
@@ -73,5 +77,13 @@ public class PaymentController {
 			log.error("웹훅 처리 실패: {}", e.getMessage(), e);
 			return ResponseEntity.status(500).build();
 		}
+	}
+
+	@GetMapping("/api/payments/me")
+	public ResponseEntity<List<PaymentResponseDto>> getPaymentHistory(
+		@AuthenticationPrincipal String username
+	) {
+		List<PaymentResponseDto> responses = paymentService.getPayments(username);
+		return ResponseEntity.ok(responses);
 	}
 }

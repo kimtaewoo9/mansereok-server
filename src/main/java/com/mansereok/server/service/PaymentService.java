@@ -6,17 +6,23 @@ import com.mansereok.server.entity.Order;
 import com.mansereok.server.entity.OrderStatus;
 import com.mansereok.server.entity.PaymentStatus;
 import com.mansereok.server.entity.SubCategory;
+import com.mansereok.server.entity.User;
 import com.mansereok.server.exception.PaymentException;
 import com.mansereok.server.repository.OrderRepository;
+import com.mansereok.server.repository.PaymentRepository;
 import com.mansereok.server.repository.SubCategoryRepository;
+import com.mansereok.server.repository.UserRepository;
 import com.mansereok.server.service.request.OrderCreateRequest;
 import com.mansereok.server.service.request.PaymentCompleteRequest;
 import com.mansereok.server.service.response.OrderCreateResponse;
+import com.mansereok.server.service.response.PaymentResponseDto;
 import com.mansereok.server.service.response.PortOnePaymentResponse;
 import com.mansereok.server.service.response.PortoneWebhookDto;
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -34,9 +40,12 @@ public class PaymentService {
 
 	private final OrderRepository orderRepository;
 	private final SubCategoryRepository subCategoryRepository;
-	private final RestClient restClient = RestClient.create();
+	private final PaymentRepository paymentRepository;
 
 	private final ObjectMapper objectMapper;
+	private final UserRepository userRepository;
+
+	private final RestClient restClient = RestClient.create();
 
 	@Value("${portone.api.secret}")
 	private String portOneApiSecret;
@@ -59,7 +68,7 @@ public class PaymentService {
 		//     throw new PaymentException("이미 구매한 항목입니다.");
 		// }
 
-		// 4. 주문 번호 생성
+		// 4. 결제 회사에 보여주는 영수증 번호 .. merchantUid
 		String merchantUid =
 			"order_" + System.currentTimeMillis() + "_" + UUID.randomUUID().toString()
 				.substring(0, 8);
@@ -199,7 +208,16 @@ public class PaymentService {
 			log.error("웹훅 처리 중 에러", e); // json 파싱 에러일 수 있음 .
 			throw new PaymentException("웹훅 처리 실패: " + e.getMessage());
 		}
+	}
 
+	public List<PaymentResponseDto> getPayments(String username) {
+		User user = userRepository.findByUsername(username)
+			.orElseThrow(() -> new IllegalArgumentException("사용자를 찾을 수 없습니다."));
+
+		return paymentRepository.findAllByUserIdOrderByCreatedAtDesc(user.getId())
+			.stream()
+			.map(PaymentResponseDto::create)
+			.collect(Collectors.toList());
 	}
 
 	private PortOnePaymentResponse fetchPaymentDataFromPortOne(String paymentId) {
