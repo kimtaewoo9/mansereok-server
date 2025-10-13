@@ -80,7 +80,7 @@ public class PaymentController {
 	}
 
 	@GetMapping("/api/payments/me")
-	public ResponseEntity<List<PaymentResponseDto>> getPaymentHistory(
+	public ResponseEntity<List<PaymentResponseDto>> getPayments(
 		@AuthenticationPrincipal String username
 	) {
 		List<PaymentResponseDto> responses = paymentService.getPayments(username);
