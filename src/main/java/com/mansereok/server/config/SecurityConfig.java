@@ -37,8 +37,6 @@ public class SecurityConfig {
 	@Bean
 	public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
 		http
-//			.csrf(csrf -> csrf.disable())
-
 //			 CSRF 설정
 			.csrf(csrf -> csrf
 				// CSRF 토큰을 쿠키로 생성하고, Javascript가 읽을 수 있도록 HttpOnly=false 설정
