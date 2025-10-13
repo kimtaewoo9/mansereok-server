@@ -64,6 +64,10 @@ public class SecurityConfig {
 					.requestMatchers("/api/auth/**").permitAll()
 					.requestMatchers("/api/public/**").permitAll()
 					.requestMatchers("/h2-console/**").permitAll()
+
+					// 프로필 관련 API는 인증된 사용자만 접근하도록 추가
+					.requestMatchers("/api/v1/users/me/profile").authenticated()
+
 					// 일단 모든 요청을 인증 없이 허용
 					.anyRequest().permitAll()
 

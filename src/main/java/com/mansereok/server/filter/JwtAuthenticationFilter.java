@@ -93,8 +93,12 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 				List<GrantedAuthority> authorities =
 					Collections.singletonList(new SimpleGrantedAuthority(role));
 
-				UsernamePasswordAuthenticationToken authentication = new UsernamePasswordAuthenticationToken(
-					username, null, authorities);
+				UsernamePasswordAuthenticationToken authentication =
+					new UsernamePasswordAuthenticationToken(
+						username,
+						null,
+						authorities
+					);
 
 				authentication.setDetails(
 					new WebAuthenticationDetailsSource().buildDetails(request));

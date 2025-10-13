@@ -74,7 +74,7 @@ public class AuthController {
 			Map<String, Object> claims = Map.of(
 				"role", user.getRole().name(),
 				"email", user.getEmail(),
-				"userId", user.getId()
+				"userId", user.getId() // claims 에 userId 가 들어있음 .
 			);
 
 			// 2. accessToken 생성 .

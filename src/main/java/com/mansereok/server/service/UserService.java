@@ -1,12 +1,15 @@
 package com.mansereok.server.service;
 
+import com.mansereok.server.entity.Gender;
 import com.mansereok.server.entity.SocialType;
 import com.mansereok.server.entity.User;
 import com.mansereok.server.repository.UserRepository;
+import com.mansereok.server.service.request.ProfileUpdateRequestDto;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 @Service
 @RequiredArgsConstructor
@@ -63,5 +66,28 @@ public class UserService {
 				socialType
 			)
 		);
+	}
+
+	@Transactional(readOnly = true)
+	public User getUserById(Long userId) {
+		return userRepository.findById(userId)
+			.orElseThrow(() -> new RuntimeException("사용자를 찾을 수 없습니다: ID " + userId));
+	}
+
+	@Transactional
+	public User updateUserProfile(String username, ProfileUpdateRequestDto requestDto) {
+		User user = findByUsername(username);
+
+		if (requestDto.getName() != null && !requestDto.getName().isBlank()) {
+			user.setName(requestDto.getName());
+		}
+		if (requestDto.getBirthDate() != null) {
+			user.setBirthDate(requestDto.getBirthDate());
+		}
+		if (requestDto.getGender() != null) {
+			user.setGender(Gender.valueOf(requestDto.getGender()));
+		}
+
+		return userRepository.save(user);
 	}
 }

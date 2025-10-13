@@ -8,6 +8,7 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import lombok.AccessLevel;
 import lombok.Getter;
@@ -35,9 +36,15 @@ public class User {
 	private SocialType socialType;
 	private String socialId;
 
+	// profile 정보
+	private LocalDate birthDate; // 생년월일 필드 추가
+
+	@Enumerated(EnumType.STRING)
+	private Gender gender; // 성별 필드 추가
+
 	private LocalDateTime createdAt;
 	private LocalDateTime updatedAt;
-	
+
 	public static User create(String name, String password, String email, boolean enabled) {
 		User user = new User();
 		user.name = name;
