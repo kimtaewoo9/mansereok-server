@@ -208,6 +208,7 @@ public class AuthController {
 		HttpServletResponse response
 	) {
 		try {
+			// 1. 서버 측 Refresh Token 무효화 .
 			if (token != null) {
 				refreshTokenService.findByToken(token)
 					.ifPresent(refreshTokenService::revokeToken);
