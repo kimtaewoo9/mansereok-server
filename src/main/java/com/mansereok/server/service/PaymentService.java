@@ -4,6 +4,7 @@ package com.mansereok.server.service;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mansereok.server.entity.Order;
 import com.mansereok.server.entity.OrderStatus;
+import com.mansereok.server.entity.Payment;
 import com.mansereok.server.entity.PaymentStatus;
 import com.mansereok.server.entity.SubCategory;
 import com.mansereok.server.entity.User;
@@ -51,8 +52,10 @@ public class PaymentService {
 	private String portOneApiSecret;
 
 	// 1단계: 주문 생성 (결제 전)
-	public OrderCreateResponse createOrder(OrderCreateRequest request) {
+	public OrderCreateResponse createOrder(String username, OrderCreateRequest request) {
 		log.info("주문 생성 요청: subCategoryId={}", request.getSubCategoryId());
+		User user = userRepository.findByUsername(username)
+			.orElseThrow(() -> new PaymentException("사용자를 찾을 수 없습니다."));
 
 		SubCategory subCategory = subCategoryRepository.findById(request.getSubCategoryId())
 			.orElseThrow(() -> new PaymentException("존재하지 않는 상품입니다."));
@@ -77,7 +80,7 @@ public class PaymentService {
 		Order savedOrder = orderRepository.save(
 			Order.create(
 				merchantUid,
-				null,
+				user.getId(),
 				subCategory.getId(),
 				amount,
 				OrderStatus.PENDING
@@ -124,7 +127,8 @@ public class PaymentService {
 		PaymentStatus status = PaymentStatus.fromPortOneStatus(paymentResponse.getStatus());
 
 		if (status == PaymentStatus.PAID) {
-			// 결제 완료 .. order 업데이트 후 DB에 저장
+			// 결제 완료 .. order 업데이트 후 DB에 저장하고 Payment 엔티티 생성
+
 			order.setStatus(OrderStatus.PAID);
 			order.setPaymentId(request.getPaymentId());
 			order.setPaidAt(LocalDateTime.now());
@@ -133,8 +137,19 @@ public class PaymentService {
 			log.info("결제 완료 처리 성공: orderId={}, paymentId={}",
 				savedOrder.getId(), request.getPaymentId());
 
-			processOrder(savedOrder);
+			// Payment 엔티티 저장 .
+			paymentRepository.save(
+				Payment.create(
+					request.getPaymentId(),
+					request.getMerchantUid(),
+					paymentResponse.getAmount().getTotal(),
+					status,
+					savedOrder.getId(),
+					savedOrder.getUserId()
+				)
+			);
 
+			processOrder(savedOrder);
 			return savedOrder; // 결제 성공시 주문 내역 반환 .
 		} else {
 			log.error("결제 실패: paymentId={}, status={}", request.getPaymentId(),
@@ -194,6 +209,18 @@ public class PaymentService {
 				Order savedOrder = orderRepository.save(order);
 				log.info("웹훅으로 결제 완료 처리: orderId={}, paymentId={}",
 					savedOrder.getId(), paymentId);
+
+				// payment 저장 .
+				paymentRepository.save(
+					Payment.create(
+						paymentId,
+						merchantUid,
+						paymentResponse.getAmount().getTotal(),
+						status,
+						savedOrder.getId(),
+						savedOrder.getUserId()
+					)
+				);
 
 				processOrder(savedOrder);
 			} else {

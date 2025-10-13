@@ -33,9 +33,12 @@ public class PaymentController {
 	 * 주문 생성 API (결제 전)
 	 */
 	@PostMapping("/api/payment/orders")
-	public ResponseEntity<?> createOrder(@RequestBody OrderCreateRequest request) {
+	public ResponseEntity<?> createOrder(
+		@RequestBody OrderCreateRequest request,
+		@AuthenticationPrincipal String username
+	) {
 		try {
-			OrderCreateResponse response = paymentService.createOrder(request);
+			OrderCreateResponse response = paymentService.createOrder(username, request);
 			return ResponseEntity.ok(response);
 		} catch (Exception e) {
 			log.error("주문 생성 실패", e);
