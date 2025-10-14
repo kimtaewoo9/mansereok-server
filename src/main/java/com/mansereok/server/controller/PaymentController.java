@@ -68,6 +68,9 @@ public class PaymentController {
 		@RequestHeader("webhook-signature") String webhookSignature
 	) {
 		try {
+			log.info("webhook-id: " + webhookId);
+			log.info("webhook-timestamp: " + webhookTimestamp);
+			log.info("webhook-signature: " + webhookSignature);
 			// 1. 웹훅 서명 검증 (위변조 방지)
 			WebhookVerifier verifier = new WebhookVerifier(webhookSecret);
 			verifier.verify(body, webhookId, webhookTimestamp, webhookSignature);

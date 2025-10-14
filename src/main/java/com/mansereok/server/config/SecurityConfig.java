@@ -44,11 +44,7 @@ public class SecurityConfig {
 
 			.csrf(csrf -> csrf
 				.csrfTokenRepository(CookieCsrfTokenRepository.withHttpOnlyFalse())
-				.requireCsrfProtectionMatcher(request ->
-					!request.getMethod().equals("GET") &&
-						!request.getMethod().equals("HEAD") &&
-						!request.getMethod().equals("OPTIONS")  // OPTIONS 제외
-				)
+				.ignoringRequestMatchers("/api/payment/webhook")
 			)
 
 			// CORS 설정 적용
@@ -64,7 +60,7 @@ public class SecurityConfig {
 
 					.requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
 					.requestMatchers("/api/auth/**").permitAll()
-
+					.requestMatchers("/api/payment/webhook").permitAll()
 					// 프로필 관련 API는 인증된 사용자만 접근하도록 추가
 					.requestMatchers("/api/v1/users/me/profile").authenticated()
 					.requestMatchers("/api/payments/me").authenticated()
