@@ -112,15 +112,25 @@ public class PaymentService {
 			throw new PaymentException("이미 처리된 결제입니다.");
 		}
 
-		// 2. 포트원에서 결제 정보를 가져옴 .
+		// 2. DB에서 포트원에서 결제 정보를 가져옴 .
 		PortOnePaymentResponse paymentResponse =
 			fetchPaymentDataFromPortOne(request.getPaymentId());
 
+		log.info("=== 결제 금액 비교 ===");
+		log.info("포트원 금액: {} (타입: {})", paymentResponse.getAmount(),
+			paymentResponse.getAmount().getClass());
+		log.info("주문 금액: {} (타입: {})", order.getAmount(), order.getAmount().getClass());
+
 		// 3. 주문 정보랑 포트원에서 가져온 정보랑 비교해서 금액을 검증함
-		if (!Objects.equals(paymentResponse.getAmount().getTotal(), order.getAmount())) {
-			order.setStatus(OrderStatus.FAILED); // 주문 상태 변경하고 .
-			orderRepository.save(order); // DB에 저장
-			throw new PaymentException("‼️결제 금액이 일치하지 않습니다. 위변조 의심️‼️");
+		if (!Objects.equals(paymentResponse.getAmount().getTotal(),
+			order.getAmount().longValue())) {
+			order.setStatus(OrderStatus.FAILED);
+			orderRepository.save(order);
+			// 에러 메시지도 조금 더 명확하게 수정하면 좋습니다.
+			throw new PaymentException(
+				String.format("결제 금액 위변조 의심: [DB: %d] != [PortOne: %d]",
+					order.getAmount(), paymentResponse.getAmount().getTotal())
+			);
 		}
 
 		// 4. 결제 상태 확인 .. response로 받은 String 형식의 Status를 Enum으로 바꿈

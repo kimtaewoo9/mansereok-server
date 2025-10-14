@@ -34,6 +34,7 @@ public class UserService {
 
 		return userRepository.save(
 			User.create(
+				email,
 				name,
 				passwordEncoder.encode(password),
 				email,
