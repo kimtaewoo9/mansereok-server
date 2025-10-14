@@ -116,7 +116,7 @@ public class PaymentService {
 		PortOnePaymentResponse paymentResponse =
 			fetchPaymentDataFromPortOne(request.getPaymentId());
 
-		// 3. ** 주문 정보랑 포트원에서 가져온 정보랑 비교해서 금액을 검증함 **
+		// 3. 주문 정보랑 포트원에서 가져온 정보랑 비교해서 금액을 검증함
 		if (!Objects.equals(paymentResponse.getAmount().getTotal(), order.getAmount())) {
 			order.setStatus(OrderStatus.FAILED); // 주문 상태 변경하고 .
 			orderRepository.save(order); // DB에 저장
@@ -153,7 +153,6 @@ public class PaymentService {
 	}
 
 	public void processWebhook(String body) {
-
 		try {
 			PortoneWebhookDto webhook = objectMapper.readValue(body, PortoneWebhookDto.class);
 
@@ -177,22 +176,8 @@ public class PaymentService {
 				return;
 			}
 
-			// ✅ 중복 처리 방지
-			if (order.getStatus() == OrderStatus.PAID && order.getPaymentId() != null) {
-				// Payment가 이미 있는지 확인
-				boolean paymentExists = paymentRepository
-					.findByImpUid(paymentId)  // ⚠️ 이 메서드 추가 필요!
-					.isPresent();
-
-				if (paymentExists) {
-					log.info("이미 처리된 웹훅: merchantUid={}, paymentId={}",
-						merchantUid, paymentId);
-					return;
-				}
-			}
-
-			PortOnePaymentResponse paymentResponse = fetchPaymentDataFromPortOne(
-				order.getPaymentId());
+			// 포트원에 결제 됐는지 재확인함
+			PortOnePaymentResponse paymentResponse = fetchPaymentDataFromPortOne(paymentId);
 
 			// 2. 금액 검증
 			if (!Objects.equals(paymentResponse.getAmount().getTotal(), order.getAmount())) {
@@ -233,8 +218,6 @@ public class PaymentService {
 				orderRepository.save(order);
 				throw new PaymentException("결제 실패 상태입니다.");
 			}
-
-
 		} catch (Exception e) {
 			log.error("웹훅 처리 중 에러", e); // json 파싱 에러일 수 있음 .
 			throw new PaymentException("웹훅 처리 실패: " + e.getMessage());
@@ -271,7 +254,7 @@ public class PaymentService {
 		// - 이메일 발송
 		// - 해석 정보 전달 등등 ..
 
-		log.info("주문 처리 완료: orderId={}, subCategoryId={}",
+		log.info("주문 처리 완료: orderId	={}, subCategoryId={}",
 			order.getId(), order.getSubCategoryId());
 	}
 }

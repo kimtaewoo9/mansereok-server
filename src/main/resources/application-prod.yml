@@ -85,13 +85,13 @@ posteller:
   api:
     base-url: https://api.forceteller.com
 
-# Swagger (운영 환경에서는 비활성화 권장)
+# Swagger
 springdoc:
   api-docs:
-    enabled: true # {SWAGGER_ENABLED:false}
+    enabled: true
     path: /v3/api-docs
   swagger-ui:
-    enabled: true # ${SWAGGER_ENABLED:false}
+    enabled: true
     operations-sorter: method
     tags-sorter: alpha
   default-consumes-media-type: application/json
@@ -129,7 +129,6 @@ management:
   endpoint:
     health:
       show-details: always
-
 
 # Logging (운영 환경)
 logging:

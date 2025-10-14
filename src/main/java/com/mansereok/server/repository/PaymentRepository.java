@@ -17,7 +17,7 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
 		value = "SELECT * "
 			+ "FROM payments "
 			+ "WHERE user_id = :userId "
-			+ "ORDER BY created_at desc",
+			+ "ORDER BY created_at DESC",
 		nativeQuery = true
 	)
 	List<Payment> findAllByUserIdOrderByCreatedAtDesc(
