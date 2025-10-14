@@ -38,6 +38,7 @@ public class PaymentController {
 		@AuthenticationPrincipal String username
 	) {
 		try {
+			log.info("주문 생성 요청자: " + username);
 			OrderCreateResponse response = paymentService.createOrder(username, request);
 			return ResponseEntity.ok(response);
 		} catch (Exception e) {

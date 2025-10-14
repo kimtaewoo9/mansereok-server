@@ -192,12 +192,14 @@ CREATE TABLE `subcategories` (
                                  `id` BIGINT NOT NULL AUTO_INCREMENT,
                                  `title` VARCHAR(255) NOT NULL,
                                  `description` TEXT,
+                                 `icon` VARCHAR(255),
                                  `price` INT NOT NULL,
+                                 `category_id` BIGINT,
                                  `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
                                  `updated_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-
                                  PRIMARY KEY (`id`)
 );
+
 
 -- 인덱스 생성 (검색 성능 최적화)
 CREATE INDEX idx_manses_solar_date ON manses(solar_date);
