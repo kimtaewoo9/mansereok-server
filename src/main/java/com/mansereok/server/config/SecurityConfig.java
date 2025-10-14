@@ -57,7 +57,6 @@ public class SecurityConfig {
 			// 인증이 필요한 경로 설정
 			.authorizeHttpRequests(auth -> auth
 					// 특정 경로를 먼저 허용
-
 					.requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
 					.requestMatchers("/api/auth/**").permitAll()
 					.requestMatchers("/api/payment/webhook").permitAll()
