@@ -100,7 +100,8 @@ public class SecurityConfig {
 		);
 
 		// 허용할 HTTP 메서드
-		configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "OPTIONS"));
+		configuration.setAllowedMethods(
+			Arrays.asList("GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"));
 		// 허용할 헤더
 		configuration.setAllowedHeaders(Arrays.asList("*"));
 		// 자격증명 허용 (쿠키, Authorization 헤더 등)
