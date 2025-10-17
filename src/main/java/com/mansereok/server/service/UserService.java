@@ -1,10 +1,15 @@
 package com.mansereok.server.service;
 
 import com.mansereok.server.entity.Gender;
+import com.mansereok.server.entity.Result;
 import com.mansereok.server.entity.SocialType;
 import com.mansereok.server.entity.User;
+import com.mansereok.server.repository.ResultRepository;
 import com.mansereok.server.repository.UserRepository;
 import com.mansereok.server.service.request.ProfileUpdateRequestDto;
+import com.mansereok.server.service.response.InterpretationResultResponse;
+import java.util.List;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -17,7 +22,10 @@ import org.springframework.transaction.annotation.Transactional;
 public class UserService {
 
 	private final UserRepository userRepository;
+	private final ResultRepository resultRepository;
+
 	private final PasswordEncoder passwordEncoder;
+
 
 	/**
 	 * 새로운 사용자를 등록한다.
@@ -90,5 +98,15 @@ public class UserService {
 		}
 
 		return userRepository.save(user);
+	}
+
+	@Transactional(readOnly = true)
+	public List<InterpretationResultResponse> getInterpretationResultsForUser(String username) {
+		User user = findByUsername(username);
+		List<Result> results = resultRepository.findAllByUserIdOrderByCreatedAtDesc(user.getId());
+
+		return results.stream()
+			.map(InterpretationResultResponse::create)
+			.collect(Collectors.toList());
 	}
 }

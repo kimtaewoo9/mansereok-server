@@ -79,8 +79,11 @@ public class ManseInterpretationService {
 	 * @param response 만세력 계산 결과
 	 * @return GPT-5 해석과 추가 정보가 담긴 응답 DTO
 	 */
-	public ManseInterpretationResponse interpret(String name,
-		ManseryeokCalculationResponse response) {
+	public ManseInterpretationResponse interpret(
+		String name,
+		ManseryeokCalculationResponse response,
+		Long userId
+	) {
 		log.info("✅ 사주 해석 요청 시작, 요청자: {}", name);
 
 		// 사주의 핵심인 '일간' 정보를 미리 추출합니다.
@@ -117,7 +120,7 @@ public class ManseInterpretationService {
 
 			Result savedResult = resultRepository.save(
 				Result.create(
-					null,  // userId - 로그인 기능 없으므로 null
+					userId,
 					name,
 					response.getInput().getSolarDate(),
 					response.getInput().getSolarTime(),

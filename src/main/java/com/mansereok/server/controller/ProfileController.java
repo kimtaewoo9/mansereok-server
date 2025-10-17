@@ -3,7 +3,9 @@ package com.mansereok.server.controller;
 import com.mansereok.server.entity.User;
 import com.mansereok.server.service.UserService;
 import com.mansereok.server.service.request.ProfileUpdateRequestDto;
+import com.mansereok.server.service.response.InterpretationResultResponse;
 import com.mansereok.server.service.response.ProfileResponseDto;
+import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -41,4 +43,12 @@ public class ProfileController {
 		return ResponseEntity.ok(new ProfileResponseDto(updatedUser));
 	}
 
+	@GetMapping("/api/v1/users/me/saju")
+	public ResponseEntity<List<InterpretationResultResponse>> getInterpretationResult(
+		@AuthenticationPrincipal String username
+	) {
+		List<InterpretationResultResponse> results =
+			userService.getInterpretationResultsForUser(username);
+		return ResponseEntity.ok(results);
+	}
 }

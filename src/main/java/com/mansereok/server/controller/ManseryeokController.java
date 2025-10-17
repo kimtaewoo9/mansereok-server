@@ -1,7 +1,9 @@
 package com.mansereok.server.controller;
 
+import com.mansereok.server.entity.User;
 import com.mansereok.server.service.ManseCalculationService;
 import com.mansereok.server.service.ManseInterpretationService;
+import com.mansereok.server.service.UserService;
 import com.mansereok.server.service.request.ManseCompatibilityAnalysisRequest;
 import com.mansereok.server.service.request.ManseInterpretationRequest;
 import com.mansereok.server.service.request.ManseryeokCalculationRequest;
@@ -9,11 +11,11 @@ import com.mansereok.server.service.response.ManseCompatibilityAnalysisResponse;
 import com.mansereok.server.service.response.ManseInterpretationResponse;
 import com.mansereok.server.service.response.ManseryeokCalculationResponse;
 import io.swagger.v3.oas.annotations.Operation;
-import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
@@ -21,15 +23,12 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequiredArgsConstructor
 @Slf4j
-@Tag(name = "자체 구현 만세력 API", description = "생년월일시로 만세력을 계산하는 API")
 public class ManseryeokController {
 
 	private final ManseCalculationService manseCalculationService;
 	private final ManseInterpretationService manseInterpretationService;
+	private final UserService userService;
 
-	@Operation(
-		summary = "만세력 계산"
-	)
 	@PostMapping("/api/v1/manseryeok/calculate")
 	public ResponseEntity<ManseryeokCalculationResponse> calculate(
 		@Valid @RequestBody ManseryeokCalculationRequest request
@@ -42,12 +41,10 @@ public class ManseryeokController {
 		return ResponseEntity.ok(response);
 	}
 
-	@Operation(
-		summary = "만세력 종합 해석"
-	)
 	@PostMapping("/api/v1/manseryeok/interpret")
 	public ResponseEntity<ManseInterpretationResponse> interpret(
-		@Valid @RequestBody ManseInterpretationRequest request
+		@Valid @RequestBody ManseInterpretationRequest request,
+		@AuthenticationPrincipal String username
 	) {
 
 		// 1. 만세력 데이터 계산
@@ -61,10 +58,22 @@ public class ManseryeokController {
 			)
 		);
 
+		// 2. 사용자 ID 조회 (로그인 상태일 경우)
+		Long userId = null;
+		if (username != null) {
+			try {
+				User user = userService.findByUsername(username);
+				userId = user.getId();
+			} catch (RuntimeException e) {
+				log.warn("사용자를 찾을 수 없어 익명 사용자로 처리합니다: {}", username);
+			}
+		}
+
 		// 2. 계산된 만세력으로 해석 시작.
 		ManseInterpretationResponse response = manseInterpretationService.interpret(
 			request.getName(),
-			manse
+			manse,
+			userId
 		);
 
 		return ResponseEntity.ok(response);
