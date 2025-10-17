@@ -72,6 +72,7 @@ public class AuthController {
 			// JWT Access Token 생성 (사용자 정보 포함)
 			// 1. Claims 생성
 			Map<String, Object> claims = Map.of(
+				"name", user.getName(),
 				"role", user.getRole().name(),
 				"email", user.getEmail(),
 				"userId", user.getId() // claims 에 userId 가 들어있음 .
@@ -165,6 +166,7 @@ public class AuthController {
 
 		// 새로운 Access Token 생성
 		Map<String, Object> claims = Map.of(
+			"name", user.getName(),
 			"role", user.getRole().name(),
 			"email", user.getEmail(),
 			"userId", user.getId()
