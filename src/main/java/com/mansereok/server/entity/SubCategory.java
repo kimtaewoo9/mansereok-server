@@ -1,5 +1,6 @@
 package com.mansereok.server.entity;
 
+import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
@@ -23,4 +24,8 @@ public class SubCategory {
 	private String title;
 	private String description;
 	private Integer price;
+	private String icon;
+
+	@Column(name = "category_id")
+	private Long categoryId;
 }
