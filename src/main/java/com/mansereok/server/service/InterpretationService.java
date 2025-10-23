@@ -28,7 +28,10 @@ public class InterpretationService {
 	private final GeminiApiClient geminiApiClient;
 	private final GptApiClient gptApiClient;
 
-	public ManseryeokInterpretationResponse createInterpretation(ManseryeokCreateRequest request) {
+	public ManseryeokInterpretationResponse createInterpretation(
+		ManseryeokCreateRequest request,
+		Long subcategoryId
+	) {
 		PersonalInfo savedPersonalInfo = save(request);
 
 		DaeunCreateResponse daeunResponse = postellerService.getDaeun(request);// 대운 API 호출
@@ -73,7 +76,9 @@ public class InterpretationService {
 	}
 
 	public CompatibilityAnalysisResponse createCompatibilityAnalysis(
-		CompatibilityAnalysisRequest request) {
+		CompatibilityAnalysisRequest request,
+		Long subcategoryId
+	) {
 		log.info("🚀 궁합 분석 시작: {} & {}", request.getPerson1().getName(),
 			request.getPerson2().getName());
 

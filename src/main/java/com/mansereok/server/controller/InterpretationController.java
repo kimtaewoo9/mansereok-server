@@ -8,6 +8,7 @@ import com.mansereok.server.service.response.ManseryeokInterpretationResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
@@ -21,22 +22,29 @@ public class InterpretationController {
 
 	@PostMapping("/api/v1/manseryeok/interpretation/{subcategoryId}")
 	public ResponseEntity<ManseryeokInterpretationResponse> getInterpretation(
-		@RequestBody ManseryeokCreateRequest request
+		@RequestBody ManseryeokCreateRequest request,
+		@PathVariable Long subcategoryId
 	) {
 		log.info("[ManseryeokController.getInterpretation] name={}]", request.getName());
 		ManseryeokInterpretationResponse response = interpretationService.createInterpretation(
-			request);
+			request,
+			subcategoryId
+		);
 		return ResponseEntity.ok(response);
 	}
 
-	@PostMapping("/api/v1/manseryeok/compatibility")
+	@PostMapping("/api/v1/manseryeok/compatibility/{subcategoryId}")
 	public ResponseEntity<CompatibilityAnalysisResponse> getCompatibilityAnalysis(
+		@PathVariable Long subcategoryId,
 		@RequestBody CompatibilityAnalysisRequest request
 	) {
 		log.info("[ManseryeokController.getCompatibilityAnalysis] person1={}, person2={}",
 			request.getPerson1().getName(), request.getPerson2().getName());
 		CompatibilityAnalysisResponse response = interpretationService.createCompatibilityAnalysis(
-			request);
+			request,
+			subcategoryId
+
+		);
 		return ResponseEntity.ok(response);
 	}
 }
