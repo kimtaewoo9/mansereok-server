@@ -19,7 +19,7 @@ public class InterpretationController {
 
 	private final InterpretationService interpretationService;
 
-	@PostMapping("/api/v1/manseryeok/interpretation")
+	@PostMapping("/api/v1/manseryeok/interpretation/{subcategoryId}")
 	public ResponseEntity<ManseryeokInterpretationResponse> getInterpretation(
 		@RequestBody ManseryeokCreateRequest request
 	) {

@@ -124,7 +124,7 @@ public class ManseInterpretationService {
 
 			User user = userService.findByUsername(username);
 			log.info("사용자 id: " + user.getId());
-			
+
 			Result savedResult = resultRepository.save(
 				Result.create(
 					user.getId(),
@@ -598,7 +598,6 @@ public class ManseInterpretationService {
 
 	private String extractContentFromResponseGpt5(String jsonResponse)
 		throws JsonProcessingException {
-		// ... 기존 코드와 동일 ...
 		if (jsonResponse == null || jsonResponse.trim().isEmpty()) {
 			throw new IllegalArgumentException("GPT 응답이 비어있습니다.");
 		}
