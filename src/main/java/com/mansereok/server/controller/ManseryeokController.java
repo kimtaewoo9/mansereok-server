@@ -1,6 +1,5 @@
 package com.mansereok.server.controller;
 
-import com.mansereok.server.entity.User;
 import com.mansereok.server.service.ManseCalculationService;
 import com.mansereok.server.service.ManseInterpretationService;
 import com.mansereok.server.service.UserService;
@@ -46,6 +45,7 @@ public class ManseryeokController {
 		@Valid @RequestBody ManseInterpretationRequest request,
 		@AuthenticationPrincipal String username
 	) {
+		log.info("만세력 해석 요청 username: " + username);
 
 		// 1. 만세력 데이터 계산
 		ManseryeokCalculationResponse manse = manseCalculationService.calculate(
@@ -58,22 +58,11 @@ public class ManseryeokController {
 			)
 		);
 
-		// 2. 사용자 ID 조회 (로그인 상태일 경우)
-		Long userId = null;
-		if (username != null) {
-			try {
-				User user = userService.findByUsername(username);
-				userId = user.getId();
-			} catch (RuntimeException e) {
-				log.warn("사용자를 찾을 수 없어 익명 사용자로 처리합니다: {}", username);
-			}
-		}
-
 		// 2. 계산된 만세력으로 해석 시작.
 		ManseInterpretationResponse response = manseInterpretationService.interpret(
 			request.getName(),
 			manse,
-			userId
+			username
 		);
 
 		return ResponseEntity.ok(response);

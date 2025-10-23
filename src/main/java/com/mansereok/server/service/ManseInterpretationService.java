@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mansereok.server.entity.CompatibilityResult;
 import com.mansereok.server.entity.Result;
+import com.mansereok.server.entity.User;
 import com.mansereok.server.repository.CompatibilityResultRepository;
 import com.mansereok.server.repository.ResultRepository;
 import com.mansereok.server.service.request.Gpt5Request;
@@ -34,6 +35,7 @@ public class ManseInterpretationService {
 	private final RestClient restClient;
 	private final ObjectMapper objectMapper = new ObjectMapper();
 
+	private final UserService userService;
 	private final ResultRepository resultRepository;
 	private final CompatibilityResultRepository compatibilityResultRepository;
 
@@ -61,6 +63,7 @@ public class ManseInterpretationService {
 	public ManseInterpretationService(@Value("${openai.api.key}") String apiKey,
 		@Value("${openai.api.base-url:https://api.openai.com}") String baseUrl,
 		ResultRepository resultRepository,
+		UserService userService,
 		CompatibilityResultRepository compatibilityResultRepository
 	) {
 		this.restClient = RestClient.builder()
@@ -70,6 +73,7 @@ public class ManseInterpretationService {
 			.build();
 		this.resultRepository = resultRepository;
 		this.compatibilityResultRepository = compatibilityResultRepository;
+		this.userService = userService;
 	}
 
 	/**
@@ -82,7 +86,7 @@ public class ManseInterpretationService {
 	public ManseInterpretationResponse interpret(
 		String name,
 		ManseryeokCalculationResponse response,
-		Long userId
+		String username
 	) {
 		log.info("✅ 사주 해석 요청 시작, 요청자: {}", name);
 
@@ -118,9 +122,12 @@ public class ManseInterpretationService {
 			log.info("GPT-5 응답 수신 완료.");
 			String interpretationText = extractContentFromResponseGpt5(gptResponse);
 
+			User user = userService.findByUsername(username);
+			log.info("사용자 id: " + user.getId());
+			
 			Result savedResult = resultRepository.save(
 				Result.create(
-					userId,
+					user.getId(),
 					name,
 					response.getInput().getSolarDate(),
 					response.getInput().getSolarTime(),

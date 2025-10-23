@@ -51,6 +51,7 @@ public class UserService {
 	}
 
 	public User findByUsername(String username) {
+		log.info("사용자 이메일: " + username);
 		return userRepository.findByUsername(username)
 			.orElseThrow(() -> new RuntimeException("사용자를 찾을 수 없습니다: " + username));
 	}
