@@ -23,7 +23,7 @@ public class ProfileController {
 	private final UserService userService;
 
 	@GetMapping("/api/v1/users/me/profiles")
-	public ResponseEntity<ProfileResponseDto> getProflie(
+	public ResponseEntity<ProfileResponseDto> getProfile(
 		@AuthenticationPrincipal String username
 	) {
 		User user = userService.findByUsername(username);
