@@ -12,6 +12,7 @@ import java.util.List;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -102,7 +103,22 @@ public class UserService {
 	}
 
 	@Transactional(readOnly = true)
-	public List<InterpretationResultResponse> getInterpretationResultsForUser(String username) {
+	public InterpretationResultResponse getInterpretationResult(Long resultId, String username) {
+		User user = findByUsername(username);
+
+		Result result = resultRepository.findById(resultId)
+			.orElseThrow(() -> new RuntimeException("result not found"));
+
+		if (!result.getUserId().equals(user.getId())) {
+			log.warn("다른 사람의 정보에 접근 시도. 접근 ID: {}", user.getId());
+			throw new AccessDeniedException("다른 사람의 리소스에 접근할 수 없습니다.");
+		}
+
+		return InterpretationResultResponse.create(result);
+	}
+
+	@Transactional(readOnly = true)
+	public List<InterpretationResultResponse> getInterpretationResults(String username) {
 		User user = findByUsername(username);
 		List<Result> results = resultRepository.findAllByUserIdOrderByCreatedAtDesc(user.getId());
 
