@@ -15,6 +15,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
@@ -40,8 +41,9 @@ public class ManseryeokController {
 		return ResponseEntity.ok(response);
 	}
 
-	@PostMapping("/api/v1/manseryeok/interpret")
+	@PostMapping("/api/v1/manseryeok/interpret/{subcategoryId}")
 	public ResponseEntity<ManseInterpretationResponse> interpret(
+		@PathVariable Long subcategoryId,
 		@Valid @RequestBody ManseInterpretationRequest request,
 		@AuthenticationPrincipal String username
 	) {
@@ -62,7 +64,8 @@ public class ManseryeokController {
 		ManseInterpretationResponse response = manseInterpretationService.interpret(
 			request.getName(),
 			manse,
-			username
+			username,
+			subcategoryId
 		);
 
 		return ResponseEntity.ok(response);
@@ -72,8 +75,9 @@ public class ManseryeokController {
 		summary = "궁합 분석",
 		description = "두 사람의 이름과 생년월일시 정보를 받아 AI를 통해 종합적인 궁합을 분석합니다."
 	)
-	@PostMapping("/api/v1/manseryeok/interpret/compatibility")
+	@PostMapping("/api/v1/manseryeok/interpret/compatibility/{subcategoryId}")
 	public ResponseEntity<ManseCompatibilityAnalysisResponse> analyzeCompatibility(
+		@PathVariable Long subcategoryId,
 		@Valid @RequestBody ManseCompatibilityAnalysisRequest request) {
 
 		ManseCompatibilityAnalysisRequest.PersonInfo person1 = request.getPerson1();
@@ -102,9 +106,10 @@ public class ManseryeokController {
 		);
 
 		// 3. 계산된 두 개의 만세력 데이터로 궁합 분석 서비스 호출
-		ManseCompatibilityAnalysisResponse response = manseInterpretationService.analyzeCompatibility(
+		ManseCompatibilityAnalysisResponse response = manseInterpretationService.analyzeCompatibilityWithSubcategory(
 			person1.getName(), person1Response,
-			person2.getName(), person2Response
+			person2.getName(), person2Response,
+			subcategoryId
 		);
 
 		return ResponseEntity.ok(response);

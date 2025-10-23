@@ -20,6 +20,7 @@ public class InterpretationController {
 
 	private final InterpretationService interpretationService;
 
+	// 단일 인물 요청
 	@PostMapping("/api/v1/manseryeok/interpretation/{subcategoryId}")
 	public ResponseEntity<ManseryeokInterpretationResponse> getInterpretation(
 		@RequestBody ManseryeokCreateRequest request,
@@ -33,6 +34,7 @@ public class InterpretationController {
 		return ResponseEntity.ok(response);
 	}
 
+	// 궁합 요청 .
 	@PostMapping("/api/v1/manseryeok/compatibility/{subcategoryId}")
 	public ResponseEntity<CompatibilityAnalysisResponse> getCompatibilityAnalysis(
 		@PathVariable Long subcategoryId,
