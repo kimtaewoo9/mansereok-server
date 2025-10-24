@@ -33,6 +33,7 @@ public class User {
 	private Role role = Role.USER;
 	private boolean enabled = true; // 계정 활성화 상태 .
 	// Oauth
+	@Enumerated(EnumType.STRING)
 	private SocialType socialType;
 	private String socialId;
 
