@@ -1,6 +1,5 @@
 package com.mansereok.server.service.response;
 
-import com.mansereok.server.entity.ProductStatus;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
@@ -21,8 +20,6 @@ public class ManseCompatibilityAnalysisResponse {
 	private String person2Ilgan;
 
 	private String interpretation;
-
-	private ProductStatus productStatus;
 
 	// TODO: 궁합 점수 카테고리 세분화.
 	private Integer compatibilityScore; // 궁합 점수(0-100)

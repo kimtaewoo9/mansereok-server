@@ -9,8 +9,9 @@ import com.mansereok.server.repository.CompatibilityResultRepository;
 import com.mansereok.server.repository.ResultRepository;
 import com.mansereok.server.repository.UserRepository;
 import com.mansereok.server.service.request.ProfileUpdateRequestDto;
+import com.mansereok.server.service.response.CompatibilityPageResponse;
+import com.mansereok.server.service.response.InterpretationPageResponse;
 import com.mansereok.server.service.response.InterpretationResultResponse;
-import com.mansereok.server.service.response.ManseCompatibilityAnalysisResponse;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.stream.Collectors;
@@ -133,19 +134,21 @@ public class UserService {
 	}
 
 	@Transactional(readOnly = true)
-	public List<InterpretationResultResponse> getInterpretationResults(String username) {
+	public List<InterpretationPageResponse> getInterpretationResults(String username) {
 		User user = findByUsername(username);
 		List<Result> results = resultRepository.findAllByUserIdOrderByCreatedAtDesc(user.getId());
 
 		return results.stream()
-			.map(InterpretationResultResponse::create)
+			.map(result -> new InterpretationPageResponse(
+				result.getProductName(),
+				result.getCreatedAt().toLocalDate(),
+				result.getStatus()
+			))
 			.collect(Collectors.toList());
 	}
 
-	/**
-	 * [NEW] 사용자가 요청했던 궁합 결과 목록 조회
-	 */
-	public List<ManseCompatibilityAnalysisResponse> getMyCompatibilityResults(String username) {
+	@Transactional(readOnly = true)
+	public List<CompatibilityPageResponse> getCompatibilityResults(String username) {
 		// 1. username으로 User ID 조회
 		User user = findByUsername(username);
 
@@ -155,14 +158,10 @@ public class UserService {
 
 		// 3. Entity List -> DTO List로 변환
 		return results.stream()
-			.map(result -> new ManseCompatibilityAnalysisResponse(
-				result.getId(),
-				result.getPerson1Name(),
-				result.getPerson1Ilgan(),
-				result.getPerson2Name(),
-				result.getPerson2Ilgan(),
-				result.getInterpretation(),
-				result.getCompatibilityScore()
+			.map(result -> new CompatibilityPageResponse(
+				result.getProductName(),
+				result.getCreatedAt().toLocalDate(),
+				result.getStatus()
 			))
 			.collect(Collectors.toList());
 	}

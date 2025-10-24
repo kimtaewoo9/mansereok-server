@@ -5,9 +5,11 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mansereok.server.entity.CompatibilityResult;
 import com.mansereok.server.entity.Result;
+import com.mansereok.server.entity.SubCategory;
 import com.mansereok.server.entity.User;
 import com.mansereok.server.repository.CompatibilityResultRepository;
 import com.mansereok.server.repository.ResultRepository;
+import com.mansereok.server.repository.SubCategoryRepository;
 import com.mansereok.server.service.request.Gpt5Request;
 import com.mansereok.server.service.response.ManseCompatibilityAnalysisResponse;
 import com.mansereok.server.service.response.ManseInterpretationResponse;
@@ -66,14 +68,15 @@ public class ManseInterpretationService {
 			"'해요'체를 기본으로 사용하되, 전문적인 분석이나 정보를 전달할 때는 '~입니다', '~습니다' 체를 자연스럽게 혼용하여 신뢰감과 친근함을 모두 갖춘 어조를 사용하세요.\n\n"
 			+
 			"--- USER QUERY ---\n";
+	private final SubCategoryRepository subCategoryRepository;
 
 
 	public ManseInterpretationService(@Value("${openai.api.key}") String apiKey,
 		@Value("${openai.api.base-url:https://api.openai.com}") String baseUrl,
 		ResultRepository resultRepository,
 		UserService userService,
-		CompatibilityResultRepository compatibilityResultRepository
-	) {
+		CompatibilityResultRepository compatibilityResultRepository,
+		SubCategoryRepository subCategoryRepository) {
 		this.restClient = RestClient.builder()
 			.baseUrl(baseUrl + "/v1")
 			.defaultHeader("Authorization", "Bearer " + apiKey)
@@ -82,6 +85,7 @@ public class ManseInterpretationService {
 		this.resultRepository = resultRepository;
 		this.compatibilityResultRepository = compatibilityResultRepository;
 		this.userService = userService;
+		this.subCategoryRepository = subCategoryRepository;
 	}
 
 	public ManseInterpretationResponse interpret(
@@ -127,6 +131,8 @@ public class ManseInterpretationService {
 			User user = userService.findByUsername(username);
 			log.info("사용자 id: " + user.getId());
 
+			SubCategory subCategory = subCategoryRepository.findById(subcategoryId).orElseThrow();
+
 			Result savedResult = resultRepository.save(
 				Result.create(
 					user.getId(),
@@ -136,7 +142,8 @@ public class ManseInterpretationService {
 					response.getInput().getGender(),
 					response.getInput().getIsLunar(),
 					ilgan,
-					interpretationText
+					interpretationText,
+					subCategory.getTitle()
 				)
 			);
 
@@ -202,6 +209,9 @@ public class ManseInterpretationService {
 			String analysisText = gptData.getInterpretation();
 
 			User user = userService.findByUsername(username);
+
+			SubCategory subCategory = subCategoryRepository.findById(subcategoryId).orElseThrow();
+
 			log.info("궁합 요청자 ID: " + user.getId());
 			CompatibilityResult savedResult = compatibilityResultRepository.save(
 				CompatibilityResult.create(
@@ -211,7 +221,8 @@ public class ManseInterpretationService {
 					person2Name,
 					person2Ilgan,
 					score,
-					analysisText
+					analysisText,
+					subCategory.getTitle()
 				)
 			);
 

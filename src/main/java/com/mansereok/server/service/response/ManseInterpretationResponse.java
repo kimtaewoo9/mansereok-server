@@ -1,6 +1,5 @@
 package com.mansereok.server.service.response;
 
-import com.mansereok.server.entity.ProductStatus;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.AllArgsConstructor;
 import lombok.Data;
@@ -19,6 +18,4 @@ public class ManseInterpretationResponse {
 	private String ilgan;
 
 	private String interpretation;
-
-	private ProductStatus status;
 }
