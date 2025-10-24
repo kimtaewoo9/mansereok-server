@@ -2,6 +2,8 @@ package com.mansereok.server.entity;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
@@ -49,8 +51,13 @@ public class Result {
 	@Column(nullable = false, length = 10)
 	private String ilgan;
 
-	@Column(columnDefinition = "TEXT", nullable = false)
+	@Column(columnDefinition = "TEXT")
 	private String interpretation;
+
+	private String productName;
+
+	@Enumerated(EnumType.STRING)
+	private ProductStatus status = ProductStatus.PENDING;
 
 	@Column(name = "created_at", nullable = false, updatable = false)
 	private LocalDateTime createdAt;
@@ -69,8 +76,27 @@ public class Result {
 		updatedAt = LocalDateTime.now();
 	}
 
+	public static Result createPending(Long userId, String name, LocalDate solarDate,
+		LocalTime solarTime, String gender, Boolean isLunar,
+		String ilgan, String productName
+	) {
+		Result result = new Result();
+		result.userId = userId;
+		result.name = name;
+		result.solarDate = solarDate;
+		result.solarTime = solarTime;
+		result.gender = gender;
+		result.isLunar = isLunar;
+		result.ilgan = ilgan;
+		result.productName = productName;
+		result.status = ProductStatus.PENDING; // 명시적으로 PENDING 설정
+		return result;
+	}
+
+
 	public static Result create(Long userId, String name, LocalDate solarDate,
-		LocalTime solarTime, String gender, Boolean isLunar, String ilgan, String interpretation
+		LocalTime solarTime, String gender, Boolean isLunar, String ilgan, String interpretation,
+		String productName
 	) {
 		Result result = new Result();
 		result.userId = userId;
@@ -81,6 +107,7 @@ public class Result {
 		result.isLunar = isLunar;
 		result.ilgan = ilgan;
 		result.interpretation = interpretation;
+		result.productName = productName;
 
 		return result;
 	}

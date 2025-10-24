@@ -16,7 +16,7 @@ public class InterpretationResultResponse {
 	private String ilgan;
 	private String interpretation;
 	private LocalDateTime createdAt;
-
+	
 	public static InterpretationResultResponse create(Result result) {
 		InterpretationResultResponse response = new InterpretationResultResponse();
 		response.id = result.getId();

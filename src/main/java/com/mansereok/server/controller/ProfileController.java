@@ -3,8 +3,9 @@ package com.mansereok.server.controller;
 import com.mansereok.server.entity.User;
 import com.mansereok.server.service.UserService;
 import com.mansereok.server.service.request.ProfileUpdateRequestDto;
+import com.mansereok.server.service.response.CompatibilityPageResponse;
+import com.mansereok.server.service.response.InterpretationPageResponse;
 import com.mansereok.server.service.response.InterpretationResultResponse;
-import com.mansereok.server.service.response.ManseCompatibilityAnalysisResponse;
 import com.mansereok.server.service.response.ProfileResponseDto;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
@@ -46,10 +47,10 @@ public class ProfileController {
 	}
 
 	@GetMapping("/api/v1/users/me/saju")
-	public ResponseEntity<List<InterpretationResultResponse>> getInterpretationResults(
+	public ResponseEntity<List<InterpretationPageResponse>> getInterpretationResults(
 		@AuthenticationPrincipal String username
 	) {
-		List<InterpretationResultResponse> results =
+		List<InterpretationPageResponse> results =
 			userService.getInterpretationResults(username);
 		return ResponseEntity.ok(results);
 	}
@@ -65,11 +66,22 @@ public class ProfileController {
 	}
 
 	@GetMapping("/api/v1/users/me/compatibility")
-	public ResponseEntity<List<ManseCompatibilityAnalysisResponse>> getCompatibilityResults(
+	public ResponseEntity<List<CompatibilityPageResponse>> getCompatibilityResults(
 		@AuthenticationPrincipal String username
 	) {
-		List<ManseCompatibilityAnalysisResponse> result =
-			userService.getMyCompatibilityResults(username);
+		List<CompatibilityPageResponse> result =
+			userService.getCompatibilityResults(
+				username); // Service method now returns the new DTO list
+		return ResponseEntity.ok(result);
+	}
+
+	@GetMapping("/api/v1/users/me/saju/{resultId}")
+	public ResponseEntity<InterpretationResultResponse> getCompatibilityResult(
+		@PathVariable Long resultId,
+		@AuthenticationPrincipal String username
+	) {
+		InterpretationResultResponse result =
+			userService.getInterpretationResult(resultId, username);
 		return ResponseEntity.ok(result);
 	}
 }
