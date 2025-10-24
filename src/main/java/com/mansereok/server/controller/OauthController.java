@@ -69,7 +69,6 @@ public class OauthController {
 
 		// 회원가입이 되어있는 회원이라면, JWT 토큰 발급 + refresh token 발급
 		Map<String, Object> claims = Map.of(
-			"name", user.getName(),
 			"role", user.getRole().name(),
 			"email", user.getEmail(),
 			"userId", user.getId()
@@ -130,7 +129,6 @@ public class OauthController {
 		// 회원가입 되어 있으면 access token + refresh token 발급 .
 		// access token
 		Map<String, Object> claims = Map.of(
-			"name", user.getName(),
 			"role", user.getRole().name(),
 			"email", user.getEmail(),
 			"userId", user.getId()
@@ -188,7 +186,6 @@ public class OauthController {
 		}
 		// 회원가입 되어있으면, access token 이랑 refresh token 전달 .
 		Map<String, Object> claims = Map.of(
-			"name", user.getName(),
 			"role", user.getRole().name(),
 			"email", user.getEmail(),
 			"userId", user.getId()
@@ -243,7 +240,6 @@ public class OauthController {
 
 		// access token + refresh 토큰 전달.
 		Map<String, Object> claims = Map.of(
-			"name", user.getName(),
 			"role", user.getRole().name(),
 			"email", user.getEmail() != null ? user.getEmail() : "",
 			"userId", user.getId()
