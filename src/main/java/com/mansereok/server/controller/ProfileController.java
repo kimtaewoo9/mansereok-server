@@ -75,7 +75,7 @@ public class ProfileController {
 		return ResponseEntity.ok(result);
 	}
 
-	@GetMapping("/api/v1/users/me/saju/{resultId}")
+	@GetMapping("/api/v1/users/me/compatibility/{resultId}")
 	public ResponseEntity<InterpretationResultResponse> getCompatibilityResult(
 		@PathVariable Long resultId,
 		@AuthenticationPrincipal String username
