@@ -11,6 +11,7 @@ import com.mansereok.server.repository.UserRepository;
 import com.mansereok.server.service.request.ProfileUpdateRequestDto;
 import com.mansereok.server.service.response.InterpretationResultResponse;
 import com.mansereok.server.service.response.ManseCompatibilityAnalysisResponse;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
@@ -40,7 +41,13 @@ public class UserService {
 	 * @param email    이메일
 	 * @return 생성된 사용자 엔티티
 	 */
-	public User createUser(String name, String email, String password) {
+	public User createUser(
+		String name,
+		String email,
+		String password,
+		LocalDate birthDate,
+		Gender gender
+	) {
 		if (userRepository.existsByEmail(email)) {
 			throw new RuntimeException("이미 존재하는 이메일 입니다: " + email);
 		}
@@ -51,6 +58,8 @@ public class UserService {
 				name,
 				passwordEncoder.encode(password),
 				email,
+				birthDate,
+				gender,
 				true
 			));
 	}

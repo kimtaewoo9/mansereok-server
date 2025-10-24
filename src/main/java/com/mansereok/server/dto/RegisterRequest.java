@@ -1,10 +1,12 @@
 package com.mansereok.server.dto;
 
 
+import com.mansereok.server.entity.Gender;
 import com.mansereok.server.entity.Role;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
+import java.time.LocalDate;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
@@ -24,6 +26,9 @@ public class RegisterRequest {
 	@Size(min = 6, message = "비밀번호는 최소 6자 이상이어야 합니다")
 	private String password;
 
+	private LocalDate birthDate;
+
+	private Gender gender;
 
 	private Role role = Role.USER;
 }

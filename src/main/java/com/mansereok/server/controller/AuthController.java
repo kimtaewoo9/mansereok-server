@@ -130,9 +130,11 @@ public class AuthController {
 	public ResponseEntity<?> register(@Valid @RequestBody RegisterRequest registerRequest) {
 		try {
 			User user = userService.createUser(
-				registerRequest.getName(), // 사용자 본명 .
+				registerRequest.getName(),
 				registerRequest.getEmail(),
-				registerRequest.getPassword()
+				registerRequest.getPassword(),
+				registerRequest.getBirthDate(),
+				registerRequest.getGender()
 			);
 
 			return ResponseEntity.ok(Map.of(

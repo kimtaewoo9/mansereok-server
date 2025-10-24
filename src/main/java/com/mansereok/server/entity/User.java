@@ -46,13 +46,16 @@ public class User {
 	private LocalDateTime updatedAt;
 
 	public static User create(String username, String name, String password, String email,
-		boolean enabled) {
+		LocalDate birthDate, Gender gender, boolean enabled) {
 		User user = new User();
 		user.username = username;
 		user.name = name;
 		user.password = password;
 		user.email = email; // 이메일 정보 강제 ..해야함
+		user.birthDate = birthDate;
+		user.gender = gender;
 		user.enabled = enabled;
+
 		user.createdAt = LocalDateTime.now();
 		user.updatedAt = LocalDateTime.now();
 		return user;
