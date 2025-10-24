@@ -85,7 +85,7 @@ app:
     secret: ${JWT_SECRET_KEY}
     access-token-expiration: 1800000   # 30분 (밀리초)
     refresh-token-expiration: 2592000000 # 30일 (밀리초)
-    issuer: "com.example.app" # 추후에 서비스 이름 정해지면 수정 ..
+    issuer: "named.com"
 
 server:
   port: 8080
