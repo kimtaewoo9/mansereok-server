@@ -46,7 +46,8 @@ public class UserService {
 		String email,
 		String password,
 		LocalDate birthDate,
-		Gender gender
+		Gender gender,
+		boolean isPrivacyAgreed
 	) {
 		if (userRepository.existsByEmail(email)) {
 			throw new RuntimeException("이미 존재하는 이메일 입니다: " + email);
@@ -60,7 +61,8 @@ public class UserService {
 				email,
 				birthDate,
 				gender,
-				true
+				true,
+				isPrivacyAgreed
 			));
 	}
 

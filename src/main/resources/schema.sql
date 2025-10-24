@@ -16,9 +16,16 @@ CREATE TABLE `users` (
                          `role` ENUM('ADMIN', 'MANAGER', 'USER') DEFAULT 'USER',
                          `enabled` BOOLEAN NOT NULL DEFAULT TRUE,
 
-    -- SocialType enum 및 social_id
-                         `social_type` TINYINT,
+    -- SocialType enum and social_id
+                         `social_type` VARCHAR(255), -- Changed from TINYINT to VARCHAR based on @Enumerated(EnumType.STRING)
                          `social_id` VARCHAR(255),
+
+    -- Added profile info
+                         `birth_date` DATE NULL, -- Changed based on LocalDate
+                         `gender` ENUM('MALE', 'FEMALE') NULL, -- Changed based on Gender enum and @Enumerated(EnumType.STRING)
+
+    -- Added privacy policy agreement
+                         `privacy_policy_agreed` BOOLEAN NOT NULL DEFAULT FALSE, -- Changed based on the new field
 
                          `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
                          `updated_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,

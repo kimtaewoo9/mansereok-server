@@ -38,15 +38,17 @@ public class User {
 
 	// profile 정보
 	private LocalDate birthDate; // 생년월일 필드 추가
-
 	@Enumerated(EnumType.STRING)
 	private Gender gender; // 성별 필드 추가
+
+	// 개인정보처리방침 동의
+	private boolean privacyPolicyAgreed = false;
 
 	private LocalDateTime createdAt;
 	private LocalDateTime updatedAt;
 
 	public static User create(String username, String name, String password, String email,
-		LocalDate birthDate, Gender gender, boolean enabled) {
+		LocalDate birthDate, Gender gender, boolean enabled, boolean privacyPolicyAgreed) {
 		User user = new User();
 		user.username = username;
 		user.name = name;
@@ -55,6 +57,7 @@ public class User {
 		user.birthDate = birthDate;
 		user.gender = gender;
 		user.enabled = enabled;
+		user.privacyPolicyAgreed = privacyPolicyAgreed;
 
 		user.createdAt = LocalDateTime.now();
 		user.updatedAt = LocalDateTime.now();

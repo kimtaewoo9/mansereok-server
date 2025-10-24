@@ -31,4 +31,6 @@ public class RegisterRequest {
 	private Gender gender;
 
 	private Role role = Role.USER;
+
+	private boolean privacyPolicyAgreed;
 }
