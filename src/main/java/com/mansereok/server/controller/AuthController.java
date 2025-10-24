@@ -11,7 +11,9 @@ import com.mansereok.server.service.RefreshTokenService;
 import com.mansereok.server.service.UserService;
 import com.mansereok.server.util.JwtUtil;
 import jakarta.servlet.http.Cookie;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import jakarta.servlet.http.HttpSession;
 import jakarta.validation.Valid;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
@@ -207,6 +209,7 @@ public class AuthController {
 	@PostMapping("/api/auth/sign-out")
 	public ResponseEntity<Void> signOut(
 		@CookieValue(value = "REFRESH_TOKEN", required = false) String token,
+		HttpServletRequest request,
 		HttpServletResponse response
 	) {
 		try {
@@ -221,6 +224,17 @@ public class AuthController {
 			cookie.setPath("/");
 			cookie.setHttpOnly(true);
 			response.addCookie(cookie);
+
+			HttpSession session = request.getSession(false); // 세션이 없으면 새로 만들지 않음
+			if (session != null) {
+				session.invalidate(); // 세션 파기
+			}
+
+			// 4. [추가] JSESSIONID 쿠키 삭제 (선택 사항이지만 권장)
+			Cookie csrfCookie = new Cookie("JSESSIONID", "");
+			csrfCookie.setMaxAge(0);
+			csrfCookie.setPath("/");
+			response.addCookie(csrfCookie);
 
 			return ResponseEntity.noContent().build();
 		} catch (Exception e) {

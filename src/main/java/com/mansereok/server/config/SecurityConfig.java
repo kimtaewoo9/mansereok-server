@@ -62,8 +62,10 @@ public class SecurityConfig {
 					.requestMatchers("/api/payment/webhook").permitAll()
 					// 프로필 관련 API는 인증된 사용자만 접근하도록 추가
 					.requestMatchers("/api/v1/users/me/profiles").authenticated()
+					// 사주 내역
+					.requestMatchers("/api/v1/users/me/saju").authenticated()
+					// 결제 관련
 					.requestMatchers("/api/payments/me").authenticated()
-					// 일단 모든 요청을 인증 없이 허용
 					.anyRequest().permitAll()
 
 				// .requestMatchers("/api/admin/**").hasRole("ADMIN")

@@ -1,13 +1,16 @@
 package com.mansereok.server.service;
 
+import com.mansereok.server.entity.CompatibilityResult;
 import com.mansereok.server.entity.Gender;
 import com.mansereok.server.entity.Result;
 import com.mansereok.server.entity.SocialType;
 import com.mansereok.server.entity.User;
+import com.mansereok.server.repository.CompatibilityResultRepository;
 import com.mansereok.server.repository.ResultRepository;
 import com.mansereok.server.repository.UserRepository;
 import com.mansereok.server.service.request.ProfileUpdateRequestDto;
 import com.mansereok.server.service.response.InterpretationResultResponse;
+import com.mansereok.server.service.response.ManseCompatibilityAnalysisResponse;
 import java.util.List;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
@@ -24,6 +27,7 @@ public class UserService {
 
 	private final UserRepository userRepository;
 	private final ResultRepository resultRepository;
+	private final CompatibilityResultRepository compatibilityResultRepository;
 
 	private final PasswordEncoder passwordEncoder;
 
@@ -124,6 +128,31 @@ public class UserService {
 
 		return results.stream()
 			.map(InterpretationResultResponse::create)
+			.collect(Collectors.toList());
+	}
+
+	/**
+	 * [NEW] 사용자가 요청했던 궁합 결과 목록 조회
+	 */
+	public List<ManseCompatibilityAnalysisResponse> getMyCompatibilityResults(String username) {
+		// 1. username으로 User ID 조회
+		User user = findByUsername(username);
+
+		// 2. Repository에서 userId로 궁합 결과 목록 조회 (최신순)
+		List<CompatibilityResult> results = compatibilityResultRepository.findByUserIdOrderByCreatedAtDesc(
+			user.getId());
+
+		// 3. Entity List -> DTO List로 변환
+		return results.stream()
+			.map(result -> new ManseCompatibilityAnalysisResponse(
+				result.getId(),
+				result.getPerson1Name(),
+				result.getPerson1Ilgan(),
+				result.getPerson2Name(),
+				result.getPerson2Ilgan(),
+				result.getInterpretation(),
+				result.getCompatibilityScore()
+			))
 			.collect(Collectors.toList());
 	}
 }

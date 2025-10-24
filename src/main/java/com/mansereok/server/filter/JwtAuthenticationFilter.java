@@ -88,8 +88,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 			String username = claims.getSubject();
 			String role = claims.get("role", String.class);
 
-			if (username != null
-				&& SecurityContextHolder.getContext().getAuthentication() == null) {
+			if (username != null) {
 				List<GrantedAuthority> authorities =
 					Collections.singletonList(new SimpleGrantedAuthority(role));
 
@@ -103,6 +102,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 				authentication.setDetails(
 					new WebAuthenticationDetailsSource().buildDetails(request));
 
+				// 세션 정보 대신 JWT 토큰 정보로 덮어쓰기
 				SecurityContextHolder.getContext().setAuthentication(authentication);
 			}
 		} catch (ExpiredJwtException e) {
