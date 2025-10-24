@@ -20,6 +20,8 @@ public class InterpretationController {
 
 	private final InterpretationService interpretationService;
 
+	// Posteller 에게 데이터 가져오는 방식.
+
 	// 단일 인물 요청
 	@PostMapping("/api/v1/manseryeok/interpretation/{subcategoryId}")
 	public ResponseEntity<ManseryeokInterpretationResponse> getInterpretation(
@@ -45,7 +47,6 @@ public class InterpretationController {
 		CompatibilityAnalysisResponse response = interpretationService.createCompatibilityAnalysis(
 			request,
 			subcategoryId
-
 		);
 		return ResponseEntity.ok(response);
 	}

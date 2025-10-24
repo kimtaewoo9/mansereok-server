@@ -158,25 +158,12 @@ public class ManseInterpretationService {
 		}
 	}
 
-	private String createPromptBySubcategory(Long subcategoryId, String name,
-		ManseryeokCalculationResponse response) {
-
-		return switch (subcategoryId.intValue()) {
-			case 1 -> createLifeOverallPrompt(name, response);           // 인생 총운 (수정됨)
-			case 2 -> createPersonalityAnalysisPrompt(name, response);   // 성격 분석 (수정됨)
-			case 3 -> createCareerAptitudePrompt(name, response);        // 직업 적성 (수정됨)
-			case 4 -> createLoveFortunePrompt(name, response);           // 연애 운세 (수정됨)
-			case 5 -> createIdolAnalysisPrompt(name, response);          // 최애 분석 (수정됨 - 연애 강화 유지)
-			case 9 -> createCharacterSajuPrompt(name, response);         // 캐릭터 사주 (수정됨)
-			default -> createComprehensiveAnalysisPrompt(name, response); // 기본 종합 (수정됨)
-		};
-	}
-
 	public ManseCompatibilityAnalysisResponse analyzeCompatibilityWithSubcategory(
 		String person1Name,
 		ManseryeokCalculationResponse person1Response,
 		String person2Name,
 		ManseryeokCalculationResponse person2Response,
+		String username,
 		Long subcategoryId
 	) {
 		String person1Ilgan = extractIlgan(person1Response);
@@ -214,21 +201,48 @@ public class ManseInterpretationService {
 			Integer score = gptData.getScore();
 			String analysisText = gptData.getInterpretation();
 
+			User user = userService.findByUsername(username);
+			log.info("궁합 요청자 ID: " + user.getId());
 			CompatibilityResult savedResult = compatibilityResultRepository.save(
-				CompatibilityResult.create(null, person1Name, person1Ilgan, person2Name,
-					person2Ilgan, score, analysisText)
+				CompatibilityResult.create(
+					user.getId(),
+					person1Name,
+					person1Ilgan,
+					person2Name,
+					person2Ilgan,
+					score,
+					analysisText
+				)
 			);
 
 			return new ManseCompatibilityAnalysisResponse(
-				savedResult.getId(), savedResult.getPerson1Name(), savedResult.getPerson1Ilgan(),
-				savedResult.getPerson2Name(), savedResult.getPerson2Ilgan(),
-				savedResult.getInterpretation(), savedResult.getCompatibilityScore()
+				savedResult.getId(),
+				savedResult.getPerson1Name(),
+				savedResult.getPerson1Ilgan(),
+				savedResult.getPerson2Name(),
+				savedResult.getPerson2Ilgan(),
+				savedResult.getInterpretation(),
+				savedResult.getCompatibilityScore()
 			);
 		} catch (Exception e) {
 			log.error("GPT API 궁합 분석 요청 중 오류 발생: {}", e.getMessage(), e);
 			return new ManseCompatibilityAnalysisResponse(null, person1Name, person1Ilgan,
 				person2Name, person2Ilgan, "궁합 분석 중 서버 오류가 발생했습니다. 잠시 후 다시 시도해주세요.", null);
 		}
+	}
+
+	private String createPromptBySubcategory(Long subcategoryId, String name,
+		ManseryeokCalculationResponse response) {
+
+		return switch (subcategoryId.intValue()) {
+			case 1 -> createLifeOverallPrompt(name, response);           // 인생 총운 (수정됨)
+			case 2 -> createPersonalityAnalysisPrompt(name, response);   // 성격 분석 (수정됨)
+			case 3 -> createCareerAptitudePrompt(name, response);        // 직업 적성 (수정됨)
+			case 4 -> createLoveFortunePrompt(name, response);           // 연애 운세 (수정됨)
+			case 5 -> createIdolAnalysisPrompt(name, response);          // 최애 분석 (수정됨 - 연애 강화 유지)
+			case 9 -> createCharacterSajuPrompt(name, response);         // 캐릭터 사주 (수정됨)
+			default -> createComprehensiveAnalysisPrompt(name, response); // 기본 종합 (수정됨)
+		};
 	}
 
 	private String createCompatibilityPromptBySubcategory(

@@ -4,21 +4,22 @@ import com.mansereok.server.entity.User;
 import com.mansereok.server.service.UserService;
 import com.mansereok.server.service.request.ProfileUpdateRequestDto;
 import com.mansereok.server.service.response.InterpretationResultResponse;
+import com.mansereok.server.service.response.ManseCompatibilityAnalysisResponse;
 import com.mansereok.server.service.response.ProfileResponseDto;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
-@RequestMapping
 @RequiredArgsConstructor
+@Slf4j
 public class ProfileController {
 
 	private final UserService userService;
@@ -58,9 +59,17 @@ public class ProfileController {
 		@PathVariable Long resultId,
 		@AuthenticationPrincipal String username
 	) {
-		InterpretationResultResponse result = userService
-			.getInterpretationResult(resultId, username);
+		InterpretationResultResponse result =
+			userService.getInterpretationResult(resultId, username);
 		return ResponseEntity.ok(result);
 	}
 
+	@GetMapping("/api/v1/users/me/compatibility")
+	public ResponseEntity<List<ManseCompatibilityAnalysisResponse>> getCompatibilityResults(
+		@AuthenticationPrincipal String username
+	) {
+		List<ManseCompatibilityAnalysisResponse> result =
+			userService.getMyCompatibilityResults(username);
+		return ResponseEntity.ok(result);
+	}
 }

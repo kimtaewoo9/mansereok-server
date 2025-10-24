@@ -78,7 +78,9 @@ public class ManseryeokController {
 	@PostMapping("/api/v1/manseryeok/interpret/compatibility/{subcategoryId}")
 	public ResponseEntity<ManseCompatibilityAnalysisResponse> analyzeCompatibility(
 		@PathVariable Long subcategoryId,
-		@Valid @RequestBody ManseCompatibilityAnalysisRequest request) {
+		@Valid @RequestBody ManseCompatibilityAnalysisRequest request,
+		@AuthenticationPrincipal String username
+	) {
 
 		ManseCompatibilityAnalysisRequest.PersonInfo person1 = request.getPerson1();
 		ManseCompatibilityAnalysisRequest.PersonInfo person2 = request.getPerson2();
@@ -109,6 +111,7 @@ public class ManseryeokController {
 		ManseCompatibilityAnalysisResponse response = manseInterpretationService.analyzeCompatibilityWithSubcategory(
 			person1.getName(), person1Response,
 			person2.getName(), person2Response,
+			username,
 			subcategoryId
 		);
 
