@@ -71,9 +71,11 @@ public class PaymentController {
 			log.info("webhook-id: " + webhookId);
 			log.info("webhook-timestamp: " + webhookTimestamp);
 			log.info("webhook-signature: " + webhookSignature);
+			log.info("webhook body: " + body);
+
 			// 1. 웹훅 서명 검증 (위변조 방지)
 			WebhookVerifier verifier = new WebhookVerifier(webhookSecret);
-			verifier.verify(body, webhookId, webhookTimestamp, webhookSignature);
+			verifier.verify(body, webhookId, webhookSignature, webhookTimestamp);
 
 			log.info("웹훅 서명 검증 성공: webhookId={}", webhookId);
 

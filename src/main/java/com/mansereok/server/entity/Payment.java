@@ -27,9 +27,11 @@ public class Payment {
 	private Long id;
 	private String impUid; // 포트원 고유 거래 번호
 
-	private String merchantUid; // PG사와 통신용 ID ..
+	private String merchantUid;
 	private Long orderId;
 	private Long userId; // user는 여러 결제 정보를 가질 수 있음 .
+
+	private Long subCategoryId;
 
 	private Long amount; // 검증을 위해 필수
 	@Enumerated(EnumType.STRING)
@@ -38,7 +40,7 @@ public class Payment {
 	private LocalDateTime createdAt;
 
 	public static Payment create(String paymentId, String merchantUid, Long amount,
-		PaymentStatus status, Long orderId, Long userId) {
+		PaymentStatus status, Long orderId, Long userId, Long subCategoryId) {
 		Payment payment = new Payment();
 		payment.impUid = paymentId;
 		payment.merchantUid = merchantUid;
@@ -47,6 +49,7 @@ public class Payment {
 		payment.createdAt = LocalDateTime.now();
 		payment.orderId = orderId;
 		payment.userId = userId;
+		payment.subCategoryId = subCategoryId;
 		return payment;
 	}
 }

@@ -17,6 +17,8 @@ public class PortOnePaymentResponse {
 	@JsonProperty("merchant_uid")
 	private String merchantUid; // 가맹점 주문 ID
 
+	private String customData;
+
 	@Data
 	@NoArgsConstructor
 	public static class Amount {

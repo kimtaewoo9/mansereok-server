@@ -7,70 +7,18 @@ import lombok.NoArgsConstructor;
 import lombok.ToString;
 
 @Getter
-@ToString
 @NoArgsConstructor
+@ToString
 public class PortoneWebhookDto {
 
-	@JsonProperty("type")
-	private String type;
+	@JsonProperty("tx_id")
+	private String txId;  // 트랜잭션 ID
 
-	@JsonProperty("data")
-	private WebhookData data;
+	@JsonProperty("payment_id")
+	private String paymentId;  // 결제 ID
 
-	@Getter
-	@NoArgsConstructor
-	@ToString
-	public static class WebhookData {
+	private String status;  // 결제 상태: Ready, Paid, Failed, Cancelled 등
 
-		@JsonProperty("paymentId")
-		private String paymentId; // imp_uid
-
-		@JsonProperty("transactionId")
-		private String transactionId;
-
-		@JsonProperty("merchantId")
-		private String merchantId;
-
-		@JsonProperty("storeId")
-		private String storeId;
-
-		@JsonProperty("orderName")
-		private String orderName;
-
-		@JsonProperty("currency")
-		private String currency;
-
-		@JsonProperty("amount")
-		private Amount amount;
-
-		@JsonProperty("status")
-		private String status;
-
-		@JsonProperty("paidAt")
-		private String paidAt;
-
-		@JsonProperty("orderDetail")
-		private OrderDetail orderDetail;
-
-		@Getter
-		@NoArgsConstructor
-		@ToString
-		public static class Amount {
-
-			@JsonProperty("total")
-			private Integer total;
-
-			@JsonProperty("paid")
-			private Integer paid;
-		}
-
-		@Getter
-		@NoArgsConstructor
-		@ToString
-		public static class OrderDetail {
-
-			@JsonProperty("orderNo")
-			private String orderNo; // merchant_uid
-		}
-	}
+	@JsonProperty("merchant_uid")
+	private String merchantUid;
 }

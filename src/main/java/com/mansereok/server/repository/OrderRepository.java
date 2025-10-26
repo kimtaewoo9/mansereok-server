@@ -21,4 +21,6 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
 
 	boolean existsByUserIdAndSubCategoryIdAndStatus(Long userId, Long subCategoryId,
 		OrderStatus status);
+
+	Optional<Order> findByPaymentId(String paymentId);
 }

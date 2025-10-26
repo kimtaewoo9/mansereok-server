@@ -1,6 +1,8 @@
 package com.mansereok.server.service;
 
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mansereok.server.entity.Order;
 import com.mansereok.server.entity.OrderStatus;
@@ -19,6 +21,7 @@ import com.mansereok.server.service.response.OrderCreateResponse;
 import com.mansereok.server.service.response.PaymentResponseDto;
 import com.mansereok.server.service.response.PortOnePaymentResponse;
 import com.mansereok.server.service.response.PortoneWebhookDto;
+import jakarta.persistence.EntityNotFoundException;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Objects;
@@ -42,7 +45,6 @@ public class PaymentService {
 	private final OrderRepository orderRepository;
 	private final SubCategoryRepository subCategoryRepository;
 	private final PaymentRepository paymentRepository;
-	private final UserService userService;
 
 	private final ObjectMapper objectMapper;
 	private final UserRepository userRepository;
@@ -101,12 +103,13 @@ public class PaymentService {
 
 	// 2단계. 결제 상태 조회 ..
 	public Order completePayment(PaymentCompleteRequest request) {
-		log.info("결제 상태 조회: paymentId={}, merchantUid={}",
-			request.getPaymentId(), request.getMerchantUid());
+		log.info("결제 상태 조회: paymentId={}, merchantUid={}", request.getPaymentId(),
+			request.getMerchantUid());
 
-		// 락 불필요 - 조회만
 		Order order = orderRepository.findByMerchantUid(request.getMerchantUid())
 			.orElseThrow(() -> new PaymentException("주문을 찾을 수 없습니다."));
+
+		log.info("[PaymentService.completePayment] order: " + order);
 
 		// 포트원 API 조회 (검증용)
 		PortOnePaymentResponse paymentResponse =
@@ -123,34 +126,80 @@ public class PaymentService {
 	}
 
 	public void processWebhook(String body) {
+		String merchantUidFromCustomData = null;
 		try {
+			log.info("=== 웹훅 원본 페이로드 ===");
+			log.info(body);
+
 			PortoneWebhookDto webhook = objectMapper.readValue(body, PortoneWebhookDto.class);
 
-			log.info("웹훅 수신: type={}, paymentId={}",
-				webhook.getType(), webhook.getData().getPaymentId());
+			log.info("웹훅 수신: status={}, paymentId={}",
+				webhook.getStatus(), webhook.getPaymentId());
 
-			String paymentId = webhook.getData().getPaymentId();
-			String merchantUid = webhook.getData().getOrderDetail().getOrderNo();
-			String webhookType = webhook.getType();
+			String paymentId = webhook.getPaymentId();
+			String status = webhook.getStatus();
+			String merchantUid = webhook.getMerchantUid();
 
-			if (!"Transaction.Paid".equals(webhookType)) {
-				log.info("결제 완료 이벤트가 아님: type={}", webhookType);
+			log.info("webhook.getStatus(): {}", webhook.getStatus());
+			log.info("webhook.getPaymentId(): {}", webhook.getPaymentId());
+			log.info("webhook.getMerchantUid(): {}", webhook.getMerchantUid());
+
+			// Ready 상태는 결제 완료가 아님 (가상계좌 발급, 결제 시작 등)
+			if (!"Paid".equals(status)) {
+				log.info("결제 완료 이벤트가 아님: status={}", status);
 				return;
 			}
 
-			// 1. 주문 조회
-			Order order = orderRepository.findByMerchantUid(merchantUid)
-				.orElseThrow(() -> new PaymentException("주문을 찾을 수 없습니다: " + merchantUid));
+			log.info("paymentId '{}'로 주문을 조회합니다...", paymentId);
+
+			// 포트원에 결제 됐는지 재확인함
+			PortOnePaymentResponse paymentResponse = fetchPaymentDataFromPortOne(paymentId);
+			log.info("PortOnePaymentResponse: " + paymentResponse);
+
+			String customDataString = paymentResponse.getCustomData();
+			if (customDataString == null || customDataString.isBlank()) {
+				log.error("PortOne API 응답(paymentId:{})에 customData가 비어있습니다!", paymentId);
+				throw new PaymentException("결제 API 응답에서 customData를 찾을 수 없어 주문 번호를 알 수 없습니다.");
+			}
+
+			try {
+				// customData 문자열을 JSON 객체로 파싱
+				JsonNode customDataJson = objectMapper.readTree(customDataString);
+				// "merchantUid" 필드 값 추출
+				if (customDataJson.has("merchantUid")) {
+					merchantUidFromCustomData = customDataJson.get("merchantUid").asText();
+					log.info("customData에서 merchantUid 추출 성공: {}", merchantUidFromCustomData);
+				}
+
+				// 추출한 merchantUid 검증
+				if (merchantUidFromCustomData == null || merchantUidFromCustomData.isBlank()) {
+					log.error("customData JSON 안에 'merchantUid' 필드가 없거나 비어있습니다! customData: {}",
+						customDataString);
+					log.error(
+						"프론트엔드 customData 형식을 확인하세요. 예: { \"merchantUid\": \"order_...\", ... }");
+					throw new PaymentException(
+						"결제 API 응답의 customData에서 유효한 주문 번호(merchantUid)를 추출할 수 없습니다.");
+				}
+
+			} catch (JsonProcessingException e) {
+				log.error("customData 문자열 JSON 파싱 실패! customData: {}", customDataString, e);
+				log.error("프론트엔드에서 customData를 올바른 JSON 문자열 형태로 전달했는지 확인하세요.");
+				throw new PaymentException("결제 API 응답의 customData 파싱 중 오류 발생");
+			}
+
+			log.info("추출한 merchantUid '{}'로 주문을 조회합니다...", merchantUidFromCustomData);
+			Order order = orderRepository.findByMerchantUid(merchantUidFromCustomData)
+				.orElseThrow(EntityNotFoundException::new);
+			log.info("주문 조회 성공: orderId={}, currentStatus={}", order.getId(), order.getStatus());
+
 			if (order.getStatus() == OrderStatus.PAID) {
 				log.info("이미 처리된 주문: merchantUid={}", merchantUid);
 				return;
 			}
 
-			// 포트원에 결제 됐는지 재확인함
-			PortOnePaymentResponse paymentResponse = fetchPaymentDataFromPortOne(paymentId);
-
 			// 2. 금액 검증
-			if (!Objects.equals(paymentResponse.getAmount().getTotal(), order.getAmount())) {
+			if (!Objects.equals(paymentResponse.getAmount().getTotal(),
+				order.getAmount().longValue())) {
 				log.error("웹훅 금액 불일치: expected={}, actual={}",
 					order.getAmount(), paymentResponse.getAmount().getTotal());
 				order.setStatus(OrderStatus.FAILED);
@@ -158,9 +207,10 @@ public class PaymentService {
 				throw new PaymentException("결제 금액이 일치하지 않습니다.");
 			}
 
-			PaymentStatus status = PaymentStatus.fromPortOneStatus(paymentResponse.getStatus());
+			PaymentStatus paymentStatus = PaymentStatus.fromPortOneStatus(
+				paymentResponse.getStatus());
 
-			if (status == PaymentStatus.PAID) {
+			if (paymentStatus == PaymentStatus.PAID) {
 				order.setStatus(OrderStatus.PAID);
 				order.setPaymentId(paymentId);
 				order.setPaidAt(LocalDateTime.now());
@@ -169,27 +219,28 @@ public class PaymentService {
 				log.info("웹훅으로 결제 완료 처리: orderId={}, paymentId={}",
 					savedOrder.getId(), paymentId);
 
-				// payment 저장 .
+				// payment 저장
 				paymentRepository.save(
 					Payment.create(
 						paymentId,
-						merchantUid,
+						merchantUidFromCustomData,
 						paymentResponse.getAmount().getTotal(),
-						status,
+						paymentStatus,
 						savedOrder.getId(),
-						savedOrder.getUserId()
+						savedOrder.getUserId(),
+						savedOrder.getSubCategoryId()
 					)
 				);
 
 				processOrder(savedOrder);
 			} else {
-				log.error("웹훅 결제 실패: paymentId={}, status={}", paymentId, status);
+				log.error("웹훅 결제 실패: paymentId={}, status={}", paymentId, paymentStatus);
 				order.setStatus(OrderStatus.FAILED);
 				orderRepository.save(order);
 				throw new PaymentException("결제 실패 상태입니다.");
 			}
 		} catch (Exception e) {
-			log.error("웹훅 처리 중 에러", e); // json 파싱 에러일 수 있음 .
+			log.error("웹훅 처리 중 에러", e);
 			throw new PaymentException("웹훅 처리 실패: " + e.getMessage());
 		}
 	}
@@ -205,16 +256,41 @@ public class PaymentService {
 	}
 
 	private PortOnePaymentResponse fetchPaymentDataFromPortOne(String paymentId) {
+		String rawJsonResponse = null; // 원시 JSON 저장 변수
 		try {
 			String url = "https://api.portone.io/payments/" + paymentId;
-			return restClient.get()
+
+			// API 호출하여 원시 JSON 문자열 받기
+			rawJsonResponse = restClient.get()
 				.uri(url)
 				.header(HttpHeaders.AUTHORIZATION, "PortOne " + portOneApiSecret)
 				.accept(MediaType.APPLICATION_JSON)
 				.retrieve()
-				.body(PortOnePaymentResponse.class);
+				.body(String.class);
+
+			log.info("PortOne API 원시 응답 (paymentId: {}): {}", paymentId, rawJsonResponse);
+
+			if (rawJsonResponse == null || rawJsonResponse.isBlank()) {
+				log.error("PortOne API로부터 비어있는 응답을 받았습니다. paymentId={}", paymentId);
+				throw new PaymentException("PortOne API로부터 비어있는 응답을 받았습니다.");
+			}
+
+			PortOnePaymentResponse response = objectMapper.readValue(rawJsonResponse,
+				PortOnePaymentResponse.class);
+
+			if (response == null) {
+				log.error("PortOne API 응답 JSON 파싱 실패. 원시 응답: {}", rawJsonResponse);
+				throw new PaymentException("PortOne API 응답 파싱에 실패했습니다.");
+			}
+
+			return response;
+
+		} catch (JsonProcessingException e) {
+			log.error("PortOne API 응답 JSON 파싱 중 오류 발생. paymentId={}, 원시 응답: {}", paymentId,
+				rawJsonResponse, e);
+			throw new PaymentException("결제 정보 응답 처리 중 오류 발생 (JSON 파싱 실패)");
 		} catch (Exception e) {
-			log.error("포트원 API 호출 실패: paymentId={}", paymentId, e);
+			log.error("PortOne API 호출 실패: paymentId={}", paymentId, e);
 			throw new PaymentException("결제 정보를 조회하는 중 오류가 발생했습니다.");
 		}
 	}

@@ -21,7 +21,7 @@ spring:
     database: mysql
     database-platform: org.hibernate.dialect.MySQL8Dialect
     hibernate:
-      ddl-auto: validate  # 운영에서는 validate 사용 (절대 update/create 금지!)
+      ddl-auto: validate  # 운영에서는 validate 사용
     show-sql: false  # 운영에서는 false
     properties:
       hibernate:
