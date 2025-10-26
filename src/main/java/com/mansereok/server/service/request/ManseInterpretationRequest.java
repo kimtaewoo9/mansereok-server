@@ -16,4 +16,6 @@ public class ManseInterpretationRequest {
 	private LocalTime solarTime;
 	private String gender;
 	private Boolean isLunar;
+
+	private Long paymentId;
 }

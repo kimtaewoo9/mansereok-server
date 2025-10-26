@@ -5,7 +5,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mansereok.server.entity.CompatibilityResult;
 import com.mansereok.server.entity.Result;
-import com.mansereok.server.entity.SubCategory;
+import com.mansereok.server.entity.ResultStatus;
 import com.mansereok.server.entity.User;
 import com.mansereok.server.repository.CompatibilityResultRepository;
 import com.mansereok.server.repository.ResultRepository;
@@ -18,6 +18,7 @@ import com.mansereok.server.service.response.ManseryeokCalculationResponse.Jijan
 import com.mansereok.server.service.response.ManseryeokCalculationResponse.JijangganInfo;
 import com.mansereok.server.service.response.ManseryeokCalculationResponse.PillarElement;
 import com.mansereok.server.service.response.model.GptCompatibilityResponse;
+import jakarta.persistence.EntityNotFoundException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -28,6 +29,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.client.RestClient;
 
 @Service
@@ -88,13 +90,18 @@ public class ManseInterpretationService {
 		this.subCategoryRepository = subCategoryRepository;
 	}
 
+	@Transactional
 	public ManseInterpretationResponse interpret(
 		String name,
 		ManseryeokCalculationResponse response,
 		String username,
-		Long subcategoryId
+		Long subcategoryId,
+		Long paymentId
 	) {
 		log.info("✅ 사주 해석 요청 시작 - name: {}, subcategoryId: {}", name, subcategoryId);
+
+		Result result = resultRepository.findByPaymentId(paymentId)
+			.orElseThrow(EntityNotFoundException::new);
 
 		String ilgan = "정보 없음";
 		if (response != null && response.getSaju() != null
@@ -102,6 +109,17 @@ public class ManseInterpretationService {
 			PillarElement daySky = response.getSaju().getDaySky();
 			ilgan = daySky.getKorean() + daySky.getFiveCircle();
 		}
+
+		result.updateInformation(
+			name,
+			response.getInput().getSolarDate(),
+			response.getInput().getSolarTime(),
+			response.getInput().getGender(),
+			response.getInput().getIsLunar(),
+			ilgan
+		);
+
+		resultRepository.saveAndFlush(result);
 
 		try {
 			String userPrompt = createPromptBySubcategory(subcategoryId, name, response);
@@ -131,21 +149,9 @@ public class ManseInterpretationService {
 			User user = userService.findByUsername(username);
 			log.info("사용자 id: " + user.getId());
 
-			SubCategory subCategory = subCategoryRepository.findById(subcategoryId).orElseThrow();
-
-			Result savedResult = resultRepository.save(
-				Result.create(
-					user.getId(),
-					name,
-					response.getInput().getSolarDate(),
-					response.getInput().getSolarTime(),
-					response.getInput().getGender(),
-					response.getInput().getIsLunar(),
-					ilgan,
-					interpretationText,
-					subCategory.getTitle()
-				)
-			);
+			result.completeInterpretation(interpretationText); // 해석 결과 및 상태(COMPLETED) 업데이트
+			Result savedResult = resultRepository.save(result);
+			log.info("Result 해석 결과 저장 및 상태 COMPLETED 변경 완료: resultId={}", savedResult.getId());
 
 			return new ManseInterpretationResponse(
 				savedResult.getId(),
@@ -165,13 +171,15 @@ public class ManseInterpretationService {
 		}
 	}
 
+	@Transactional
 	public ManseCompatibilityAnalysisResponse analyzeCompatibilityWithSubcategory(
 		String person1Name,
 		ManseryeokCalculationResponse person1Response,
 		String person2Name,
 		ManseryeokCalculationResponse person2Response,
 		String username,
-		Long subcategoryId
+		Long subcategoryId,
+		Long paymentId
 	) {
 		String person1Ilgan = extractIlgan(person1Response);
 		String person2Ilgan = extractIlgan(person2Response);
@@ -180,6 +188,13 @@ public class ManseInterpretationService {
 			person2Name);
 
 		try {
+			CompatibilityResult result = compatibilityResultRepository.findByPaymentId(paymentId)
+				.orElseThrow(EntityNotFoundException::new);
+
+			result.setStatus(ResultStatus.PROCESSING); // 사주 해석 진행 중으로 상태 변경 .
+			compatibilityResultRepository.saveAndFlush(result);
+			log.info("CompatibilityResult 상태 PROCESSING 변경 및 정보 업데이트: resultId={}", result.getId());
+
 			String userPrompt = createCompatibilityPromptBySubcategory(
 				subcategoryId, person1Name, person1Response, person2Name, person2Response);
 			String input = GPT5_SYSTEM_INSTRUCTION + userPrompt;
@@ -208,23 +223,10 @@ public class ManseInterpretationService {
 			Integer score = gptData.getScore();
 			String analysisText = gptData.getInterpretation();
 
-			User user = userService.findByUsername(username);
-
-			SubCategory subCategory = subCategoryRepository.findById(subcategoryId).orElseThrow();
-
-			log.info("궁합 요청자 ID: " + user.getId());
-			CompatibilityResult savedResult = compatibilityResultRepository.save(
-				CompatibilityResult.create(
-					user.getId(),
-					person1Name,
-					person1Ilgan,
-					person2Name,
-					person2Ilgan,
-					score,
-					analysisText,
-					subCategory.getTitle()
-				)
-			);
+			result.completeInterpretation(analysisText, score);
+			CompatibilityResult savedResult = compatibilityResultRepository.save(result);
+			log.info("CompatibilityResult 분석 결과 저장 및 상태 COMPLETED 변경 완료: resultId={}",
+				savedResult.getId());
 
 			return new ManseCompatibilityAnalysisResponse(
 				savedResult.getId(),

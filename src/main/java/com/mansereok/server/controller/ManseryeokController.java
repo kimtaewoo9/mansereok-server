@@ -2,14 +2,12 @@ package com.mansereok.server.controller;
 
 import com.mansereok.server.service.ManseCalculationService;
 import com.mansereok.server.service.ManseInterpretationService;
-import com.mansereok.server.service.UserService;
 import com.mansereok.server.service.request.ManseCompatibilityAnalysisRequest;
 import com.mansereok.server.service.request.ManseInterpretationRequest;
 import com.mansereok.server.service.request.ManseryeokCalculationRequest;
 import com.mansereok.server.service.response.ManseCompatibilityAnalysisResponse;
 import com.mansereok.server.service.response.ManseInterpretationResponse;
 import com.mansereok.server.service.response.ManseryeokCalculationResponse;
-import io.swagger.v3.oas.annotations.Operation;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -27,7 +25,6 @@ public class ManseryeokController {
 
 	private final ManseCalculationService manseCalculationService;
 	private final ManseInterpretationService manseInterpretationService;
-	private final UserService userService;
 
 	@PostMapping("/api/v1/manseryeok/calculate")
 	public ResponseEntity<ManseryeokCalculationResponse> calculate(
@@ -65,16 +62,13 @@ public class ManseryeokController {
 			request.getName(),
 			manse,
 			username,
-			subcategoryId
+			subcategoryId,
+			request.getPaymentId()
 		);
 
 		return ResponseEntity.ok(response);
 	}
 
-	@Operation(
-		summary = "궁합 분석",
-		description = "두 사람의 이름과 생년월일시 정보를 받아 AI를 통해 종합적인 궁합을 분석합니다."
-	)
 	@PostMapping("/api/v1/manseryeok/interpret/compatibility/{subcategoryId}")
 	public ResponseEntity<ManseCompatibilityAnalysisResponse> analyzeCompatibility(
 		@PathVariable Long subcategoryId,
@@ -112,7 +106,8 @@ public class ManseryeokController {
 			person1.getName(), person1Response,
 			person2.getName(), person2Response,
 			username,
-			subcategoryId
+			subcategoryId,
+			request.getPaymentId()
 		);
 
 		return ResponseEntity.ok(response);

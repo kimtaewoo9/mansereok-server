@@ -32,6 +32,9 @@ public class Result {
 	@Column(name = "user_id")
 	private Long userId;  // User 엔티티 대신 ID만 저장
 
+	@Column(name = "payment_id", unique = true) // unique 제약 .. 하나의 결제에 하나의 결과만 연결
+	private Long paymentId;
+
 	@Column(nullable = false, length = 100)
 	private String name;
 
@@ -57,7 +60,7 @@ public class Result {
 	private String productName;
 
 	@Enumerated(EnumType.STRING)
-	private ProductStatus status = ProductStatus.PENDING;
+	private ResultStatus status = ResultStatus.INPUT_REQUIRED;
 
 	@Column(name = "created_at", nullable = false, updatable = false)
 	private LocalDateTime createdAt;
@@ -76,39 +79,30 @@ public class Result {
 		updatedAt = LocalDateTime.now();
 	}
 
-	public static Result createPending(Long userId, String name, LocalDate solarDate,
-		LocalTime solarTime, String gender, Boolean isLunar,
-		String ilgan, String productName
-	) {
+	public static Result createInitial(Long userId, Long paymentId, String productName) {
 		Result result = new Result();
 		result.userId = userId;
-		result.name = name;
-		result.solarDate = solarDate;
-		result.solarTime = solarTime;
-		result.gender = gender;
-		result.isLunar = isLunar;
-		result.ilgan = ilgan;
+		result.paymentId = paymentId;
 		result.productName = productName;
-		result.status = ProductStatus.PENDING; // 명시적으로 PENDING 설정
+		result.status = ResultStatus.INPUT_REQUIRED;
 		return result;
 	}
 
+	// 정보 입력시 ..
+	public void updateInformation(String name, LocalDate solarDate, LocalTime solarTime,
+		String gender, Boolean isLunar, String ilgan) {
+		this.name = name;
+		this.solarDate = solarDate;
+		this.solarTime = solarTime;
+		this.gender = gender;
+		this.isLunar = isLunar;
+		this.ilgan = ilgan;
+		this.status = ResultStatus.PROCESSING;
+	}
 
-	public static Result create(Long userId, String name, LocalDate solarDate,
-		LocalTime solarTime, String gender, Boolean isLunar, String ilgan, String interpretation,
-		String productName
-	) {
-		Result result = new Result();
-		result.userId = userId;
-		result.name = name;
-		result.solarDate = solarDate;
-		result.solarTime = solarTime;
-		result.gender = gender;
-		result.isLunar = isLunar;
-		result.ilgan = ilgan;
-		result.interpretation = interpretation;
-		result.productName = productName;
-
-		return result;
+	// 해석 완료 후 COMPLETED 상태로 바꿈 .
+	public void completeInterpretation(String interpretation) {
+		this.interpretation = interpretation;
+		this.status = ResultStatus.COMPLETED;
 	}
 }

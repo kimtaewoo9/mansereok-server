@@ -26,7 +26,10 @@ public class CompatibilityResult {
 	@GeneratedValue(strategy = GenerationType.IDENTITY)
 	private Long id;
 
-	private Long userId;  // 요청한 사용자
+	private Long userId;
+
+	@Column(name = "payment_id", unique = true) // unique 제약 .. 하나의 결제에 하나의 결과만 연결
+	private Long paymentId;
 
 	@Column(name = "person1_name")
 	private String person1Name;
@@ -50,7 +53,7 @@ public class CompatibilityResult {
 	private String productName;
 
 	@Enumerated(EnumType.STRING)
-	private ProductStatus status = ProductStatus.PENDING;
+	private ResultStatus status = ResultStatus.INPUT_REQUIRED;
 
 	private LocalDateTime createdAt;
 
@@ -59,33 +62,24 @@ public class CompatibilityResult {
 		createdAt = LocalDateTime.now();
 	}
 
-	public static CompatibilityResult createPending(
-		Long userId, String person1Name, String person1Ilgan, String person2Name,
-		String person2Ilgan, String productName) {
-		CompatibilityResult result = new CompatibilityResult();
-		result.userId = userId;
-		result.person1Name = person1Name;
-		result.person1Ilgan = person1Ilgan;
-		result.person2Name = person2Name;
-		result.person2Ilgan = person2Ilgan;
-		result.productName = productName;
-		result.status = ProductStatus.PENDING;
-		return result;
-	}
 
-	public static CompatibilityResult create(
-		Long userId, String person1Name, String person1Ilgan, String person2Name,
-		String person2Ilgan, Integer compatibilityScore, String interpretation,
+	public static CompatibilityResult createInitial(Long userId, Long paymentId,
 		String productName) {
 		CompatibilityResult result = new CompatibilityResult();
 		result.userId = userId;
-		result.person1Name = person1Name;
-		result.person1Ilgan = person1Ilgan;
-		result.person2Name = person2Name;
-		result.person2Ilgan = person2Ilgan;
-		result.compatibilityScore = compatibilityScore;
-		result.interpretation = interpretation;
+		result.paymentId = paymentId;
 		result.productName = productName;
+		result.status = ResultStatus.INPUT_REQUIRED;
 		return result;
+	}
+
+	public void completeInterpretation(String interpretation, Integer score) {
+		this.interpretation = interpretation;
+		this.compatibilityScore = score;
+		this.status = ResultStatus.COMPLETED;
+	}
+
+	public void setStatus(ResultStatus status) {
+		this.status = ResultStatus.PROCESSING;
 	}
 }

@@ -4,15 +4,19 @@ package com.mansereok.server.service;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.mansereok.server.entity.CompatibilityResult;
 import com.mansereok.server.entity.Order;
 import com.mansereok.server.entity.OrderStatus;
 import com.mansereok.server.entity.Payment;
 import com.mansereok.server.entity.PaymentStatus;
+import com.mansereok.server.entity.Result;
 import com.mansereok.server.entity.SubCategory;
 import com.mansereok.server.entity.User;
 import com.mansereok.server.exception.PaymentException;
+import com.mansereok.server.repository.CompatibilityResultRepository;
 import com.mansereok.server.repository.OrderRepository;
 import com.mansereok.server.repository.PaymentRepository;
+import com.mansereok.server.repository.ResultRepository;
 import com.mansereok.server.repository.SubCategoryRepository;
 import com.mansereok.server.repository.UserRepository;
 import com.mansereok.server.service.request.OrderCreateRequest;
@@ -45,6 +49,9 @@ public class PaymentService {
 	private final OrderRepository orderRepository;
 	private final SubCategoryRepository subCategoryRepository;
 	private final PaymentRepository paymentRepository;
+
+	private final ResultRepository resultRepository;
+	private final CompatibilityResultRepository compatibilityResultRepository;
 
 	private final ObjectMapper objectMapper;
 	private final UserRepository userRepository;
@@ -220,7 +227,7 @@ public class PaymentService {
 					savedOrder.getId(), paymentId);
 
 				// payment 저장
-				paymentRepository.save(
+				Payment savedPayment = paymentRepository.save(
 					Payment.create(
 						paymentId,
 						merchantUidFromCustomData,
@@ -231,6 +238,8 @@ public class PaymentService {
 						savedOrder.getSubCategoryId()
 					)
 				);
+
+				createInitialResult(savedPayment, savedOrder);
 
 				processOrder(savedOrder);
 			} else {
@@ -302,5 +311,47 @@ public class PaymentService {
 
 		log.info("주문 처리 완료: orderId	={}, subCategoryId={}",
 			order.getId(), order.getSubCategoryId());
+	}
+
+	private void createInitialResult(Payment savedPayment, Order savedOrder) {
+		Long paymentPkId = savedPayment.getId(); // 상품의 PK 키 ..
+		Long userId = savedOrder.getUserId();
+		Long subCategoryId = savedOrder.getSubCategoryId();
+
+		// SubCategory 정보 조회 (상품 이름 가져오기)
+		SubCategory subCategory = subCategoryRepository.findById(subCategoryId)
+			.orElseThrow(() -> {
+				log.error("Payment 후 Result 생성 중 SubCategory 조회 실패: subCategoryId={}",
+					subCategoryId);
+				return new PaymentException("상품 정보를 찾을 수 없습니다: ID " + subCategoryId);
+			});
+		String productName = subCategory.getTitle();
+		Long categoryId = subCategory.getCategoryId(); // categoryId 가져오기
+
+		// Category ID에 따라 Result 또는 CompatibilityResult 생성 분기
+		if (categoryId != null && (categoryId == 4 || categoryId == 6 || categoryId == 7)) {
+			if (compatibilityResultRepository.findByPaymentId(paymentPkId).isEmpty()) {
+				CompatibilityResult initialCompResult = CompatibilityResult.createInitial(userId,
+					paymentPkId, productName);
+				compatibilityResultRepository.save(initialCompResult);
+				log.info(
+					"초기 CompatibilityResult 생성 완료: paymentId(PK)={}, resultId={}, productName={}",
+					paymentPkId, initialCompResult.getId(), productName);
+			} else {
+				log.warn(
+					"이미 paymentId(PK) {}에 해당하는 CompatibilityResult가 존재하여 생성을 건너 뜁니다.",
+					paymentPkId);
+			}
+		} else { // 그 외 모든 경우는 일반 Result 생성
+			if (resultRepository.findByPaymentId(paymentPkId).isEmpty()) {
+				Result initialResult = Result.createInitial(userId, paymentPkId, productName);
+				resultRepository.save(initialResult);
+				log.info("초기 Result 생성 완료: paymentId(PK)={}, resultId={}, productName={}",
+					paymentPkId, initialResult.getId(), productName);
+			} else {
+				log.warn("이미 paymentId(PK) {}에 해당하는 Result가 존재하여 생성을 건너 뜁니다.",
+					paymentPkId);
+			}
+		}
 	}
 }

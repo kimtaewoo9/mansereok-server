@@ -1,7 +1,7 @@
 package com.mansereok.server.service.response;
 
 
-import com.mansereok.server.entity.ProductStatus;
+import com.mansereok.server.entity.ResultStatus;
 import java.time.LocalDate;
 import lombok.AllArgsConstructor;
 import lombok.Data;
@@ -14,5 +14,6 @@ public class CompatibilityPageResponse {
 
 	private String productName;
 	private LocalDate createdAt;
-	private ProductStatus productStatus;
+	private ResultStatus productStatus;
+	private Long paymentId;
 }

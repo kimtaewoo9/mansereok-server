@@ -11,6 +11,8 @@ public class ManseCompatibilityAnalysisRequest {
 
 	private PersonInfo person2;
 
+	private Long paymentId;
+
 	@Data
 	public static class PersonInfo {
 

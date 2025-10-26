@@ -142,7 +142,8 @@ public class UserService {
 			.map(result -> new InterpretationPageResponse(
 				result.getProductName(),
 				result.getCreatedAt().toLocalDate(),
-				result.getStatus()
+				result.getStatus(),
+				result.getPaymentId()
 			))
 			.collect(Collectors.toList());
 	}
@@ -161,7 +162,8 @@ public class UserService {
 			.map(result -> new CompatibilityPageResponse(
 				result.getProductName(),
 				result.getCreatedAt().toLocalDate(),
-				result.getStatus()
+				result.getStatus(),
+				result.getPaymentId()
 			))
 			.collect(Collectors.toList());
 	}

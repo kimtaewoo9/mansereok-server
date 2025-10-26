@@ -1,6 +1,6 @@
 package com.mansereok.server.service.response;
 
-import com.mansereok.server.entity.ProductStatus;
+import com.mansereok.server.entity.ResultStatus;
 import java.time.LocalDate;
 import lombok.AllArgsConstructor;
 import lombok.Data;
@@ -13,5 +13,6 @@ public class InterpretationPageResponse {
 
 	private String productName;
 	private LocalDate createdAt;
-	private ProductStatus productStatus;
+	private ResultStatus resultStatus; // 사주 결과 상태
+	private Long paymentId;
 }
