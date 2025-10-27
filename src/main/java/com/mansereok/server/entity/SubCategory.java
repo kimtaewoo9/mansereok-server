@@ -22,6 +22,7 @@ public class SubCategory {
 	@GeneratedValue(strategy = GenerationType.IDENTITY)
 	private Long id;
 	private String title;
+	private String subtitle;
 	private String description;
 	private Integer price;
 	private String icon;
