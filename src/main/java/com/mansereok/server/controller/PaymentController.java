@@ -1,6 +1,8 @@
 package com.mansereok.server.controller;
 
 import com.mansereok.server.entity.Order;
+import com.mansereok.server.entity.Payment;
+import com.mansereok.server.repository.OrderRepository;
 import com.mansereok.server.service.PaymentService;
 import com.mansereok.server.service.request.OrderCreateRequest;
 import com.mansereok.server.service.request.PaymentCompleteRequest;
@@ -14,6 +16,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
@@ -25,6 +28,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class PaymentController {
 
 	private final PaymentService paymentService;
+	private final OrderRepository orderRepository;
 
 	@Value("${portone.webhook.secret}")
 	private String webhookSecret;
@@ -56,6 +60,12 @@ public class PaymentController {
 		} catch (Exception e) {
 			return ResponseEntity.badRequest().body(e.getMessage());
 		}
+	}
+
+	@PostMapping("/api/payment/orders/{orderId}")
+	public ResponseEntity<?> getOrder(@PathVariable Long orderId) {
+		Order order = orderRepository.findById(orderId).orElseThrow();
+		return ResponseEntity.ok(order);
 	}
 
 	// 포트원이 결제완료 사실을 백엔드에 알려주는 알림 시스템
@@ -97,4 +107,14 @@ public class PaymentController {
 		List<PaymentResponseDto> responses = paymentService.getPayments(username);
 		return ResponseEntity.ok(responses);
 	}
+
+	@GetMapping("/api/payments/{paymentId}")
+	public ResponseEntity<Payment> getPayment(
+		@PathVariable Long paymentId
+	) {
+		Payment payment = paymentService.getPayment(paymentId);
+		return ResponseEntity.ok(payment);
+	}
+
+
 }

@@ -23,7 +23,7 @@ public class InterpretationController {
 	// Posteller 에게 데이터 가져오는 방식.
 
 	// 단일 인물 요청
-	@PostMapping("/api/v1/manseryeok/interpretation/{subcategoryId}")
+	@PostMapping("/api/v1/manseryeok/interpretation/{subcategoryId}/posteller")
 	public ResponseEntity<ManseryeokInterpretationResponse> getInterpretation(
 		@RequestBody ManseryeokCreateRequest request,
 		@PathVariable Long subcategoryId
@@ -37,7 +37,7 @@ public class InterpretationController {
 	}
 
 	// 궁합 요청 .
-	@PostMapping("/api/v1/manseryeok/compatibility/{subcategoryId}")
+	@PostMapping("/api/v1/manseryeok/compatibility/{subcategoryId}/posteller")
 	public ResponseEntity<CompatibilityAnalysisResponse> getCompatibilityAnalysis(
 		@PathVariable Long subcategoryId,
 		@RequestBody CompatibilityAnalysisRequest request
