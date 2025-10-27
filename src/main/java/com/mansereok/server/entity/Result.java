@@ -37,37 +37,24 @@ public class Result {
 	@Column(name = "payment_id", unique = true) // unique 제약 .. 하나의 결제에 하나의 결과만 연결
 	private Long paymentId;
 
-	@Column(nullable = false, length = 100)
 	private String name;
-
 	// 생년월일시를 저장 해야되나 ?
-	@Column(name = "solar_date", nullable = false)
 	private LocalDate solarDate;
 
-	@Column(name = "solar_time", nullable = false)
 	private LocalTime solarTime;
 
-	@Column(nullable = false) // MALE OR FEMALE
 	private String gender;
 
-	@Column(name = "is_lunar", nullable = false)
 	private Boolean isLunar;
 
-	@Column(nullable = false, length = 10)
 	private String ilgan;
 
 	@Column(columnDefinition = "TEXT")
 	private String interpretation;
-
 	private String productName;
-
 	@Enumerated(EnumType.STRING)
 	private ResultStatus status = ResultStatus.INPUT_REQUIRED;
-
-	@Column(name = "created_at", nullable = false, updatable = false)
 	private LocalDateTime createdAt;
-
-	@Column(name = "updated_at")
 	private LocalDateTime updatedAt;
 
 	@PrePersist

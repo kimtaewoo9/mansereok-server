@@ -21,7 +21,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RequiredArgsConstructor
 @Slf4j
 @Tag(name = "Posteller 만세력 API", description = "사주팔자 분석 및 해석 API")
-public class PostllerController {
+public class PostellerController {
 
 	private final PostellerService postellerService;
 
