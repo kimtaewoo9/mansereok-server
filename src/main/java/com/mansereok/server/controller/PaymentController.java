@@ -1,7 +1,6 @@
 package com.mansereok.server.controller;
 
 import com.mansereok.server.entity.Order;
-import com.mansereok.server.entity.Payment;
 import com.mansereok.server.repository.OrderRepository;
 import com.mansereok.server.service.PaymentService;
 import com.mansereok.server.service.request.OrderCreateRequest;
@@ -9,10 +8,12 @@ import com.mansereok.server.service.request.PaymentCompleteRequest;
 import com.mansereok.server.service.response.OrderCreateResponse;
 import com.mansereok.server.service.response.PaymentResponseDto;
 import io.portone.sdk.server.webhook.WebhookVerifier;
+import jakarta.persistence.EntityNotFoundException;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -63,7 +64,10 @@ public class PaymentController {
 	}
 
 	@PostMapping("/api/payment/orders/{orderId}")
-	public ResponseEntity<?> getOrder(@PathVariable Long orderId) {
+	public ResponseEntity<?> getOrder(
+		@PathVariable Long orderId,
+		@AuthenticationPrincipal String username
+	) {
 		Order order = orderRepository.findById(orderId).orElseThrow();
 		return ResponseEntity.ok(order);
 	}
@@ -108,12 +112,23 @@ public class PaymentController {
 		return ResponseEntity.ok(responses);
 	}
 
-	@GetMapping("/api/payments/{paymentId}")
-	public ResponseEntity<Payment> getPayment(
-		@PathVariable Long paymentId
+	@GetMapping("/api/orders/by-payment/{paymentId}") // 경로도 orders 쪽으로 맞추는 것이 더 명확
+	public ResponseEntity<?> getOrderByPaymentId(
+		@PathVariable String paymentId, // 타입 String으로 유지
+		@AuthenticationPrincipal String username // 인증된 사용자 정보 추가
 	) {
-		Payment payment = paymentService.getPayment(paymentId);
-		return ResponseEntity.ok(payment);
+		try {
+			log.info("Payment ID로 Order 조회 요청: username={}, paymentId={}", username, paymentId);
+			Order order = orderRepository.findByPaymentId(paymentId).orElseThrow();
+			return ResponseEntity.ok(order);
+		} catch (EntityNotFoundException e) {
+			log.error("Order 조회 실패 (찾을 수 없음): {}", e.getMessage());
+			return ResponseEntity.status(HttpStatus.NOT_FOUND).body(e.getMessage());
+		} catch (Exception e) {
+			log.error("Payment ID로 Order 조회 중 서버 오류 발생", e);
+			return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+				.body("주문 조회 중 오류가 발생했습니다.");
+		}
 	}
 
 

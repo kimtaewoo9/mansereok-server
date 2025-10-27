@@ -15,4 +15,5 @@ public class InterpretationPageResponse {
 	private LocalDate createdAt;
 	private ResultStatus resultStatus; // 사주 결과 상태
 	private Long paymentId;
+	private Long resultId;
 }

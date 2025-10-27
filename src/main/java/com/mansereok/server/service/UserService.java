@@ -123,10 +123,10 @@ public class UserService {
 		User user = findByUsername(username);
 
 		Result result = resultRepository.findById(resultId)
-			.orElseThrow(() -> new RuntimeException("result not found"));
+			.orElseThrow(() -> new RuntimeException("result not found. resultId: " + resultId));
 
 		if (!result.getUserId().equals(user.getId())) {
-			log.warn("다른 사람의 정보에 접근 시도. 접근 ID: {}", user.getId());
+			log.warn("다른 사람의 정보에 접근 시도. 접근 ID: {}, 접근하려는 ID: {}", user.getId(), result.getUserId());
 			throw new AccessDeniedException("다른 사람의 리소스에 접근할 수 없습니다.");
 		}
 
@@ -143,7 +143,8 @@ public class UserService {
 				result.getProductName(),
 				result.getCreatedAt().toLocalDate(),
 				result.getStatus(),
-				result.getPaymentId()
+				result.getPaymentId(),
+				result.getId()
 			))
 			.collect(Collectors.toList());
 	}

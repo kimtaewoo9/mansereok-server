@@ -25,7 +25,7 @@ public class Payment {
 	@Id
 	@GeneratedValue(strategy = GenerationType.IDENTITY)
 	private Long id;
-	private String impUid; // 포트원 고유 거래 번호
+	private String impUid; // 포트원 고유 거래 번호 // impUid 로 ..
 
 	private String merchantUid;
 	private Long orderId;
