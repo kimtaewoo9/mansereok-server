@@ -72,15 +72,6 @@ public class PaymentService {
 
 		Integer amount = subCategory.getPrice(); // 2. 금액 계산 .
 
-		// TODO  중복 구매 체크
-		Long currentUserId = user.getId();
-		boolean alreadyPurchased = orderRepository.existsByUserIdAndSubCategoryIdAndStatus(
-			currentUserId, subCategory.getId(), OrderStatus.PAID
-		);
-		if (alreadyPurchased) {
-			throw new PaymentException("이미 구매한 항목입니다.");
-		}
-
 		// 4. 결제 회사에 보여주는 영수증 번호 .. merchantUid
 		String merchantUid =
 			"order_" + System.currentTimeMillis() + "_" + UUID.randomUUID().toString()
@@ -252,6 +243,10 @@ public class PaymentService {
 			log.error("웹훅 처리 중 에러", e);
 			throw new PaymentException("웹훅 처리 실패: " + e.getMessage());
 		}
+	}
+
+	public Payment getPayment(Long paymentId) {
+		return paymentRepository.findById(paymentId).orElseThrow(EntityNotFoundException::new);
 	}
 
 	public List<PaymentResponseDto> getPayments(String username) {
