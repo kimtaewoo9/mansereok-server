@@ -127,6 +127,7 @@ public class UserService {
 
 		if (!result.getUserId().equals(user.getId())) {
 			log.warn("다른 사람의 정보에 접근 시도. 접근 ID: {}, 접근하려는 ID: {}", user.getId(), result.getUserId());
+			log.warn("resultId: {}", resultId); // resultId 전송 .
 			throw new AccessDeniedException("다른 사람의 리소스에 접근할 수 없습니다.");
 		}
 
