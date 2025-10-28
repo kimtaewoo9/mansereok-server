@@ -56,23 +56,45 @@ public class SecurityConfig {
 
 			// 인증이 필요한 경로 설정
 			.authorizeHttpRequests(auth -> auth
-					// 특정 경로를 먼저 허용
-					.requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
-					.requestMatchers("/api/auth/**").permitAll()
-					.requestMatchers("/api/payment/webhook").permitAll()
-					// 프로필 관련 API는 인증된 사용자만 접근하도록 추가
-					.requestMatchers("/api/v1/users/me/profiles").authenticated()
-					// 사주 내역
-					.requestMatchers("/api/v1/users/me/saju").authenticated()
-					// 결제 관련
-					.requestMatchers("/api/payments/me").authenticated()
-					.anyRequest().permitAll()
+				// 1. 인증 없이 접근 허용 (permitAll)
+				.requestMatchers(HttpMethod.OPTIONS, "/**").permitAll() // CORS Preflight 요청
+				// AuthController: 회원가입, 로그인, 토큰갱신, 로그아웃, CSRF 토큰 발급
+				.requestMatchers("/api/auth/**").permitAll()
+				// OauthController: 소셜 로그인 콜백 처리
+				.requestMatchers("/member/**").permitAll()
+				// PaymentController: 결제 웹훅 수신
+				.requestMatchers("/api/payment/webhook").permitAll()
+				// ProductController: 상품 목록 및 상세 정보 조회 (GET 요청만 허용)
+				.requestMatchers(HttpMethod.GET, "/api/v1/products", "/api/v1/products/{productId}")
+				.permitAll()
+				// Swagger UI 접근 (개발/테스트 환경용)
+				.requestMatchers("/swagger-ui/**", "/v3/api-docs/**").permitAll()
+				// Posteller 프록시 API (InterpretationController, PostellerController) - 일단 인증 없이 허용
+				// 만약 이 API들도 인증이 필요하다면 아래 .authenticated() 섹션으로 이동
+				.requestMatchers(
+					"/api/v1/manseryeok/interpretation/{subcategoryId}/posteller",
+					"/api/v1/manseryeok/compatibility/{subcategoryId}/posteller"
+				).permitAll()
+				.requestMatchers("/api/v1/manseryeok/daeun", "/api/v1/manseryeok/chart",
+					"/api/v1/manseryeok/points").permitAll()
+				.requestMatchers("/actuator/health").permitAll()
 
-				// .requestMatchers("/api/admin/**").hasRole("ADMIN")
-				// .requestMatchers("/api/manager/**").hasAnyRole("ADMIN", "MANAGER")
-				// .requestMatchers("/api/user/**").hasAnyRole("ADMIN", "MANAGER", "USER")
+				// ProfileController: 내 정보 관련 모든 API
+				.requestMatchers("/api/v1/users/me/**").authenticated()
+				// PaymentController: 내 결제 내역, 특정 주문/결제 조회, 주문 생성, 결제 완료 확인
+				.requestMatchers("/api/payments/me").authenticated()
+				.requestMatchers("/api/orders/by-payment/{paymentId}").authenticated()
+				.requestMatchers("/api/payments/{paymentId}/**")
+				.authenticated() // Payment PK로 조회하는 API들
+				.requestMatchers("/api/payment/orders/**").authenticated()
+				.requestMatchers("/api/payment/complete").authenticated()
+				// ManseryeokController: 만세력 계산, 사주/궁합 해석 요청
+				.requestMatchers("/api/v1/manseryeok/calculate").authenticated()
+				.requestMatchers("/api/v1/manseryeok/interpret/**").authenticated()
+
+				// 3. 그 외 모든 요청은 인증 필요 (기본 규칙)
+				.anyRequest().authenticated()
 			)
-
 			// JWT 인증 예외 처리
 			.exceptionHandling(ex -> ex
 				.authenticationEntryPoint(jwtAuthenticationEntryPoint)
