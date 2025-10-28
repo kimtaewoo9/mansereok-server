@@ -323,10 +323,11 @@ public class PaymentService {
 				return new PaymentException("상품 정보를 찾을 수 없습니다: ID " + subCategoryId);
 			});
 		String productName = subCategory.getTitle();
-		Long categoryId = subCategory.getCategoryId(); // categoryId 가져오기
+
+		log.info("[PaymentService.createInitialResult] subcategoryId = {}", subCategoryId);
 
 		// Category ID에 따라 Result 또는 CompatibilityResult 생성 분기
-		if (categoryId != null && (categoryId == 4 || categoryId == 6 || categoryId == 7)) {
+		if (subCategoryId == 4 || subCategoryId == 6 || subCategoryId == 7) {
 			if (compatibilityResultRepository.findByPaymentId(paymentPkId).isEmpty()) {
 				CompatibilityResult initialCompResult = CompatibilityResult.createInitial(userId,
 					paymentPkId, productName);

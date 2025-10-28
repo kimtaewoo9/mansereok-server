@@ -108,6 +108,13 @@ public class ManseryeokController {
 		ManseCompatibilityAnalysisRequest.PersonInfo person1 = request.getPerson1();
 		ManseCompatibilityAnalysisRequest.PersonInfo person2 = request.getPerson2();
 
+		try {
+			updateCompatibilityResultStatusToProcessing(request.getPaymentId());
+		} catch (EntityNotFoundException e) {
+			log.error("해석 시작 전 상태 업데이트 실패: {}", e.getMessage());
+			return ResponseEntity.status(404).body(null); // 예시 응답
+		}
+
 		// 1. 첫 번째 사람의 만세력 데이터 계산
 		ManseryeokCalculationResponse person1Response = manseCalculationService.calculate(
 			new ManseryeokCalculationRequest(

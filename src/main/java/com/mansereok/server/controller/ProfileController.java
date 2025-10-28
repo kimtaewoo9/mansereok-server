@@ -6,7 +6,9 @@ import com.mansereok.server.service.request.ProfileUpdateRequestDto;
 import com.mansereok.server.service.response.CompatibilityPageResponse;
 import com.mansereok.server.service.response.InterpretationPageResponse;
 import com.mansereok.server.service.response.InterpretationResultResponse;
+import com.mansereok.server.service.response.ManseCompatibilityAnalysisResponse;
 import com.mansereok.server.service.response.ProfileResponseDto;
+import com.mansereok.server.service.response.SajuHistoryResponseDto;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -76,12 +78,20 @@ public class ProfileController {
 	}
 
 	@GetMapping("/api/v1/users/me/compatibility/{resultId}")
-	public ResponseEntity<InterpretationResultResponse> getCompatibilityResult(
+	public ResponseEntity<ManseCompatibilityAnalysisResponse> getCompatibilityResult(
 		@PathVariable Long resultId,
 		@AuthenticationPrincipal String username
 	) {
-		InterpretationResultResponse result =
-			userService.getInterpretationResult(resultId, username);
+		ManseCompatibilityAnalysisResponse result =
+			userService.getCompatibilityResultDetail(resultId, username); // 👈 올바른 서비스 메서드 호출
 		return ResponseEntity.ok(result);
+	}
+
+	@GetMapping("/api/v1/users/me/saju-history")
+	public ResponseEntity<List<SajuHistoryResponseDto>> getCombinedSajuHistory(
+		@AuthenticationPrincipal String username
+	) {
+		List<SajuHistoryResponseDto> results = userService.getCombinedSajuHistory(username);
+		return ResponseEntity.ok(results);
 	}
 }

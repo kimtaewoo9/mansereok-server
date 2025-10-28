@@ -12,9 +12,13 @@ import com.mansereok.server.service.request.ProfileUpdateRequestDto;
 import com.mansereok.server.service.response.CompatibilityPageResponse;
 import com.mansereok.server.service.response.InterpretationPageResponse;
 import com.mansereok.server.service.response.InterpretationResultResponse;
+import com.mansereok.server.service.response.ManseCompatibilityAnalysisResponse;
+import com.mansereok.server.service.response.SajuHistoryResponseDto;
 import java.time.LocalDate;
+import java.util.Comparator;
 import java.util.List;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.access.AccessDeniedException;
@@ -135,6 +139,32 @@ public class UserService {
 	}
 
 	@Transactional(readOnly = true)
+	public List<SajuHistoryResponseDto> getCombinedSajuHistory(String username) {
+		User user = findByUsername(username);
+		Long userId = user.getId();
+
+		// 단일 사주 목록 조회
+		List<Result> sajuResults = resultRepository.findAllByUserIdOrderByCreatedAtDesc(userId);
+
+		// 궁합 사주 목록 조회
+		List<CompatibilityResult> compResults = compatibilityResultRepository.findByUserIdOrderByCreatedAtDesc(
+			userId);
+
+		// 두 리스트를 SajuHistoryResponseDto 스트림으로 변환
+		Stream<SajuHistoryResponseDto> sajuStream = sajuResults.stream()
+			.map(SajuHistoryResponseDto::new); // SajuHistoryResponseDto(Result result) 생성자 사용
+
+		Stream<SajuHistoryResponseDto> compStream = compResults.stream()
+			.map(
+				SajuHistoryResponseDto::new); // SajuHistoryResponseDto(CompatibilityResult result) 생성자 사용
+
+		// 두 스트림을 합치고, createdAt 기준으로 내림차순 정렬 (최신순)
+		return Stream.concat(sajuStream, compStream)
+			.sorted(Comparator.comparing(SajuHistoryResponseDto::getCreatedAt).reversed())
+			.collect(Collectors.toList());
+	}
+
+	@Transactional(readOnly = true)
 	public List<InterpretationPageResponse> getInterpretationResults(String username) {
 		User user = findByUsername(username);
 		List<Result> results = resultRepository.findAllByUserIdOrderByCreatedAtDesc(user.getId());
@@ -168,5 +198,33 @@ public class UserService {
 				result.getPaymentId()
 			))
 			.collect(Collectors.toList());
+	}
+
+	@Transactional(readOnly = true)
+	public ManseCompatibilityAnalysisResponse getCompatibilityResultDetail(Long resultId,
+		String username) {
+		User user = findByUsername(username);
+
+		CompatibilityResult result = compatibilityResultRepository.findById(resultId)
+			.orElseThrow(() -> new RuntimeException(
+				"compatibility result not found. resultId: " + resultId));
+
+		if (!result.getUserId().equals(user.getId())) {
+			log.warn("다른 사람의 궁합 정보에 접근 시도. 접근 ID: {}, 접근하려는 ID: {}", user.getId(),
+				result.getUserId());
+			log.warn("resultId: {}", resultId);
+			throw new AccessDeniedException("다른 사람의 리소스에 접근할 수 없습니다.");
+		}
+
+		// 궁합 DTO로 반환
+		return new ManseCompatibilityAnalysisResponse(
+			result.getId(),
+			result.getPerson1Name(),
+			result.getPerson1Ilgan(),
+			result.getPerson2Name(),
+			result.getPerson2Ilgan(),
+			result.getInterpretation(),
+			result.getCompatibilityScore()
+		);
 	}
 }
