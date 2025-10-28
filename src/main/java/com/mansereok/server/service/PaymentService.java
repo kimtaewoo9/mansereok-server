@@ -230,6 +230,8 @@ public class PaymentService {
 					)
 				);
 
+				order.setPaymentPkId(savedPayment.getId());
+
 				createInitialResult(savedPayment, savedOrder);
 
 				processOrder(savedOrder);

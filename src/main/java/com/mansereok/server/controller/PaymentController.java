@@ -57,13 +57,14 @@ public class PaymentController {
 	public ResponseEntity<?> completePayment(@RequestBody PaymentCompleteRequest request) {
 		try {
 			Order order = paymentService.completePayment(request);
+			log.info("Order: {}", order);
 			return ResponseEntity.ok(order);
 		} catch (Exception e) {
 			return ResponseEntity.badRequest().body(e.getMessage());
 		}
 	}
 
-	@PostMapping("/api/payment/orders/{orderId}")
+	@GetMapping("/api/payment/orders/{orderId}")
 	public ResponseEntity<?> getOrder(
 		@PathVariable Long orderId,
 		@AuthenticationPrincipal String username
@@ -112,14 +113,14 @@ public class PaymentController {
 		return ResponseEntity.ok(responses);
 	}
 
-	@GetMapping("/api/orders/by-payment/{paymentId}") // 경로도 orders 쪽으로 맞추는 것이 더 명확
+	@GetMapping("/api/orders/by-payment/{paymentId}")
 	public ResponseEntity<?> getOrderByPaymentId(
-		@PathVariable String paymentId, // 타입 String으로 유지
-		@AuthenticationPrincipal String username // 인증된 사용자 정보 추가
+		@PathVariable Long paymentId,
+		@AuthenticationPrincipal String username
 	) {
 		try {
 			log.info("Payment ID로 Order 조회 요청: username={}, paymentId={}", username, paymentId);
-			Order order = orderRepository.findByPaymentId(paymentId).orElseThrow();
+			Order order = orderRepository.findByPaymentPkId(paymentId).orElseThrow();
 			return ResponseEntity.ok(order);
 		} catch (EntityNotFoundException e) {
 			log.error("Order 조회 실패 (찾을 수 없음): {}", e.getMessage());

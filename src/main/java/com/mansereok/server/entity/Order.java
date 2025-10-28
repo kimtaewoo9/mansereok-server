@@ -28,7 +28,10 @@ public class Order {
 	@GeneratedValue(strategy = GenerationType.IDENTITY)
 	private Long id;
 	private String merchantUid;
-	private String paymentId; // 포트원 결제 ID (결제 후 저장)
+	private String paymentId; // Payment 엔티티의 id
+
+	private Long paymentPkId; // Payment 엔티티의 PK ID 저장용 필드 (Long 타입)
+
 	private Long userId; // 사용자 ID (누가 주문 했는가)
 	private Long subCategoryId;  // 구매한 상품 ID
 
