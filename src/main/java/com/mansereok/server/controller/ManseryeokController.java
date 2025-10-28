@@ -10,13 +10,13 @@ import com.mansereok.server.service.ManseInterpretationService;
 import com.mansereok.server.service.request.ManseCompatibilityAnalysisRequest;
 import com.mansereok.server.service.request.ManseInterpretationRequest;
 import com.mansereok.server.service.request.ManseryeokCalculationRequest;
-import com.mansereok.server.service.response.ManseCompatibilityAnalysisResponse;
-import com.mansereok.server.service.response.ManseInterpretationResponse;
 import com.mansereok.server.service.response.ManseryeokCalculationResponse;
 import jakarta.persistence.EntityNotFoundException;
 import jakarta.validation.Valid;
+import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.transaction.annotation.Transactional;
@@ -49,7 +49,7 @@ public class ManseryeokController {
 	}
 
 	@PostMapping("/api/v1/manseryeok/interpret/{subcategoryId}")
-	public ResponseEntity<ManseInterpretationResponse> interpret(
+	public ResponseEntity<?> interpret(
 		@PathVariable Long subcategoryId,
 		@Valid @RequestBody ManseInterpretationRequest request,
 		@AuthenticationPrincipal String username
@@ -76,31 +76,35 @@ public class ManseryeokController {
 		);
 
 		// 2. 계산된 만세력으로 해석 시작.
-		ManseInterpretationResponse response = manseInterpretationService.interpret(
-			request.getName(),
-			manse,
-			username,
-			subcategoryId,
-			request.getPaymentId()
-		);
+		try {
+			manseInterpretationService.interpret(
+				request.getName(),
+				manse, // 계산된 만세력 데이터 전달
+				username,
+				subcategoryId,
+				request.getPaymentId()
+			);
+		} catch (Exception e) {
+			log.error("비동기 해석 작업 시작 중 예상치 못한 오류 발생: {}", e.getMessage(), e);
+			return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+				.body(Map.of("message", "해석 작업을 시작하는 중 서버 오류가 발생했습니다."));
+		}
 
-		return ResponseEntity.ok(response);
+		// 즉시 "요청 접수됨" 응답 반환 (HTTP 202 Accepted)
+		log.info("만세력 해석 요청 접수 완료 (비동기 처리 시작): paymentId={}", request.getPaymentId());
+		return ResponseEntity.accepted() // HTTP 202 Accepted 상태 코드 사용
+			.body(Map.of(
+				"message", "해석 요청이 접수되었습니다. 잠시 후 결과를 확인해주세요.",
+				"paymentId", request.getPaymentId() // 클라이언트가 결과를 조회할 때 사용할 ID
+			));
 	}
 
 	@PostMapping("/api/v1/manseryeok/interpret/compatibility/{subcategoryId}")
-	public ResponseEntity<ManseCompatibilityAnalysisResponse> analyzeCompatibility(
+	public ResponseEntity<?> analyzeCompatibility(
 		@PathVariable Long subcategoryId,
 		@Valid @RequestBody ManseCompatibilityAnalysisRequest request,
 		@AuthenticationPrincipal String username
 	) {
-		// 상태 업데이트 로직
-		try {
-			updateCompatibilityResultStatusToProcessing(request.getPaymentId());
-		} catch (EntityNotFoundException e) {
-			log.error("궁합 분석 시작 전 상태 업데이트 실패: {}", e.getMessage());
-			return ResponseEntity.status(404).body(null); // 예시 응답
-		}
-
 		ManseCompatibilityAnalysisRequest.PersonInfo person1 = request.getPerson1();
 		ManseCompatibilityAnalysisRequest.PersonInfo person2 = request.getPerson2();
 
@@ -127,15 +131,25 @@ public class ManseryeokController {
 		);
 
 		// 3. 계산된 두 개의 만세력 데이터로 궁합 분석 서비스 호출
-		ManseCompatibilityAnalysisResponse response = manseInterpretationService.analyzeCompatibilityWithSubcategory(
-			person1.getName(), person1Response,
-			person2.getName(), person2Response,
-			username,
-			subcategoryId,
-			request.getPaymentId()
-		);
+		try {
+			manseInterpretationService.analyzeCompatibilityWithSubcategory(
+				person1.getName(), person1Response,
+				person2.getName(), person2Response,
+				subcategoryId,
+				request.getPaymentId()
+			);
+		} catch (Exception e) {
+			log.error("비동기 궁합 분석 작업 시작 중 예상치 못한 오류 발생: {}", e.getMessage(), e);
+			return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+				.body(Map.of("message", "궁합 분석 작업을 시작하는 중 서버 오류가 발생했습니다."));
+		}
 
-		return ResponseEntity.ok(response);
+		log.info("궁합 분석 요청 접수 완료 (비동기 처리 시작): paymentId={}", request.getPaymentId());
+		return ResponseEntity.accepted()
+			.body(Map.of(
+				"message", "궁합 분석 요청이 접수되었습니다. 잠시 후 결과를 확인해주세요.",
+				"paymentId", request.getPaymentId()
+			));
 	}
 
 	@Transactional

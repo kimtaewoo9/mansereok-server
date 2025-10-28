@@ -86,7 +86,6 @@ public class Result {
 		this.gender = gender;
 		this.isLunar = isLunar;
 		this.ilgan = ilgan;
-		this.status = ResultStatus.PROCESSING;
 	}
 
 	// 해석 완료 후 COMPLETED 상태로 바꿈 .

@@ -11,8 +11,6 @@ import com.mansereok.server.repository.CompatibilityResultRepository;
 import com.mansereok.server.repository.ResultRepository;
 import com.mansereok.server.repository.SubCategoryRepository;
 import com.mansereok.server.service.request.Gpt5Request;
-import com.mansereok.server.service.response.ManseCompatibilityAnalysisResponse;
-import com.mansereok.server.service.response.ManseInterpretationResponse;
 import com.mansereok.server.service.response.ManseryeokCalculationResponse;
 import com.mansereok.server.service.response.ManseryeokCalculationResponse.JijangganElement;
 import com.mansereok.server.service.response.ManseryeokCalculationResponse.JijangganInfo;
@@ -28,6 +26,7 @@ import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.MediaType;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.client.RestClient;
@@ -70,8 +69,6 @@ public class ManseInterpretationService {
 			"'해요'체를 기본으로 사용하되, 전문적인 분석이나 정보를 전달할 때는 '~입니다', '~습니다' 체를 자연스럽게 혼용하여 신뢰감과 친근함을 모두 갖춘 어조를 사용하세요.\n\n"
 			+
 			"--- USER QUERY ---\n";
-	private final SubCategoryRepository subCategoryRepository;
-
 
 	public ManseInterpretationService(@Value("${openai.api.key}") String apiKey,
 		@Value("${openai.api.base-url:https://api.openai.com}") String baseUrl,
@@ -87,11 +84,11 @@ public class ManseInterpretationService {
 		this.resultRepository = resultRepository;
 		this.compatibilityResultRepository = compatibilityResultRepository;
 		this.userService = userService;
-		this.subCategoryRepository = subCategoryRepository;
 	}
 
+	@Async
 	@Transactional
-	public ManseInterpretationResponse interpret(
+	public void interpret(
 		String name,
 		ManseryeokCalculationResponse response,
 		String username,
@@ -102,6 +99,15 @@ public class ManseInterpretationService {
 
 		Result result = resultRepository.findByPaymentId(paymentId)
 			.orElseThrow(EntityNotFoundException::new);
+
+		if (result.getStatus() == ResultStatus.INPUT_REQUIRED) {
+			result.setStatus(ResultStatus.PROCESSING);
+			log.info("[Async] Result 상태 PROCESSING으로 변경: paymentId={}", paymentId);
+		} else {
+			log.error("[Async] Result 상태가 INPUT_REQUIRED가 아닙니다! 현재 상태: {}, paymentId={}",
+				result.getStatus(), paymentId);
+			return;
+		}
 
 		String ilgan = "정보 없음";
 		if (response != null && response.getSaju() != null
@@ -119,7 +125,8 @@ public class ManseInterpretationService {
 			ilgan
 		);
 
-		resultRepository.saveAndFlush(result);
+		resultRepository.save(result);
+		log.info("[Async] Result 정보 업데이트 및 상태 저장 완료: resultId={}", result.getId());
 
 		try {
 			String userPrompt = createPromptBySubcategory(subcategoryId, name, response);
@@ -152,49 +159,72 @@ public class ManseInterpretationService {
 			result.completeInterpretation(interpretationText); // 해석 결과 및 상태(COMPLETED) 업데이트
 			Result savedResult = resultRepository.save(result);
 			log.info("Result 해석 결과 저장 및 상태 COMPLETED 변경 완료: resultId={}", savedResult.getId());
-
-			return new ManseInterpretationResponse(
-				savedResult.getId(),
-				name,
-				ilgan,
-				interpretationText
-			);
-
 		} catch (Exception e) {
-			log.error("GPT API 요청 중 오류 발생: {}", e.getMessage(), e);
-			return new ManseInterpretationResponse(
-				null,
-				name,
-				ilgan,
-				"해석 생성 중 API 요청 오류가 발생했습니다. 서버 로그를 확인해주세요."
-			);
+			log.error("[Async] GPT API 요청 또는 처리 중 오류 발생: paymentId={}, Error: {}", paymentId,
+				e.getMessage(), e);
+			// 오류 발생 시 상태 롤백 처리
+			if (paymentId != null) {
+				try {
+					Result errorResult = resultRepository.findById(
+						result != null ? result.getId() : -1L).orElse(null);
+
+					if (errorResult != null && errorResult.getStatus() == ResultStatus.PROCESSING) {
+						errorResult.setStatus(ResultStatus.INPUT_REQUIRED); // 또는 FAILED 상태
+						// errorResult.setErrorMessage(e.getMessage().substring(0, Math.min(e.getMessage().length(), 250))); // 에러 메시지 저장 필드 있다면
+						resultRepository.save(errorResult);
+						log.info("[Async] 오류 발생으로 Result 상태 INPUT_REQUIRED로 롤백 시도: paymentId={}",
+							paymentId);
+					} else {
+						log.warn(
+							"[Async] 오류 롤백 처리 중 Result를 찾지 못했거나 상태가 PROCESSING이 아님: paymentId={}",
+							paymentId);
+					}
+				} catch (Exception ex) {
+					log.error("[Async] 오류 처리(상태 롤백) 중 추가 오류 발생: paymentId={}, Error: {}", paymentId,
+						ex.getMessage(), ex);
+				}
+			}
 		}
 	}
 
+	@Async
 	@Transactional
-	public ManseCompatibilityAnalysisResponse analyzeCompatibilityWithSubcategory(
+	public void analyzeCompatibilityWithSubcategory(
 		String person1Name,
 		ManseryeokCalculationResponse person1Response,
 		String person2Name,
 		ManseryeokCalculationResponse person2Response,
-		String username,
 		Long subcategoryId,
 		Long paymentId
 	) {
-		String person1Ilgan = extractIlgan(person1Response);
-		String person2Ilgan = extractIlgan(person2Response);
-
 		log.info("✅ 궁합 분석 요청 시작 - subcategoryId: {}, {} & {}", subcategoryId, person1Name,
 			person2Name);
 
+		CompatibilityResult result = null;
 		try {
-			CompatibilityResult result = compatibilityResultRepository.findByPaymentId(paymentId)
+			result = compatibilityResultRepository.findByPaymentId(paymentId)
 				.orElseThrow(EntityNotFoundException::new);
 
-			result.setStatus(ResultStatus.PROCESSING); // 사주 해석 진행 중으로 상태 변경 .
+			if (result.getStatus() == ResultStatus.PROCESSING
+				|| result.getStatus() == ResultStatus.COMPLETED) {
+				log.warn("[Async] 이미 처리 중이거나 완료된 궁합 요청입니다: paymentId={}, status={}", paymentId,
+					result.getStatus());
+				return;
+			}
+
+			if (result.getStatus() == ResultStatus.INPUT_REQUIRED) {
+				result.setStatus(ResultStatus.PROCESSING);
+				log.info("[Async] CompatibilityResult 상태 PROCESSING으로 변경: paymentId={}", paymentId);
+			} else {
+				log.error(
+					"[Async] CompatibilityResult 상태가 INPUT_REQUIRED가 아닙니다! 현재 상태: {}, paymentId={}",
+					result.getStatus(), paymentId);
+				return;
+			}
 			compatibilityResultRepository.saveAndFlush(result);
 			log.info("CompatibilityResult 상태 PROCESSING 변경 및 정보 업데이트: resultId={}", result.getId());
 
+			// ChatGPT 해석 로직 .
 			String userPrompt = createCompatibilityPromptBySubcategory(
 				subcategoryId, person1Name, person1Response, person2Name, person2Response);
 			String input = GPT5_SYSTEM_INSTRUCTION + userPrompt;
@@ -227,20 +257,33 @@ public class ManseInterpretationService {
 			CompatibilityResult savedResult = compatibilityResultRepository.save(result);
 			log.info("CompatibilityResult 분석 결과 저장 및 상태 COMPLETED 변경 완료: resultId={}",
 				savedResult.getId());
-
-			return new ManseCompatibilityAnalysisResponse(
-				savedResult.getId(),
-				savedResult.getPerson1Name(),
-				savedResult.getPerson1Ilgan(),
-				savedResult.getPerson2Name(),
-				savedResult.getPerson2Ilgan(),
-				savedResult.getInterpretation(),
-				savedResult.getCompatibilityScore()
-			);
+		} catch (EntityNotFoundException enfe) {
+			log.error("[Async] EntityNotFoundException (궁합 초기 조회 실패): {}", enfe.getMessage());
 		} catch (Exception e) {
-			log.error("GPT API 궁합 분석 요청 중 오류 발생: {}", e.getMessage(), e);
-			return new ManseCompatibilityAnalysisResponse(null, person1Name, person1Ilgan,
-				person2Name, person2Ilgan, "궁합 분석 중 서버 오류가 발생했습니다. 잠시 후 다시 시도해주세요.", null);
+			log.error("[Async] GPT API 궁합 분석 요청 또는 처리 중 오류 발생: paymentId={}, Error: {}", paymentId,
+				e.getMessage(), e);
+			// 오류 발생 시 상태 롤백 처리
+			if (paymentId != null) {
+				try {
+					CompatibilityResult errorResult = compatibilityResultRepository.findById(
+						result != null ? result.getId() : -1L).orElse(null);
+
+					if (errorResult != null && errorResult.getStatus() == ResultStatus.PROCESSING) {
+						errorResult.setStatus(ResultStatus.INPUT_REQUIRED);
+						compatibilityResultRepository.save(errorResult);
+						log.info(
+							"[Async] 오류 발생으로 CompatibilityResult 상태 INPUT_REQUIRED로 롤백 시도: paymentId={}",
+							paymentId);
+					} else {
+						log.warn(
+							"[Async] 궁합 오류 롤백 처리 중 CompatibilityResult를 찾지 못했거나 상태가 PROCESSING이 아님: paymentId={}",
+							paymentId);
+					}
+				} catch (Exception ex) {
+					log.error("[Async] 궁합 오류 처리(상태 롤백) 중 추가 오류 발생: paymentId={}, Error: {}",
+						paymentId, ex.getMessage(), ex);
+				}
+			}
 		}
 	}
 

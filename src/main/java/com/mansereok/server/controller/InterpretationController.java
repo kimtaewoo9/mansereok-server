@@ -5,6 +5,7 @@ import com.mansereok.server.service.request.CompatibilityAnalysisRequest;
 import com.mansereok.server.service.request.ManseryeokCreateRequest;
 import com.mansereok.server.service.response.CompatibilityAnalysisResponse;
 import com.mansereok.server.service.response.ManseryeokInterpretationResponse;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
@@ -16,6 +17,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequiredArgsConstructor
 @Slf4j
+@Tag(name = "Posteller에게 만세력 받아와서 해석하는 API")
 public class InterpretationController {
 
 	private final InterpretationService interpretationService;

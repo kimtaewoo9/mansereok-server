@@ -85,7 +85,7 @@ app:
     secret: ${JWT_SECRET_KEY}
     access-token-expiration: 1800000   # 30분 (밀리초)
     refresh-token-expiration: 2592000000 # 30일 (밀리초)
-    issuer: "named.com"
+    issuer: "www.namedsaju.com"
 
 server:
   port: 8080
@@ -99,7 +99,7 @@ portone:
 # 결제 관련 설정
 payment:
   webhook:
-    url: ${PAYMENT_WEBHOOK_URL:https://yourdomain.com/api/payment/webhook}  # 포트원 웹훅 URL
+    url: ${PAYMENT_WEBHOOK_URL:https://api/namedsaju.com/api/payment/webhook}  # 포트원 웹훅 URL
   test-mode: ${PAYMENT_TEST_MODE:true}  # 테스트 모드 여부
 
 # 상품 가격 설정 (원화)
