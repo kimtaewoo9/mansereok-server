@@ -28,7 +28,7 @@ public class CompatibilityResult {
 
 	private Long userId;
 
-	@Column(name = "payment_id", unique = true) // unique 제약 .. 하나의 결제에 하나의 결과만 연결
+	@Column(name = "payment_id", unique = true)
 	private Long paymentId;
 
 	@Column(name = "person1_name")
@@ -80,6 +80,19 @@ public class CompatibilityResult {
 	}
 
 	public void setStatus(ResultStatus status) {
+		this.status = ResultStatus.PROCESSING;
+	}
+
+	public void updatePersonsInformation(
+		String person1Name,
+		String person1Ilgan,
+		String person2Name,
+		String person2Ilgan
+	) {
+		this.person1Name = person1Name;
+		this.person1Ilgan = person1Ilgan;
+		this.person2Name = person2Name;
+		this.person2Ilgan = person2Ilgan;
 		this.status = ResultStatus.PROCESSING;
 	}
 }

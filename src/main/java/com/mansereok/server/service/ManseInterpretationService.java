@@ -100,15 +100,6 @@ public class ManseInterpretationService {
 		Result result = resultRepository.findByPaymentId(paymentId)
 			.orElseThrow(EntityNotFoundException::new);
 
-		if (result.getStatus() == ResultStatus.INPUT_REQUIRED) {
-			result.setStatus(ResultStatus.PROCESSING);
-			log.info("[Async] Result 상태 PROCESSING으로 변경: paymentId={}", paymentId);
-		} else {
-			log.error("[Async] Result 상태가 INPUT_REQUIRED가 아닙니다! 현재 상태: {}, paymentId={}",
-				result.getStatus(), paymentId);
-			return;
-		}
-
 		String ilgan = "정보 없음";
 		if (response != null && response.getSaju() != null
 			&& response.getSaju().getDaySky() != null) {
@@ -205,22 +196,12 @@ public class ManseInterpretationService {
 			result = compatibilityResultRepository.findByPaymentId(paymentId)
 				.orElseThrow(EntityNotFoundException::new);
 
-			if (result.getStatus() == ResultStatus.PROCESSING
-				|| result.getStatus() == ResultStatus.COMPLETED) {
-				log.warn("[Async] 이미 처리 중이거나 완료된 궁합 요청입니다: paymentId={}, status={}", paymentId,
-					result.getStatus());
-				return;
-			}
+			// 두사람의 일간 정보 추출 ..
+			String person1Ilgan = extractIlgan(person1Response);
+			String person2Ilgan = extractIlgan(person2Response);
 
-			if (result.getStatus() == ResultStatus.INPUT_REQUIRED) {
-				result.setStatus(ResultStatus.PROCESSING);
-				log.info("[Async] CompatibilityResult 상태 PROCESSING으로 변경: paymentId={}", paymentId);
-			} else {
-				log.error(
-					"[Async] CompatibilityResult 상태가 INPUT_REQUIRED가 아닙니다! 현재 상태: {}, paymentId={}",
-					result.getStatus(), paymentId);
-				return;
-			}
+			result.updatePersonsInformation(person1Name, person1Ilgan, person2Name, person2Ilgan);
+
 			compatibilityResultRepository.saveAndFlush(result);
 			log.info("CompatibilityResult 상태 PROCESSING 변경 및 정보 업데이트: resultId={}", result.getId());
 
