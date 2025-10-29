@@ -1,8 +1,10 @@
 package com.mansereok.server.controller;
 
 import com.mansereok.server.entity.Order;
+import com.mansereok.server.entity.User;
 import com.mansereok.server.repository.OrderRepository;
 import com.mansereok.server.service.PaymentService;
+import com.mansereok.server.service.UserService;
 import com.mansereok.server.service.request.OrderCreateRequest;
 import com.mansereok.server.service.request.PaymentCompleteRequest;
 import com.mansereok.server.service.response.OrderCreateResponse;
@@ -30,6 +32,7 @@ public class PaymentController {
 
 	private final PaymentService paymentService;
 	private final OrderRepository orderRepository;
+	private final UserService userService;
 
 	@Value("${portone.webhook.secret}")
 	private String webhookSecret;
@@ -121,6 +124,15 @@ public class PaymentController {
 		try {
 			log.info("Payment ID로 Order 조회 요청: username={}, paymentId={}", username, paymentId);
 			Order order = orderRepository.findByPaymentPkId(paymentId).orElseThrow();
+
+			User currentUser = userService.findByUsername(username);
+
+			if (!order.getUserId().equals(currentUser.getId())) {
+				log.warn("권한 없는 주문 조회 시도: 요청자={}, 주문 소유자={}",
+					currentUser.getId(), order.getUserId());
+				return ResponseEntity.status(HttpStatus.FORBIDDEN)
+					.body("본인의 주문만 조회할 수 있습니다.");
+			}
 			return ResponseEntity.ok(order);
 		} catch (EntityNotFoundException e) {
 			log.error("Order 조회 실패 (찾을 수 없음): {}", e.getMessage());
@@ -131,6 +143,4 @@ public class PaymentController {
 				.body("주문 조회 중 오류가 발생했습니다.");
 		}
 	}
-
-
 }
