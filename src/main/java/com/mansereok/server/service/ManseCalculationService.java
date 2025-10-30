@@ -92,23 +92,29 @@ public class ManseCalculationService {
 					.seasonStartTime(samju.getSeasonStartTime())
 
 					// 운성 포함
-					.yearSky(formatChinese(samju.getYearSky(), samju.getDaySky(), false))
+					.yearSky(
+						formatChinese(samju.getYearSky(), samju.getDaySky(), false, ilganChinese))
 					.yearGround(formatChineseWithUnseong(
-						samju.getYearGround(), ilganChinese, samju.getDaySky(), true))
+						samju.getYearGround(), ilganChinese, samju.getDaySky(), true, ilganChinese))
 
-					.monthSky(formatChinese(samju.getMonthSky(), samju.getDaySky(), false))
+					.monthSky(
+						formatChinese(samju.getMonthSky(), samju.getDaySky(), false, ilganChinese))
 					.monthGround(formatChineseWithUnseong(
-						samju.getMonthGround(), ilganChinese, samju.getDaySky(), true))
+						samju.getMonthGround(), ilganChinese, samju.getDaySky(), true,
+						ilganChinese))
 
-					.daySky(formatChinese(samju.getDaySky(), samju.getDaySky(), false))
+					.daySky(
+						formatChinese(samju.getDaySky(), samju.getDaySky(), false, ilganChinese))
 					.dayGround(formatChineseWithUnseong(
-						samju.getDayGround(), ilganChinese, samju.getDaySky(), true))
+						samju.getDayGround(), ilganChinese, samju.getDaySky(), true, ilganChinese))
 
 					.timeSky(timePillar.getTimeSky() != null ?
-						formatChinese(timePillar.getTimeSky(), samju.getDaySky(), false) : null)
+						formatChinese(timePillar.getTimeSky(), samju.getDaySky(), false,
+							ilganChinese) : null)
 					.timeGround(timePillar.getTimeGround() != null ?
 						formatChineseWithUnseong(
-							timePillar.getTimeGround(), ilganChinese, samju.getDaySky(), true)
+							timePillar.getTimeGround(), ilganChinese, samju.getDaySky(), true,
+							ilganChinese)
 						: null)
 
 					// 신살 정보
@@ -130,10 +136,11 @@ public class ManseCalculationService {
 	 * 운성을 포함한 지지 정보 포맷팅
 	 */
 	private ManseryeokCalculationResponse.PillarElement formatChineseWithUnseong(
-		String chinese, String ilganChinese, String daySky, boolean isGround) {
+		String chinese, String ilganChinese, String daySky, boolean isGround,
+		String ilganChineseForJijanggan) {
 
 		ManseryeokCalculationResponse.PillarElement.PillarElementBuilder builder =
-			formatChineseToBuilder(chinese, daySky, isGround);
+			formatChineseToBuilder(chinese, daySky, isGround, ilganChineseForJijanggan);
 
 		// 운성 계산 및 추가
 		if (isGround) {
@@ -141,6 +148,9 @@ public class ManseCalculationService {
 			if (unseong != null) {
 				builder.unseong(unseong);
 				builder.unseongDescription(unseongCalculator.getUnseongDescription(unseong));
+			} else {
+				// ⭐ 운성 계산 실패 경고 로깅 강화
+				log.warn("⚠️ 운성 계산 실패: 일간={}, 지지={}", ilganChinese, chinese);
 			}
 		}
 
@@ -148,10 +158,10 @@ public class ManseCalculationService {
 	}
 
 	/**
-	 * 기존 formatChinese를 Builder 패턴으로 분리
+	 * 기존 formatChinese를 Builder 패턴으로 분리 ⭐ ilganChinese 파라미터 추가 (지장간 십성 계산용)
 	 */
 	private ManseryeokCalculationResponse.PillarElement.PillarElementBuilder formatChineseToBuilder(
-		String chinese, String daySky, boolean isGround) {
+		String chinese, String daySky, boolean isGround, String ilganChinese) {
 
 		Map<String, String> koreanData = sajuDataService.convertChineseToKorean();
 		Map<String, Map<String, String>> tenStarData = sajuDataService.getTenStar();
@@ -182,15 +192,15 @@ public class ManseCalculationService {
 				.minusPlus(minusPlusData.get(chinese));
 
 		if (isGround) {
-			builder.jijanggan(getJijangganInfo(chinese));
+			builder.jijanggan(getJijangganInfo(chinese, ilganChinese));  // ⭐ ilganChinese 전달
 		}
 
 		return builder;
 	}
 
 	private ManseryeokCalculationResponse.PillarElement formatChinese(
-		String chinese, String daySky, boolean isGround) {
-		return formatChineseToBuilder(chinese, daySky, isGround).build();
+		String chinese, String daySky, boolean isGround, String ilganChinese) {
+		return formatChineseToBuilder(chinese, daySky, isGround, ilganChinese).build();
 	}
 
 	/**
@@ -409,7 +419,14 @@ public class ManseCalculationService {
 		};
 	}
 
-	private ManseryeokCalculationResponse.JijangganInfo getJijangganInfo(String jiji) {
+	/**
+	 * ⭐ 지장간 정보 가져오기 (십성 계산 포함)
+	 *
+	 * @param jiji         지지 한자
+	 * @param ilganChinese 일간 한자 (십성 계산용)
+	 */
+	private ManseryeokCalculationResponse.JijangganInfo getJijangganInfo(String jiji,
+		String ilganChinese) {
 		Map<String, Map<String, Object>> jijangganData = sajuDataService.getJijangan();
 		Map<String, Object> jijiData = jijangganData.get(jiji);
 
@@ -418,26 +435,53 @@ public class ManseCalculationService {
 		}
 
 		return ManseryeokCalculationResponse.JijangganInfo.builder()
-			.first(createJijangganElement((Map<String, Object>) jijiData.get("first")))
-			.second(createJijangganElement((Map<String, Object>) jijiData.get("second")))
-			.third(createJijangganElement((Map<String, Object>) jijiData.get("third")))
+			.first(
+				createJijangganElement((Map<String, Object>) jijiData.get("first"), ilganChinese))
+			.second(
+				createJijangganElement((Map<String, Object>) jijiData.get("second"), ilganChinese))
+			.third(
+				createJijangganElement((Map<String, Object>) jijiData.get("third"), ilganChinese))
 			.build();
 	}
 
+	/**
+	 * ⭐ 지장간 요소 생성 (십성 계산 추가)
+	 *
+	 * @param elementData  지장간 요소 데이터
+	 * @param ilganChinese 일간 한자 (십성 계산용)
+	 */
 	@SuppressWarnings("unchecked")
 	private ManseryeokCalculationResponse.JijangganElement createJijangganElement(
-		Map<String, Object> elementData) {
+		Map<String, Object> elementData, String ilganChinese) {
 		if (elementData == null) {
 			return null;
 		}
 
+		String chinese = (String) elementData.get("chinese");
+
+		// ⭐ 지장간의 십성 계산 (SajuDataService.getTenStar() 활용)
+		String tenStar = null;
+		if (chinese != null && ilganChinese != null) {
+			Map<String, Map<String, String>> tenStarData = sajuDataService.getTenStar();
+			Map<String, String> ilganTenStarMap = tenStarData.get(ilganChinese);
+			if (ilganTenStarMap != null) {
+				String tenStarInfo = ilganTenStarMap.get(chinese);
+				if (tenStarInfo != null) {
+					String[] parts = tenStarInfo.split(",");
+					tenStar = parts.length > 0 ? parts[0] : null; // "편인,수" → "편인"
+					log.debug("지장간 십성 계산: 일간={}, 지장간천간={}, 십성={}", ilganChinese, chinese, tenStar);
+				}
+			}
+		}
+
 		return ManseryeokCalculationResponse.JijangganElement.builder()
-			.chinese((String) elementData.get("chinese"))
+			.chinese(chinese)
 			.korean((String) elementData.get("korean"))
 			.fiveCircle((String) elementData.get("fiveCircle"))
 			.fiveCircleColor((String) elementData.get("fiveCircleColor"))
 			.minusPlus((String) elementData.get("minusPlus"))
 			.rate((Integer) elementData.get("rate"))
+			.tenStar(tenStar)  // ⭐ 십성 추가
 			.build();
 	}
 

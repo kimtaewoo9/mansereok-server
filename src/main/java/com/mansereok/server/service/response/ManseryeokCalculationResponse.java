@@ -136,7 +136,7 @@ public class ManseryeokCalculationResponse {
 		@Schema(description = "지장간 (지지에만 존재)")
 		private JijangganInfo jijanggan;
 
-		// 운성 정보 추가 .
+		// 운성 정보 추가
 		@JsonProperty("unseong")
 		@Schema(description = "12운성 (지지에만 존재)", example = "제왕")
 		private String unseong;
@@ -188,5 +188,10 @@ public class ManseryeokCalculationResponse {
 
 		@Schema(description = "비율", example = "10")
 		private Integer rate;
+
+		// ⭐ 십성 필드 추가
+		@JsonProperty("ten_star")
+		@Schema(description = "십성", example = "편인")
+		private String tenStar;
 	}
 }
