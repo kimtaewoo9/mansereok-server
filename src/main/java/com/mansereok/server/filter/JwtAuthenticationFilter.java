@@ -22,6 +22,7 @@ import java.util.Collections;
 import java.util.List;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
@@ -33,6 +34,7 @@ import org.springframework.web.filter.OncePerRequestFilter;
 
 @Component
 @RequiredArgsConstructor
+@Slf4j
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
 	private final JwtUtil jwtUtil;
@@ -46,8 +48,14 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 		"/v3/api-docs/**",
 		"/actuator/health",
 		"/api/payment/webhook",
+		// --- SecurityConfig에 있는 permitAll 경로들 ---
 		"/api/v1/manseryeok/daeun",
-		"/api/v1/manseryeok/chart"
+		"/api/v1/manseryeok/chart",
+		"/api/v1/manseryeok/points",
+		"/api/v1/products", // GET이지만 일단 추가
+		"/api/v1/products/{productId}", // GET이지만 일단 추가
+		"/api/v1/manseryeok/interpretation/{subcategoryId}/posteller",
+		"/api/v1/manseryeok/compatibility/{subcategoryId}/posteller"
 	);
 
 	@Override
@@ -55,41 +63,39 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 		@NonNull HttpServletRequest request,
 		@NonNull HttpServletResponse response,
 		@NonNull FilterChain filterChain) throws ServletException, IOException {
+
+		String path = request.getRequestURI();
+		String method = request.getMethod();
+
+		if (method.equals("OPTIONS")) {
+			filterChain.doFilter(request, response);
+			return;
+		}
+
+		boolean isPermitAll = PERMIT_ALL_PATHS.stream()
+			.anyMatch(pattern -> pathMatcher.match(pattern, path));
+
+		if (isPermitAll) {
+			filterChain.doFilter(request, response);
+			return;
+		}
+
+		// ⭐ 여기서부터만 예외 처리
 		try {
-
-			String path = request.getRequestURI();
-			String method = request.getMethod();
-
-			if (method.equals("OPTIONS")) {
-				filterChain.doFilter(request, response);
-				return;
-			}
-
-			boolean isPermitAll = PERMIT_ALL_PATHS.stream()
-				.anyMatch(pattern -> pathMatcher.match(pattern, path));
-
-			if (isPermitAll) {
-				filterChain.doFilter(request, response);
-				return;
-			}
-
 			String jwtToken = extractJwtFromtRequest(request);
 
 			if (jwtToken != null) {
 				validateAndProcessToken(jwtToken, request);
 			}
 		} catch (JwtAuthenticationException ex) {
-			// JWT 관련 예외는 request attribute에 저장하여 EntryPoint에서 처리
 			request.setAttribute("jwt.exception", ex);
 		} catch (Exception ex) {
-			// 기타 예외는 일반적인 인증 예외로 처리
 			logger.error("JWT 인증 처리 중 예상치 못한 오류 발생", ex);
 			request.setAttribute("jwt.exception",
 				new JwtAuthenticationException("JWT 처리 중 내부 오류가 발생했습니다.", 500,
 					"JWT_INTERNAL_ERROR"));
 		}
 
-		// 다음 필터로 요청 전달
 		filterChain.doFilter(request, response);
 	}
 
