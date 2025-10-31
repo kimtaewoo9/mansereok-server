@@ -49,6 +49,9 @@ public class CompatibilityResult {
 	@Column(columnDefinition = "TEXT")
 	private String interpretation;  // GPT 생성 궁합 분석
 
+	@Column(columnDefinition = "TEXT")
+	private String summary;
+
 	@Column(name = "product_name")
 	private String productName;
 
@@ -73,9 +76,10 @@ public class CompatibilityResult {
 		return result;
 	}
 
-	public void completeInterpretation(String interpretation, Integer score) {
+	public void completeInterpretation(String interpretation, Integer score, String summary) {
 		this.interpretation = interpretation;
 		this.compatibilityScore = score;
+		this.summary = summary;
 		this.status = ResultStatus.COMPLETED;
 	}
 

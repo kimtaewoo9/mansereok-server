@@ -51,10 +51,17 @@ public class Result {
 
 	@Column(columnDefinition = "TEXT")
 	private String interpretation;
+
+	@Column(columnDefinition = "TEXT")
+	private String summary;
+
 	private String productName;
+
 	@Enumerated(EnumType.STRING)
 	private ResultStatus status = ResultStatus.INPUT_REQUIRED;
+
 	private LocalDateTime createdAt;
+
 	private LocalDateTime updatedAt;
 
 	@PrePersist
@@ -89,8 +96,9 @@ public class Result {
 	}
 
 	// 해석 완료 후 COMPLETED 상태로 바꿈 .
-	public void completeInterpretation(String interpretation) {
+	public void completeInterpretation(String interpretation, String summary) {
 		this.interpretation = interpretation;
+		this.summary = summary;
 		this.status = ResultStatus.COMPLETED;
 	}
 }
