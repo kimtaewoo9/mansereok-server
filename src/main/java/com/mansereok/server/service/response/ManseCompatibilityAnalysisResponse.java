@@ -23,4 +23,6 @@ public class ManseCompatibilityAnalysisResponse {
 
 	// TODO: 궁합 점수 카테고리 세분화.
 	private Integer compatibilityScore; // 궁합 점수(0-100)
+
+	private String summary;
 }

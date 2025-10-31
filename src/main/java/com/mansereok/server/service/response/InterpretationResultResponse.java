@@ -15,8 +15,9 @@ public class InterpretationResultResponse {
 	private Boolean isLunar;
 	private String ilgan;
 	private String interpretation;
+	private String summary;
 	private LocalDateTime createdAt;
-	
+
 	public static InterpretationResultResponse create(Result result) {
 		InterpretationResultResponse response = new InterpretationResultResponse();
 		response.id = result.getId();
@@ -27,6 +28,7 @@ public class InterpretationResultResponse {
 		response.ilgan = result.getIlgan();
 		response.interpretation = result.getInterpretation();
 		response.createdAt = result.getCreatedAt();
+		response.summary = result.getSummary();
 
 		return response;
 	}
