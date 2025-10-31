@@ -108,6 +108,11 @@ public class OauthController {
 		@RequestBody RedirectDto redirectDto,
 		HttpServletResponse response) {
 
+		Cookie deleteCookie = new Cookie("REFRESH_TOKEN", null);
+		deleteCookie.setMaxAge(0);
+		deleteCookie.setPath("/");
+		response.addCookie(deleteCookie);
+
 		// 인가코드 받아서 access token 받아옴
 		AccessTokenDto accessTokenDto = kakaoService.getAccessTokenDto(redirectDto.getCode());
 
@@ -115,17 +120,33 @@ public class OauthController {
 		KakaoProfileDto kakaoProfileDto = kakaoService.getKakaoProfileDto(
 			accessTokenDto.getAccess_token());
 
-		// 회원가입 안되어 있으면 회원가입 ..
+		log.info("KakaoProfileDto: {} ", kakaoProfileDto);
+
 		User user = userService.getUserBySocialId(kakaoProfileDto.getId());
+
 		if (user == null) {
+			// 2. 카카오로 가입 안 되어 있으면 → 이메일로 일반 가입 여부 확인
+			User existingUser = userService.findByEmail(
+				kakaoProfileDto.getKakao_account().getEmail());
+
+			if (existingUser != null) {
+				// 이미 일반 회원가입으로 가입된 이메일
+				throw new RuntimeException(
+					"해당 이메일은 이미 일반 회원가입으로 등록되어 있습니다. " +
+						"일반 로그인을 이용해주세요."
+				);
+			}
+
+			// 3. 신규 카카오 회원가입
 			user = userService.registerWithOauth(
 				kakaoProfileDto.getId(),
 				kakaoProfileDto.getKakao_account().getEmail(),
-				null, // 카카오는 본명 정보를 주지 않음.
+				null,
 				kakaoProfileDto.getId(),
 				SocialType.KAKAO
 			);
 		}
+
 		// 회원가입 되어 있으면 access token + refresh token 발급 .
 		// access token
 		Map<String, Object> claims = Map.of(
