@@ -1,4 +1,4 @@
-package com.mansereok.server.service.response.model;
+package com.mansereok.server.service.response;
 
 import lombok.Data;
 import lombok.NoArgsConstructor;
@@ -9,4 +9,5 @@ public class GptCompatibilityResponse {
 
 	private Integer score;
 	private String interpretation;
+	private String summary;
 }
