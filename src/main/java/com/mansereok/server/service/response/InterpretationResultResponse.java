@@ -17,6 +17,7 @@ public class InterpretationResultResponse {
 	private String interpretation;
 	private String summary;
 	private LocalDateTime createdAt;
+	private String ogImageUrl;
 
 	public static InterpretationResultResponse create(Result result) {
 		InterpretationResultResponse response = new InterpretationResultResponse();
@@ -29,6 +30,7 @@ public class InterpretationResultResponse {
 		response.interpretation = result.getInterpretation();
 		response.createdAt = result.getCreatedAt();
 		response.summary = result.getSummary();
+		response.ogImageUrl = result.getOgImageUrl();
 
 		return response;
 	}

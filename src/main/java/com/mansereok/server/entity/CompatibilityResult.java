@@ -13,11 +13,13 @@ import java.time.LocalDateTime;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
+import lombok.Setter;
 import lombok.ToString;
 
 @Entity
 @Table(name = "compatibility_results")
 @Getter
+@Setter
 @ToString
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class CompatibilityResult {
@@ -51,6 +53,9 @@ public class CompatibilityResult {
 
 	@Column(columnDefinition = "TEXT")
 	private String summary;
+
+	@Column(length = 512)
+	private String ogImageUrl;
 
 	@Column(name = "product_name")
 	private String productName;
