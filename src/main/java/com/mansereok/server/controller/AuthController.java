@@ -170,12 +170,12 @@ public class AuthController {
 		User user = refreshToken.getUser();
 
 		// 새로운 Access Token 생성
-		Map<String, Object> claims = Map.of(
-			"name", user.getName(),
-			"role", user.getRole().name(),
-			"email", user.getEmail(),
-			"userId", user.getId()
-		);
+		Map<String, Object> claims = new java.util.HashMap<>();
+
+		claims.put("name", user.getName());
+		claims.put("role", user.getRole().name());
+		claims.put("email", user.getEmail());
+		claims.put("userId", user.getId());
 
 		String newAccessToken = jwtUtil.generateAccessToken(user.getUsername(), claims);
 
