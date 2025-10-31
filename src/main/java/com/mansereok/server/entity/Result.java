@@ -55,6 +55,9 @@ public class Result {
 	@Column(columnDefinition = "TEXT")
 	private String summary;
 
+	@Column(length = 512)
+	private String ogImageUrl;
+
 	private String productName;
 
 	@Enumerated(EnumType.STRING)

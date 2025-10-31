@@ -9,7 +9,6 @@ import org.springframework.stereotype.Service;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.GetUrlRequest;
-import software.amazon.awssdk.services.s3.model.ObjectCannedACL;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 
 @Service
@@ -33,7 +32,6 @@ public class S3UploadService {
 				.bucket(bucketName)
 				.key(objectKey)
 				.contentType(contentType)
-				.acl(ObjectCannedACL.PUBLIC_READ)
 				.build();
 
 			RequestBody requestBody = RequestBody.fromInputStream(inputStream, fileSize);

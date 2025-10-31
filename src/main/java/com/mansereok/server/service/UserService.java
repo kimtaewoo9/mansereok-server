@@ -71,6 +71,11 @@ public class UserService {
 			));
 	}
 
+	public User findByEmail(String email) {
+		return userRepository.findByEmail(email)
+			.orElse(null);
+	}
+
 	public User findByUsername(String username) {
 		log.info("사용자 이메일: " + username);
 		return userRepository.findByUsername(username)
@@ -224,7 +229,9 @@ public class UserService {
 			result.getPerson2Name(),
 			result.getPerson2Ilgan(),
 			result.getInterpretation(),
-			result.getCompatibilityScore()
+			result.getCompatibilityScore(),
+			result.getSummary(),
+			result.getOgImageUrl()
 		);
 	}
 }

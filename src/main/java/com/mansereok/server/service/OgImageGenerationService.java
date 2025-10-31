@@ -9,11 +9,15 @@ import java.awt.Font;
 import java.awt.FontMetrics;
 import java.awt.Graphics2D;
 import java.awt.RenderingHints;
+import java.awt.font.TextAttribute;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
 import javax.imageio.ImageIO;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.io.ClassPathResource;
@@ -25,24 +29,21 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class OgImageGenerationService {
 
-	// 1. 의존성 주입
-	private final S3UploadService s3UploadService; // 님이 만든 업로더
+	private final S3UploadService s3UploadService;
 	private final ResultRepository resultRepository;
 	private final CompatibilityResultRepository compatibilityResultRepository;
 
-	// 2. 템플릿 및 폰트 경로 (src/main/resources/ 에 있어야 함)
-	private static final String FONT_PATH_REGULAR = "fonts/NotoSansKR-Regular.ttf"; // 일반체
-	private static final String FONT_PATH_BOLD = "fonts/NotoSansKR-Bold.ttf";
+	// 1. 폰트 경로 (Regular만 사용)
+	private static final String FONT_PATH_REGULAR = "fonts/NotoSansKR-Regular.ttf";
+	// private static final String FONT_PATH_BOLD = "fonts/NotoSansKR-Bold.ttf"; // Bold 제거
 
 	private static final String SAJU_TEMPLATE_PATH = "static/result_image_template.png";
 	private static final String COMPAT_TEMPLATE_PATH = "static/result_image_template.png";
 
 	private Font notoSansRegular;
-	private Font notoSansBold;
+	// private Font notoSansBold; // Bold 제거
 
-	private Font customFont;
-
-	// 3. 폰트 로드 (생성자)
+	// 2. 폰트 로드 (생성자 수정)
 	public OgImageGenerationService(S3UploadService s3UploadService,
 		ResultRepository resultRepository,
 		CompatibilityResultRepository compatibilityResultRepository) {
@@ -56,35 +57,32 @@ public class OgImageGenerationService {
 				.deriveFont(30f);
 			regularStream.close();
 
-			InputStream boldStream = new ClassPathResource(FONT_PATH_BOLD).getInputStream();
-			this.notoSansBold = Font.createFont(Font.TRUETYPE_FONT, boldStream).deriveFont(30f);
-			boldStream.close();
+			// Bold 폰트 로드 제거
 		} catch (Exception e) {
 			log.error("!!!!!!!!!! Noto Sans KR 폰트 로드 실패: {}. 기본 폰트를 사용합니다. !!!!!!!!!!!",
 				e.getMessage());
 			this.notoSansRegular = new Font("Arial", Font.PLAIN, 30);
-			this.notoSansBold = new Font("Arial", Font.BOLD, 30);
+			// this.notoSansBold = new Font("Arial", Font.BOLD, 30); // Bold 제거
 		}
 	}
 
-	// --- 4. 1인 사주(Result)용 비동기 처리 ---
+	// --- 1인 사주(Result)용 비동기 처리 ---
 	@Async
-	@Transactional // 새 트랜잭션에서 URL을 저장해야 함
+	@Transactional
 	public void generateAndUploadOgImage(Result savedResult) {
 		try {
-			String name = savedResult.getName();
+			// 이름(name)은 더 이상 필요 없음, summary만 확인
 			String summary = savedResult.getSummary();
-			if (name == null || summary == null) {
-				log.warn("Result(id={})에 name 또는 summary가 없어 OG 생성을 건너뜁니다.", savedResult.getId());
+			if (summary == null) {
+				log.warn("Result(id={})에 summary가 없어 OG 생성을 건너뜁니다.", savedResult.getId());
 				return;
 			}
 
-			// (1) 이미지 그리기
-			byte[] imageBytes = generateSajuOgImage(savedResult.getName(),
-				savedResult.getSummary());
+			// (1) 이미지 그리기 (name 인자 제거)
+			byte[] imageBytes = generateSajuOgImage(savedResult.getSummary());
 
-			// (2) S3 업로드 (님이 만든 서비스 호출)
-			String objectKey = "og-images/saju/" + savedResult.getId() + ".png";
+			// (2) S3 업로드
+			String objectKey = "og-images/saju-" + savedResult.getId() + ".png";
 			String publicUrl = s3UploadService.uploadFileAndGetPublicUrl(
 				new ByteArrayInputStream(imageBytes),
 				imageBytes.length,
@@ -93,7 +91,6 @@ public class OgImageGenerationService {
 			);
 
 			// (3) DB에 URL 저장
-			// @Async + @Transactional 이므로, savedResult가 Detached 상태일 수 있음. ID로 다시 조회.
 			Result resultToUpdate = resultRepository.findById(savedResult.getId())
 				.orElseThrow(() -> new RuntimeException(
 					"OG 이미지 저장 중 Result를 찾을 수 없음: " + savedResult.getId()));
@@ -109,26 +106,24 @@ public class OgImageGenerationService {
 		}
 	}
 
-	// --- 5. 궁합(CompatibilityResult)용 비동기 처리 ---
+	// --- 궁합(CompatibilityResult)용 비동기 처리 ---
 	@Async
 	@Transactional
 	public void generateAndUploadOgImage(CompatibilityResult savedResult) {
 		try {
-			String name1 = savedResult.getPerson1Name();
-			String name2 = savedResult.getPerson2Name();
+			// 이름(name1, name2)은 더 이상 필요 없음, summary만 확인
 			String summary = savedResult.getSummary();
 
-			if (name1 == null || name2 == null || summary == null) {
-				log.warn("CompatResult(id={})에 이름 또는 summary가 없어 OG 생성을 건너뜁니다.",
+			if (summary == null) {
+				log.warn("CompatResult(id={})에 summary가 없어 OG 생성을 건너뜁니다.",
 					savedResult.getId());
 				return;
 			}
 
-			// (1) 이미지 그리기
-			byte[] imageBytes = generateCompatOgImage(savedResult.getPerson1Name(),
-				savedResult.getPerson2Name(), savedResult.getSummary());
+			// (1) 이미지 그리기 (name 인자 제거)
+			byte[] imageBytes = generateCompatOgImage(savedResult.getSummary());
 			// (2) S3 업로드
-			String objectKey = "og-images/compat/" + savedResult.getId() + ".png";
+			String objectKey = "og-images/compat-" + savedResult.getId() + ".png";
 			String publicUrl = s3UploadService.uploadFileAndGetPublicUrl(
 				new ByteArrayInputStream(imageBytes),
 				imageBytes.length,
@@ -143,7 +138,7 @@ public class OgImageGenerationService {
 					"OG 이미지 저장 중 CompatibilityResult를 찾을 수 없음: " + savedResult.getId()));
 
 			resultToUpdate.setOgImageUrl(
-				publicUrl); // (CompatibilityResult 엔티티에 setOgImageUrl(String url) 메서드 필요)
+				publicUrl);
 			compatibilityResultRepository.save(resultToUpdate);
 
 			log.info("CompatResult(id={}) OG 이미지 URL 저장 완료: {}", savedResult.getId(), publicUrl);
@@ -154,46 +149,87 @@ public class OgImageGenerationService {
 		}
 	}
 
-	// --- 4. 이미지 그리기 메서드 (폰트 적용) ---
+	// --- 3. 이미지 그리기 메서드 (스타일 및 정렬 적용) ---
 
 	// 1인 사주 이미지 그리기
-	private byte[] generateSajuOgImage(String name, String summary) throws IOException {
+	private byte[] generateSajuOgImage(String summary) throws IOException {
 		BufferedImage baseImage = loadTemplate(SAJU_TEMPLATE_PATH);
 		Graphics2D g2d = baseImage.createGraphics();
 		setupGraphics(g2d);
 
-		// (디자인 템플릿에 맞게 폰트, 색상, X/Y 좌표 수정 필수)
+		// [스타일 적용]
+		Color textColor = new Color(0x111111);
+		Font summaryFont = this.notoSansRegular.deriveFont(40f) // (font-size: 40px)
+			.deriveFont(Map.of(TextAttribute.TRACKING, 0.04f)); // (letter-spacing: 4%)
+		int lineHeight = 52; // (line-height: 52px)
+		int margin = 60; // (양 옆 마진 60px)
 
-		// 이름 (Bold 폰트)
-		g2d.setFont(notoSansBold.deriveFont(60f));
-		g2d.setColor(Color.BLACK);
-		drawTextCentered(g2d, name + "님의 사주", baseImage.getWidth(), 200);
+		g2d.setFont(summaryFont);
+		g2d.setColor(textColor);
 
-		// 요약 (Regular 폰트)
-		g2d.setFont(notoSansRegular.deriveFont(36f));
-		g2d.setColor(Color.BLACK);
-		drawMultiLineText(g2d, summary, 100, 400, baseImage.getWidth() - 200, 46); // 줄간격 46
+		// [레이아웃 적용]
+		int x = margin;
+		int maxWidth = baseImage.getWidth() - (margin * 2);
+
+		// 1. 텍스트 줄바꿈 계산
+		List<String> lines = getWrappedLines(g2d, summary, maxWidth);
+
+		// 2. 전체 텍스트 블록의 세로 높이 계산
+		FontMetrics metrics = g2d.getFontMetrics();
+		// (줄 개수 - 1) * 줄간격 + 마지막 줄의 높이
+		int blockHeight = (lines.size() - 1) * lineHeight + metrics.getHeight();
+
+		// 3. 텍스트 블록의 시작 Y좌표 계산 (위아래 가운데 정렬)
+		// (전체 높이 - 블록 높이) / 2 + 첫 줄의 baseline (Ascent)
+		int startY = (baseImage.getHeight() - blockHeight) / 2 + metrics.getAscent();
+
+		// 4. 텍스트 그리기
+		int currentY = startY;
+		for (String line : lines) {
+			g2d.drawString(line, x, currentY);
+			currentY += lineHeight;
+		}
 
 		g2d.dispose();
 		return toByteArray(baseImage, "png");
 	}
 
-	// 궁합 이미지 그리기
-	private byte[] generateCompatOgImage(String name1, String name2, String summary)
-		throws IOException {
-		BufferedImage baseImage = loadTemplate(COMPAT_TEMPLATE_PATH); // (궁합용 템플릿이 따로 있다면 경로 수정)
+	// 궁합 이미지 그리기 (사주 이미지와 동일하게 수정)
+	private byte[] generateCompatOgImage(String summary) throws IOException {
+		BufferedImage baseImage = loadTemplate(COMPAT_TEMPLATE_PATH);
 		Graphics2D g2d = baseImage.createGraphics();
 		setupGraphics(g2d);
 
-		// 이름 (Bold 폰트)
-		g2d.setFont(notoSansBold.deriveFont(50f));
-		g2d.setColor(Color.BLACK);
-		drawTextCentered(g2d, name1 + "님과 " + name2 + "님의 궁합", baseImage.getWidth(), 200);
+		// [스타일 적용]
+		Color textColor = new Color(0x111111);
+		Font summaryFont = this.notoSansRegular.deriveFont(40f) // (font-size: 40px)
+			.deriveFont(Map.of(TextAttribute.TRACKING, 0.04f)); // (letter-spacing: 4%)
+		int lineHeight = 52; // (line-height: 52px)
+		int margin = 60; // (양 옆 마진 60px)
 
-		// 요약 (Regular 폰트)
-		g2d.setFont(notoSansRegular.deriveFont(36f));
-		g2d.setColor(Color.BLACK);
-		drawMultiLineText(g2d, summary, 100, 400, baseImage.getWidth() - 200, 46);
+		g2d.setFont(summaryFont);
+		g2d.setColor(textColor);
+
+		// [레이아웃 적용]
+		int x = margin;
+		int maxWidth = baseImage.getWidth() - (margin * 2);
+
+		// 1. 텍스트 줄바꿈 계산
+		List<String> lines = getWrappedLines(g2d, summary, maxWidth);
+
+		// 2. 전체 텍스트 블록의 세로 높이 계산
+		FontMetrics metrics = g2d.getFontMetrics();
+		int blockHeight = (lines.size() - 1) * lineHeight + metrics.getHeight();
+
+		// 3. 텍스트 블록의 시작 Y좌표 계산 (위아래 가운데 정렬)
+		int startY = (baseImage.getHeight() - blockHeight) / 2 + metrics.getAscent();
+
+		// 4. 텍스트 그리기
+		int currentY = startY;
+		for (String line : lines) {
+			g2d.drawString(line, x, currentY);
+			currentY += lineHeight;
+		}
 
 		g2d.dispose();
 		return toByteArray(baseImage, "png");
@@ -208,7 +244,6 @@ public class OgImageGenerationService {
 				throw new IOException("템플릿 이미지 읽기 실패: " + path);
 			}
 
-			// (중요) 원본 이미지가 ARGB가 아니면 글씨가 안 써질 수 있으므로 ARGB 타입으로 변환
 			BufferedImage newImage = new BufferedImage(image.getWidth(), image.getHeight(),
 				BufferedImage.TYPE_INT_ARGB);
 			Graphics2D g = newImage.createGraphics();
@@ -225,44 +260,34 @@ public class OgImageGenerationService {
 		g2d.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY);
 	}
 
-	// 텍스트 중앙 정렬
-	private void drawTextCentered(Graphics2D g, String text, int totalWidth, int y) {
-		FontMetrics metrics = g.getFontMetrics();
-		int x = (totalWidth - metrics.stringWidth(text)) / 2;
-		g.drawString(text, x, y);
-	}
-
-	// 텍스트 자동 줄 바꿈 (maxWidth 초과 시)
-	private void drawMultiLineText(Graphics2D g, String text, int x, int y, int maxWidth,
-		int lineHeight) {
+	// (수정) 텍스트를 그리는 대신, 줄바꿈된 라인 리스트를 반환
+	private List<String> getWrappedLines(Graphics2D g, String text, int maxWidth) {
+		List<String> lines = new ArrayList<>();
 		FontMetrics metrics = g.getFontMetrics();
 		String[] words = text.split(" ");
 		StringBuilder currentLine = new StringBuilder();
 
 		for (String word : words) {
-			// 단어가 너무 길어서 maxWidth를 초과하면 강제 줄 바꿈 (예시: 영어)
-			if (metrics.stringWidth(word) > maxWidth) {
-				// (이 부분은 한글의 경우 로직이 더 복잡해질 수 있음, 일단 단어 단위로만 처리)
-				g.drawString(currentLine.toString(), x, y);
-				y += lineHeight;
-				currentLine = new StringBuilder(word);
-			}
-
+			// (한글은 보통 띄어쓰기 기준이므로 이 로직이 잘 동작합니다)
 			if (metrics.stringWidth(currentLine + " " + word) < maxWidth) {
 				if (currentLine.length() > 0) {
 					currentLine.append(" ");
 				}
 				currentLine.append(word);
 			} else {
-				g.drawString(currentLine.toString(), x, y);
-				y += lineHeight;
+				lines.add(currentLine.toString());
 				currentLine = new StringBuilder(word);
 			}
 		}
 		if (currentLine.length() > 0) {
-			g.drawString(currentLine.toString(), x, y);
+			lines.add(currentLine.toString());
 		}
+		return lines;
 	}
+
+	// (제거) drawTextCentered - 더 이상 사용하지 않음
+
+	// (제거) drawMultiLineText - getWrappedLines로 대체됨
 
 	// BufferedImage -> byte[] 변환
 	private byte[] toByteArray(BufferedImage image, String format) throws IOException {
