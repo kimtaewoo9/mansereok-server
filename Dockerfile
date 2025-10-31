@@ -15,8 +15,8 @@ RUN gradle clean bootJar -x test --no-daemon
 FROM --platform=linux/arm64 amazoncorretto:21-alpine
 WORKDIR /app
 
-# 타임존 설정
-RUN apk add --no-cache tzdata && \
+# 타임존 및 폰트 설치 (이 부분이 수정되었습니다)
+RUN apk add --no-cache tzdata fontconfig ttf-dejavu && \
     cp /usr/share/zoneinfo/Asia/Seoul /etc/localtime && \
     echo "Asia/Seoul" > /etc/timezone
 
@@ -42,6 +42,8 @@ USER spring
 EXPOSE 8080
 
 # 헬스체크 - wget 대신 curl 사용 (alpine에서 더 안정적)
+# (alpine-corretto에는 wget이 기본 포함되어 있을 수 있으나, curl이 권장됩니다)
+# RUN apk add --no-cache curl (만약 curl이 없다면 이 줄 추가)
 HEALTHCHECK --interval=30s --timeout=3s --start-period=60s --retries=3 \
   CMD wget --no-verbose --tries=1 --spider http://localhost:8080/actuator/health || exit 1
 
