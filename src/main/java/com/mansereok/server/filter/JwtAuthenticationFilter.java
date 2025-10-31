@@ -17,6 +17,7 @@ import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import lombok.NonNull;
@@ -27,6 +28,7 @@ import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.web.authentication.WebAuthenticationDetailsSource;
 import org.springframework.stereotype.Component;
+import org.springframework.util.AntPathMatcher;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 @Component
@@ -35,12 +37,42 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
 	private final JwtUtil jwtUtil;
 
+	private final AntPathMatcher pathMatcher = new AntPathMatcher();
+
+	private static final List<String> PERMIT_ALL_PATHS = Arrays.asList(
+		"/member/**",
+		"/api/auth/**",
+		"/swagger-ui/**",
+		"/v3/api-docs/**",
+		"/actuator/health",
+		"/api/payment/webhook",
+		"/api/v1/manseryeok/daeun",
+		"/api/v1/manseryeok/chart"
+	);
+
 	@Override
 	protected void doFilterInternal(
 		@NonNull HttpServletRequest request,
 		@NonNull HttpServletResponse response,
 		@NonNull FilterChain filterChain) throws ServletException, IOException {
 		try {
+
+			String path = request.getRequestURI();
+			String method = request.getMethod();
+
+			if (method.equals("OPTIONS")) {
+				filterChain.doFilter(request, response);
+				return;
+			}
+
+			boolean isPermitAll = PERMIT_ALL_PATHS.stream()
+				.anyMatch(pattern -> pathMatcher.match(pattern, path));
+
+			if (isPermitAll) {
+				filterChain.doFilter(request, response);
+				return;
+			}
+
 			String jwtToken = extractJwtFromtRequest(request);
 
 			if (jwtToken != null) {

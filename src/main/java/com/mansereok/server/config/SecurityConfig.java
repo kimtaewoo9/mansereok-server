@@ -44,7 +44,10 @@ public class SecurityConfig {
 
 			.csrf(csrf -> csrf
 				.csrfTokenRepository(CookieCsrfTokenRepository.withHttpOnlyFalse())
-				.ignoringRequestMatchers("/api/payment/webhook")
+				.ignoringRequestMatchers("/api/payment/webhook",
+					"/member/**", // <-- 이 경로 추가
+					"/api/auth/**"
+				)
 			)
 
 			// CORS 설정 적용
@@ -54,7 +57,6 @@ public class SecurityConfig {
 			.sessionManagement(session ->
 				session.sessionCreationPolicy(SessionCreationPolicy.IF_REQUIRED))
 
-			// 인증이 필요한 경로 설정
 			.authorizeHttpRequests(auth -> auth
 				// 1. 인증 없이 접근 허용 (permitAll)
 				.requestMatchers(HttpMethod.OPTIONS, "/**").permitAll() // CORS Preflight 요청
