@@ -37,6 +37,7 @@ public class UserService {
 
 	private final PasswordEncoder passwordEncoder;
 
+	private final SlackNotificationService slackNotificationService;
 
 	/**
 	 * 새로운 사용자를 등록한다.
@@ -58,7 +59,7 @@ public class UserService {
 			throw new RuntimeException("이미 존재하는 이메일 입니다: " + email);
 		}
 
-		return userRepository.save(
+		User savedUser = userRepository.save(
 			User.create(
 				email,
 				name,
@@ -69,6 +70,15 @@ public class UserService {
 				true,
 				isPrivacyAgreed
 			));
+
+		// Slack 알림 전송
+		slackNotificationService.sendUserCreatedNotification(
+			savedUser.getName(),
+			savedUser.getEmail(),
+			savedUser.getId()
+		);
+
+		return savedUser;
 	}
 
 	public User findByEmail(String email) {
@@ -93,7 +103,8 @@ public class UserService {
 		if (userRepository.existsByEmail(email)) {
 			throw new RuntimeException("이미 존재하는 이메일 입니다: " + email);
 		}
-		return userRepository.save(
+
+		User savedUser = userRepository.save(
 			User.createByOauth(
 				sub, // id 로 social id 를 사용함 .
 				name, // 사용자 이름
@@ -102,6 +113,15 @@ public class UserService {
 				socialType
 			)
 		);
+
+		// Slack 알림 전송 (OAuth 가입)
+		slackNotificationService.sendUserCreatedNotification(
+			savedUser.getName(),
+			savedUser.getEmail(),
+			savedUser.getId()
+		);
+
+		return savedUser;
 	}
 
 	@Transactional(readOnly = true)
