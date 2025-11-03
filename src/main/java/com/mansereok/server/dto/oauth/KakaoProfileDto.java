@@ -33,4 +33,11 @@ public class KakaoProfileDto {
 		private String nickname;
 		private String profile_image_url;
 	}
+
+	public String getNickname() {
+		if (kakao_account != null && kakao_account.getProfile() != null) {
+			return kakao_account.getProfile().getNickname();
+		}
+		return "카카오 사용자";
+	}
 }
