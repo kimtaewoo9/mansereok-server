@@ -3,7 +3,7 @@ spring:
     name: mansereok-server
 
   datasource:
-    url: ${DB_URL}
+    url: ${DB_URL}?zeroDateTimeBehavior=convertToNull
     username: ${DB_USERNAME}
     password: ${DB_PASSWORD}
     driver-class-name: com.mysql.cj.jdbc.Driver
