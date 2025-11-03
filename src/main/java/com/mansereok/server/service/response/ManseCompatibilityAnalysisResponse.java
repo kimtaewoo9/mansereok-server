@@ -25,4 +25,6 @@ public class ManseCompatibilityAnalysisResponse {
 	private Integer compatibilityScore; // 궁합 점수(0-100)
 
 	private String summary;
+
+	private String ogImageUrl;
 }
