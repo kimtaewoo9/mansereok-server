@@ -126,3 +126,13 @@ product:
 logging:
   level:
     org.springframework.security: DEBUG
+
+# Slack
+slack:
+  webhook:
+    url: https://hooks.slack.com/services/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
+
+# Discord
+discord:
+  webhook:
+    url: https://discord.com/api/webhooks/1434928352602619936/-oP0DLWAK5Dd_i7uWL0hq_ss6CtVuv5SuBOJWLSJy0zjTgnpYhE4RcsQ8QgfOyq95QfX

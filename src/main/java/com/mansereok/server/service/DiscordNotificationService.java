@@ -26,7 +26,7 @@ public class DiscordNotificationService {
 			embed.put("title", "✅ 새로운 사용자 가입");
 			embed.put("color", 3066993);  // 초록색
 			embed.put("description", String.format(
-				"**이름:** %s\n **이메일:** %s\n **ID:** %d\n📱 **가입 유형:** %s",
+				"**이름:** %s\n **이메일:** %s\n **ID:** %d\n **가입 유형:** %s",
 				userName, email, userId, signupType
 			));
 
