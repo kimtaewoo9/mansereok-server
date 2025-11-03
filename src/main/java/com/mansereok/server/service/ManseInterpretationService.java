@@ -9,7 +9,6 @@ import com.mansereok.server.entity.ResultStatus;
 import com.mansereok.server.entity.User;
 import com.mansereok.server.repository.CompatibilityResultRepository;
 import com.mansereok.server.repository.ResultRepository;
-import com.mansereok.server.repository.SubCategoryRepository;
 import com.mansereok.server.service.request.Gpt5Request;
 import com.mansereok.server.service.response.GptCompatibilityResponse;
 import com.mansereok.server.service.response.GptSajuResponse;
@@ -40,7 +39,9 @@ public class ManseInterpretationService {
 	private final ObjectMapper objectMapper = new ObjectMapper();
 
 	private final UserService userService;
+	private final OgImageGenerationService ogImageGenerationService;
 	private final ResultRepository resultRepository;
+
 	private final CompatibilityResultRepository compatibilityResultRepository;
 
 	// 60갑자 순서 정의 (대운 계산용)
@@ -72,7 +73,8 @@ public class ManseInterpretationService {
 		ResultRepository resultRepository,
 		UserService userService,
 		CompatibilityResultRepository compatibilityResultRepository,
-		SubCategoryRepository subCategoryRepository) {
+		OgImageGenerationService ogImageGenerationService
+	) {
 		this.restClient = RestClient.builder()
 			.baseUrl(baseUrl + "/v1")
 			.defaultHeader("Authorization", "Bearer " + apiKey)
@@ -81,6 +83,7 @@ public class ManseInterpretationService {
 		this.resultRepository = resultRepository;
 		this.compatibilityResultRepository = compatibilityResultRepository;
 		this.userService = userService;
+		this.ogImageGenerationService = ogImageGenerationService;
 	}
 
 	@Async
@@ -137,8 +140,16 @@ public class ManseInterpretationService {
 				.retrieve()
 				.body(String.class);
 
-			log.info("GPT-5 응답 수신 완료.");
-			GptSajuResponse gptData = objectMapper.readValue(gptResponse, GptSajuResponse.class);
+			String content = extractContentFromResponseGpt5(gptResponse);
+			log.info("✅ content 추출 완료 - 길이: {}", content.length());
+
+			GptSajuResponse gptData = objectMapper.readValue(content, GptSajuResponse.class);
+			log.info("✅ gptData 파싱 완료");
+			log.info("✅ fullAnalysis 길이: {}", gptData.getFullAnalysis().length());
+			log.info("✅ summary 길이: {}", gptData.getSummary().length());
+
+			log.info("✅ gptData.getFullAnalysis(): " + gptData.getFullAnalysis());
+			log.info("✅ gptData.getSummary(): " + gptData.getSummary());
 
 			User user = userService.findByUsername(username);
 			log.info("사용자 id: " + user.getId());
@@ -149,6 +160,9 @@ public class ManseInterpretationService {
 			); // complete 포함 .
 
 			Result savedResult = resultRepository.save(result);
+
+			ogImageGenerationService.generateAndUploadOgImage(savedResult);
+
 			log.info("Result 해석 결과 저장 및 상태 COMPLETED 변경 완료: resultId={}", savedResult.getId());
 		} catch (Exception e) {
 			log.error("[Async] GPT API 요청 또는 처리 중 오류 발생: paymentId={}, Error: {}", paymentId,
@@ -226,9 +240,17 @@ public class ManseInterpretationService {
 				.retrieve()
 				.body(String.class);
 
-			log.info("GPT-5 궁합 분석 응답 수신 완료.");
-			GptCompatibilityResponse gptData = objectMapper.readValue(gptResponse,
+			String content = extractContentFromResponseGpt5(gptResponse);
+			log.info("✅ content 추출 완료 - 길이: {}", content.length());
+
+			GptCompatibilityResponse gptData = objectMapper.readValue(content,
 				GptCompatibilityResponse.class);
+			log.info("✅ gptData 파싱 완료");
+			log.info("✅ interpretation 길이: {}", gptData.getInterpretation().length());
+			log.info("✅ score: {}", gptData.getScore());
+			log.info("✅ summary 길이: {}", gptData.getSummary().length());
+
+			log.info("GPT 응답. gptData.getSummary(): " + gptData.getSummary());
 
 			result.completeInterpretation(
 				gptData.getInterpretation(),
@@ -239,6 +261,8 @@ public class ManseInterpretationService {
 			CompatibilityResult savedResult = compatibilityResultRepository.save(result);
 			log.info("CompatibilityResult 분석 결과 저장 및 상태 COMPLETED 변경 완료: resultId={}",
 				savedResult.getId());
+
+			ogImageGenerationService.generateAndUploadOgImage(savedResult);
 		} catch (EntityNotFoundException enfe) {
 			log.error("[Async] EntityNotFoundException (궁합 초기 조회 실패): {}", enfe.getMessage());
 		} catch (Exception e) {
@@ -276,33 +300,17 @@ public class ManseInterpretationService {
 			"당신은 한 사람의 고유한 인생 지도(사주팔자)를 해석하여, 그 사람의 잠재력을 긍정하고 삶의 여정을 응원하는 '안내자(Guide)'입니다.\n\n");
 
 		prompt.append("### 1. 핵심 분석 원칙 (Core Principles) ###\n");
-		prompt.append("1. **절대적 긍정성**: 모든 부정적 요소(충, 형, 흉살 등)는 '성장을 위한 역동적인 에너지'로만 해석합니다.\n");
-		prompt.append("2. **서사적 스토리텔링**: 사주 데이터를 절대 나열하지 않고, '한 편의 이야기' 속에 자연스럽게 녹여냅니다.\n");
-		prompt.append("3. **감성적 비유 활용**: '핵심 비유 사전'을 준수하여 일관되고 풍부한 비유로 설명합니다.\n");
+		prompt.append("1.. **서사적 스토리텔링**: 사주 데이터를 절대 나열하지 않고, '한 편의 이야기' 속에 자연스럽게 녹여냅니다.\n");
 		prompt.append(
-			"4. **자연스러운 전문가 어조**: '해요체'를 기본으로 쓰되, 전문 정보 전달 시 '입니다' 체를 혼용하여 신뢰감과 친근함을 모두 전달합니다.\n");
-		prompt.append("5. **깊이 있는 통찰**: 각 주제를 피상적으로 다루지 않고, 명리학적 근거를 바탕으로 심층 분석합니다.\n\n");
+			"2. **자연스러운 전문가 어조**: '해요체'를 기본으로 쓰되, 전문 정보 전달 시 '입니다' 체를 혼용하여 신뢰감과 친근함을 모두 전달합니다.\n");
+		prompt.append("3. **깊이 있는 통찰**: 각 주제를 피상적으로 다루지 않고, 명리학적 근거를 바탕으로 심층 분석합니다.\n\n");
 
-		prompt.append("### 2. 핵심 비유 사전 (Metaphor Lexicon) ###\n");
-		prompt.append("- **사주팔자**: '인생 지도', '설계도'\n");
-		prompt.append("- **일간**: '본질', '뿌리', '엔진' (자연물 비유)\n");
-		prompt.append("- **월지**: '토양', '사회적 무대'\n");
-		prompt.append("- **지장간**: 'DNA', '숨겨진 보물'\n");
-		prompt.append("- **십성**: '10가지 도구', '사회적 역할'\n");
-		prompt.append("- **12운성**: '에너지 리듬'\n");
-		prompt.append("- **대운**: '10년 챕터', '계절 변화'\n");
-		prompt.append("- **신살**: '특수 능력', '강력한 도구'\n");
-		prompt.append("- **합/충/형/파**: '안정/변화 에너지', '역동성'\n\n");
-
-		prompt.append("### 3. 절대 금지 사항 (Strict Prohibitions) ###\n");
+		prompt.append("### 2. 절대 금지 사항 (Strict Prohibitions) ###\n");
 		prompt.append("- 운명론적 단정, 데이터 나열, AI/시스템 노출, AI티가 나면 절대 안됨, 차갑거나 권위적인 어조 금지.\n\n");
 
-		prompt.append("### 4. 작성 스타일 (공통) ###\n");
-		prompt.append(
-			"- **자연스러운 전문가 어조**: '해요체'와 '입니다' 체를 자연스럽게 혼용하여 신뢰감과 친근함을 전달해주세요.\n");
+		prompt.append("### 3. 작성 스타일 (공통) ###\n");
 		prompt.append("- **깊이 우선**: 각 항목을 매우 구체적이고 깊이 있게 분석해주세요. 분량 제한은 없습니다.\n");
-		prompt.append("- **긍정적 관점**: 모든 내용을 '성장의 기회'와 '잠재력 발현'의 관점에서 희망적으로 서술해주세요.\n");
-		prompt.append("- **비유 활용**: '핵심 비유 사전'을 적극 활용하여 명리학적 개념을 쉽게 설명해주세요.\n");
+		prompt.append("- **비유 활용**: 명리학적 개념을 쉽고 재밌게 풀어서 설명해주세요.\n");
 	}
 
 	private void appendHyeanCompatibilityPersonaHeader(StringBuilder prompt) {
@@ -310,33 +318,21 @@ public class ManseInterpretationService {
 		prompt.append("당신은 30년 경력의 사주명리학 대가이자, '관계 서사 상담가' 혜안(慧眼)입니다.\n");
 		prompt.append(
 			"당신은 두 사람의 고유한 인생 지도(사주팔자)가 어떻게 서로 엮이고 영향을 주는지, 그 '관계의 서사'를 깊이 있게 해석합니다.\n");
-		prompt.append("두 사람의 잠재력을 긍정하고 관계의 성장을 응원하는 '안내자(Guide)'입니다.\n\n");
 
 		prompt.append("### 1. 핵심 분석 원칙 (Core Principles) ###\n");
 		prompt.append(
-			"1. **긍정적 관계 조명**: 모든 갈등 요소(충, 형 등)는 '서로를 성장시키는 역동적인 에너지'로만 해석합니다.\n");
-		prompt.append("2. **서사적 스토리텔링**: 사주 데이터를 나열하지 않고, '두 사람의 이야기' 속에 자연스럽게 녹여냅니다.\n");
-		prompt.append("3. **감성적 비유 활용**: '핵심 비유 사전'을 준수하여 관계의 역학을 풍부한 비유로 설명합니다.\n");
+			"1. **서사적 스토리텔링**: 사주 데이터를 나열하지 않고, '두 사람의 이야기' 속에 자연스럽게 녹여내어 사주를 쉽고 재미있게 풀어냅니다.\n");
 		prompt.append(
 			"4. **자연스러운 전문가 어조**: '해요체'를 기본으로 쓰되, 전문 정보 전달 시 '입니다' 체를 혼용하여 신뢰감과 친근함을 모두 전달합니다.\n");
 		prompt.append("5. **깊이 있는 통찰**: 관계를 피상적으로 다루지 않고, 명리학적 근거를 바탕으로 심층 분석합니다.\n\n");
 
-		prompt.append("### 2. 핵심 비유 사전 (Metaphor Lexicon) ###\n");
-		prompt.append("- **사주팔자**: '인생 지도', '설계도'\n");
-		prompt.append("- **일간**: '본질', '뿌리' (자연물 비유)\n");
-		prompt.append("- **궁합**: '두 지도의 만남', '관계의 시너지'\n");
-		prompt.append("- **오행 조화**: '서로의 계절을 보완하는 힘'\n");
-		prompt.append("- **합/충/형/파**: '관계의 역동성', '성장의 계기'\n\n");
+		prompt.append("### 2. 금지 사항 (Strict Prohibitions) ###\n");
+		prompt.append("- 데이터 나열, 글에서 AI티가 나면 절대 안됨\n\n");
 
-		prompt.append("### 3. 금지 사항 (Strict Prohibitions) ###\n");
-		prompt.append("- 운명론적 단정, 데이터 나열, AI/시스템 노출, 차갑거나 권위적인 어조 금지.\n\n");
-
-		prompt.append("### 4. 작성 스타일 (공통) ###\n");
+		prompt.append("### 3. 작성 스타일 (공통) ###\n");
 		prompt.append(
 			"- **자연스러운 전문가 어조**: '해요체'와 '입니다' 체를 자연스럽게 혼용하여 신뢰감과 친근함을 전달해주세요.\n");
 		prompt.append("- **깊이 우선**: 각 항목을 매우 구체적이고 깊이 있게 분석해주세요. 분량 제한은 없습니다.\n");
-		prompt.append("- **긍정적 관점**: 모든 내용을 '성장의 기회'와 '관계 발전'의 관점에서 희망적으로 서술해주세요.\n");
-		prompt.append("- **비유 활용**: '핵심 비유 사전'을 적극 활용하여 명리학적 개념을 쉽게 설명해주세요.\n");
 	}
 
 	private void appendSajuJsonResponseFormat(StringBuilder prompt, String name) {
@@ -345,20 +341,40 @@ public class ManseInterpretationService {
 		prompt.append(
 			"**fullAnalysis** 값에는 위에서 요청한 모든 상세 분석 내용을 **목록 기호 없이 물 흐르듯 자연스럽게 이어진 하나의 긴 텍스트**로 담아야 합니다.\n");
 
-		// ⭐ [핵심 수정] 요약본 스타일 강제
-		prompt.append(String.format(
-			"**summary** 값에는 **'혜안' 페르소나를 '완전히 무시'하고**, %s님의 특징을 아래 '요약 예시'의 **말투(반말, 펀치라인, 단정적)**를 '그대로' 흉내내서 3~4줄로 요약해주세요.\n\n",
-			name));
-		prompt.append("--- [요약 예시 (이 말투를 따라하세요)] ---\n");
-		prompt.append("겉으론 차분한데 속은 완전 철근덩어리 자기 기준 확실해서\n");
-		prompt.append("남들이 뭐라 해도 아닌 건 아닌 거지 모든 발동하긔 머릿속\n");
-		prompt.append("계산 빠르고 감정보다 현실 먼저 보는 타입이긔 한 번 마음 먹\n");
-		prompt.append("으면 끝까지 해내는 추진력 쩔긔\n");
-		prompt.append("--- [요약 예시 끝] ---\n\n");
+		prompt.append("--- [fullAnalysis 작성 규칙] ---\n");
+		prompt.append("1. **(매우 중요)** 프롬프트에 `##`로 시작하는 주제(제목)가 있으면, `##` 기호는 **절대 출력하지 마세요.**\n");
+		prompt.append("2. 대신, 그 주제(제목) 텍스트를 **대괄호(`[]`)**로 감싸고, 그 뒤에 **줄바꿈(\\n)**을 한 번만 추가해주세요.\n");
+		prompt.append("   (예시: `## 1. 핵심 성격` -> [핵심 성격]\\n)\n");
+		prompt.append(
+			"3. **(매우 중요)** 프롬프트에 `**`로 감싸진 단어(강조)는, `**` 기호 없이 **그냥 텍스트**로만 출력해주세요. (굵게 표시 금지)\n");
+		prompt.append("4. 한 문단이 6~7줄을 넘으면 안됨.\n");
+		prompt.append("5. 목록 기호(-, *, 1.) 사용 금지, 자연스러운 문장으로 연결\n");
+		prompt.append(
+			"6. **(카드 UI용)** 가독성을 위해, 본문 내용 4~5 문장마다 **줄바꿈을 두 번(\\n\\n)** 하여 다음 카드로 넘어가는 것처럼 문단을 나눠주세요.\n");
+
+		prompt.append("--- [summary 말투 규칙 - 매우 중요!!!] ---\n");
+		prompt.append("**summary는 '혜안' 페르소나를 완전히 무시하고, 아래 규칙만 100% 따라야 합니다.**\n\n");
+
+		prompt.append("🎯 **필수 규칙 (절대 엄수)**\n");
+		prompt.append(
+			"1. **페르소나 (가장 중요)**: 너는 내 **찐친(best friend)**이야. 완전 반말로, 핵심만 콕 집어서 재치있게(witty) 말해줘. **딱딱한 정보 요약이 절대 아니야.**\n");
+		prompt.append("2. **주제 (총평)**: 이 사람 사주에 대한 **'핵심 총평'**을 해줘. 성격, 재능, 매력 같은 거 팍팍 찝어서.\n");
+		prompt.append("3. **줄바꿈**: 한 문장이 끝나면 **반드시 줄바꿈(\\n)** 해주고, 마침표는 찍지 마.\n");
+		prompt.append("4. **분량**: 총 220자 이내.\n");
+
+		prompt.append("✅ **자연스러운 예시 (이런 느낌!)**\n");
+		prompt.append("예시1: (성격)\n");
+		prompt.append("\"겉으론 조용? 속은 완전 불도저 그 자체\n");
+		prompt.append("고집 개셈 마이웨이 장난 아님\n");
+		prompt.append("꽂히면 앞만 보고 달림\n");
+		prompt.append("현실 계산은 또 빨라서 절대 손해 안 봐\n");
+		prompt.append("한마디로 '차가운 심장을 가진 폭주기관차'랄까\"\n\n");
 
 		prompt.append("{\n");
-		prompt.append("  \"fullAnalysis\": \"<여기에 상세 분석 전체 내용을 작성...>\",\n");
-		prompt.append("  \"summary\": \"<여기에 '요약 예시' 말투로 3~4줄 요약본 작성...>\"\n"); // finalMessage 삭제
+		prompt.append(
+			"  \"fullAnalysis\": \"<여기에 상세 분석 전체 내용을 작성. 상세 분석 전체 내용 작성할때 보기 편하게 문단을 잘 나눠야함>\",\n");
+		prompt.append(
+			"  \"summary\": \"<여기에 '올바른 예시'처럼 '~임' 말투를 사용하고, 문장 끝마다 '\\n'으로 줄바꿈된 200자 이내 요약본 작성>\"\n");
 		prompt.append("}\n");
 	}
 
@@ -372,21 +388,40 @@ public class ManseInterpretationService {
 		prompt.append("그 어떤 부가적인 설명이나 markdown 감싸기(` ```json `) 없이 순수한 JSON 객체만 출력해주세요.\n");
 		prompt.append("**interpretation** 값 안에는 **목록 기호 없이 물 흐르듯 자연스럽게 이어진 상세 궁합 분석**을 담아야 합니다.\n");
 
-		// ⭐ [핵심 수정] 요약본 스타일 강제
-		prompt.append(String.format(
-			"**summary** 값에는 **'혜안' 페르소나를 '완전히 무시'하고**, %s님과 %s님 궁합의 특징을 아래 '요약 예시'의 **말투(반말, 펀치라인, 단정적)**를 '그대로' 흉내내서 3~4줄로 요약해주세요.\n\n",
-			person1Name, person2Name));
-		prompt.append("--- [요약 예시 (이 말투를 따라하세요)] ---\n");
-		prompt.append("겉으론 차분한데 속은 완전 철근덩어리 자기 기준 확실해서\n");
-		prompt.append("남들이 뭐라 해도 아닌 건 아닌 거지 모든 발동하긔 머릿속\n");
-		prompt.append("계산 빠르고 감정보다 현실 먼저 보는 타입이긔 한 번 마음 먹\n");
-		prompt.append("으면 끝까지 해내는 추진력 쩔긔\n");
-		prompt.append("--- [요약 예시 끝] ---\n\n");
+		prompt.append("--- [fullAnalysis 작성 규칙] ---\n");
+		prompt.append("1. **(매우 중요)** 프롬프트에 `##`로 시작하는 주제(제목)가 있으면, `##` 기호는 **절대 출력하지 마세요.**\n");
+		prompt.append("2. 대신, 그 주제(제목) 텍스트를 **대괄호(`[]`)**로 감싸고, 그 뒤에 **줄바꿈(\\n)**을 한 번만 추가해주세요.\n");
+		prompt.append("   (예시: `## 첫 만남` -> [첫 만남]\\n)\n");
+		prompt.append(
+			"3. **(매우 중요)** 프롬프트에 `**`로 감싸진 단어(강조)는, `**` 기호 없이 **그냥 텍스트**로만 출력해주세요. (굵게 표시 금지)\n");
+		prompt.append("4. 한 문단이 6~7줄을 넘지 않도록 적절히 끊어서 작성\n");
+		prompt.append("5. 목록 기호(-, *, 1.) 사용 금지, 자연스러운 문장으로 연결\n");
+		prompt.append(
+			"6. **(카드 UI용)** 가독성을 위해, 본문 내용 4~5 문장마다 **줄바꿈을 두 번(\\n\\n)** 하여 다음 카드로 넘어가는 것처럼 문단을 나눠주세요.\n");
 
+		prompt.append("--- [summary 말투 규칙 - 매우 중요!!!] ---\n");
+		prompt.append("**summary는 '혜안' 페르소나를 완전히 무시하고, 아래 규칙만 100% 따라야 합니다.**\n\n");
+
+		prompt.append("🎯 **필수 규칙 (절대 엄수)**\n");
+		prompt.append(
+			"1. **페르소나 (가장 중요)**: 너는 내 **찐친(best friend)**이야. 완전 반말로, 두 사람 궁합을 재치있게(witty) 팩폭해줘.\n");
+		prompt.append(
+			"2. **주제 (총평)**: 두 사람의 **'궁합 총평'**을 해줘. 둘의 케미, 제일 조심할 거, 미래 예측 같은 거 팍팍 찝어서.\n");
+		prompt.append("3. **줄바꿈**: 한 문장이 끝나면 **반드시 줄바꿈(\\n)** 해주고, 마침표는 찍지 마.\n");
+		prompt.append("4. **분량**: 총 220자 이내.\n");
+
+		prompt.append("✅ **자연스러운 예시 (이런 느낌!)**\n");
+		prompt.append("예시1: (궁합)\n");
+		prompt.append("\"물 만난 고기? 아니 물 만난 밭이네\n");
+		prompt.append("임수 강물이 기토 밭을 싹 적셔주니 찰떡궁합\n");
+		prompt.append("근데 둘 다 속도 조절 못하면 큰일남\n");
+		prompt.append("남자가 좀 달래주고 여자가 템포 맞추면\n");
+		prompt.append("2029년쯤엔 진짜 결혼각 잡힐 각\"\n\n");
 		prompt.append("{\n");
 		prompt.append("  \"score\": <두 사람의 종합 궁합을 0에서 100 사이의 정수 점수로 표현>,\n");
 		prompt.append("  \"interpretation\": \"<상세 궁합 분석 내용>\",\n");
-		prompt.append("  \"summary\": \"<여기에 '요약 예시' 말투로 3~4줄 요약본 작성...>\"\n"); // finalMessage 삭제
+		prompt.append(
+			"  \"summary\": \"<여기에 '올바른 예시'처럼 '~임' 말투를 사용하고, 문장 끝마다 '\\n'으로 줄바꿈된 200자 이내 요약본 작성>\"\n");
 		prompt.append("}\n");
 	}
 
@@ -398,7 +433,6 @@ public class ManseInterpretationService {
 			case 1 -> createLifeOverallPrompt(name, response);
 			case 2 -> createPersonalityAnalysisPrompt(name, response);
 			case 3 -> createCareerAptitudePrompt(name, response);
-			case 4 -> createLoveFortunePrompt(name, response);
 			case 5 -> createIdolAnalysisPrompt(name, response);
 			case 9 -> createCharacterSajuPrompt(name, response);
 			default -> createComprehensiveAnalysisPrompt(name, response); // 기본 종합
@@ -413,14 +447,12 @@ public class ManseInterpretationService {
 		ManseryeokCalculationResponse person2Response
 	) {
 		return switch (subcategoryId.intValue()) {
-			case 6 -> createLoveStoryPrompt(person1Name, person1Response, person2Name,
-				person2Response);
-			case 7 -> createIdolCompatibilityPrompt(person1Name, person1Response, person2Name,
+			case 4, 6, 7 -> createLoveStoryPrompt(person1Name, person1Response, person2Name,
 				person2Response);
 			case 8 -> createTriangleRelationshipPrompt(person1Name, person1Response, person2Name,
 				person2Response);
 			default -> createCompatibilityPrompt(person1Name, person1Response, person2Name,
-				person2Response); // 기본 궁합
+				person2Response);
 		};
 	}
 
@@ -476,24 +508,24 @@ public class ManseInterpretationService {
 			name, formattedDate, formattedTime,
 			saju.getDaySky().getKorean() + saju.getDaySky().getFiveCircle()));
 
-		prompt.append("## 1. 타고난 본성과 성격\n");
+		prompt.append("## 타고난 본성과 성격\n");
 		prompt.append(
-			"- 일간, 월지, 오행 분포, 십성 구조를 종합하여 %s님의 핵심 기질과 성격 형성 과정을 '비유'를 통해 깊이 있게 분석해주세요.\n");
-		prompt.append("- 지장간에 숨겨진 '내면의 DNA'와 무의식적 동기까지 파헤쳐, 다층적인 성격 구조를 설명해주세요.\n\n");
+			" 일간, 월지, 오행 분포, 십성 구조를 종합하여 %s님의 핵심 기질과 성격 형성 과정을 '비유'를 통해 깊이 있게 분석해주세요.\n");
+		prompt.append("지장간에 숨겨진 '내면의 DNA'와 무의식적 동기까지 파헤쳐, 다층적인 성격 구조를 설명해주세요.\n\n");
 
-		prompt.append("## 2. 직업과 사회적 성공의 길\n");
+		prompt.append("## 직업과 사회적 성공의 길\n");
 		prompt.append(
-			"- %s님의 핵심 재능(십성, 신살 등을 참고)은 무엇이며, 어떤 분야(구체적 직업군 2~3개 제시)에서 가장 빛을 발할 수 있는지 명확히 제시해주세요.\n");
+			" %s님의 핵심 재능(십성, 신살 등을 참고)은 무엇이며, 어떤 분야(구체적 직업군 2~3개 제시)에서 가장 빛을 발할 수 있는지 명확히 제시해주세요.\n");
 
-		prompt.append("## 3. 재물운의 흐름과 경제적 안정\n");
-		prompt.append("- %s님의 타고난 재물운, 앞으로 어떻게 해야하는지, 어떻게 노력해야하는지, 투자 성향, 투자 어떻게 해야하는지 등\n");
+		prompt.append("## 재물운의 흐름과 경제적 안정\n");
+		prompt.append(" %s님의 타고난 재물운, 앞으로 어떻게 해야하는지, 어떻게 노력해야하는지, 투자 성향, 투자 어떻게 해야하는지 등\n");
 
-		prompt.append("## 4. 연애와 결혼의 인연\n");
+		prompt.append("## 연애와 결혼의 인연\n");
 		prompt.append("%s님의 연애 스타일, 매력 포인트, 이상적인 배우자상('일지' 비유 활용)을 상세히 그려주세요.\n");
 		prompt.append("%s님이 끌리는 스타일, 본인의 이상형, 실제로 이상형을 만나는가 ?\n");
 		prompt.append("연애/결혼 가능성이 높은 시기와 만남의 방식 예측, 행복한 관계를 오래 유지하기 위한 비결 조언.\n\n");
 
-		prompt.append("## 5. 대운과 세운 - 인생의 큰 파도\n");
+		prompt.append("## 대운과 세운 - 인생의 큰 파도\n");
 		prompt.append(
 			"**[현재 대운 집중 분석]** 지금 겪고 있는 현재 대운(10년)은 %s님 인생에서 어떤 '챕터'이며, 이 시기의 주요 과제와 기회는 무엇인지 집중 분석해주세요. 그리고 어떻게 행동해야하는지까지 분석 해주세요.\n");
 		prompt.append(
@@ -501,7 +533,7 @@ public class ManseInterpretationService {
 		prompt.append(
 			"2026년 병오년 세운이 %s님에게 미치는 영향을 직업, 재물, 연애, 건강 측면에서 구체적으로 분석해주세요.\n\n");
 
-		prompt.append("## 6. 인생 전체를 위한 조언\n");
+		prompt.append("## 인생 전체를 위한 조언\n");
 		prompt.append(
 			"%s님의 사주가 가진 고유한 강점과 약점을 종합하여, 인생을 슬기롭게 헤쳐나가기 위한 핵심 가치를 제시해주세요. 간단한 비유를 들어 설명해주세요.\n");
 		prompt.append("어려움에 직면했을 때 기억해야 할 점과, 삶의 만족도를 높이기 위한 실천적인 조언을 너무 깊지 않고 간단하게 설명해주세요.\n\n");
@@ -537,32 +569,31 @@ public class ManseInterpretationService {
 			name, input.getSolarDate(), input.getSolarTime(),
 			saju.getDaySky().getKorean() + saju.getDaySky().getFiveCircle()));
 
-		prompt.append("## 1. 핵심 성격 키워드와 그 근원\n");
+		prompt.append("## 핵심 성격 키워드와 그 근원\n");
 		prompt.append(
-			"- %s님을 가장 잘 나타내는 핵심 성격 키워드 3가지를 선정하고, 각 키워드가 어떤 사주 요소(일간, 월지, 오행, 십성 등)에서 비롯되었는지 '비유'를 통해 명확한 근거와 함께 설명해주세요.\n");
-		prompt.append("- 이 핵심 성격이 삶 전반에 어떻게 긍정적/부정적으로 발현되는지 구체적인 예시를 들어 분석해주세요.\n\n");
+			"%s님을 가장 잘 나타내는 핵심 성격 키워드 3가지를 선정하고, 각 키워드가 어떤 사주 요소(일간, 월지, 오행, 십성 등)에서 비롯되었는지 '비유'를 통해 명확한 근거와 함께 설명해주세요. 사주 용어를 쉽고 재미있게 풀어서 설명해주세요.\n");
+		prompt.append("이 핵심 성격이 삶 전반에 어떻게 긍정적/부정적으로 발현되는지 구체적인 예시를 들어 분석해주세요.\n\n");
 
-		prompt.append("## 2. 겉모습(페르소나) vs 진짜 내면\n");
+		prompt.append("## 겉모습(페르소나) vs 진짜 내면\n");
 		prompt.append(
-			"- 사회적으로 보여지는 모습(천간 십성)과 실제 내면의 모습(지지, '지장간 DNA') 사이의 유사점과 차이점을 분석해주세요.\n");
-		prompt.append("- 만약 차이가 크다면, 그 이유는 무엇이며 어떤 상황에서 내면의 모습이 드러나는지 설명해주세요.\n");
-		prompt.append("- 이 두 모습의 조화를 이루기 위한 방법을 조언해주세요.\n\n");
+			"사회적으로 보여지는 모습(천간 십성)과 실제 내면의 모습(지지, '지장간 DNA') 사이의 유사점과 차이점을 분석해주세요.\n");
+		prompt.append("만약 차이가 크다면, 그 이유는 무엇이며 어떤 상황에서 내면의 모습이 드러나는지 설명해주세요.\n");
+		prompt.append("이 두 모습의 조화를 이루기 위한 방법을 쉽고 재미있게 풀어서 조언해주세요\n\n");
 
-		prompt.append("## 3. 사고방식, 가치관, 그리고 강점과 약점\n");
+		prompt.append("## 사고방식, 가치관, 그리고 강점과 약점\n");
 		prompt.append(
-			"- 십성 분포를 통해 %s님의 주요 사고 패턴(논리/직관, 감성/이성 등)과 중요하게 생각하는 가치관(명예/재물/안정 등)을 분석해주세요.\n");
+			"십성 분포를 통해 %s님의 주요 사고 패턴(논리/직관, 감성/이성 등)과 중요하게 생각하는 가치관(명예/재물/안정 등)을 쉽고 재미있게 분석해주세요.\n");
 		prompt.append(
-			"- 성격적인 강점 3가지와 약점(개선점) 2가지를 명확히 제시하고, 각 강점을 극대화하고 약점을 보완할 수 있는 구체적인 방법을 조언해주세요.\n\n");
+			"성격적인 강점 3가지와 약점(개선점) 2가지를 명확히 제시해주세요. 쉽고 재미있게 풀어서 설명해주세요. \n\n");
 
-		prompt.append("## 4. 인간관계 스타일 (관계 유형별)\n");
-		prompt.append("- 친구, 동료(상사/부하 포함), 연인, 가족 등 주요 관계 유형별로 %s님이 관계를 맺는 특징적인 방식과 태도를 분석해주세요.\n");
-		prompt.append("- 각 관계에서 발생할 수 있는 갈등 유형과 이를 원만하게 해결하는 방법을 조언해주세요.\n");
-		prompt.append("- 어떤 유형의 사람들과 잘 맞고, 어떤 유형과 어려움을 겪을 수 있는지 설명해주세요.\n\n");
+		prompt.append("## 인간관계 스타일 (관계 유형별)\n");
+		prompt.append("친구, 동료(상사/부하 포함), 연인, 가족 등 주요 관계 유형별로 %s님이 관계를 맺는 특징적인 방식과 태도를 분석해주세요.\n");
+		prompt.append("각 관계에서 발생할 수 있는 갈등 유형과 이를 원만하게 해결하는 방법을 조언해주세요.\n");
+		prompt.append("어떤 유형의 사람들과 잘 맞고, 어떤 유형과 어려움을 겪을 수 있는지 설명해주세요.\n\n");
 
-		prompt.append("## 5. 자기 성장과 행복을 위한 조언\n");
-		prompt.append("- %s님의 성격적 특성을 고려했을 때, 삶의 만족도와 행복감을 높이기 위해 무엇에 집중하면 좋을지 조언해주세요.\n");
-		prompt.append("- 스트레스 해소 방식과 멘탈 관리법을 제안해주세요.\n");
-		prompt.append("- 타고난 성격을 바탕으로 더 나은 나로 성장하기 위한 장기적인 방향성을 제시하며 따뜻하게 마무리해주세요.\n\n");
+		prompt.append("## 자기 성장과 행복을 위한 조언\n");
+		prompt.append("%s님의 성격적 특성을 고려했을 때, 삶의 만족도와 행복감을 높이기 위해 무엇에 집중하면 좋을지 조언해주세요.\n");
+		prompt.append("타고난 성격을 바탕으로 더 나은 나로 성장하기 위한 장기적인 방향성을 제시하며 따뜻하게 마무리해주세요.\n\n");
 
 		appendSajuJsonResponseFormat(prompt, name);
 
@@ -664,9 +695,7 @@ public class ManseInterpretationService {
 		appendDaewoonFlow(prompt, saju, input.getGender());
 		prompt.append("\n");
 
-		// =================================================================
 		// 3. [핵심 수정] 분석 요청: '-', 목차 제거 + 자연스러운 흐름 강조
-		// =================================================================
 		prompt.append("### [직업 적성] 심층 분석 요청 ###\n\n");
 		prompt.append(
 			"혜안 선생님, 위 데이터를 바탕으로 %s님의 '직업과 재능'에 대한 이야기를 들려주세요.\n\n");
@@ -676,96 +705,35 @@ public class ManseInterpretationService {
 		prompt.append(
 			"1. **(필수!) 자연스러운 글쓰기:** **'절대로' '-', '*', '1.' 같은 목록 기호를 사용하지 마세요.** 모든 문장을 이어서 작성하고, 접속사나 부드러운 표현을 사용해서 **마치 옆에서 대화하듯 물 흐르듯 자연스럽게** 글이 이어지도록 하세요. (AI 티 나는 딱딱한 보고서 형식 절대 금지!)\n");
 		prompt.append(
-			"2. **(필수!) '나를 알아가는 느낌':** 단순히 정보를 나열하는 설명글이 아니라, 독자가 자신의 재능과 가능성을 발견하며 '나에 대해 알아가는 느낌'을 받을 수 있도록 감성적인 비유와 따뜻한 공감의 언어를 사용해주세요.\n");
+			"2. **(필수!) 쉽고 재미있게 사주 해석을 풀어서 설명해주세요.\n");
 		prompt.append(
 			"3. **(내용)** 아래 질문들에 대한 답을 **자연스러운 이야기 속에 녹여내세요.** (딱딱한 목차 구분 절대 금지!)\n");
 		prompt.append(
-			"%s님의 본질적인 성향과 재능의 뿌리(일간)는 무엇인가요?\n");
+			"%s님의 본질적인 성향과 재능은 무엇인가요?\n");
 		prompt.append(
-			"%s님의 '숨겨진 보물 상자'(지장간)에는 어떤 잠재력의 씨앗이 있으며, 어떤 직업적 재능으로 피어날 수 있을까요?\n");
+			"%s님의 '숨겨진 보물 상자'(지장간)에는 어떤 잠재력의 씨앗이 있으며, 어떤 직업적 재능으로 피어날 수 있을까요? 쉽고 재미있게 풀어서 설명해주세요.\n");
 		prompt.append(
 			"%s님의 가장 강력한 '핵심 도구'(십성)는 무엇이며, 어떤 직업적 성향을 나타내나요?\n");
 		prompt.append(
-			" %s님이 가장 편안하게 재능을 발휘할 '사회적 무대'(월지, 환경)는 어떤 곳인가요?\n");
-		prompt.append(
 			"%s님은 '혼자 빛나는 별'인가요, '함께 어우러지는 숲'인가요? (독립 vs 조직, 근무 형태)\n");
 		prompt.append(
-			"%s님의 '소명'이라 부를 수 있는 직업 분야는 무엇인가요? (최대 3가지, 구체적이지만 비즈니스 용어 없이 이야기로 풀어낼 것)\n");
+			"%s님에게 잘어울리는 직업 분야는 무엇인가요? (최대 3가지, 구체적이지만 어려운 비즈니스 용어 나열 절대 금지)\n");
 		prompt.append(
-			"%s님의 '재물 그릇'은 어떤 모양이며, 어떤 방식으로 부를 쌓아갈 수 있을까요? ('수확의 계절' 포함)\n");
+			"%s님은 어떤 방식으로 부를 쌓아갈 수 있을까요? ('수확의 계절' 구체적인 시기 포함)\n");
 		prompt.append(
 			"%s님의 커리어 '에너지 파도'(12운성)는 지금 어떤 상태이며, '커리어 챕터'(대운)는 어떻게 흘러가나요?\n");
 		prompt.append(
 			" %s님의 '성공 히든카드'(길신)와 '다루기 힘든 명검'(흉살)은 무엇이며, 어떻게 활용해야 할까요?\n");
 		prompt.append(
-			"4. **(마무리)** 글 마지막에는 %s님의 커리어 여정을 위한 따뜻한 조언과 응원의 메시지를 담아 자연스럽게 마무리해주세요. (핵심 키워드 3가지 제시 포함)\n\n");
+			"4. **(마무리)** 글 마지막에는 %s님의 커리어 여정을 위한 따뜻한 조언과 응원의 메시지를 담아 자연스럽게 마무리해주세요.\n\n");
 
 		prompt.append("【분석 시작】\n");
 		prompt.append(String.format(
-			"\"%s님은 %s %s에 태어나신, [일간(%s) 자연물 비유]와 같은 기운을 지니셨습니다.\" 로 시작해주세요.\n\n",
-			name, formattedDate, formattedTime,
+			"\"%s %s에 태어나신 %s 님은 [일간(%s) 자연물 비유]와 같은 기운을 지니셨습니다.\" 로 시작해주세요.\n\n",
+			formattedDate, formattedTime, name,
 			saju.getDaySky().getKorean() + saju.getDaySky().getFiveCircle()));
 
-		prompt.append("(이제 위 3번 지침에 따라, 목록 기호 없이 자연스럽게 이어서 %s님의 직업과 재능 이야기를 풀어주세요.)\n");
-
-		appendSajuJsonResponseFormat(prompt, name);
-
-		return prompt.toString();
-	}
-
-	// ==================== 4. 연애 운세 프롬프트 ====================
-	private String createLoveFortunePrompt(String name, ManseryeokCalculationResponse response) {
-		StringBuilder prompt = new StringBuilder();
-		ManseryeokCalculationResponse.SajuInfo saju = response.getSaju();
-		ManseryeokCalculationResponse.InputInfo input = response.getInput();
-
-		// 1. '혜안' 공통 페르소나 주입
-		appendHyeanPersonaHeader(prompt);
-
-		// 2. 분석 대상자 정보 주입
-		prompt.append("### 5. 분석 대상자 상세 정보 (Data for Analysis) ###\n");
-		appendPersonDetailInfo(prompt, name, response);
-
-		// 3. 분석 요청
-		prompt.append("\n### 6. [연애 운세 심층 분석] 요청 ###\n");
-		prompt.append(String.format(
-			"혜안 선생님, 위 데이터를 바탕으로 %s님의 '사랑과 인연의 서사'를 아래 **5가지 핵심 주제**에 대해 깊이 있게 작성해주세요.\n", name));
-		prompt.append("각 주제를 '혜안'의 서사적 스타일로 깊이 있게 다루어 주세요. **분량 제한은 없습니다.**\n\n");
-
-		prompt.append("--- [분석 시작] ---\n");
-		prompt.append(String.format(
-			"\"%s님은 %s %s에 태어나신, [일간(%s) 자연물 비유]와 같은 기운을 지니셨네요.\" 로 시작해주세요.\n\n",
-			name, input.getSolarDate(), input.getSolarTime(),
-			saju.getDaySky().getKorean() + saju.getDaySky().getFiveCircle()));
-
-		prompt.append("## 1. 타고난 연애 스타일과 매력 포인트\n");
-		prompt.append("%s님이 사랑에 빠지는 방식, 감정 및 애정 표현 스타일(십성, 오행 등 활용)을 구체적으로 분석해주세요.\n");
-		prompt.append(
-			"이성에게 어필하는 %s님만의 매력 포인트(외적/내적, '도화/홍염' 등 신살 비유)는 무엇인지 설명해주세요.\n");
-		prompt.append("연애할 때 드러나는 장점과, 관계를 어렵게 만들 수 있는 주의할 점(약점)을 함께 분석해주세요.\n\n");
-
-		prompt.append("## 2. 운명의 상대: 이상형 심층 분석\n");
-		prompt.append(
-			"%s님이 본능적으로 끌리는 이상형의 외모, 성격, 가치관, 직업군 등을 사주(일지, 관련 십성 등)를 통해 구체적으로 그려주세요.\n");
-		prompt.append("일지(배우자궁)를 '내 마음의 집'에 비유하여, 어떤 인연이 들어왔을 때 가장 조화롭고 행복할지 설명해주세요.\n");
-		prompt.append(
-			"**[궁합 맛보기]** %s님의 사주와 가장 잘 맞는 상대방의 일간 또는 오행 특징을 간단히 언급하며 궁합에 대한 기대감을 주세요.\n\n");
-
-		prompt.append("## 3. 인연의 시기와 만남의 기회\n");
-		prompt.append(
-			"'대운(10년 챕터)'과 '세운(1년)'의 흐름을 분석하여, 연애운이 강하게 들어와 새로운 인연을 만나거나 관계가 발전할 가능성이 높은 시기(향후 3~5년 이내)를 구체적으로 예측해주세요.\n");
-		prompt.append("인연을 만날 가능성이 높은 장소나 상황(직장, 소개, 동호회 등)을 사주 특성에 맞게 조언해주세요.\n");
-		prompt.append("좋은 인연을 끌어당기기 위해 %s님이 노력하면 좋을 부분을 조언해주세요.\n\n");
-
-		prompt.append("## 4. 연애 과정과 결혼 전망\n");
-		prompt.append("연애 중 발생할 수 있는 주요 갈등 유형(충, 형 등)과 이를 현명하게 해결하는 방법을 조언해주세요.\n");
-		prompt.append("%s님의 결혼 적령기는 언제쯤이며, 빠른 결혼과 만혼 중 어떤 경향이 있는지 분석해주세요.\n");
-		prompt.append("'일지' 분석을 통해 결혼 생활의 모습과 배우자와의 관계를 예측하고, 행복한 결혼 생활을 위한 조언을 포함해주세요.\n\n");
-
-		prompt.append("## 5. 행복한 사랑을 위한 최종 조언\n");
-		prompt.append("%s님의 '인생 지도'가 사랑에 대해 가르쳐주는 핵심 교훈은 무엇인지 요약해주세요.\n");
-		prompt.append("진정한 사랑을 찾고 건강한 관계를 유지하기 위해 %s님이 마음속에 간직해야 할 가장 중요한 가치나 태도를 조언해주세요.\n");
-		prompt.append("%s님의 사랑과 행복을 응원하는 따뜻한 메시지로 마무리해주세요.\n\n");
+		prompt.append("【분석 시작】\n");
 
 		appendSajuJsonResponseFormat(prompt, name);
 
@@ -781,12 +749,10 @@ public class ManseInterpretationService {
 		String solarDate = input.getSolarDate().toString();
 		String solarTime = input.getSolarTime().toString();
 
-		// 2001-06-12 -> 2001년 6월 12일
 		String formattedDate = solarDate.substring(0, 4) + "년 "
 			+ solarDate.substring(5, 7) + "월 "
 			+ solarDate.substring(8, 10) + "일";
 
-		// 11:12 -> 11시 12분
 		String formattedTime = solarTime.substring(0, 2) + "시 "
 			+ solarTime.substring(3, 5) + "분";
 
@@ -804,68 +770,40 @@ public class ManseInterpretationService {
 		prompt.append("### 5. 분석 대상자 상세 정보 ###\n");
 		appendPersonDetailInfo(prompt, name, response);
 
-		// 4. [대대적 수정] 분석 요청: '발견' 기반 구조로 변경
+		// 4. [⭐️ 수정된 분석 요청]
 		prompt.append("\n### 6. [최애 심층 분석] 요청 ###\n");
 		prompt.append(String.format(
-			"혜안 선생님, 아이돌 '%s'님의 사주를 팬의 관점에서 분석해주세요.\n", name));
+			"혜안 선생님, 아이돌 '%s'님의 사주를 팬의 관점에서 **아래 요청된 순서대로** 깊이 있게 분석해주세요.\n", name));
 
 		prompt.append(
-			"**[가장 중요!]** 아래 5단계 지침을 '반드시' 따르세요:\n\n");
-
+			"**[가장 중요!]** 말투는 **'~입니다', '~네요', '~로군요', '~이군요' 같은 따뜻하고 명료한 말투**를 사용하세요.\n");
 		prompt.append(
-			"**1. (필수!) 이 스타일을 따르세요:** 아래 '완벽한 답변 예시'의 **구조와 말투**를 '그대로' 따라야 합니다. **'~입니다', '~네요', '~로군요', '~이군요' 같은 따뜻하고 명료한 말투를 사용하세요.** AI가 쓴 것 같은 뻔한 서론/결론, 억지 비유를 절대 쓰지 마세요. 부드럽고, 심각하지 않게, '발견한 사실'을 나열하고 설명하는 방식이어야 합니다.\n\n");
-
-		prompt.append(
-			"**2. (핵심 분석) '팬들이 가장 궁금해하는 것' 먼저 분석:**\n");
-		prompt.append(
-			"팬들이 가장 궁금해하는 것은 **'연애관과 이상형'**입니다. '완벽한 답변 예시'의 '편인의 직업' 섹션처럼, 이 주제를 **가장 먼저, 가장 길고 상세하게** 분석해주세요.\n");
-		prompt.append(
-			"(분석 내용 예시: 연애 시작 방식, 이상형(외모/성격/나이), 애정 표현, 질투 수준, 연애 vs 일, 연애할 때 싫어하는 행동, 미래 배우자궁 모습, 결혼 후 남편/아빠로서의 모습 등)\n\n");
-
-		prompt.append(
-			"**3. (특징 나열) '아이돌로서의 재능과 성격' 나열:**\n");
-		prompt.append(
-			"그 다음 '완벽한 답변 예시'의 '문곡성', '현침살' 섹션처럼, 사주에서 발견되는 아이돌의 **재능/성격 특징**들을 하나씩 짧고 명료하게 나열해주세요.\n");
-		prompt.append(
-			"(분석 대상 예시: **'사주에 도화살/홍염살이 있습니다'** (팬을 끄는 매력), **'사주에 식상(食傷)이 발달했습니다'** (무대 표현력/재능), **'사주에 겁재(劫財)가 강합니다'** (승부욕/경쟁심), **'사주에 역마살이 있습니다'** (해외 활동), **'무대 위 성격(천간)과 실제 성격(지지)'** (페르소나 분석) 등 팬들이 궁금해할 만한 것 위주로 분석하세요.)\n\n");
-
-		prompt.append(
-			"**4. (조언) '미래와 리스크'로 마무리:**\n");
-		prompt.append(
-			"마지막으로, '혜안의 최종 조언' 같은 느낌으로, 이 아이돌의 **향후 10년 커리어 로드맵**과 팬들이 조심하거나 응원해야 할 **리스크(건강, 구설수 등)**를 분석하며 따뜻하게 마무리해주세요.\n\n");
-
-		prompt.append(
-			"**5. (금지!) AI 말투 및 전문 용어 금지:**\n");
-		prompt.append(
-			"   - '...님의 인생 여정에서...', '...님의 내면에는...' 같은 AI 티 나는 감성적인 문장 절대 쓰지 마세요.\n");
-		prompt.append("--- [완벽한 답변 예시 시작] ---\n");
-		prompt.append(
-			"(이건 '직업 적성' 예시입니다. 이 '구조'와 '말투'만 참고해서 '아이돌 분석'에 맞게 내용을 채워주세요.)\n\n");
-
-		prompt.append("편인의 직업\n");
-		prompt.append(
-			"편인의 성향을 지닌 당신은 끼와 개성으로 똘똘 뭉쳐 평범함을 거부하고 자기만의 세계를 창조해나가는군요. 때로는 사회성이 부족한 덕후 같다는 평가를 받기도 하며 주류가 아닌 언더그라운드에서 고독감에 빠질 수도 있습니다. (중략...)\n");
-		prompt.append(
-			"예를 들면 건축가, 조각가, 영화/연극/공연 감독... (이하 생략)\n\n");
-
-		prompt.append("사주에 문곡성이 있습니다.\n");
-		prompt.append(
-			"예체능과 연구, 개발에 탁월한 재능이 있어서... (이하 생략)\n\n");
-
-		prompt.append("사주에 현침살이 있습니다.\n");
-		prompt.append(
-			"바늘, 침, 칼, 주사, 가위, 펜, 붓, IT 기술 등... (이하 생략)\n");
-
-		prompt.append("--- [완벽한 답변 예시 끝] ---\n\n");
+			"AI가 쓴 것 같은 뻔한 서론/결론, 억지 비유는 절대 쓰지 마세요. 부드럽고, 심각하지 않게, '발견한 사실'을 설명하는 방식이어야 합니다.\n\n");
 
 		prompt.append("--- [분석 시작] ---\n");
 		prompt.append(String.format(
-			"\"%s님은 %s %s에 태어나신, [일간(%s) 자연물 비유]와 같은 기운을 지니셨습니다.\" 로 시작해주세요.\n\n",
+			"\"%s님은 %s %s에 태어나신, [일간(%s) 자연물 비유]와 같은 기운을 지니셨습니다.\"와 같이 자연스럽게 분석을 시작해주세요.\n\n",
 			name, formattedDate, formattedTime,
 			saju.getDaySky().getKorean() + saju.getDaySky().getFiveCircle()));
 
+		prompt.append("## 타고난 기질, 성격, 인성, 그룹 내 역할)\n");
+		prompt.append(String.format(
+			"(일간, 월지, 십성 분포를 바탕으로 %s님의 근본적인 성격과 인성을 심층 분석해주세요.)\n", name));
 		prompt.append(
-			"(이제 위 2, 3, 4번 지침에 따라 %s님의 사주에서 발견한 '연애 스타일', '재능/성격 특징', '미래/조언'들을 예시처럼 분석하고 나열해주세요.)\n");
+			"(만약 그룹이라면 이 성격이 팀 내에서 어떻게 작용할지, 어떤 역할(리더형, 조율자형, 마이웨이형 등)을 맡을지도 함께 예측해주세요.)\n\n");
+
+		prompt.append("## 병크 및 리스크 예측\n");
+		prompt.append("(사주 원국과 신살, 운의 흐름을 볼 때, 이 아이돌이 아이돌 활동 중 가장 조심해야 할 '병크'나 리스크는 무엇인가요?)\n");
+		prompt.append(
+			"(예: 구설수, 건강 문제, 재물 문제, 이성 문제 등. 흉살이나 충/형을 근거로 설명하되, 알아듣기 쉽게 풀어서 설명해주세요.)\n\n");
+
+		prompt.append("## 아이돌이 아니었다면? (타고난 재능)\n");
+		prompt.append(
+			"(사주에 나타난 핵심 재능(식상, 인성, 관성 등)을 바탕으로, 아이돌이 아니었다면 어떤 직업에서 성공 했을지, 1~2가지 구체적으로 분석해주세요.)\n\n");
+
+		prompt.append("## 연애관 및 이상형 (가장 마지막)\n");
+		prompt.append("(팬들이 궁금해하는 부분입니다. 이 사람의 연애 스타일, 본능적으로 끌리는 이상형(외모, 성격)을 솔직하게 분석해주세요.)\n");
+		prompt.append("(결혼은 언제쯤 할지 정확한 년도 예측, 배우자궁(일지)의 모습은 어떤지도 포함해주세요.)\n\n");
 
 		appendSajuJsonResponseFormat(prompt, name);
 
@@ -901,31 +839,31 @@ public class ManseInterpretationService {
 
 		prompt.append("--- [분석 시작] ---\n");
 		prompt.append(String.format(
-			"\"가상 캐릭터 '%s'님은 %s %s에 태어나신, [일간(%s) 자연물 비유]와 같은 기운을 지니셨네요.\" 로 시작해주세요.\n\n",
+			"\"'%s'님은 %s %s에 태어나신, [일간(%s) 자연물 비유]와 같은 기운을 지니셨네요.\" 로 시작해주세요.\n\n",
 			name, input.getSolarDate(), input.getSolarTime(),
 			saju.getDaySky().getKorean() + saju.getDaySky().getFiveCircle()));
 
-		prompt.append("## 1. 사주로 본 캐릭터 본질과 작품 속 모습\n");
+		prompt.append("## 사주로 본 캐릭터 본질과 작품 속 모습\n");
 		prompt.append("이 사주가 부여하는 핵심 성격/기질과 작품 속 캐릭터 설정의 일치점/차이점 분석.\n");
 		prompt.append("작품 속 주요 행동이나 결정이 이 사주를 가졌기에 가능했던 이유 설명 (명리학적 근거, '비유' 활용).\n");
 		prompt.append("캐릭터의 핵심 매력을 사주(일간, '신살' 등)를 통해 재해석.\n\n");
 
-		prompt.append("## 2. 작품 속 운명, 사주로 재해석하다\n");
+		prompt.append("## 작품 속 운명, 사주로 재해석하다\n");
 		prompt.append(
 			"캐릭터가 겪은 주요 사건(시련/성공/전환점)들을 사주 구조('충/형/합', '대운/세운 챕터' 변화)와 연결하여 명리학적으로 설명.\n");
 		prompt.append("작품의 결말(해피/새드/오픈)이 이 사주를 가졌다면 필연적이었는지, 혹은 다른 가능성은 없었는지 분석.\n\n");
 
-		prompt.append("## 3. 작품 속 관계성, 궁합으로 엿보기\n");
+		prompt.append("## 작품 속 관계성, 궁합으로 엿보기\n");
 		prompt.append("주인공 또는 주요 인물과의 관계(동료/친구/연인/적대)를 '관계의 시너지' 관점에서 분석 (간단히).\n");
 		prompt.append("왜 특정 인물과 강하게 끌리거나 혹은 대립하게 되는지 명리학적 이유 설명.\n");
 
-		prompt.append("## 4. 만약 현실 세계에 존재한다면? (What if?)\n");
+		prompt.append("## 만약 현실 세계에 존재한다면? \n");
 		prompt.append("이 캐릭터가 2025년 대한민국에 이 사주를 가지고 태어났다면 어떤 모습일지 상상하여 서술.\n");
 		prompt.append("현실에서의 예상 직업 (가장 잘 어울리는 직업 1~2개 집중 분석).\n");
 		prompt.append("현실에서의 예상 연애 스타일 및 이상형.\n");
 		prompt.append("작품 속 모습과 현실 버전의 가장 큰 차이점은 무엇일지 예측.\n\n");
 
-		prompt.append("## 5. 캐릭터의 성장과 팬들에게 주는 메시지\n");
+		prompt.append("## 캐릭터의 성장과 팬들에게 주는 메시지\n");
 		prompt.append("이 사주를 가진 캐릭터의 매력 정리\n");
 		prompt.append("팬들이 이 캐릭터를 사랑하는 이유를 사주를 통해 설명하며 공감대 형성.\n");
 
@@ -934,7 +872,7 @@ public class ManseInterpretationService {
 		return prompt.toString();
 	}
 
-	// ==================== [수정] 6. 러브 스토리 프롬프트 (혜안 적용) ====================
+	// ==================== [수정] 4,6 러브 스토리 프롬프트 (혜안 적용) ====================
 	private String createLoveStoryPrompt(
 		String person1Name,
 		ManseryeokCalculationResponse person1Response,
@@ -943,57 +881,115 @@ public class ManseInterpretationService {
 	) {
 		StringBuilder prompt = new StringBuilder();
 
-		// 1. '혜안' 궁합 페르소나 주입
+		// 1. 궁합 페르소나 주입
 		appendHyeanCompatibilityPersonaHeader(prompt);
 
 		// 2. 분석 대상자들 정보 주입
 		prompt.append("\n### 5. 분석 대상자 상세 정보 ###\n");
 		prompt.append("--- 첫 번째 사람 정보: ").append(person1Name).append(" ---\n");
-		appendPersonDetailInfo(prompt, person1Name, person1Response); // 상세 정보 주입
+		appendPersonDetailInfo(prompt, person1Name, person1Response);
 		prompt.append("\n--- 두 번째 사람 정보: ").append(person2Name).append(" ---\n");
-		appendPersonDetailInfo(prompt, person2Name, person2Response); // 상세 정보 주입
+		appendPersonDetailInfo(prompt, person2Name, person2Response);
 
-		// 3. 분석 요청
-		prompt.append("\n### 6. [러브 스토리 심층 분석] 요청 ###\n");
+		// ===== 3. 분석 구조 설명 =====
+		prompt.append("\n### 6. [분석 구조] ###\n");
+		prompt.append(String.format("%s님에 대한 분석\n", person1Name));
+		prompt.append(String.format("%s님과 %s님의 궁합\n\n", person1Name, person2Name));
+
+		// ===== 4. 1단계: 첫 번째 사람 개인 분석 =====
+		prompt.append("### 7. [").append(person1Name).append("님 개인 분석] ###\n");
 		prompt.append(String.format(
-			"혜안 선생님, 위 두 사람(%s님, %s님)의 '인생 지도'가 만났을 때 펼쳐질 **5단계의 로맨스 서사**를 깊이 있게 작성해주세요.\n",
+			"먼저 %s님의 사주를 통해 이 분이 어떤 사람인지, 연애에서 어떤 모습을 보이는지 분석해주세요.\n\n",
+			person1Name));
+
+		prompt.append("타고난 성격과 가치관\n");
+		prompt.append(String.format(
+			"%s님의 일간, 오행, 십성을 바탕으로 연애 할때의 성격을 쉽고 재미있게 풀어서 설명해주세요.\n",
+			person1Name));
+		prompt.append(String.format(
+			"%s님이 인생에서 중요하게 생각하는 가치관(사랑/일/돈/안정 등)은 무엇인지 설명해주세요.\n",
+			person1Name));
+		prompt.append("일지(배우자궁)와 지장간을 통해 내면의 모습과 결혼관을 분석해주세요.\n\n");
+
+		prompt.append("연애 스타일과 특징\n");
+		prompt.append(String.format(
+			"%s님은 어떤 방식으로 사랑에 빠지나요? (적극적/소극적, 빠르게/천천히)\n",
+			person1Name));
+		prompt.append(String.format(
+			"%s님의 애정 표현 방식은? (말로 표현/행동으로 표현/조용히 배려)\n",
+			person1Name));
+		prompt.append(String.format(
+			"%s님은 연애할 때 어떤 장점이 있고, 어떤 점을 조심해야 하나요?\n",
+			person1Name));
+		prompt.append(String.format(
+			"%s님의 질투심 수준과 연애 vs 일의 우선순위는?\n\n",
+			person1Name));
+
+		prompt.append("이상형과 끌리는 타입\n");
+		prompt.append(String.format(
+			"%s님이 본능적으로 끌리는 사람의 특징 (외모, 성격, 분위기, 직업 등)을 구체적으로 설명해주세요.\n",
+			person1Name));
+		prompt.append(String.format(
+			"%s님과 궁합이 잘 맞는 오행/일간은 무엇이며, 어떤 성향의 사람이 좋은지 설명해주세요.\n",
+			person1Name));
+		prompt.append(String.format(
+			"반대로 %s님과 갈등이 생기기 쉬운 타입은 어떤 사람인지도 언급해주세요.\n\n",
+			person1Name));
+
+		// ===== 5. 2단계: 두 사람 궁합 분석 =====
+		prompt.append("\n8. [2단계: ").append(person1Name).append("님과 ").append(person2Name)
+			.append("님 궁합 분석] ###\n");
+		prompt.append(String.format(
+			"이제 %s님과 %s님 두 분의 궁합을 단계별로 분석해주세요.\n\n",
 			person1Name, person2Name));
+
+		prompt.append(String.format(
+			"\"%s님과 %s님, 두 분의 사주 인연을 보니... [두 사람의 일간을 자연물에 비유]처럼 [어떤 느낌]의 만남이네요.\" 라는 느낌으로 시작해주세요.\n\n",
+			person1Name, person2Name));
+
+		prompt.append("첫 만남: 서로의 첫인상\n");
+		prompt.append(String.format(
+			"%s님이 %s님을 처음 봤을 때 어떤 인상을 받을까요? (호감/무관심/경계)\n",
+			person1Name, person2Name));
+		prompt.append(String.format(
+			"%s님이 %s님을 처음 봤을 때는 어떨까요?\n",
+			person2Name, person1Name));
+		prompt.append("누가 먼저 다가가거나 호감을 표현할 가능성이 높은지 예측해주세요.\n");
+		prompt.append(String.format(
+			"%s님의 이상형 분석 결과, %s님이 그 이상형에 얼마나 부합하는지 설명해주세요.\n\n",
+			person1Name, person2Name));
+
+		prompt.append("썸과 관계 발전\n");
+		prompt.append("관계가 친구에서 연인으로 발전하는 속도는? (빠른 편/천천히)\n");
+		prompt.append("썸 기간 동안 누가 관계를 리드하고, 밀당 주도권은 누가 쥘까요?\n");
+		prompt.append("서로의 어떤 점에 매력을 느끼고 마음을 열게 될까요? (구체적으로)\n");
 		prompt.append(
-			"각 단계는 명확히 구분하되, '혜안'의 스타일로 자연스럽게 연결되어야 합니다. **분량 제한은 없으니, 각 단계를 충분히 깊게 다루어 주세요.**\n\n");
+			"두 사람의 오행 관계(상생/상극)를 쉽게 풀어서 설명하고, 서로에게 어떤 영향을 주는지 분석해주세요.\n\n");
 
-		prompt.append("--- [분석 시작] ---\n");
+		prompt.append("연애의 모습: 두 사람만의 케미\n");
+		prompt.append("연인이 된 후 두 사람의 데이트 스타일은? (활동적/조용한/감성적)\n");
+		prompt.append("애정 표현 방식이 서로 잘 맞을까요? 차이가 있다면 어떻게 조율해야 할까요?\n");
+		prompt.append("스킨십 성향과 친밀도는?\n");
+		prompt.append(
+			"성격 궁합: 서로 잘 맞는 부분(합)과 서로 노력해야 하는 부분(충/형)을 **사주 용어를 쉽게 풀어서** 설명해주세요. AI 티 나는 말투 절대 금지\n");
+		prompt.append("연애 중 서로에게 주는 긍정적 영향은?\n\n");
+
+		prompt.append("갈등과 극복\n");
+		prompt.append(
+			"두 사람 사이에 발생할 수 있는 주요 갈등 원인 3가지 (성격 차이, 가치관 충돌, 생활 패턴 등)를 예측하고, **지지 충/형을 쉽게 풀어서** 설명해주세요.\n");
+		prompt.append("관계의 위기(권태기, 이별 위기)가 올 수 있는 시점은 언제일까요?\n");
+		prompt.append("각자의 특성을 고려했을 때, 갈등을 어떻게 극복하는 유형인지 구체적으로 설명해주세요.\n");
+		prompt.append("이 커플이 오래 지속되려면 서로 어떤 노력이 필요한가요?\n\n");
+
+		prompt.append("미래: 결혼 가능성과 장기 전망\n");
 		prompt.append(String.format(
-			"\"%s님과 %s님, 두 분의 사주 인연을 보니... [두 사람의 일간 비유]처럼 서로 다른/비슷한 기운이 만나는 형상이네요.\" 로 시작해주세요.\n\n",
+			"%s님의 결혼관과 %s님의 결혼관을 각각 분석하고, 두 분이 결혼에 대해 어떻게 생각하고 있을지 예측해주세요.\n",
 			person1Name, person2Name));
-
-		prompt.append("## 1. 첫 만남: 운명의 시작 혹은 스침\n");
-		prompt.append("두 사람의 첫인상 (서로에게 어떻게 보일까?).\n");
-		prompt.append("즉각적인 끌림(첫눈에 반함) 가능성 vs 서서히 알아갈 가능성 (일간, 오행 관계).\n");
-		prompt.append("누가 먼저 호감을 느끼거나 표현하게 될지 예측.\n");
-		prompt.append("첫 만남의 분위기와 예상되는 대화.\n\n");
-
-		prompt.append("## 2. 썸 또는 관계 발전: 서로에게 스며들다\n");
-		prompt.append("관계가 친구에서 연인으로, 혹은 바로 연인으로 발전하는 과정.\n");
-		prompt.append("썸 기간의 길이 예측 및 누가 관계를 리드할지 (밀당 주도권).\n");
-		prompt.append("서로의 어떤 점에 매력을 느끼고 마음을 열게 되는지 (성격, 가치관 등).\n");
-		prompt.append("고백은 누가, 어떤 방식으로 하게 될지 상상.\n\n");
-
-		prompt.append("## 3. 연애의 모습: 두 사람만의 케미스트리\n");
-		prompt.append("연인이 된 후 두 사람의 데이트 스타일, 애정 표현 방식, 스킨십 성향 분석.\n");
-		prompt.append("성격 궁합: 서로 잘 맞는 부분(합)과 서로 노력해야 하는 부분(충/형) (오행, 십성 조화).\n");
-		prompt.append("함께 있을 때의 에너지 (편안함 vs 긴장감, '관계의 시너지' vs 소모).\n");
-		prompt.append("연애 중 각자가 상대방에게 어떤 영향을 주고받는지.\n\n");
-
-		prompt.append("## 4. 갈등과 성장: 관계의 시련과 극복\n");
-		prompt.append("두 사람 사이에 발생할 수 있는 주요 갈등의 원인(성격 차이, 가치관 충돌 등) 예측 (지지 충/형 등 활용).\n");
-		prompt.append("각자의 갈등 해결 방식과, 이 커플이 갈등을 통해 어떻게 '성장'할 수 있을지 조언.\n");
-		prompt.append("관계의 위기(권태기, 이별 가능성)가 올 수 있는 시점과 극복 가능성.\n\n");
-
-		prompt.append("## 5. 미래의 가능성: 장기 연애와 그 너머\n");
-		prompt.append("이 커플의 장기 연애 가능성 (1년, 3년, 5년 후 모습 예측).\n");
-		prompt.append("결혼까지 이어질 확률과 결혼 적합도 분석.\n");
-		prompt.append("만약 결혼한다면 어떤 부부의 모습일지 예측 (역할 분담, 관계 유지 비결).\n");
-		prompt.append("두 사람의 인연에 대한 최종적인 조언과 응원.\n\n");
+		prompt.append("이 커플의 결혼 가능성은? (냉철하게 판단해도 됩니다. 높음/중간/낮음)\n");
+		prompt.append(
+			"만약 결혼한다면 몇 년도에 할 가능성이 높은지, 대운과 세운을 참고하여 **구체적인 연도** 예측해주세요.\n");
+		prompt.append(
+			"두 사람의 인연에 대한 최종 조언과 응원 메시지로 따뜻하게 마무리해주세요.\n\n");
 
 		appendCompatibilityJsonResponseFormat(prompt, person1Name, person2Name);
 
@@ -1037,29 +1033,24 @@ public class ManseInterpretationService {
 			"\"'%s'님과 '%s'님의 '인생 지도'가 만나는 지점을 보니... [두 사람의 일간 비유]처럼 흥미로운 '관계의 시너지'가 예상되네요.\" 로 시작해주세요.\n\n",
 			person1Name, person2Name));
 
-		prompt.append("## 1. 첫인상과 친밀도 형성 과정\n");
-		prompt.append("두 사람이 처음 만났을 때 서로에게 느꼈을 첫인상 (호감/경계/무관심 등)과 그 이유 (일간, 오행 관계).\n");
-		prompt.append("서로 친해지는 속도와 방식 예측 (누가 먼저 다가갈까?).\n");
-		prompt.append("무대 밖에서 개인적인 친구로 발전할 가능성과, 어떤 유형의 우정(깊은 교감 vs 가벼운 친분)이 될지 분석.\n\n");
+		prompt.append("## 첫인상\n");
+		prompt.append(
+			"두 사람이 처음 만났을 때 서로에게 느꼈을 첫인상 (호감/경계/무관심 등)과 그 이유 (일간, 오행 관계). 일간 오행을 보고 파악해주되, 사주 용어 사용을 최대한 자제하고 잘 알아들을 수 있도록 쉽게 풀어서 재미있게 설명\n");
+		prompt.append("누가 먼저 다가갈까? 각자의 특성을 설명해주고 누가 먼저 다가갈지 예측. 쉽게 풀어서 재미 있게 설명\n");
 
-		prompt.append("## 2. 무대 위 시너지와 팀워크\n");
-		prompt.append("함께 공연하거나 활동할 때 나타나는 에너지 조화 ('관계의 시너지' vs 부조화) 분석.\n");
-		prompt.append("서로의 강점을 살려주고 약점을 보완해주는 관계인지, 혹은 경쟁 관계가 될 가능성이 있는지 (십성 관계).\n");
-		prompt.append("유닛, 듀엣 등 협업 프로젝트에 적합한 조합인지 평가.\n\n");
-
-		prompt.append("## 3. 성격 궁합과 잠재적 갈등 요소\n");
-		prompt.append("두 사람의 기본적인 성격 궁합 (유사점 vs 차이점, 서로에게 배우는 점).\n");
-		prompt.append("사주 구조상(지지 '충/형' 등) 어떤 부분에서 의견 충돌이나 갈등이 발생하기 쉬운지 예측.\n");
-		prompt.append("갈등 발생 시 각자의 대처 방식과, 관계를 건강하게 유지하기 위한 조언.\n\n");
+		prompt.append("## 성격 궁합과 잠재적 갈등 요소\n");
+		prompt.append("두 사람의 기본적인 성격 궁합 (유사점 vs 차이점, 서로에게 배우는 점). 각자의 특성을 잘 설명해주고 기본적인 성격 궁합 전달\n");
+		prompt.append(
+			"사주 구조상(지지 '충/형' 등을 활용하되 사주 용어를 쉽게 풀어서 설명) 서로의 특성을 말해주고 어떤 부분에서 의견 충돌이나 갈등이 발생하기 쉬운지 예측해보기, 재미있게 풀어서 설명해주기\n");
+		prompt.append("각자의 특성을 설명해주고, 어떨때 충돌이 일어날 지 예측. 쉽게 풀어서 설명해줘야함 . \n\n");
 
 		prompt.append("## 4. [팬심 저격] 로맨스 가능성 탐구\n");
-		prompt.append("팬들의 상상력을 자극할 만한, 두 사람 사이에 연애 감정이 싹틀 가능성 분석 (이성적 끌림 요소).\n");
-		prompt.append("만약 연인이 된다면 어떤 스타일의 커플이 될지 예측 (달달함 vs 친구 같음 등).\n");
-		prompt.append("실제 연애로 이어질 경우 장기적인 관계 유지 가능성 평가.\n\n");
+		prompt.append("팬들의 상상력을 자극할 만한, 두 사람 사이에 연애 감정이 싹틀 가능성 분석 (이성적 끌림 요소). 서로의 어떤 점에 끌릴 것인가\n");
+		prompt.append("서로의 이상형을 말해주고, 상대방의 이런 부분에 끌릴 수 있다 하는 점을 만세력을 참고하여 재미있게 풀어서 설명.\n\n");
 
 		prompt.append("## 5. 장기적 인연\n");
-		prompt.append("서로의 인생에 긍정적인 영향을 주는 귀인(貴人) 관계가 될 수 있는지.\n");
-		prompt.append("일시적인 인연인지, 혹은 오랫동안 서로에게 힘이 되어줄 인연인지에 대한 최종 전망.\n\n");
+		prompt.append("둘 각자의 결혼관을 말해주고, 이 둘이 결혼을 한다면 언제쯤 결혼을 하게 될지. 몇년도 쯤 결혼할지 예측.\n");
+		prompt.append("결혼 가능성, 한다면 언제쯤 결혼 할지, 서로의 결혼관 설명. 만세력을 참고하되 용어를 쉽게 풀어서 재미있게 설명\n");
 
 		appendCompatibilityJsonResponseFormat(prompt, person1Name, person2Name);
 
@@ -1104,27 +1095,27 @@ public class ManseInterpretationService {
 			"\"%s님과 %s님의 '두 지도의 만남'을 보니, 기본적인 끌림과 함께 '관계의 역동성'을 불러일으키는 지점도 보이네요...\" 로 시작해주세요.\n\n",
 			person1Name, person2Name));
 
-		prompt.append("## 1. 두 사람의 기본 관계 방정식: 끌림과 균열의 씨앗\n");
+		prompt.append("## 두 사람의 기본 관계 방정식: 끌림과 균열의 씨앗\n");
 		prompt.append("두 사람이 서로에게 느끼는 매력과 기본적인 관계의 강점 분석.\n");
 		prompt.append("겉으로 드러나지 않을 수 있는 관계의 취약점 또는 불만 요소 예측 (지지 '충/형', 오행 불균형 등).\n");
 		prompt.append("제3자가 비집고 들어올 수 있는 '틈'은 어디에 있는지 분석.\n\n");
 
-		prompt.append("## 2. 제3자의 등장: 어떤 인물이, 왜 끼어드는가?\n");
+		prompt.append("## 제3자의 등장: 어떤 인물이, 왜 끼어드는가?\n");
 		prompt.append("%s님 또는 %s님이 끌리기 쉬운 제3자의 사주적 특징(일간, 오행, 십성 등) 예측.\n");
 		prompt.append("두 사람 중 누가 먼저 마음이 흔들리거나 관계에 변화를 줄 가능성이 높은지 분석.\n");
 		prompt.append("제3자의 등장이 두 사람의 관계에 미치는 초기 영향력 예측.\n\n");
 
-		prompt.append("## 3. 질투와 경쟁: 감정의 소용돌이\n");
+		prompt.append("## 질투와 경쟁: 감정의 소용돌이\n");
 		prompt.append("삼각관계 상황에서 %s님과 %s님이 각각 보일 수 있는 질투의 양상과 강도 분석 (겁재, 비견 등 활용).\n");
 		prompt.append("누가 관계의 주도권을 쥐려 하거나 혹은 더 집착하는 모습을 보일지 예측.\n");
 		prompt.append("경쟁 구도 속에서 각자가 사용할 수 있는 전략이나 행동 패턴 분석.\n\n");
 
-		prompt.append("## 4. 관계의 역학: 누가 선택하고 누가 상처받는가?\n");
+		prompt.append("## 관계의 역학: 누가 선택하고 누가 상처받는가?\n");
 		prompt.append("삼각관계 구도에서 누가 심리적으로 우위에 서거나 선택하는 입장이 될 가능성이 높은지 분석.\n");
 		prompt.append("반대로 누가 더 큰 상처를 받거나 관계에서 밀려날 가능성이 높은지 예측.\n");
 		prompt.append("이 복잡한 관계가 안정될 가능성 vs 파국으로 치달을 가능성 평가.\n\n");
 
-		prompt.append("## 5. 예상 시나리오와 최종 조언\n");
+		prompt.append("## 예상 시나리오와 최종 조언\n");
 		prompt.append("이 삼각관계가 맞이할 가능성이 높은 결말 시나리오 1~2가지 제시 (명리학적 근거 포함).\n");
 		prompt.append("각 당사자(%s님, %s님, 그리고 가상의 제3자)가 이 상황을 현명하게 대처하기 위한 조언.\n");
 		prompt.append("관계의 복잡성 속에서도 각자가 '성장'할 수 있는 방법에 대한 메시지로 마무리.\n\n");
@@ -1152,9 +1143,9 @@ public class ManseInterpretationService {
 		// 3. 분석 대상자들 정보 주입 (요약본 사용)
 		prompt.append("### 5. 분석 대상자 요약 정보 ###\n");
 		prompt.append("--- 첫 번째 사람: ").append(person1Name).append(" ---\n");
-		appendPersonInfoToPrompt(prompt, person1Name, person1Saju); // 요약 정보 주입
+		appendPersonInfoToPrompt(prompt, person1Name, person1Saju);
 		prompt.append("\n--- 두 번째 사람: ").append(person2Name).append(" ---\n");
-		appendPersonInfoToPrompt(prompt, person2Name, person2Saju); // 요약 정보 주입
+		appendPersonInfoToPrompt(prompt, person2Name, person2Saju);
 
 		// 4. 분석 요청
 		prompt.append("\n### 6. [기본 궁합 심층 분석] 요청 ###\n");
@@ -1169,28 +1160,28 @@ public class ManseInterpretationService {
 			"\"%s님과 %s님의 '두 지도의 만남'을 보니, [두 사람의 일간 비유]처럼 흥미로운 '관계의 시너지'가 예상되네요.\" 로 시작해주세요.\n\n",
 			person1Name, person2Name));
 
-		prompt.append("## 1. 서로에게 끌리는 첫 만남의 에너지\n");
+		prompt.append("## 서로에게 끌리는 첫 만남의 에너지\n");
 		prompt.append("- 두 사람의 일간(日干) 오행 관계와 첫인상 분석 (서로에게 어떤 매력을 느낄까?).\n");
 		prompt.append("- 각자의 외적인 분위기('신살', 12운성 등)가 서로에게 어떻게 작용하는지.\n");
 		prompt.append("- 관계 초반의 발전 속도 예측 (빠르게 가까워질까? 서서히 알아갈까?).\n\n");
 
-		prompt.append("## 2. 함께할 때의 조화와 보완 ('오행 조화')\n");
+		prompt.append("##  함께할 때의 조화와 보완 ('오행 조화')\n");
 		prompt.append(
 			"- 각자의 오행 분포를 비교하여, 서로의 부족한 기운을 채워주는 '상생' 관계인지, 혹은 에너지가 부딪히는 '상극' 관계인지 심층 분석.\n");
 		prompt.append("- 함께 있을 때 느끼는 감정(안정감/편안함 vs 긴장감/불편함) 예측.\n");
 		prompt.append("- 서로의 성장을 돕는 긍정적 측면과, 주의해야 할 부정적 측면 설명.\n\n");
 
-		prompt.append("## 3. 현실적인 관계에서의 역할과 갈등 (십성, '관계의 역동성')\n");
+		prompt.append("## 현실적인 관계에서의 역할과 갈등 (십성, '관계의 역동성')\n");
 		prompt.append("- 각자의 십성(十星) 분포를 통해 관계에서의 역할 분담 예측 (주도/보조, 표현/수용 등).\n");
 		prompt.append(
 			"- 두 사람의 지지(地支) 간 합(合)/충(沖)/형(刑) 관계 분석: 어떤 부분에서 조화를 이루고, 어떤 부분에서 '관계의 역동성'(갈등)이 발생하기 쉬운지.\n");
 		prompt.append("- 예상되는 주요 갈등 유형과 이를 '성장의 계기'로 삼기 위한 구체적인 조언.\n\n");
 
-		prompt.append("## 4. 관계 발전을 위한 맞춤 조언\n");
+		prompt.append("## 관계 발전을 위한 맞춤 조언\n");
 		prompt.append("- 서로의 장점을 더욱 살리고 단점을 보완해주기 위한 구체적인 소통 방식이나 행동 지침 2~3가지 제안.\n");
 		prompt.append("- 두 사람이 함께 성장하고 행복한 관계를 오래 유지하기 위해 각자 노력해야 할 부분.\n\n");
 
-		prompt.append("## 5. 총평: 관계의 본질과 미래\n");
+		prompt.append("## 총평: 관계의 본질과 미래\n");
 		prompt.append("- 두 사람 관계의 핵심적인 특징과 잠재력을 한두 문장으로 요약.\n");
 		prompt.append("- 행복한 관계를 위한 가장 중요한 조언을 강조하며 긍정적으로 마무리.\n\n");
 
@@ -1200,35 +1191,37 @@ public class ManseInterpretationService {
 	}
 
 	// ==================== 공통 유틸리티 메서드 (기존 유지) ====================
-
 	private void appendPersonDetailInfo(StringBuilder prompt, String name,
 		ManseryeokCalculationResponse response) {
 		ManseryeokCalculationResponse.SajuInfo saju = response.getSaju();
 		ManseryeokCalculationResponse.InputInfo input = response.getInput();
 
-		prompt.append(String.format("- 이름: %s\n", name));
-		prompt.append(
-			String.format("- 성별: %s\n", "MALE".equalsIgnoreCase(input.getGender()) ? "남자" : "여자"));
-		prompt.append(
-			String.format("- 생년월일시(양력): %s %s\n", input.getSolarDate(), input.getSolarTime()));
-		prompt.append(String.format("- 현재 년도: %d년\n\n", java.time.LocalDate.now().getYear()));
+		// 1. 기본 정보
+		prompt.append("### 기본 정보 ###\n");
+		prompt.append(String.format("%s | %s | %s %s | 현재 %d년\n\n",
+			name,
+			"MALE".equalsIgnoreCase(input.getGender()) ? "남성" : "여성",
+			input.getSolarDate(),
+			input.getSolarTime(),
+			java.time.LocalDate.now().getYear()));
 
-		prompt.append("**사주 원국(팔자)**\n");
-		String sajuPalja = String.format(" 시 일 월 년\n %s %s %s %s (천간)\n %s %s %s %s (지지)",
-			saju.getTimeSky() != null ? saju.getTimeSky().getKorean() : " ",
-			saju.getDaySky().getKorean(), saju.getMonthSky().getKorean(),
-			saju.getYearSky().getKorean(),
-			saju.getTimeGround() != null ? saju.getTimeGround().getKorean() : " ",
-			saju.getDayGround().getKorean(), saju.getMonthGround().getKorean(),
-			saju.getYearGround().getKorean()
-		);
-		prompt.append(sajuPalja + "\n\n");
+		// 2. 사주 팔자
+		prompt.append("### 사주팔자 ###\n");
+		prompt.append(String.format("년주: %s%s | 월주: %s%s | 일주: %s%s (일간) | 시주: %s%s\n\n",
+			saju.getYearSky().getKorean(), saju.getYearGround().getKorean(),
+			saju.getMonthSky().getKorean(), saju.getMonthGround().getKorean(),
+			saju.getDaySky().getKorean(), saju.getDayGround().getKorean(),
+			saju.getTimeSky() != null ? saju.getTimeSky().getKorean() : "?",
+			saju.getTimeGround() != null ? saju.getTimeGround().getKorean() : "?"));
 
-		prompt.append(String.format("**일간(본질)**: %s%s (%s)\n\n",
+		// 3. 일간 정보
+		prompt.append("### 일간 ###\n");
+		prompt.append(String.format("%s%s (%s) - 본질적 성향의 뿌리\n\n",
 			saju.getDaySky().getKorean(),
 			saju.getDaySky().getFiveCircle(),
 			saju.getDaySky().getTenStar()));
 
+		// 4. 오행, 십성
 		prompt.append("**오행 분포(점수)**\n");
 		Map<String, Double> ohaengCounts = new HashMap<>();
 		Map<String, Integer> sipseongCounts = new HashMap<>();
@@ -1242,6 +1235,7 @@ public class ManseInterpretationService {
 			(key, value) -> prompt.append(String.format("- %s: %d\n", key, value)));
 		prompt.append("\n");
 
+		// 5. 12운성
 		prompt.append("**12운성 (에너지 리듬)**\n");
 		prompt.append(String.format("- 년주: %s | 월주: %s | 일주: %s | 시주: %s\n\n",
 			saju.getYearGround().getUnseong() != null ? saju.getYearGround().getUnseong() : "-",
@@ -1259,17 +1253,14 @@ public class ManseInterpretationService {
 		}
 		prompt.append("\n");
 
-		prompt.append("**주요 신살 (특수 능력/주의점)**\n");
-		appendSinsalAnalysis(prompt, saju); // 주요 신살 요약 추가
-		if (saju.getGongmang() != null && !saju.getGongmang().isEmpty()) {
-			prompt.append(String.format("- 공망: %s\n", String.join(", ", saju.getGongmang())));
-		}
+		// 7. 신살
+		prompt.append("### 신살 ###\n");
+		appendSinsalFull(prompt, saju);
 		prompt.append("\n");
 
-		prompt.append("**대운 (10년 주기 인생 챕터)**\n");
-		prompt.append(String.format("- 대운수: %d\n", saju.getBigFortuneNumber()));
-		appendDaewoonFlow(prompt, saju, input.getGender()); // 대운 흐름 추가
-		prompt.append("\n");
+		// 8. 대운
+		prompt.append("### 대운 ###\n");
+		appendDaewoonCompact(prompt, saju, input.getGender());
 	}
 
 	private void appendJijangganDetail(StringBuilder prompt, String pillarName,
@@ -1416,57 +1407,297 @@ public class ManseInterpretationService {
 	// 기본 궁합 프롬프트용 요약 정보 주입
 	private void appendPersonInfoToPrompt(StringBuilder prompt, String name,
 		ManseryeokCalculationResponse manseResponse) {
+
 		if (manseResponse == null || manseResponse.getSaju() == null) {
-			prompt.append(String.format("- %s님 정보 로드 오류\n", name));
+			prompt.append(String.format("%s님 정보 로드 오류\n\n", name));
 			return;
 		}
+
 		ManseryeokCalculationResponse.SajuInfo saju = manseResponse.getSaju();
+		ManseryeokCalculationResponse.InputInfo input = manseResponse.getInput();
 
-		// Check for null PillarElements before accessing methods
-		String yearSkyKorean = saju.getYearSky() != null ? saju.getYearSky().getKorean() : "?";
-		String yearGroundKorean =
-			saju.getYearGround() != null ? saju.getYearGround().getKorean() : "?";
-		String monthSkyKorean = saju.getMonthSky() != null ? saju.getMonthSky().getKorean() : "?";
-		String monthGroundKorean =
-			saju.getMonthGround() != null ? saju.getMonthGround().getKorean() : "?";
-		String daySkyKorean = saju.getDaySky() != null ? saju.getDaySky().getKorean() : "?";
-		String dayGroundKorean =
-			saju.getDayGround() != null ? saju.getDayGround().getKorean() : "?";
-		String timeSkyKorean = saju.getTimeSky() != null ? saju.getTimeSky().getKorean() : "?";
-		String timeGroundKorean =
-			saju.getTimeGround() != null ? saju.getTimeGround().getKorean() : "?";
-		String daySkyFiveCircle = saju.getDaySky() != null ? saju.getDaySky().getFiveCircle() : "?";
+		// ===== 1. 기본 정보 =====
+		prompt.append("### 기본 정보 ###\n");
+		prompt.append(String.format("%s | %s | %s %s | 현재 %d년\n\n",
+			name,
+			"MALE".equalsIgnoreCase(input.getGender()) ? "남성" : "여성",
+			input.getSolarDate(),
+			input.getSolarTime(),
+			java.time.LocalDate.now().getYear()));
 
-		String sajuPalja = String.format("%s%s %s%s %s%s %s%s",
-			yearSkyKorean, yearGroundKorean, monthSkyKorean, monthGroundKorean,
-			daySkyKorean, dayGroundKorean, timeSkyKorean, timeGroundKorean);
-		prompt.append(String.format("- 사주명식: %s\n", sajuPalja));
-		prompt.append(String.format("- 일간: %s%s\n", daySkyKorean, daySkyFiveCircle));
+		// ===== 2. 사주팔자 =====
+		prompt.append("### 사주팔자 ###\n");
+		prompt.append(String.format("년주: %s%s | 월주: %s%s | 일주: %s%s (일간) | 시주: %s%s\n\n",
+			saju.getYearSky() != null ? saju.getYearSky().getKorean() : "?",
+			saju.getYearGround() != null ? saju.getYearGround().getKorean() : "?",
+			saju.getMonthSky() != null ? saju.getMonthSky().getKorean() : "?",
+			saju.getMonthGround() != null ? saju.getMonthGround().getKorean() : "?",
+			saju.getDaySky() != null ? saju.getDaySky().getKorean() : "?",
+			saju.getDayGround() != null ? saju.getDayGround().getKorean() : "?",
+			saju.getTimeSky() != null ? saju.getTimeSky().getKorean() : "?",
+			saju.getTimeGround() != null ? saju.getTimeGround().getKorean() : "?"));
 
-		Map<String, Double> ohaengCounts = new HashMap<>();
-		Map<String, Integer> sipseongCounts = new HashMap<>();
-		// 오행/십성 계산 전 null 체크 강화
-		if (saju.getYearSky() != null && saju.getMonthSky() != null && saju.getDaySky() != null) {
-			calculateDistributionWithJijanggan(saju, ohaengCounts, sipseongCounts);
-			prompt.append("- 오행 분포(요약): ");
-			ohaengCounts.forEach(
-				(key, value) -> prompt.append(String.format("%s(%.1f) ", key, value)));
-			prompt.append("\n");
+		// ===== 3. 일간 정보 =====
+		prompt.append("### 일간 ###\n");
+		if (saju.getDaySky() != null) {
+			prompt.append(String.format("%s%s (%s) - 본질적 성향의 뿌리\n\n",
+				saju.getDaySky().getKorean() != null ? saju.getDaySky().getKorean() : "?",
+				saju.getDaySky().getFiveCircle() != null ? saju.getDaySky().getFiveCircle() : "?",
+				saju.getDaySky().getTenStar() != null ? saju.getDaySky().getTenStar() : "?"));
 		} else {
-			prompt.append("- 오행 분포: (계산 불가 - 필수 정보 누락)\n");
+			prompt.append("일간 정보 없음\n\n");
 		}
 
-		appendSinsalAnalysis(prompt, saju); // 주요 신살 요약 추가 (null 처리 내장됨)
+		// ===== 4. 오행 분포 =====
+		prompt.append("### 오행 분포 ###\n");
+		Map<String, Double> ohaengCounts = new HashMap<>();
+		Map<String, Integer> sipseongCounts = new HashMap<>();
+
+		if (saju.getYearSky() != null && saju.getMonthSky() != null && saju.getDaySky() != null) {
+			calculateDistributionWithJijanggan(saju, ohaengCounts, sipseongCounts);
+
+			String ilganOhaeng = saju.getDaySky() != null ? saju.getDaySky().getFiveCircle() : "";
+			prompt.append(formatOhaengAsTable(ohaengCounts, ilganOhaeng));
+
+			// ===== 5. 십성 분포 =====
+			prompt.append("### 십성 분포 ###\n");
+			prompt.append(formatSipseongAsTable(sipseongCounts));
+		} else {
+			prompt.append("오행/십성: 계산 불가 - 필수 정보 누락\n\n");
+		}
+
+		// ===== 6. 12운성 =====
+		prompt.append("### 12운성 ###\n");
+		prompt.append(String.format("년:%s 월:%s 일:%s 시:%s\n\n",
+			saju.getYearGround() != null && saju.getYearGround().getUnseong() != null
+				? saju.getYearGround().getUnseong() : "-",
+			saju.getMonthGround() != null && saju.getMonthGround().getUnseong() != null
+				? saju.getMonthGround().getUnseong() : "-",
+			saju.getDayGround() != null && saju.getDayGround().getUnseong() != null
+				? saju.getDayGround().getUnseong() : "-",
+			saju.getTimeGround() != null && saju.getTimeGround().getUnseong() != null
+				? saju.getTimeGround().getUnseong() : "-"));
+
+		// ===== 7. 지장간 =====
+		prompt.append("### 지장간 ###\n");
+		prompt.append("일지(배우자궁): ");
+		if (saju.getDayGround() != null) {
+			appendJijangganDetailSimple(prompt, saju.getDayGround());
+		} else {
+			prompt.append("정보 없음");
+		}
 		prompt.append("\n");
+
+		prompt.append("년지: " + getJijangganSummary(saju.getYearGround()) + " | ");
+		prompt.append("월지: " + getJijangganSummary(saju.getMonthGround()) + " | ");
+		if (saju.getTimeGround() != null) {
+			prompt.append("시지: " + getJijangganSummary(saju.getTimeGround()));
+		}
+		prompt.append("\n\n");
+
+		// ===== 8. 신살 (전체) =====
+		prompt.append("### 신살 ###\n");
+		appendSinsalFull(prompt, saju);
+
+		// ===== 9. 대운 (간략) =====
+		prompt.append("### 대운 ###\n");
+		if (saju.getBigFortuneNumber() != null) {
+			prompt.append(String.format("시작:%d세 | 방향:%s\n",
+				saju.getBigFortuneNumber(),
+				getDaewoonDirection(saju, input.getGender())));
+			appendDaewoonSimple(prompt, saju, input.getGender());
+		} else {
+			prompt.append("대운 정보 없음\n");
+		}
+		prompt.append("\n");
+	}
+
+	private String formatSipseongAsTable(Map<String, Integer> sipseongCounts) {
+		List<String> sipseongOrder = Arrays.asList(
+			"비견", "겁재", "식신", "상관", "편재",
+			"정재", "편관", "정관", "편인", "정인"
+		);
+
+		StringBuilder sb = new StringBuilder();
+		for (int i = 0; i < sipseongOrder.size(); i++) {
+			String sipseong = sipseongOrder.get(i);
+			int count = sipseongCounts.getOrDefault(sipseong, 0);
+			sb.append(sipseong).append(":").append(count);
+
+			if (i == 4) {
+				sb.append("\n");
+			} else if (i < sipseongOrder.size() - 1) {
+				sb.append(" | ");
+			}
+		}
+		sb.append("\n\n");
+		return sb.toString();
+	}
+
+	private String formatOhaengAsTable(Map<String, Double> ohaengCounts, String ilganOhaeng) {
+		StringBuilder sb = new StringBuilder();
+		sb.append("목:").append(String.format("%.1f", ohaengCounts.getOrDefault("목", 0.0)));
+		if ("목".equals(ilganOhaeng)) {
+			sb.append("★");
+		}
+		sb.append(" | ");
+
+		sb.append("화:").append(String.format("%.1f", ohaengCounts.getOrDefault("화", 0.0)));
+		if ("화".equals(ilganOhaeng)) {
+			sb.append("★");
+		}
+		sb.append(" | ");
+
+		sb.append("토:").append(String.format("%.1f", ohaengCounts.getOrDefault("토", 0.0)));
+		if ("토".equals(ilganOhaeng)) {
+			sb.append("★");
+		}
+		sb.append(" | ");
+
+		sb.append("금:").append(String.format("%.1f", ohaengCounts.getOrDefault("금", 0.0)));
+		if ("금".equals(ilganOhaeng)) {
+			sb.append("★");
+		}
+		sb.append(" | ");
+
+		sb.append("수:").append(String.format("%.1f", ohaengCounts.getOrDefault("수", 0.0)));
+		if ("수".equals(ilganOhaeng)) {
+			sb.append("★");
+		}
+		sb.append(" (★=일간)\n\n");
+
+		return sb.toString();
+	}
+
+	private void appendJijangganDetailSimple(StringBuilder prompt, PillarElement pillar) {
+		if (pillar == null || pillar.getJijanggan() == null) {
+			prompt.append("정보 없음");
+			return;
+		}
+
+		JijangganInfo ji = pillar.getJijanggan();
+		List<String> elements = new ArrayList<>();
+
+		if (ji.getFirst() != null) {
+			elements.add(String.format("%s%s(%s,%d%%)",
+				ji.getFirst().getKorean() != null ? ji.getFirst().getKorean() : "?",
+				ji.getFirst().getFiveCircle() != null ? ji.getFirst().getFiveCircle() : "?",
+				ji.getFirst().getTenStar() != null ? ji.getFirst().getTenStar() : "?",
+				ji.getFirst().getRate() != null ? ji.getFirst().getRate() : 0));
+		}
+		if (ji.getSecond() != null) {
+			elements.add(String.format("%s%s(%s,%d%%)",
+				ji.getSecond().getKorean() != null ? ji.getSecond().getKorean() : "?",
+				ji.getSecond().getFiveCircle() != null ? ji.getSecond().getFiveCircle() : "?",
+				ji.getSecond().getTenStar() != null ? ji.getSecond().getTenStar() : "?",
+				ji.getSecond().getRate() != null ? ji.getSecond().getRate() : 0));
+		}
+		if (ji.getThird() != null) {
+			elements.add(String.format("%s%s(%s,%d%%)",
+				ji.getThird().getKorean() != null ? ji.getThird().getKorean() : "?",
+				ji.getThird().getFiveCircle() != null ? ji.getThird().getFiveCircle() : "?",
+				ji.getThird().getTenStar() != null ? ji.getThird().getTenStar() : "?",
+				ji.getThird().getRate() != null ? ji.getThird().getRate() : 0));
+		}
+
+		prompt.append(String.join(", ", elements));
+	}
+
+	private String getJijangganSummary(PillarElement pillar) {
+		if (pillar == null || pillar.getJijanggan() == null) {
+			return "?";
+		}
+		JijangganInfo ji = pillar.getJijanggan();
+
+		List<String> elements = new ArrayList<>();
+		if (ji.getFirst() != null && ji.getFirst().getKorean() != null
+			&& ji.getFirst().getFiveCircle() != null && ji.getFirst().getRate() != null) {
+			elements.add(ji.getFirst().getKorean() + ji.getFirst().getFiveCircle()
+				+ "(" + ji.getFirst().getRate() + "%)");
+		}
+		if (ji.getSecond() != null && ji.getSecond().getKorean() != null
+			&& ji.getSecond().getFiveCircle() != null && ji.getSecond().getRate() != null) {
+			elements.add(ji.getSecond().getKorean() + ji.getSecond().getFiveCircle()
+				+ "(" + ji.getSecond().getRate() + "%)");
+		}
+		if (ji.getThird() != null && ji.getThird().getKorean() != null
+			&& ji.getThird().getFiveCircle() != null && ji.getThird().getRate() != null) {
+			elements.add(ji.getThird().getKorean() + ji.getThird().getFiveCircle()
+				+ "(" + ji.getThird().getRate() + "%)");
+		}
+
+		return elements.isEmpty() ? "?" : String.join(", ", elements);
+	}
+
+	private String getDaewoonDirection(SajuInfo saju, String gender) {
+		if (saju.getYearSky() == null || saju.getYearSky().getMinusPlus() == null) {
+			return "?";
+		}
+
+		String yearSkyMinusPlus = saju.getYearSky().getMinusPlus();
+		return "MALE".equalsIgnoreCase(gender) ?
+			(yearSkyMinusPlus.equals("+") ? "순행" : "역행") :
+			(yearSkyMinusPlus.equals("+") ? "역행" : "순행");
+	}
+
+	private void appendDaewoonSimple(StringBuilder prompt, SajuInfo saju, String gender) {
+		if (saju.getMonthSky() == null || saju.getMonthGround() == null
+			|| saju.getBigFortuneNumber() == null) {
+			prompt.append("대운 흐름 계산 불가\n");
+			return;
+		}
+
+		String monthGapja = saju.getMonthSky().getKorean() + saju.getMonthGround().getKorean();
+		int currentGapjaIndex = GAPJA_CYCLE.indexOf(monthGapja);
+
+		if (currentGapjaIndex == -1) {
+			prompt.append("대운 흐름 계산 불가\n");
+			return;
+		}
+
+		String flowDirection = getDaewoonDirection(saju, gender);
+		int startAge = saju.getBigFortuneNumber();
+
+		// 현재 나이 계산
+		int currentYear = java.time.LocalDate.now().getYear();
+		// 간단히 년주로 추정 (정확한 생년은 별도 처리 필요)
+		int currentAge = 30; // 기본값 (실제로는 input에서 계산)
+		int currentDaewoonIndex = Math.max(0, (currentAge - startAge) / 10);
+
+		// 현재 + 미래 2개 (총 3개)
+		for (int i = currentDaewoonIndex; i < currentDaewoonIndex + 3 && i < 9; i++) {
+			int age = startAge + (i * 10);
+			if (age > 120) {
+				break;
+			}
+
+			int nextIndex;
+			if (flowDirection.equals("순행")) {
+				nextIndex = (currentGapjaIndex + i + 1) % 60;
+			} else {
+				nextIndex = (currentGapjaIndex - (i + 1) % 60 + 60) % 60;
+			}
+			String daewoonGapja = GAPJA_CYCLE.get(nextIndex);
+
+			if (i == currentDaewoonIndex) {
+				prompt.append(String.format("▶ %d~%d세: %s (현재)\n", age, age + 9, daewoonGapja));
+			} else {
+				prompt.append(String.format("  %d~%d세: %s\n", age, age + 9, daewoonGapja));
+			}
+		}
 	}
 
 	private String extractContentFromResponseGpt5(String jsonResponse)
 		throws JsonProcessingException {
+
 		if (jsonResponse == null || jsonResponse.trim().isEmpty()) {
 			throw new IllegalArgumentException("GPT 응답이 비어있습니다.");
 		}
+
 		try {
 			JsonNode root = objectMapper.readTree(jsonResponse);
+
+			// 에러 체크
 			if (root.path("error").isObject()) {
 				JsonNode errorNode = root.get("error");
 				String errorMessage = errorNode.path("message").asText("알 수 없는 API 오류");
@@ -1474,46 +1705,36 @@ public class ManseInterpretationService {
 				throw new IllegalArgumentException("GPT API 에러: " + errorMessage);
 			}
 
-			// More robust path checking
+			// output 배열 체크
 			JsonNode outputNode = root.path("output");
 			if (!outputNode.isArray() || outputNode.isEmpty()) {
 				log.error("응답에 유효한 'output' 배열이 없습니다. JSON: {}", jsonResponse);
-				// Attempt to find choices/message structure as a fallback
-				JsonNode choicesNode = root.path("choices");
-				if (choicesNode.isArray() && !choicesNode.isEmpty()) {
-					JsonNode messageNode = choicesNode.get(0).path("message");
-					if (messageNode.isObject()) {
-						JsonNode contentNode = messageNode.path("content");
-						if (contentNode.isTextual()) {
-							String content = contentNode.asText();
-							log.info("✅ GPT 응답 성공 (Fallback Choices) - 길이: {} 문자",
-								content.length());
-							return content;
-						}
-					}
-				}
-				// Fallback failed, throw original error
-				throw new IllegalArgumentException(
-					"GPT 응답 형식이 올바르지 않습니다. ('output' 배열 누락 또는 비어있음)");
+				throw new IllegalArgumentException("GPT 응답 형식이 올바르지 않습니다.");
 			}
 
-			// Original logic for 'output' array
+			// output 배열에서 message 타입 찾기
 			for (JsonNode outputItem : outputNode) {
 				if ("message".equals(outputItem.path("type").asText())) {
 					JsonNode contentArray = outputItem.path("content");
 					if (contentArray.isArray() && !contentArray.isEmpty()) {
-						JsonNode textNode = contentArray.get(0).path("text");
-						if (textNode.isTextual()) {
-							String content = textNode.asText();
-							log.info("✅ GPT 응답 성공 - 길이: {} 문자", content.length());
-							return content;
+						// content 배열에서 output_text 타입 찾기
+						for (JsonNode contentItem : contentArray) {
+							if ("output_text".equals(contentItem.path("type").asText())) {
+								JsonNode textNode = contentItem.path("text");
+								if (textNode.isTextual()) {
+									String content = textNode.asText();
+									log.info("✅ GPT 응답 추출 성공 - 길이: {} 문자", content.length());
+									return content; // ← 이게 JSON 문자열
+								}
+							}
 						}
 					}
 				}
 			}
 
-			log.error("GPT 응답에서 최종 'text' 필드를 찾을 수 없습니다. JSON 구조 확인 필요. JSON: {}", jsonResponse);
+			log.error("GPT 응답에서 'text' 필드를 찾을 수 없습니다. JSON: {}", jsonResponse);
 			throw new IllegalArgumentException("GPT 응답에서 내용 추출 실패.");
+
 		} catch (JsonProcessingException e) {
 			log.error("JSON 파싱 실패: {}", e.getMessage());
 			throw e;
@@ -1598,10 +1819,8 @@ public class ManseInterpretationService {
 		List<String> allSinsal = new ArrayList<>();
 
 		if (saju.getSinsalInfo() != null) {
-			// ⭐ 모든 신살 포함 (필터링 제거)
 			saju.getSinsalInfo().forEach((pillarName, sinsals) -> {
 				if (sinsals != null && !sinsals.isEmpty()) {
-					// 각 신살에 기둥 위치 표시 (예: "년주:도화살")
 					sinsals.stream()
 						.filter(s -> s != null && !s.isEmpty())
 						.forEach(s -> allSinsal.add(pillarName + ":" + s));
@@ -1623,6 +1842,112 @@ public class ManseInterpretationService {
 		} else {
 			prompt.append("- 신살: 해당 없음\n");
 		}
+	}
+
+	private void appendSinsalFull(StringBuilder prompt, SajuInfo saju) {
+		Map<String, List<String>> sinsalByPillar = new HashMap<>();
+		sinsalByPillar.put("년주", new ArrayList<>());
+		sinsalByPillar.put("월주", new ArrayList<>());
+		sinsalByPillar.put("일주", new ArrayList<>());
+		sinsalByPillar.put("시주", new ArrayList<>());
+
+		// 각 기둥별 신살 수집
+		if (saju.getSinsalInfo() != null) {
+			saju.getSinsalInfo().forEach((pillar, sinsals) -> {
+				if (sinsals != null && !sinsals.isEmpty()) {
+					sinsalByPillar.get(pillar).addAll(sinsals);
+				}
+			});
+		}
+
+		// 특수 신살 추가 (일주)
+		if (Boolean.TRUE.equals(saju.getHasGoegang())) {
+			sinsalByPillar.get("일주").add("괴강살");
+		}
+		if (Boolean.TRUE.equals(saju.getHasBaekho())) {
+			sinsalByPillar.get("일주").add("백호대살");
+		}
+
+		// 공망 추가
+		if (saju.getGongmang() != null && !saju.getGongmang().isEmpty()) {
+			sinsalByPillar.get("일주").add("공망:" + String.join(",", saju.getGongmang()));
+		}
+
+		// 기둥별로 출력 (신살이 있는 기둥만)
+		boolean hasSinsal = false;
+		for (String pillar : Arrays.asList("년주", "월주", "일주", "시주")) {
+			List<String> sinsals = sinsalByPillar.get(pillar);
+			if (!sinsals.isEmpty()) {
+				prompt.append(pillar).append(": ").append(String.join(", ", sinsals)).append("\n");
+				hasSinsal = true;
+			}
+		}
+
+		if (!hasSinsal) {
+			prompt.append("해당 없음\n");
+		}
+		prompt.append("\n");
+	}
+
+	private void appendDaewoonCompact(StringBuilder prompt, SajuInfo saju, String gender) {
+		if (saju.getYearSky() == null || saju.getMonthSky() == null
+			|| saju.getMonthGround() == null || saju.getBigFortuneNumber() == null) {
+			prompt.append("대운 정보 없음\n\n");
+			return;
+		}
+
+		String yearSkyMinusPlus = saju.getYearSky().getMinusPlus();
+		if (yearSkyMinusPlus == null) {
+			prompt.append("대운 정보 없음\n\n");
+			return;
+		}
+
+		String flowDirection = "MALE".equalsIgnoreCase(gender) ?
+			(yearSkyMinusPlus.equals("+") ? "순행" : "역행") :
+			(yearSkyMinusPlus.equals("+") ? "역행" : "순행");
+
+		int startAge = saju.getBigFortuneNumber();
+		String monthGapja = saju.getMonthSky().getKorean() + saju.getMonthGround().getKorean();
+		int currentGapjaIndex = GAPJA_CYCLE.indexOf(monthGapja);
+
+		if (currentGapjaIndex == -1) {
+			prompt.append("대운 정보 없음\n\n");
+			return;
+		}
+
+		// 현재 나이 계산 (간단히 년도 차이로)
+		int currentYear = java.time.LocalDate.now().getYear();
+		int birthYear = Integer.parseInt(
+			saju.getYearSky().getKorean() + saju.getYearGround().getKorean());
+		int currentAge = currentYear - birthYear + 1; // 한국 나이
+
+		// 현재 대운 찾기
+		int currentDaewoonIndex = Math.max(0, (currentAge - startAge) / 10);
+
+		prompt.append(String.format("시작:%d세 | 방향:%s\n", startAge, flowDirection));
+
+		// 현재 + 미래 2개만 표시 (총 3개)
+		for (int i = currentDaewoonIndex; i < currentDaewoonIndex + 3 && i < 9; i++) {
+			int age = startAge + (i * 10);
+			if (age > 120) {
+				break;
+			}
+
+			int nextIndex;
+			if (flowDirection.equals("순행")) {
+				nextIndex = (currentGapjaIndex + i + 1) % 60;
+			} else {
+				nextIndex = (currentGapjaIndex - (i + 1) % 60 + 60) % 60;
+			}
+			String daewoonGapja = GAPJA_CYCLE.get(nextIndex);
+
+			if (i == currentDaewoonIndex) {
+				prompt.append(String.format("▶ %d~%d세: %s (현재)\n", age, age + 9, daewoonGapja));
+			} else {
+				prompt.append(String.format("  %d~%d세: %s\n", age, age + 9, daewoonGapja));
+			}
+		}
+		prompt.append("\n");
 	}
 
 	/**
