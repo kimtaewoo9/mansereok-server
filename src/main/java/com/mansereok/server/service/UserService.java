@@ -38,6 +38,7 @@ public class UserService {
 	private final PasswordEncoder passwordEncoder;
 
 	private final SlackNotificationService slackNotificationService;
+	private final DiscordNotificationService discordNotificationService;
 
 	/**
 	 * 새로운 사용자를 등록한다.
@@ -72,10 +73,11 @@ public class UserService {
 			));
 
 		// Slack 알림 전송
-		slackNotificationService.sendUserCreatedNotification(
+		discordNotificationService.sendUserCreatedNotification(
 			savedUser.getName(),
 			savedUser.getEmail(),
-			savedUser.getId()
+			savedUser.getId(),
+			"일반 회원가입"
 		);
 
 		return savedUser;
@@ -114,11 +116,12 @@ public class UserService {
 			)
 		);
 
-		// Slack 알림 전송 (OAuth 가입)
-		slackNotificationService.sendUserCreatedNotification(
+		// 디스코드 알림 전송
+		discordNotificationService.sendUserCreatedNotification(
 			savedUser.getName(),
 			savedUser.getEmail(),
-			savedUser.getId()
+			savedUser.getId(),
+			socialType.name() + " OAuth"
 		);
 
 		return savedUser;

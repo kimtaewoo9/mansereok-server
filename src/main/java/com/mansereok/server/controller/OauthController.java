@@ -141,7 +141,7 @@ public class OauthController {
 			user = userService.registerWithOauth(
 				kakaoProfileDto.getId(),
 				kakaoProfileDto.getKakao_account().getEmail(),
-				null,
+				kakaoProfileDto.getNickname(),
 				kakaoProfileDto.getId(),
 				SocialType.KAKAO
 			);
