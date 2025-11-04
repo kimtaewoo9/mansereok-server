@@ -248,7 +248,8 @@ public class PaymentService {
 							user.getEmail(),
 							savedPayment.getAmount(),
 							subCategory.getTitle(),
-							savedOrder.getPaidAt()
+							savedOrder.getPaidAt(),
+							user.getBirthDate()
 						);
 					} else {
 						log.warn(
@@ -259,9 +260,6 @@ public class PaymentService {
 					// 알림 실패가 웹훅 처리에 영향을 주지 않도록 try-catch로 감쌉니다.
 					log.error("Discord 결제 알림 전송 중 오류 발생", e);
 				}
-				//
-				// 👈 (추가) 알림 로직 끝
-				//
 
 				processOrder(savedOrder);
 			} else {

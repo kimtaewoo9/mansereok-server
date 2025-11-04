@@ -1,5 +1,6 @@
 package com.mansereok.server.service;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.HashMap;
@@ -63,18 +64,33 @@ public class DiscordNotificationService {
 		}
 	}
 
-	public void sendPaymentCompletedNotification(String userName, String userEmail, Long amount,
-		String productName, LocalDateTime paidAt) {
+	public void sendPaymentCompletedNotification(
+		String userName,
+		String userEmail,
+		Long amount,
+		String productName,
+		LocalDateTime paidAt,
+		LocalDate birthDate
+	) {
 		try {
 			String formattedPaidAt =
 				(paidAt != null) ? paidAt.format(dateTimeFormatter) : "시간 정보 없음";
+
+			String formattedBirthDate = (birthDate != null)
+				? birthDate.format(DateTimeFormatter.ofPattern("yyyy년 MM월 dd일"))
+				: "미입력";
 
 			Map<String, Object> embed = new HashMap<>();
 			embed.put("title", "💰 결제 완료");
 			embed.put("color", 16766720); // 금색 (비슷하게)
 			embed.put("description", String.format(
-				"**상품명:** %s\n**결제 금액:** %,d원\n\n**구매자:** %s (%s)\n**결제 시간:** %s",
-				productName, amount, userName, userEmail, formattedPaidAt
+				"**상품명:** %s\n**결제 금액:** %,d원\n\n" +
+					"**구매자:** %s (%s)\n" +
+					"**생년월일:** %s\n" +                    // ← 추가
+					"**결제 시간:** %s",
+				productName, amount, userName, userEmail,
+				formattedBirthDate,           // ← 추가
+				formattedPaidAt
 			));
 
 			Map<String, Object> footer = new HashMap<>();
@@ -90,7 +106,6 @@ public class DiscordNotificationService {
 
 			HttpEntity<Map<String, Object>> request = new HttpEntity<>(message, headers);
 
-			// ▼▼▼ [수정] 결제 전용 URL 사용 ▼▼▼
 			restTemplate.postForEntity(paymentWebhookUrl, request, String.class);
 
 			log.info("Discord 결제 알림 전송 완료: productName={}, amount={}", productName, amount);
