@@ -46,6 +46,8 @@ import org.springframework.web.client.RestClient;
 @Slf4j
 public class PaymentService {
 
+	private final DiscordNotificationService discordNotificationService;
+
 	private final OrderRepository orderRepository;
 	private final SubCategoryRepository subCategoryRepository;
 	private final PaymentRepository paymentRepository;
@@ -233,6 +235,33 @@ public class PaymentService {
 				order.setPaymentPkId(savedPayment.getId());
 
 				createInitialResult(savedPayment, savedOrder);
+
+				try {
+					User user = userRepository.findById(savedOrder.getUserId())
+						.orElse(null);
+					SubCategory subCategory = subCategoryRepository.findById(
+						savedOrder.getSubCategoryId()).orElse(null);
+
+					if (user != null && subCategory != null) {
+						discordNotificationService.sendPaymentCompletedNotification(
+							user.getName(),
+							user.getEmail(),
+							savedPayment.getAmount(),
+							subCategory.getTitle(),
+							savedOrder.getPaidAt()
+						);
+					} else {
+						log.warn(
+							"Discord 결제 알림 전송 실패: 사용자(ID:{}) 또는 상품(ID:{}) 정보를 찾을 수 없습니다.",
+							savedOrder.getUserId(), savedOrder.getSubCategoryId());
+					}
+				} catch (Exception e) {
+					// 알림 실패가 웹훅 처리에 영향을 주지 않도록 try-catch로 감쌉니다.
+					log.error("Discord 결제 알림 전송 중 오류 발생", e);
+				}
+				//
+				// 👈 (추가) 알림 로직 끝
+				//
 
 				processOrder(savedOrder);
 			} else {

@@ -77,7 +77,8 @@ public class UserService {
 			savedUser.getName(),
 			savedUser.getEmail(),
 			savedUser.getId(),
-			"일반 회원가입"
+			"일반 회원가입",
+			savedUser.getCreatedAt()
 		);
 
 		return savedUser;
@@ -121,7 +122,8 @@ public class UserService {
 			savedUser.getName(),
 			savedUser.getEmail(),
 			savedUser.getId(),
-			socialType.name() + " OAuth"
+			socialType.name() + " OAuth",
+			savedUser.getCreatedAt()
 		);
 
 		return savedUser;
