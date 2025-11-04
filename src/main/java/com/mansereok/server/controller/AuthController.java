@@ -155,16 +155,30 @@ public class AuthController {
 	}
 
 	@PostMapping("/api/auth/refresh")
-	public ResponseEntity<TokenRefreshResponse> refreshToken(
-		@CookieValue("REFRESH_TOKEN") String token,
+	public ResponseEntity<?> refreshToken(
+		@CookieValue(value = "REFRESH_TOKEN", required = false) String token,
 		HttpServletResponse response
 	) {
-		RefreshToken refreshToken = refreshTokenService.findByToken(token)
-			.orElseThrow(() -> new RuntimeException("유효하지 않거나, 만료된 refresh token 입니다."));
+		// 1. 토큰이 없는 경우
+		if (token == null || token.isBlank()) {
+			return ResponseEntity.status(401)
+				.body(Map.of("error", "인증 정보가 없습니다. 다시 로그인해주세요."));
+		}
 
-		// refresh token 이 유효한지 검증 .
-		if (!refreshToken.isValid()) {
-			throw new RuntimeException("만료되었거나 무효화된 토큰입니다.");
+		// 2. 토큰은 있지만 DB에서 만료된 경우
+		RefreshToken refreshToken = refreshTokenService.findByToken(token)
+			.orElse(null);
+
+		if (refreshToken == null || !refreshToken.isValid()) {
+			// 쿠키 삭제
+			Cookie deleteCookie = new Cookie("REFRESH_TOKEN", "");
+			deleteCookie.setMaxAge(0);
+			deleteCookie.setPath("/");
+			deleteCookie.setHttpOnly(true);
+			response.addCookie(deleteCookie);
+
+			return ResponseEntity.status(401)
+				.body(Map.of("error", "세션이 만료되었습니다. 다시 로그인해주세요."));
 		}
 
 		User user = refreshToken.getUser();
@@ -186,8 +200,7 @@ public class AuthController {
 		// refresh 토큰은 쿠키에 저장해서 전달 .
 		Cookie refreshCookie = new Cookie("REFRESH_TOKEN", newRefreshToken.getToken());
 		refreshCookie.setHttpOnly(true);
-		refreshCookie.setSecure(false); //
-//		refreshCookie.setSecure(true); // HTTPS 환경에서만
+		refreshCookie.setSecure(true); // HTTPS 환경에서만
 
 		refreshCookie.setPath("/");
 		refreshCookie.setMaxAge(7 * 24 * 60 * 60); // 7일
