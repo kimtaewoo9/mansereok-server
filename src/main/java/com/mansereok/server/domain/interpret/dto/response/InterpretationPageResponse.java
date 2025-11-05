@@ -1,0 +1,19 @@
+package com.mansereok.server.domain.interpret.dto.response;
+
+import com.mansereok.server.domain.interpret.entity.ResultStatus;
+import java.time.LocalDate;
+import lombok.AllArgsConstructor;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+
+@Data
+@NoArgsConstructor
+@AllArgsConstructor
+public class InterpretationPageResponse {
+
+	private String productName;
+	private LocalDate createdAt;
+	private ResultStatus resultStatus; // 사주 결과 상태
+	private Long paymentId;
+	private Long resultId;
+}
