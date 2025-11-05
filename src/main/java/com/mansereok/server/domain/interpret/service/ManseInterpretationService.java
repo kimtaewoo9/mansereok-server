@@ -16,6 +16,7 @@ import com.mansereok.server.domain.interpret.entity.Result;
 import com.mansereok.server.domain.interpret.entity.ResultStatus;
 import com.mansereok.server.domain.interpret.repository.CompatibilityResultRepository;
 import com.mansereok.server.domain.interpret.repository.ResultRepository;
+import com.mansereok.server.domain.notification.service.DiscordNotificationService;
 import com.mansereok.server.domain.user.entity.User;
 import com.mansereok.server.domain.user.service.UserService;
 import jakarta.persistence.EntityNotFoundException;
@@ -41,8 +42,9 @@ public class ManseInterpretationService {
 
 	private final UserService userService;
 	private final OgImageGenerationService ogImageGenerationService;
-	private final ResultRepository resultRepository;
+	private final DiscordNotificationService discordNotificationService; // 👈 Slack -> Discord
 
+	private final ResultRepository resultRepository;
 	private final CompatibilityResultRepository compatibilityResultRepository;
 
 	// 60갑자 순서 정의 (대운 계산용)
@@ -74,7 +76,8 @@ public class ManseInterpretationService {
 		ResultRepository resultRepository,
 		UserService userService,
 		CompatibilityResultRepository compatibilityResultRepository,
-		OgImageGenerationService ogImageGenerationService
+		OgImageGenerationService ogImageGenerationService,
+		DiscordNotificationService discordNotificationService
 	) {
 		this.restClient = RestClient.builder()
 			.baseUrl(baseUrl + "/v1")
@@ -85,6 +88,7 @@ public class ManseInterpretationService {
 		this.compatibilityResultRepository = compatibilityResultRepository;
 		this.userService = userService;
 		this.ogImageGenerationService = ogImageGenerationService;
+		this.discordNotificationService = discordNotificationService;
 	}
 
 	@Async("gptTaskExecutor")
@@ -119,6 +123,21 @@ public class ManseInterpretationService {
 
 		resultRepository.save(result);
 		log.info("[Async] Result 정보 업데이트 및 상태 저장 완료: resultId={}", result.getId());
+
+		try {
+			User user = userService.findByUsername(username);
+			String birthdate = response.getInput().getSolarDate().toString();
+
+			discordNotificationService.sendInterpretationRequestNotification(
+				name,
+				user.getEmail(),
+				birthdate,
+				subcategoryId
+			);
+		} catch (Exception e) {
+			log.error("Discord 사주 요청 알림 전송 실패", e);
+			// 알림 실패해도 작업은 계속 진행
+		}
 
 		try {
 			String userPrompt = createPromptBySubcategory(subcategoryId, name, response);
@@ -219,6 +238,21 @@ public class ManseInterpretationService {
 
 			compatibilityResultRepository.saveAndFlush(result);
 			log.info("CompatibilityResult 상태 PROCESSING 변경 및 정보 업데이트: resultId={}", result.getId());
+
+			try {
+				String person1Birthdate = person1Response.getInput().getSolarDate().toString();
+				String person2Birthdate = person2Response.getInput().getSolarDate().toString();
+
+				discordNotificationService.sendCompatibilityRequestNotification(
+					person1Name,
+					person1Birthdate,
+					person2Name,
+					person2Birthdate
+				);
+			} catch (Exception e) {
+				log.error("Discord 궁합 요청 알림 전송 실패", e);
+				// 알림 실패해도 작업은 계속 진행
+			}
 
 			// ChatGPT 해석 로직 .
 			String userPrompt = createCompatibilityPromptBySubcategory(

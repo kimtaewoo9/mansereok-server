@@ -22,6 +22,9 @@ public class DiscordNotificationService {
 	@Value("${discord.webhook.payment-url}")
 	private String paymentWebhookUrl;
 
+	@Value("${discord.webhook.interpretation-request-url}")
+	private String interpretationRequestWebhookUrl;
+
 	private final RestTemplate restTemplate = new RestTemplate();
 
 	private static final DateTimeFormatter dateTimeFormatter =
@@ -104,6 +107,87 @@ public class DiscordNotificationService {
 
 		} catch (Exception e) {
 			log.error("Discord 결제 알림 전송 실패", e);
+		}
+	}
+
+	// 단일 사주 해석
+	public void sendInterpretationRequestNotification(
+		String userName,
+		String userEmail,
+		String userBirthdate,
+		Long subcategoryId
+	) {
+		try {
+			Map<String, Object> embed = new HashMap<>();
+			embed.put("title", "🔮 사주 해석 요청");
+			embed.put("color", 10181046); // 보라색
+			embed.put("description", String.format(
+				"**카테고리 ID:** %d\n\n" +
+					"**요청자:** %s\n" +
+					"**이메일:** %s\n" +
+					"**생년월일:** %s",
+				subcategoryId,
+				userName,
+				userEmail,
+				userBirthdate
+			));
+
+			Map<String, Object> footer = new HashMap<>();
+			footer.put("text", "만세력 서비스");
+			embed.put("footer", footer);
+
+			Map<String, Object> message = new HashMap<>();
+			message.put("username", "사주봇");
+			message.put("embeds", new Object[]{embed});
+
+			HttpHeaders headers = new HttpHeaders();
+			headers.setContentType(MediaType.APPLICATION_JSON);
+			HttpEntity<Map<String, Object>> request = new HttpEntity<>(message, headers);
+
+			restTemplate.postForEntity(interpretationRequestWebhookUrl, request, String.class);
+
+			log.info("Discord 사주 요청 알림 전송 완료: userName={}", userName);
+
+		} catch (Exception e) {
+			log.error("Discord 사주 요청 알림 전송 실패", e);
+		}
+	}
+
+	public void sendCompatibilityRequestNotification(
+		String person1Name,
+		String person1Birthdate,
+		String person2Name,
+		String person2Birthdate
+	) {
+		try {
+			Map<String, Object> embed = new HashMap<>();
+			embed.put("title", "💕 궁합 해석 요청");
+			embed.put("color", 15277667); // 핑크색
+			embed.put("description", String.format(
+				"**대상자1:** %s (%s)\n" +
+					"**대상자2:** %s (%s)",
+				person1Name, person1Birthdate,
+				person2Name, person2Birthdate
+			));
+
+			Map<String, Object> footer = new HashMap<>();
+			footer.put("text", "만세력 서비스");
+			embed.put("footer", footer);
+
+			Map<String, Object> message = new HashMap<>();
+			message.put("username", "사주봇");
+			message.put("embeds", new Object[]{embed});
+
+			HttpHeaders headers = new HttpHeaders();
+			headers.setContentType(MediaType.APPLICATION_JSON);
+			HttpEntity<Map<String, Object>> request = new HttpEntity<>(message, headers);
+
+			restTemplate.postForEntity(interpretationRequestWebhookUrl, request, String.class);
+
+			log.info("Discord 궁합 요청 알림 전송 완료: {} & {}", person1Name, person2Name);
+
+		} catch (Exception e) {
+			log.error("Discord 궁합 요청 알림 전송 실패", e);
 		}
 	}
 }
