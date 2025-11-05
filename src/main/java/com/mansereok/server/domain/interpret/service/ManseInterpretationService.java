@@ -3,13 +3,6 @@ package com.mansereok.server.domain.interpret.service;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.mansereok.server.domain.interpret.repository.CompatibilityResultRepository;
-import com.mansereok.server.domain.user.service.UserService;
-import com.mansereok.server.domain.interpret.entity.CompatibilityResult;
-import com.mansereok.server.domain.interpret.entity.Result;
-import com.mansereok.server.domain.interpret.entity.ResultStatus;
-import com.mansereok.server.domain.user.entity.User;
-import com.mansereok.server.domain.interpret.repository.ResultRepository;
 import com.mansereok.server.domain.interpret.dto.request.Gpt5Request;
 import com.mansereok.server.domain.interpret.dto.response.GptCompatibilityResponse;
 import com.mansereok.server.domain.interpret.dto.response.GptSajuResponse;
@@ -18,6 +11,13 @@ import com.mansereok.server.domain.interpret.dto.response.ManseryeokCalculationR
 import com.mansereok.server.domain.interpret.dto.response.ManseryeokCalculationResponse.JijangganInfo;
 import com.mansereok.server.domain.interpret.dto.response.ManseryeokCalculationResponse.PillarElement;
 import com.mansereok.server.domain.interpret.dto.response.ManseryeokCalculationResponse.SajuInfo;
+import com.mansereok.server.domain.interpret.entity.CompatibilityResult;
+import com.mansereok.server.domain.interpret.entity.Result;
+import com.mansereok.server.domain.interpret.entity.ResultStatus;
+import com.mansereok.server.domain.interpret.repository.CompatibilityResultRepository;
+import com.mansereok.server.domain.interpret.repository.ResultRepository;
+import com.mansereok.server.domain.user.entity.User;
+import com.mansereok.server.domain.user.service.UserService;
 import jakarta.persistence.EntityNotFoundException;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -87,7 +87,7 @@ public class ManseInterpretationService {
 		this.ogImageGenerationService = ogImageGenerationService;
 	}
 
-	@Async
+	@Async("gptTaskExecutor")
 	@Transactional
 	public void interpret(
 		String name,
@@ -193,7 +193,7 @@ public class ManseInterpretationService {
 		}
 	}
 
-	@Async
+	@Async("gptTaskExecutor")
 	@Transactional
 	public void analyzeCompatibilityWithSubcategory(
 		String person1Name,
