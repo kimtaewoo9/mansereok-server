@@ -24,6 +24,9 @@ public class EmailService {
 	@Value("${aws.ses.from-email:welcome@namedsaju.com}")
 	private String fromEmail;
 
+	@Value("${aws.ses.from-name:네임드사주}")
+	private String fromName;
+
 	public EmailService(
 		@Value("${aws.ses.access-key:#{null}}") String accessKey,
 		@Value("${aws.ses.secret-key:#{null}}") String secretKey,
@@ -53,6 +56,9 @@ public class EmailService {
 			String subject = "Welcome NAMED - 진짜 나를 찾는 여정";
 			String htmlBody = createWelcomeEmailHtml();
 
+			// 발신자 이름 + 이메일 형식으로 변경
+			String fromAddress = fromName + " <" + fromEmail + ">";
+
 			SendEmailRequest request = SendEmailRequest.builder()
 				.destination(Destination.builder()
 					.toAddresses(toEmail)
@@ -69,7 +75,7 @@ public class EmailService {
 							.build())
 						.build())
 					.build())
-				.source(fromEmail)
+				.source(fromAddress)  // 변경된 부분
 				.build();
 
 			sesClient.sendEmail(request);
@@ -232,7 +238,7 @@ public class EmailService {
 			
 			                                        <!-- 소셜 미디어 안내 문구 -->
 			                                        <p style="margin: 0 0 25px 0; font-size: 15px; line-height: 1.5; color: #666666 !important; text-align: center; font-weight: 500;">
-			                                            "다양한 곳에서 네임드사주를 만나 보세요!"
+			                                            다양한 곳에서 네임드사주를 만나 보세요!
 			                                        </p>
 			
 			                                        <!-- 소셜 미디어 아이콘 (개별 margin 조정) -->

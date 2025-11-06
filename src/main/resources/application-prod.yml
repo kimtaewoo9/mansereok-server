@@ -64,6 +64,7 @@ aws:
   ses:
     region: ap-northeast-2
     from-email: welcome@namedsaju.com
+    from-name: 네임드사주
 
 # Custom OAuth 설정
 oauth:
