@@ -61,7 +61,9 @@ spring:
 aws:
   s3:
     bucket-name: named-og-image
-
+  ses:
+    region: ap-northeast-2
+    from-email: welcome@namedsaju.com
 
 # Custom OAuth 설정
 oauth:

@@ -27,6 +27,7 @@ repositories {
 dependencyManagement {
     imports {
         mavenBom "io.awspring.cloud:spring-cloud-aws-dependencies:3.1.1"
+        mavenBom "software.amazon.awssdk:bom:2.21.46"
     }
 }
 
@@ -67,6 +68,9 @@ dependencies {
 
     // S3 bucket
     implementation 'io.awspring.cloud:spring-cloud-aws-starter-s3'
+
+    // AWS SDK v2 SES
+    implementation 'software.amazon.awssdk:ses'
 }
 
 tasks.named('test') {

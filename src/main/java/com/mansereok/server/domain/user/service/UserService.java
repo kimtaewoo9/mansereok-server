@@ -1,21 +1,20 @@
 package com.mansereok.server.domain.user.service;
 
-import com.mansereok.server.domain.interpret.repository.CompatibilityResultRepository;
-import com.mansereok.server.domain.notification.service.DiscordNotificationService;
-import com.mansereok.server.domain.notification.service.SlackNotificationService;
-import com.mansereok.server.domain.interpret.entity.CompatibilityResult;
-import com.mansereok.server.domain.user.entity.Gender;
-import com.mansereok.server.domain.interpret.entity.Result;
-import com.mansereok.server.domain.user.entity.SocialType;
-import com.mansereok.server.domain.user.entity.User;
-import com.mansereok.server.domain.interpret.repository.ResultRepository;
-import com.mansereok.server.domain.user.repository.UserRepository;
-import com.mansereok.server.domain.user.dto.request.ProfileUpdateRequestDto;
 import com.mansereok.server.domain.interpret.dto.response.CompatibilityPageResponse;
 import com.mansereok.server.domain.interpret.dto.response.InterpretationPageResponse;
 import com.mansereok.server.domain.interpret.dto.response.InterpretationResultResponse;
 import com.mansereok.server.domain.interpret.dto.response.ManseCompatibilityAnalysisResponse;
 import com.mansereok.server.domain.interpret.dto.response.SajuHistoryResponseDto;
+import com.mansereok.server.domain.interpret.entity.CompatibilityResult;
+import com.mansereok.server.domain.interpret.entity.Result;
+import com.mansereok.server.domain.interpret.repository.CompatibilityResultRepository;
+import com.mansereok.server.domain.interpret.repository.ResultRepository;
+import com.mansereok.server.domain.notification.service.DiscordNotificationService;
+import com.mansereok.server.domain.user.dto.request.ProfileUpdateRequestDto;
+import com.mansereok.server.domain.user.entity.Gender;
+import com.mansereok.server.domain.user.entity.SocialType;
+import com.mansereok.server.domain.user.entity.User;
+import com.mansereok.server.domain.user.repository.UserRepository;
 import java.time.LocalDate;
 import java.util.Comparator;
 import java.util.List;
@@ -39,8 +38,9 @@ public class UserService {
 
 	private final PasswordEncoder passwordEncoder;
 
-	private final SlackNotificationService slackNotificationService;
 	private final DiscordNotificationService discordNotificationService;
+
+	private final EmailService emailService;
 
 	/**
 	 * 새로운 사용자를 등록한다.
@@ -82,6 +82,8 @@ public class UserService {
 			"일반 회원가입",
 			savedUser.getCreatedAt()
 		);
+
+		emailService.sendWelcomeEmail(savedUser.getEmail(), savedUser.getName());
 
 		return savedUser;
 	}
@@ -127,6 +129,8 @@ public class UserService {
 			socialType.name() + " OAuth",
 			savedUser.getCreatedAt()
 		);
+
+		emailService.sendWelcomeEmail(savedUser.getEmail(), savedUser.getName());
 
 		return savedUser;
 	}
