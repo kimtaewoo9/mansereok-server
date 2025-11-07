@@ -22,8 +22,8 @@ public class SlackNotificationService {
 	public void sendUserCreatedNotification(String userName, String email, Long userId) {
 		try {
 			Map<String, Object> message = new HashMap<>();
-			message.put("channel", "#31-project-namedsaju");
-			message.put("username", "User Service Bot");
+			message.put("channel", "91-namedsaju-회원가입-알림");
+			message.put("username", "회원가입 알림 봇");
 			message.put("icon_emoji", ":bust_in_silhouette:");
 			message.put("text", "✅ *새로운 사용자 가입*");
 

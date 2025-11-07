@@ -19,6 +19,9 @@ public class DiscordNotificationService {
 	@Value("${discord.webhook.signup-url}")
 	private String signupWebhookUrl;
 
+	@Value("${discord.webhook.signup-url-channel2}")
+	private String signupWebhookUrl2;
+
 	@Value("${discord.webhook.payment-url}")
 	private String paymentWebhookUrl;
 
@@ -57,7 +60,18 @@ public class DiscordNotificationService {
 
 			HttpEntity<Map<String, Object>> request = new HttpEntity<>(message, headers);
 
-			restTemplate.postForEntity(signupWebhookUrl, request, String.class);
+			if (signupWebhookUrl != null && !signupWebhookUrl.isBlank()) {
+				restTemplate.postForEntity(signupWebhookUrl, request, String.class);
+				log.info("Discord 회원가입 알림 (채널1) 전송 완료: userId={}, signupType={}", userId,
+					signupType);
+			}
+
+			// 두 번째 채널로 전송
+			if (signupWebhookUrl2 != null && !signupWebhookUrl2.isBlank()) {
+				restTemplate.postForEntity(signupWebhookUrl2, request, String.class);
+				log.info("Discord 회원가입 알림 (채널2) 전송 완료: userId={}, signupType={}", userId,
+					signupType);
+			}
 
 			log.info("Discord 회원가입 알림 전송 완료: userId={}, signupType={}", userId, signupType);
 

@@ -190,5 +190,6 @@ slack:
 discord:
   webhook:
     signup-url: https://discord.com/api/webhooks/1434928352602619936/-oP0DLWAK5Dd_i7uWL0hq_ss6CtVuv5SuBOJWLSJy0zjTgnpYhE4RcsQ8QgfOyq95QfX
+    signup-url-channel2: https://discord.com/api/webhooks/1436229483240882237/7UHVmdN8-aDKZyIVRkqEyCUCoGeiK4h8yvDwKukt24BEhDiuDlTVCHk4P57Z_qLNguTH
     payment-url: https://discord.com/api/webhooks/1435095394081050695/Tw6K8MY1WLGEwj-zMzgNdR-N4NkuKQXOGW0ZIpeYy85mNN0PwHiYBQjq1OVHKX5Yw9Ar
     interpretation-request-url: https://discord.com/api/webhooks/1435540266835775509/uXV14D6BAlL06TnU945svM8FHDP6TkJf7tmH4qSk0rUrBIDxGaEnkvhEm6tvUQRMQ7EY
