@@ -1,16 +1,16 @@
 package com.mansereok.server.domain.interpret.controller;
 
-import com.mansereok.server.domain.interpret.repository.CompatibilityResultRepository;
-import com.mansereok.server.domain.interpret.service.ManseCalculationService;
-import com.mansereok.server.domain.interpret.service.ManseInterpretationService;
-import com.mansereok.server.domain.interpret.entity.CompatibilityResult;
-import com.mansereok.server.domain.interpret.entity.Result;
-import com.mansereok.server.domain.interpret.entity.ResultStatus;
-import com.mansereok.server.domain.interpret.repository.ResultRepository;
 import com.mansereok.server.domain.interpret.dto.request.ManseCompatibilityAnalysisRequest;
 import com.mansereok.server.domain.interpret.dto.request.ManseInterpretationRequest;
 import com.mansereok.server.domain.interpret.dto.request.ManseryeokCalculationRequest;
 import com.mansereok.server.domain.interpret.dto.response.ManseryeokCalculationResponse;
+import com.mansereok.server.domain.interpret.entity.CompatibilityResult;
+import com.mansereok.server.domain.interpret.entity.Result;
+import com.mansereok.server.domain.interpret.entity.ResultStatus;
+import com.mansereok.server.domain.interpret.repository.CompatibilityResultRepository;
+import com.mansereok.server.domain.interpret.repository.ResultRepository;
+import com.mansereok.server.domain.interpret.service.ManseCalculationService;
+import com.mansereok.server.domain.interpret.service.ManseInterpretationService;
 import jakarta.persistence.EntityNotFoundException;
 import jakarta.validation.Valid;
 import java.util.Map;
@@ -143,7 +143,8 @@ public class ManseryeokController {
 				person1.getName(), person1Response,
 				person2.getName(), person2Response,
 				subcategoryId,
-				request.getPaymentId()
+				request.getPaymentId(),
+				username
 			);
 		} catch (Exception e) {
 			log.error("비동기 궁합 분석 작업 시작 중 예상치 못한 오류 발생: {}", e.getMessage(), e);
