@@ -3,17 +3,35 @@ spring:
     name: mansereok-server
 
   datasource:
-    url: jdbc:mysql://${DB_HOST:localhost}:${DB_PORT:3306}/${DB_NAME:mysql}?zeroDateTimeBehavior=CONVERT_TO_NULL
-    username: ${DB_USERNAME:root}
-    password: ${DB_PASSWORD:root}
+    url: ${DB_URL}?zeroDateTimeBehavior=convertToNull
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+
+    # HikariCP 설정
+    hikari:
+      maximum-pool-size: 20
+      minimum-idle: 10
+      connection-timeout: 30000
+      idle-timeout: 600000
+      max-lifetime: 1800000
+      connection-test-query: SELECT 1
 
   jpa:
+    database: mysql
+    database-platform: org.hibernate.dialect.MySQL8Dialect
     hibernate:
-      ddl-auto: update
-    show-sql: true
+      ddl-auto: validate  # 운영에서는 validate 사용
+    show-sql: false  # 운영에서는 false
     properties:
       hibernate:
-        format_sql: true
+        format_sql: false
+        use_sql_comments: false
+        jdbc:
+          batch_size: 20
+        order_inserts: true
+        order_updates: true
+        default_batch_fetch_size: 100
 
   security:
     oauth2:
@@ -23,7 +41,7 @@ spring:
             client-id: ${GOOGLE_OAUTH_CLIENT_ID}
             client-secret: ${GOOGLE_OAUTH_CLIENT_SECRET}
             scope: openid, email, profile
-            redirect-uri: http://localhost:8080/login/oauth2/code/google
+            redirect-uri: ${GOOGLE_OAUTH_REDIRECT_URI}/login/oauth2/code/google
             authorization-grant-type: authorization_code
         provider:
           google:
@@ -39,20 +57,21 @@ spring:
         access-key: ${AWS_ACCESS_KEY_ID}
         secret-key: ${AWS_SECRET_ACCESS_KEY}
 
-## S3 bucket
+  ## S3 bucket
 aws:
   s3:
     bucket-name: named-og-image
   ses:
-    access-key: ${AWS_SES_ACCESS_KEY}
-    secret-key: ${AWS_SES_SECRET_KEY}
     region: ap-northeast-2
+    from-email: welcome@namedsaju.com
+    from-name: 네임드사주
 
+# Custom OAuth 설정
 oauth:
   google:
     client-id: ${GOOGLE_OAUTH_CLIENT_ID}
     client-secret: ${GOOGLE_OAUTH_CLIENT_SECRET}
-    redirect-uri: ${GOOGLE_OAUTH_REDIRECT_URI} # 나중에 실제 서비스 uri로 바꿔야함 .
+    redirect-uri: ${GOOGLE_OAUTH_REDIRECT_URI}
   kakao:
     client-id: ${KAKAO_OAUTH_CLIENT_ID}
     redirect-uri: ${KAKAO_OAUTH_REDIRECT_URI}
@@ -64,8 +83,6 @@ oauth:
     client-id: ${X_OAUTH_CLIENT_ID}
     client-secret: ${X_OAUTH_CLIENT_SECRET}
     redirect-uri: ${X_OAUTH_REDIRECT_URI}
-  
-  # X(트위터)
 
 # OpenAI API
 openai:
@@ -84,12 +101,13 @@ posteller:
   api:
     base-url: https://api.forceteller.com
 
-# swagger
+# Swagger
 springdoc:
   api-docs:
+    enabled: true
     path: /v3/api-docs
   swagger-ui:
-    path: /swagger-ui.html
+    enabled: true
     operations-sorter: method
     tags-sorter: alpha
   default-consumes-media-type: application/json
@@ -99,23 +117,59 @@ springdoc:
 app:
   jwt:
     secret: ${JWT_SECRET_KEY}
-    access-token-expiration: 1800000   # 30분 (밀리초)
-    refresh-token-expiration: 2592000000 # 30일 (밀리초)
-    issuer: "www.namedsaju.com"
+    access-token-expiration: 1800000      # 30분 (밀리초)
+    refresh-token-expiration: 2592000000  # 30일 (밀리초)
+    issuer: ${JWT_ISSUER:www.namedsaju.com}
 
+# Server 설정
 server:
   port: 8080
+  tomcat:
+    threads:
+      max: 200
+      min-spare: 20
+    connection-timeout: 20000
+    max-connections: 8192
+    accept-count: 100
+  compression:
+    enabled: true
+    mime-types: application/json,application/xml,text/html,text/xml,text/plain
+    min-response-size: 1024
+
+# Actuator (헬스체크 및 모니터링)
+management:
+  endpoints:
+    web:
+      exposure:
+        include: "health"
+  endpoint:
+    health:
+      show-details: always
+
+# Logging (운영 환경)
+logging:
+  level:
+    root: INFO
+    com.mansereok: INFO
+    org.springframework.web: INFO
+    org.springframework.security: INFO
+    org.hibernate.SQL: WARN
+    org.hibernate.type.descriptor.sql.BasicBinder: WARN
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
+  file:
+    name: /app/logs/application.log
 
 portone:
   api:
-    secret: ${PORTONE_API_SECRET}  # 포트원 콘솔에서 발급받은 V2 API Secret
+    secret: ${PORTONE_API_SECRET}
     webhook:
       secret: ${PORTONE_WEBHOOK_SECRET}
 
 # 결제 관련 설정
 payment:
   webhook:
-    url: ${PAYMENT_WEBHOOK_URL:https://api/namedsaju.com/api/payment/webhook}  # 포트원 웹훅 URL
+    url: ${PAYMENT_WEBHOOK_URL:https://namedsaju.com/api/payment/webhook}  # 포트원 웹훅 URL
   test-mode: ${PAYMENT_TEST_MODE:true}  # 테스트 모드 여부
 
 # 상품 가격 설정 (원화)
@@ -126,10 +180,6 @@ product:
     compatibility: 20000   # 궁합 분석
     monthly-pass: 50000    # 월간 이용권
     yearly-pass: 300000    # 연간 이용권
-
-logging:
-  level:
-    org.springframework.security: DEBUG
 
 # Slack
 slack:
