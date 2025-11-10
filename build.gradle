@@ -71,6 +71,12 @@ dependencies {
 
     // AWS SDK v2 SES
     implementation 'software.amazon.awssdk:ses'
+
+    // 1. Spring Retry 라이브러리
+    implementation 'org.springframework.retry:spring-retry'
+
+    // 2. AOP
+    implementation 'org.springframework.boot:spring-boot-starter-aop'
 }
 
 tasks.named('test') {

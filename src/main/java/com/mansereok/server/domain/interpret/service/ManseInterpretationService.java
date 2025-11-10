@@ -18,6 +18,7 @@ import com.mansereok.server.domain.interpret.repository.CompatibilityResultRepos
 import com.mansereok.server.domain.interpret.repository.ResultRepository;
 import com.mansereok.server.domain.notification.service.DiscordNotificationService;
 import com.mansereok.server.domain.user.entity.User;
+import com.mansereok.server.domain.user.service.EmailService;
 import com.mansereok.server.domain.user.service.UserService;
 import jakarta.persistence.EntityNotFoundException;
 import java.util.ArrayList;
@@ -27,22 +28,22 @@ import java.util.List;
 import java.util.Map;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.http.MediaType;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.client.RestClient;
 
 @Service
 @Slf4j
 public class ManseInterpretationService {
 
-	private final RestClient restClient;
 	private final ObjectMapper objectMapper = new ObjectMapper();
+
+	private final GptApiRetryService gptApiRetryService;
 
 	private final UserService userService;
 	private final OgImageGenerationService ogImageGenerationService;
 	private final DiscordNotificationService discordNotificationService; // 👈 Slack -> Discord
+	private final EmailService emailService;
 
 	private final ResultRepository resultRepository;
 	private final CompatibilityResultRepository compatibilityResultRepository;
@@ -73,22 +74,21 @@ public class ManseInterpretationService {
 
 	public ManseInterpretationService(@Value("${openai.api.key}") String apiKey,
 		@Value("${openai.api.base-url:https://api.openai.com}") String baseUrl,
+		GptApiRetryService gptApiRetryService,
 		ResultRepository resultRepository,
 		UserService userService,
 		CompatibilityResultRepository compatibilityResultRepository,
 		OgImageGenerationService ogImageGenerationService,
-		DiscordNotificationService discordNotificationService
+		DiscordNotificationService discordNotificationService,
+		EmailService emailService
 	) {
-		this.restClient = RestClient.builder()
-			.baseUrl(baseUrl + "/v1")
-			.defaultHeader("Authorization", "Bearer " + apiKey)
-			.defaultHeader("Content-Type", MediaType.APPLICATION_JSON_VALUE)
-			.build();
+		this.gptApiRetryService = gptApiRetryService;
 		this.resultRepository = resultRepository;
 		this.compatibilityResultRepository = compatibilityResultRepository;
 		this.userService = userService;
 		this.ogImageGenerationService = ogImageGenerationService;
 		this.discordNotificationService = discordNotificationService;
+		this.emailService = emailService;
 	}
 
 	@Async("gptTaskExecutor")
@@ -154,11 +154,7 @@ public class ManseInterpretationService {
 			String requestBody = objectMapper.writeValueAsString(gpt5Request);
 
 			log.info("GPT-5 요청 데이터 생성 완료. API 호출 시작...");
-			String gptResponse = restClient.post()
-				.uri("/responses")
-				.body(requestBody)
-				.retrieve()
-				.body(String.class);
+			String gptResponse = gptApiRetryService.callGptApiWithRetry(requestBody);
 
 			String content = extractContentFromResponseGpt5(gptResponse);
 			log.info("✅ content 추출 완료 - 길이: {}", content.length());
@@ -183,6 +179,18 @@ public class ManseInterpretationService {
 
 			ogImageGenerationService.generateAndUploadOgImage(savedResult);
 
+			try {
+				if (user.getEmail() != null) {
+					emailService.sendResultReadyEmail(user.getEmail(), user.getName());
+				} else {
+					log.warn("[Async] 결과 완료 이메일 전송 실패: 사용자 이메일이 없습니다. username={}", username);
+				}
+			} catch (Exception e) { // 7. 👈 GptApiFailedException catch
+				log.error("[Async] GPT API 요청 또는 처리 중 오류 발생: paymentId={}, Error: {}", paymentId,
+					e.getMessage(), e);
+				// ... (오류 롤백 로직 동일) ...
+			}
+
 			log.info("Result 해석 결과 저장 및 상태 COMPLETED 변경 완료: resultId={}", savedResult.getId());
 		} catch (Exception e) {
 			log.error("[Async] GPT API 요청 또는 처리 중 오류 발생: paymentId={}, Error: {}", paymentId,
@@ -195,7 +203,6 @@ public class ManseInterpretationService {
 
 					if (errorResult != null && errorResult.getStatus() == ResultStatus.PROCESSING) {
 						errorResult.setStatus(ResultStatus.INPUT_REQUIRED); // 또는 FAILED 상태
-						// errorResult.setErrorMessage(e.getMessage().substring(0, Math.min(e.getMessage().length(), 250))); // 에러 메시지 저장 필드 있다면
 						resultRepository.save(errorResult);
 						log.info("[Async] 오류 발생으로 Result 상태 INPUT_REQUIRED로 롤백 시도: paymentId={}",
 							paymentId);
@@ -220,7 +227,8 @@ public class ManseInterpretationService {
 		String person2Name,
 		ManseryeokCalculationResponse person2Response,
 		Long subcategoryId,
-		Long paymentId
+		Long paymentId,
+		String username
 	) {
 		log.info("✅ 궁합 분석 요청 시작 - subcategoryId: {}, {} & {}", subcategoryId, person1Name,
 			person2Name);
@@ -269,11 +277,7 @@ public class ManseInterpretationService {
 			String requestBody = objectMapper.writeValueAsString(gpt5Request);
 
 			log.info("GPT-5 궁합 분석 요청 데이터 생성 완료. API 호출 시작...");
-			String gptResponse = restClient.post()
-				.uri("/responses")
-				.body(requestBody)
-				.retrieve()
-				.body(String.class);
+			String gptResponse = gptApiRetryService.callGptApiWithRetry(requestBody);
 
 			String content = extractContentFromResponseGpt5(gptResponse);
 			log.info("✅ content 추출 완료 - 길이: {}", content.length());
@@ -298,6 +302,19 @@ public class ManseInterpretationService {
 				savedResult.getId());
 
 			ogImageGenerationService.generateAndUploadOgImage(savedResult);
+
+			try {
+				User user = userService.findByUsername(username); // [2] 추가한 username으로 User 조회
+				if (user.getEmail() != null) {
+					emailService.sendResultReadyEmail(user.getEmail(), user.getName());
+				} else {
+					log.warn("[Async] 궁합 결과 완료 이메일 전송 실패: 사용자 이메일이 없습니다. username={}", username);
+				}
+			} catch (Exception e) {
+				log.error("[Async] 궁합 결과 완료 이메일 전송 중 오류 발생: {}", e.getMessage(), e);
+				// 이메일 실패가 메인 해석 로직을 롤백시키면 안 됨
+			}
+
 		} catch (EntityNotFoundException enfe) {
 			log.error("[Async] EntityNotFoundException (궁합 초기 조회 실패): {}", enfe.getMessage());
 		} catch (Exception e) {
