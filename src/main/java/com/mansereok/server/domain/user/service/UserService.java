@@ -10,6 +10,7 @@ import com.mansereok.server.domain.interpret.entity.Result;
 import com.mansereok.server.domain.interpret.repository.CompatibilityResultRepository;
 import com.mansereok.server.domain.interpret.repository.ResultRepository;
 import com.mansereok.server.domain.notification.service.DiscordNotificationService;
+import com.mansereok.server.domain.notification.service.SlackNotificationService;
 import com.mansereok.server.domain.user.dto.request.ProfileUpdateRequestDto;
 import com.mansereok.server.domain.user.entity.Gender;
 import com.mansereok.server.domain.user.entity.SocialType;
@@ -39,6 +40,7 @@ public class UserService {
 	private final PasswordEncoder passwordEncoder;
 
 	private final DiscordNotificationService discordNotificationService;
+	private final SlackNotificationService slackNotificationService;
 
 	private final EmailService emailService;
 
@@ -74,8 +76,15 @@ public class UserService {
 				isPrivacyAgreed
 			));
 
-		// Slack 알림 전송
 		discordNotificationService.sendUserCreatedNotification(
+			savedUser.getName(),
+			savedUser.getEmail(),
+			savedUser.getId(),
+			"일반 회원가입",
+			savedUser.getCreatedAt()
+		);
+
+		slackNotificationService.sendUserCreatedNotification(
 			savedUser.getName(),
 			savedUser.getEmail(),
 			savedUser.getId(),
@@ -127,6 +136,14 @@ public class UserService {
 			savedUser.getEmail(),
 			savedUser.getId(),
 			socialType.name() + " OAuth",
+			savedUser.getCreatedAt()
+		);
+
+		slackNotificationService.sendUserCreatedNotification(
+			savedUser.getName(),
+			savedUser.getEmail(),
+			savedUser.getId(),
+			"일반 회원가입",
 			savedUser.getCreatedAt()
 		);
 

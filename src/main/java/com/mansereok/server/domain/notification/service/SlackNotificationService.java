@@ -1,5 +1,7 @@
 package com.mansereok.server.domain.notification.service;
 
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.HashMap;
 import java.util.Map;
 import lombok.extern.slf4j.Slf4j;
@@ -19,7 +21,23 @@ public class SlackNotificationService {
 
 	private final RestTemplate restTemplate = new RestTemplate();
 
-	public void sendUserCreatedNotification(String userName, String email, Long userId) {
+	/**
+	 * Slack으로 신규 회원 가입 알림을 전송합니다.
+	 *
+	 * @param userName  회원 이름
+	 * @param email     회원 이메일
+	 * @param userId    회원 ID
+	 * @param joinType  가입 경로 (예: "일반 회원가입", "KAKAO OAuth")
+	 * @param createdAt 가입 일시
+	 */
+	// 👈 3. 메서드 시그니처 수정 (파라미터 5개)
+	public void sendUserCreatedNotification(
+		String userName,
+		String email,
+		Long userId,
+		String joinType,
+		LocalDateTime createdAt
+	) {
 		try {
 			Map<String, Object> message = new HashMap<>();
 			message.put("channel", "91-namedsaju-회원가입-알림");
@@ -29,9 +47,14 @@ public class SlackNotificationService {
 
 			Map<String, Object> attachment = new HashMap<>();
 			attachment.put("color", "good");
+			
 			attachment.put("text", String.format(
-				"👤 이름: %s\n📧 이메일: %s\n🆔 ID: %d",
-				userName, email, userId
+				"👤 이름: %s\n📧 이메일: %s\n🆔 ID: %d\n🚪 가입경로: %s\n⏰ 가입일시: %s",
+				userName,
+				email,
+				userId,
+				joinType,
+				createdAt.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"))
 			));
 
 			message.put("attachments", new Object[]{attachment});
