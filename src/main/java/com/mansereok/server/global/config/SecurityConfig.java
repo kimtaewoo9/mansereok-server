@@ -121,7 +121,8 @@ public class SecurityConfig {
 			Arrays.asList(
 				"http://localhost:3000",
 				"https://namedsaju.com",
-				"https://www.namedsaju.com"
+				"https://www.namedsaju.com",
+				"https://findme-jet.vercel.app"
 			)
 		);
 
