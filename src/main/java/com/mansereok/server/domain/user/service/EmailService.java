@@ -88,6 +88,44 @@ public class EmailService {
 		}
 	}
 
+	public void sendResultReadyEmail(String toEmail, String userName) {
+		try {
+			String subject = "NAMED 사주 리포트 완성! 지금 이야기를 확인해 보세요.";
+
+			String mypageUrl = "https://www.namedsaju.com/mypage/fortunes";
+			String htmlBody = createResultReadyEmailHtml(mypageUrl);
+
+			String fromAddress = fromName + " <" + fromEmail + ">";
+
+			SendEmailRequest request = SendEmailRequest.builder()
+				.destination(Destination.builder()
+					.toAddresses(toEmail)
+					.build())
+				.message(Message.builder()
+					.subject(Content.builder()
+						.charset("UTF-8")
+						.data(subject)
+						.build())
+					.body(Body.builder()
+						.html(Content.builder()
+							.charset("UTF-8")
+							.data(htmlBody)
+							.build())
+						.build())
+					.build())
+				.source(fromAddress)
+				.build();
+
+			sesClient.sendEmail(request);
+			log.info("✅ ResultReady-email 전송 완료: {} (수신자: {})", toEmail, userName);
+
+		} catch (SesException e) {
+			log.error("❌ ResultReady-email 전송 실패: {}", e.awsErrorDetails().errorMessage(), e);
+		} catch (Exception e) {
+			log.error("❌ ResultReady-email 전송 중 알 수 없는 오류: {}", e.getMessage(), e);
+		}
+	}
+
 	private String createWelcomeEmailHtml() {
 		return """
 			<!DOCTYPE html>
@@ -97,7 +135,7 @@ public class EmailService {
 			    <meta name="viewport" content="width=device-width, initial-scale=1.0">
 			    <meta name="color-scheme" content="light only">
 			    <meta name="supported-color-schemes" content="light">
-			    <title>Welcome NAMED</title>
+			    <title>NAMED</title>
 			    <style type="text/css">
 			        /* 다크모드 방지 */
 			        :root {
@@ -255,7 +293,7 @@ public class EmailService {
 			                                                                 style="border: 0; display: inline-block; vertical-align: middle; max-width: 40px;">
 			                                                        </a>
 			                                                        <!-- X: 37px - margin 증가 (1.5px씩) -->
-			                                                        <a href="https://x.com/namedsaju_" style="display: inline-block; margin: 0 11.5px; text-decoration: none;">
+			                                                        <a href="https://x.com/namedsaju?s=11" style="display: inline-block; margin: 0 11.5px; text-decoration: none;">
 			                                                            <img src="https://named-logo.s3.ap-northeast-2.amazonaws.com/X.png" 
 			                                                                 alt="X" 
 			                                                                 width="37" 
@@ -324,5 +362,140 @@ public class EmailService {
 			</body>
 			</html>
 			""";
+	}
+
+	private String createResultReadyEmailHtml(String mypageUrl) {
+
+		return """
+			<!DOCTYPE html>
+			<html lang="ko">
+			<head>
+			    <meta charset="UTF-8">
+			    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+			    <meta name="color-scheme" content="light only">
+			    <meta name="supported-color-schemes" content="light">
+			    <title>NAMED 사주 리포트 완성</title>
+			    <style type="text/css">
+			        /* 다크모드 방지 스타일... (웰컴 이메일과 동일) */
+			        :root { color-scheme: light only; supported-color-schemes: light; }
+			        * { color-scheme: light only !important; }
+			        img { -webkit-filter: none !important; filter: none !important; }
+			        body, table, td { background-color: #ffffff !important; }
+			        .email-container { background-color: #ffffff !important; }
+			        @media (prefers-color-scheme: dark) {
+			            body, table, td, .email-container { background-color: #ffffff !important; color: #000000 !important; }
+			            img { opacity: 1 !important; }
+			        }
+			    </style>
+			    </head>
+			<body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Malgun Gothic', 'Apple SD Gothic Neo', sans-serif; background-color: #ffffff !important;">
+			
+			    <div style="display: none; max-height: 0px; overflow: hidden;">
+			        회원님의 사주 리포트가 완성되었어요.
+			    </div>
+			
+			    <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%%" style="background-color: #ffffff !important;" class="email-container">
+			        <tr>
+			            <td align="center" style="padding: 40px 20px; background-color: #ffffff !important;">
+			
+			                <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="700" style="max-width: 700px; background-image: url('https://named-logo.s3.ap-northeast-2.amazonaws.com/email-gradient-border.png'); background-size: cover; background-position: center; background-repeat: no-repeat; background-color: #00D4FF;">
+			                    <tr>
+			                        <td style="padding: 15px;">
+			
+			                            <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%%" style="background-color: #ffffff !important;">
+			                                <tr>
+			                                    <td style="padding: 60px 50px; text-align: center; background-color: #ffffff !important;">
+			
+			                                        <div style="background-color: #ffffff !important; padding: 10px 0;">
+			                                            <img src="https://named-logo.s3.ap-northeast-2.amazonaws.com/named-logo.png" 
+			                                                 alt="NAMED Logo" 
+			                                                 width="80" 
+			                                                 height="80" 
+			                                                 style="display: block; margin: 0 auto 35px; border: 0; max-width: 80px; height: auto;">
+			                                        </div>
+			
+			                                        <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%%" style="background-color: #F8F8F8 !important; margin: 0 0 40px 0;">
+			                                            <tr>
+			                                                <td style="padding: 40px 35px; background-color: #F8F8F8 !important;">
+			                                                    <p style="margin: 0 0 20px 0; font-size: 16px; line-height: 1.4; color: #333333 !important; text-align: center;">
+			                                                        안녕하세요. NAMED입니다.
+			                                                    </p>
+			                                                    <p style="margin: 0 0 10px 0; font-size: 16px; line-height: 1.4; color: #333333 !important; text-align: center;">
+			                                                        진짜 '나'를 찾는 여정, 그 두 번째 문이 열렸습니다.
+			                                                    </p>
+			                                                    <p style="margin: 0 0 40px 0; font-size: 16px; line-height: 1.4; color: #333333 !important; text-align: center;">
+			                                                        회원님을 위한 사주 리포트가 완성되었어요.
+			                                                    </p>
+			                                                    <p style="margin: 0 0 40px 0; font-size: 16px; line-height: 1.4; color: #333333 !important; text-align: center;">
+			                                                        지금 바로 확인해보세요.
+			                                                    </p>
+			
+			                                                    <p style="margin: 0 0 40px 0; text-align: center;">
+			                                                        <a href="%s" target="_blank" style="font-size: 18px; font-weight: 700; color: #444444; text-decoration: none; border: 2px solid #DDDDDD; padding: 12px 25px; border-radius: 8px; display: inline-block;">
+			                                                            [리포트 확인하기]
+			                                                        </a>
+			                                                    </p>
+			
+			                                                    <p style="margin: 0; font-size: 16px; line-height: 1.4; color: #333333 !important; text-align: center;">
+			                                                        오늘의 리포트가 작은 힌트가 되길 바랍니다.
+			                                                    </p>
+			                                                </td>
+			                                            </tr>
+			                                        </table>
+			
+			                                        <p style="margin: 0 0 25px 0; font-size: 15px; line-height: 1.5; color: #666666 !important; text-align: center; font-weight: 500;">
+			                                            다양한 곳에서 네임드사주를 만나 보세요!
+			                                        </p>
+			                                        <div style="background-color: #ffffff !important; padding: 0 0 20px 0;">
+			                                            <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%%" style="margin: 0 0 30px 0;">
+			                                                <tr>
+			                                                    <td align="center" style="background-color: #ffffff !important;">
+			                                                        <a href="https://www.instagram.com/namedsaju_official/" style="display: inline-block; margin: 0 10px; text-decoration: none;">
+			                                                            <img src="https://named-logo.s3.ap-northeast-2.amazonaws.com/instagram.png" alt="Instagram" width="40" height="40" style="border: 0; display: inline-block; vertical-align: middle; max-width: 40px;">
+			                                                        </a>
+			                                                        <a href="https://x.com/namedsaju_" style="display: inline-block; margin: 0 11.5px; text-decoration: none;">
+			                                                            <img src="https://named-logo.s3.ap-northeast-2.amazonaws.com/X.png" alt="X" width="37" height="37" style="border: 0; display: inline-block; vertical-align: middle; max-width: 40px;">
+			                                                        </a>
+			                                                        <a href="https://blog.naver.com/namedsaju_official" style="display: inline-block; margin: 0 13.5px; text-decoration: none;">
+			                                                            <img src="https://named-logo.s3.ap-northeast-2.amazonaws.com/naver_blog.png" alt="Naver Blog" width="33" height="33" style="border: 0; display: inline-block; vertical-align: middle; max-width: 50px;">
+			                                                        </a>
+			                                                        <a href="https://www.namedsaju.com/" style="display: inline-block; margin: 0 10px; text-decoration: none;">
+			                                                            <img src="https://named-logo.s3.ap-northeast-2.amazonaws.com/homepage.png" alt="Homepage" width="40" height="40" style="border: 0; display: inline-block; vertical-align: middle; max-width: 40px;">
+			                                                        </a>
+			                                                    </td>
+			                                                </tr>
+			                                            </table>
+			                                        </div>
+			
+			                                        <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%%" style="border-top: 1px solid #E5E5E5; padding-top: 35px; background-color: #ffffff !important;">
+			                                            <tr>
+			                                                <td align="center" style="background-color: #ffffff !important;">
+			                                                    <p style="margin: 0 0 6px 0; font-size: 13px; line-height: 1.5; color: #999999 !important;">상호명: 와이포스트</p>
+			                                                    <p style="margin: 0 0 6px 0; font-size: 13px; line-height: 1.5; color: #999999 !important;">help@namedsaju.com</p>
+			                                                    <p style="margin: 0 0 18px 0; font-size: 13px; line-height: 1.5; color: #999999 !important;">서울 은평구 역촌동 40-51 양지빌딩 4층</p>
+			                                                    <p style="margin: 0; font-size: 13px; line-height: 1.5;">
+			                                                        <a href="https://www.namedsaju.com" style="color: #6B9FF5 !important; text-decoration: underline;">수신거부</a>
+			                                                        <span style="color: #CCCCCC !important;"> | </span>
+			                                                        <a href="https://www.namedsaju.com" style="color: #6B9FF5 !important; text-decoration: underline;">Unsubscribe</a>
+			                                                    </p>
+			                                                </td>
+			                                            </tr>
+			                                        </table>
+			
+			                                    </td>
+			                                </tr>
+			                            </table>
+			
+			                        </td>
+			                    </tr>
+			                    </table>
+			
+			            </td>
+			        </tr>
+			    </table>
+			
+			</body>
+			</html>
+			""".formatted(mypageUrl);
 	}
 }
