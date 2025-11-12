@@ -411,7 +411,8 @@ public class EmailService {
 			                                                 alt="NAMED Logo" 
 			                                                 width="80" 
 			                                                 height="80" 
-			                                                 style="display: block; margin: 0 auto 35px; border: 0; max-width: 80px; height: auto;">
+			                                                 style="display: block; margin: 0 auto 10px; border: 0; max-width: 80px; height: auto;">
+			                                            <h1 style="margin: 0 0 35px 0; font-size: 32px; font-weight: 700; color: #000000 !important; letter-spacing: 2px;">NAMED</h1>
 			                                        </div>
 			
 			                                        <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%%" style="background-color: #F8F8F8 !important; margin: 0 0 40px 0;">
@@ -432,7 +433,7 @@ public class EmailService {
 			
 			                                                    <p style="margin: 0 0 40px 0; text-align: center;">
 			                                                        <a href="%s" target="_blank" style="font-size: 18px; font-weight: 700; color: #444444; text-decoration: none; border: 2px solid #DDDDDD; padding: 12px 25px; border-radius: 8px; display: inline-block;">
-			                                                            [리포트 확인하기]
+			                                                            리포트 확인하기
 			                                                        </a>
 			                                                    </p>
 			
