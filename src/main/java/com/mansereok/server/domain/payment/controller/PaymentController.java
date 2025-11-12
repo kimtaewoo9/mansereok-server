@@ -1,22 +1,23 @@
 package com.mansereok.server.domain.payment.controller;
 
-import com.mansereok.server.domain.payment.service.PaymentService;
-import com.mansereok.server.domain.user.service.UserService;
-import com.mansereok.server.domain.order.entity.Order;
-import com.mansereok.server.domain.user.entity.User;
-import com.mansereok.server.domain.order.repository.OrderRepository;
 import com.mansereok.server.domain.order.dto.request.OrderCreateRequest;
-import com.mansereok.server.domain.payment.dto.request.PaymentCompleteRequest;
 import com.mansereok.server.domain.order.dto.response.OrderCreateResponse;
+import com.mansereok.server.domain.order.entity.Order;
+import com.mansereok.server.domain.order.repository.OrderRepository;
+import com.mansereok.server.domain.payment.dto.request.PaymentCompleteRequest;
 import com.mansereok.server.domain.payment.dto.response.PaymentResponseDto;
+import com.mansereok.server.domain.payment.service.PaymentService;
+import com.mansereok.server.domain.user.entity.User;
+import com.mansereok.server.domain.user.service.UserService;
+import io.portone.sdk.server.errors.WebhookVerificationException;
 import io.portone.sdk.server.webhook.WebhookVerifier;
 import jakarta.persistence.EntityNotFoundException;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -45,26 +46,17 @@ public class PaymentController {
 		@RequestBody OrderCreateRequest request,
 		@AuthenticationPrincipal String username
 	) {
-		try {
-			log.info("주문 생성 요청자: " + username);
-			OrderCreateResponse response = paymentService.createOrder(username, request);
-			return ResponseEntity.ok(response);
-		} catch (Exception e) {
-			log.error("주문 생성 실패", e);
-			return ResponseEntity.badRequest().body(e.getMessage());
-		}
+		log.info("주문 생성 요청자: " + username);
+		OrderCreateResponse response = paymentService.createOrder(username, request);
+		return ResponseEntity.ok(response);
 	}
 
 	// 결제 완료 API (결제 후 검증) // 이렇게 구현하면 프론트엔드에서 폴링으로 계속 결제 정보 확인해야함 .
 	@PostMapping("/api/payment/complete")
 	public ResponseEntity<?> completePayment(@RequestBody PaymentCompleteRequest request) {
-		try {
-			Order order = paymentService.completePayment(request);
-			log.info("Order: {}", order);
-			return ResponseEntity.ok(order);
-		} catch (Exception e) {
-			return ResponseEntity.badRequest().body(e.getMessage());
-		}
+		Order order = paymentService.completePayment(request);
+		log.info("Order: {}", order);
+		return ResponseEntity.ok(order);
 	}
 
 	@GetMapping("/api/payment/orders/{orderId}")
@@ -72,7 +64,9 @@ public class PaymentController {
 		@PathVariable Long orderId,
 		@AuthenticationPrincipal String username
 	) {
-		Order order = orderRepository.findById(orderId).orElseThrow();
+		Order order = orderRepository.findById(orderId)
+			.orElseThrow(
+				() -> new EntityNotFoundException("주문을 찾을 수 없습니다.")); // 👈 404 처리를 위해 예외 Throw
 		return ResponseEntity.ok(order);
 	}
 
@@ -84,28 +78,21 @@ public class PaymentController {
 		@RequestHeader("webhook-id") String webhookId,
 		@RequestHeader("webhook-timestamp") String webhookTimestamp,
 		@RequestHeader("webhook-signature") String webhookSignature
-	) {
-		try {
-			log.info("webhook-id: " + webhookId);
-			log.info("webhook-timestamp: " + webhookTimestamp);
-			log.info("webhook-signature: " + webhookSignature);
-			log.info("webhook body: " + body);
+	) throws WebhookVerificationException {
+		log.info("webhook-id: " + webhookId);
+		log.info("webhook-timestamp: " + webhookTimestamp);
+		log.info("webhook-signature: " + webhookSignature);
+		log.info("webhook body: " + body);
 
-			// 1. 웹훅 서명 검증 (위변조 방지)
-			WebhookVerifier verifier = new WebhookVerifier(webhookSecret);
-			verifier.verify(body, webhookId, webhookSignature, webhookTimestamp);
+		WebhookVerifier verifier = new WebhookVerifier(webhookSecret);
+		verifier.verify(body, webhookId, webhookSignature, webhookTimestamp);
 
-			log.info("웹훅 서명 검증 성공: webhookId={}", webhookId);
+		log.info("웹훅 서명 검증 성공: webhookId={}", webhookId);
 
-			// 2. 검증 통과 후 처리
-			paymentService.processWebhook(body);
+		paymentService.processWebhook(body);
 
-			return ResponseEntity.ok().build();
+		return ResponseEntity.ok().build();
 
-		} catch (Exception e) {
-			log.error("웹훅 처리 실패: {}", e.getMessage(), e);
-			return ResponseEntity.status(500).build();
-		}
 	}
 
 	@GetMapping("/api/payments/me")
@@ -121,26 +108,19 @@ public class PaymentController {
 		@PathVariable Long paymentId,
 		@AuthenticationPrincipal String username
 	) {
-		try {
-			log.info("Payment ID로 Order 조회 요청: username={}, paymentId={}", username, paymentId);
-			Order order = orderRepository.findByPaymentPkId(paymentId).orElseThrow();
+		log.info("Payment ID로 Order 조회 요청: username={}, paymentId={}", username, paymentId);
+		Order order = orderRepository.findByPaymentPkId(paymentId)
+			.orElseThrow(() -> new EntityNotFoundException(
+				"결제 ID에 해당하는 주문을 찾을 수 없습니다.")); // 👈 404 처리를 위해 예외 Throw
 
-			User currentUser = userService.findByUsername(username);
+		User currentUser = userService.findByUsername(username);
 
-			if (!order.getUserId().equals(currentUser.getId())) {
-				log.warn("권한 없는 주문 조회 시도: 요청자={}, 주문 소유자={}",
-					currentUser.getId(), order.getUserId());
-				return ResponseEntity.status(HttpStatus.FORBIDDEN)
-					.body("본인의 주문만 조회할 수 있습니다.");
-			}
-			return ResponseEntity.ok(order);
-		} catch (EntityNotFoundException e) {
-			log.error("Order 조회 실패 (찾을 수 없음): {}", e.getMessage());
-			return ResponseEntity.status(HttpStatus.NOT_FOUND).body(e.getMessage());
-		} catch (Exception e) {
-			log.error("Payment ID로 Order 조회 중 서버 오류 발생", e);
-			return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-				.body("주문 조회 중 오류가 발생했습니다.");
+		if (!order.getUserId().equals(currentUser.getId())) {
+			log.warn("권한 없는 주문 조회 시도: 요청자={}, 주문 소유자={}",
+				currentUser.getId(), order.getUserId());
+			throw new AccessDeniedException("본인의 주문만 조회할 수 있습니다.");
+			// (AccessDeniedException 발생 시 GlobalExceptionHandler가 403으로 처리)
 		}
+		return ResponseEntity.ok(order);
 	}
 }
