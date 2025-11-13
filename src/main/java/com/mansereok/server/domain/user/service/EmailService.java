@@ -326,13 +326,10 @@ public class EmailService {
 			                                            <tr>
 			                                                <td align="center" style="background-color: #ffffff !important;">
 			                                                    <p style="margin: 0 0 6px 0; font-size: 13px; line-height: 1.5; color: #999999 !important;">
-			                                                        상호명: 와이포스트
+			                                                        네임드사주 NAMED
 			                                                    </p>
 			                                                    <p style="margin: 0 0 6px 0; font-size: 13px; line-height: 1.5; color: #999999 !important;">
-			                                                        help@namedsaju.com
-			                                                    </p>
-			                                                    <p style="margin: 0 0 18px 0; font-size: 13px; line-height: 1.5; color: #999999 !important;">
-			                                                        서울 은평구 역촌동 40-51 양지빌딩 4층
+			                                                        문의: help@namedsaju.com
 			                                                    </p>
 			                                                    <p style="margin: 0; font-size: 13px; line-height: 1.5;">
 			                                                        <a href="https://www.namedsaju.com" style="color: #6B9FF5 !important; text-decoration: underline;">수신거부</a>
@@ -473,9 +470,8 @@ public class EmailService {
 			                                        <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%%" style="border-top: 1px solid #E5E5E5; padding-top: 35px; background-color: #ffffff !important;">
 			                                            <tr>
 			                                                <td align="center" style="background-color: #ffffff !important;">
-			                                                    <p style="margin: 0 0 6px 0; font-size: 13px; line-height: 1.5; color: #999999 !important;">상호명: 와이포스트</p>
-			                                                    <p style="margin: 0 0 6px 0; font-size: 13px; line-height: 1.5; color: #999999 !important;">help@namedsaju.com</p>
-			                                                    <p style="margin: 0 0 18px 0; font-size: 13px; line-height: 1.5; color: #999999 !important;">서울 은평구 역촌동 40-51 양지빌딩 4층</p>
+			                                                    <p style="margin: 0 0 6px 0; font-size: 13px; line-height: 1.5; color: #999999 !important;">네임드사주 NAMED</p>
+			                                                    <p style="margin: 0 0 6px 0; font-size: 13px; line-height: 1.5; color: #999999 !important;">문의: help@namedsaju.com</p>
 			                                                    <p style="margin: 0; font-size: 13px; line-height: 1.5;">
 			                                                        <a href="https://www.namedsaju.com" style="color: #6B9FF5 !important; text-decoration: underline;">수신거부</a>
 			                                                        <span style="color: #CCCCCC !important;"> | </span>
