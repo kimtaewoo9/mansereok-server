@@ -104,10 +104,10 @@ posteller:
 # Swagger
 springdoc:
   api-docs:
-    enabled: true
+    enabled: false
     path: /v3/api-docs
   swagger-ui:
-    enabled: true
+    enabled: false
     operations-sorter: method
     tags-sorter: alpha
   default-consumes-media-type: application/json

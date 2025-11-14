@@ -9,8 +9,8 @@ import lombok.NoArgsConstructor;
 @AllArgsConstructor
 public class OrderCreateResponse {
 
-	private Long orderId; // orderId를 프론트에게 전달 ..
+	private Long orderId;
 	private String merchantUid;
-	private Integer amount; // 가격 알려주고
+	private Integer amount;
 	private String productName;
 }

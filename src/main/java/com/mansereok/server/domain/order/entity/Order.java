@@ -43,18 +43,24 @@ public class Order {
 
 	private LocalDateTime paidAt; // 결제한 시간 .
 
+	private Integer originalAmount;
+	private String appliedDiscountCode;
+
 	@PrePersist
 	protected void onCreate() {
 		createdAt = LocalDateTime.now();
 	}
 
 	public static Order create(String merchantUid, Long userId, Long subCategoryId,
-		Integer amount, OrderStatus status) {
+		Integer originalAmount, Integer finalAmount, String appliedDiscountCode,
+		OrderStatus status) {
 		Order order = new Order();
 		order.merchantUid = merchantUid;
 		order.userId = userId;
 		order.subCategoryId = subCategoryId;
-		order.amount = amount;
+		order.originalAmount = originalAmount;
+		order.amount = finalAmount;
+		order.appliedDiscountCode = appliedDiscountCode;
 		order.status = status;
 		return order;
 	}

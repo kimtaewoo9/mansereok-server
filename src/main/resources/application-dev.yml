@@ -135,6 +135,11 @@ server:
     enabled: true
     mime-types: application/json,application/xml,text/html,text/xml,text/plain
     min-response-size: 1024
+  servlet:
+    session:
+      cookie:
+        same-site: none
+        secure: true
 
 # Actuator (헬스체크 및 모니터링)
 management:

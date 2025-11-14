@@ -4,6 +4,9 @@ package com.mansereok.server.domain.payment.service;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.mansereok.server.domain.discount.DiscountCodeService;
+import com.mansereok.server.domain.discount.DiscountCodeService.DiscountValidationResult;
+import com.mansereok.server.domain.discount.entity.DiscountCode;
 import com.mansereok.server.domain.interpret.entity.CompatibilityResult;
 import com.mansereok.server.domain.interpret.entity.Result;
 import com.mansereok.server.domain.interpret.repository.CompatibilityResultRepository;
@@ -52,6 +55,7 @@ public class PaymentService {
 	private final OrderRepository orderRepository;
 	private final SubCategoryRepository subCategoryRepository;
 	private final PaymentRepository paymentRepository;
+	private final DiscountCodeService discountCodeService;
 
 	private final ResultRepository resultRepository;
 	private final CompatibilityResultRepository compatibilityResultRepository;
@@ -73,36 +77,66 @@ public class PaymentService {
 		SubCategory subCategory = subCategoryRepository.findById(request.getSubCategoryId())
 			.orElseThrow(() -> new PaymentException("존재하지 않는 상품입니다."));
 
-		Integer amount = subCategory.getPrice(); // 2. 금액 계산 .
+		Integer originalAmount = subCategory.getPrice(); // 1. 원본 금액 .
 
-		// 4. 결제 회사에 보여주는 영수증 번호 .. merchantUid
-		String merchantUid =
-			"order_" + System.currentTimeMillis() + "_" + UUID.randomUUID().toString()
-				.substring(0, 8);
+		try {
+			// 2. [핵심] 락 걸고, 검증하고, 엔티티까지 받아옴
+			DiscountValidationResult validationResult = discountCodeService.validateAndCalculateDiscountForPayment(
+				request.getDiscountCode(),
+				originalAmount
+			);
 
-		// 5. 주문을 DB에 저장함 .
-		Order savedOrder = orderRepository.save(
-			Order.create(
+			Integer finalAmount = validationResult.getFinalAmount();
+			String appliedCode = validationResult.getAppliedCode();
+			DiscountCode discountCodeEntity = validationResult.getDiscountCodeEntity(); // 락 걸린 엔티티
+
+			String merchantUid =
+				"order_" + System.currentTimeMillis() + "_" + UUID.randomUUID().toString()
+					.substring(0, 8);
+
+			// 3. 주문서 생성
+			Order savedOrder = orderRepository.save(
+				Order.create(
+					merchantUid,
+					user.getId(),
+					subCategory.getId(),
+					originalAmount, // 원본 금액
+					finalAmount,    // 최종 결제 금액
+					appliedCode,    // 적용된 코드
+					OrderStatus.PENDING
+				)
+			);
+
+			// 4. 사용 횟수 증가 (주문 생성 트랜잭션 내에서 즉시 처리)
+			if (discountCodeEntity != null) {
+				discountCodeService.incrementUsage(discountCodeEntity);
+				log.info("할인 코드 사용 횟수 증가 완료: {}", appliedCode);
+			}
+
+			log.info("주문 생성 완료 (트랜잭션 커밋): orderId={}, merchantUid={}, amount={}",
+				savedOrder.getId(), merchantUid, finalAmount);
+
+			// 5. 프론트에 최종 결제액과 주문번호 전달
+			return new OrderCreateResponse(
+				savedOrder.getId(),
 				merchantUid,
-				user.getId(),
-				subCategory.getId(),
-				amount,
-				OrderStatus.PENDING
-			)
-		);
+				finalAmount, // 프론트가 결제할 최종 금액
+				subCategory.getTitle()
+			);
 
-		log.info("주문 생성 완료: orderId={}, merchantUid={}, amount={}",
-			savedOrder.getId(), merchantUid, amount);
-
-		return new OrderCreateResponse(
-			savedOrder.getId(),
-			merchantUid,
-			amount,
-			subCategory.getTitle()
-		);
+		} catch (PaymentException e) {
+			// 할인 코드 검증 실패 (만료, 횟수 초과 등)
+			log.warn("할인 코드 처리 실패: {}", e.getMessage());
+			throw e; // 400 Bad Request로 프론트에 전달
+		} catch (Exception e) {
+			// 기타 DB 오류 등
+			log.error("주문 생성 중 심각한 오류 발생: {}", e.getMessage(), e);
+			throw new PaymentException("주문 생성 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.");
+		}
 	}
 
 	// 2단계. 결제 상태 조회 ..
+	@Transactional(readOnly = true)
 	public Order completePayment(PaymentCompleteRequest request) {
 		log.info("결제 상태 조회: paymentId={}, merchantUid={}", request.getPaymentId(),
 			request.getMerchantUid());
@@ -130,7 +164,7 @@ public class PaymentService {
 		String merchantUidFromCustomData = null;
 		try {
 			log.info("=== 웹훅 원본 페이로드 ===");
-			log.info(body);
+			log.info("body: {}", body);
 
 			PortoneWebhookDto webhook = objectMapper.readValue(body, PortoneWebhookDto.class);
 
@@ -151,10 +185,13 @@ public class PaymentService {
 				return;
 			}
 
-			log.info("paymentId '{}'로 주문을 조회합니다...", paymentId);
+			// ✅ 포트원 API 호출 전에 로그
+			log.info("포트원 API 호출 시작: paymentId={}", paymentId);
 
 			// 포트원에 결제 됐는지 재확인함
 			PortOnePaymentResponse paymentResponse = fetchPaymentDataFromPortOne(paymentId);
+
+			log.info("포트원 API 호출 완료");
 			log.info("PortOnePaymentResponse: " + paymentResponse);
 
 			String customDataString = paymentResponse.getCustomData();
@@ -163,10 +200,21 @@ public class PaymentService {
 				throw new PaymentException("결제 API 응답에서 customData를 찾을 수 없어 주문 번호를 알 수 없습니다.");
 			}
 
+			log.info("customData 원본: '{}'", customDataString);
+
+			if (customDataString.isBlank()) {
+				log.error("customData가 비어있음!");
+				throw new PaymentException("customData 없음");
+			}
+
 			try {
 				// customData 문자열을 JSON 객체로 파싱
 				JsonNode customDataJson = objectMapper.readTree(customDataString);
-				// "merchantUid" 필드 값 추출
+
+				log.info("JSON 파싱 완료: {}", customDataJson);
+
+				// ✅ merchantUid 추출 전에 로그
+				log.info("merchantUid 추출 시작");
 				if (customDataJson.has("merchantUid")) {
 					merchantUidFromCustomData = customDataJson.get("merchantUid").asText();
 					log.info("customData에서 merchantUid 추출 성공: {}", merchantUidFromCustomData);
@@ -253,7 +301,7 @@ public class PaymentService {
 						);
 					} else {
 						log.warn(
-							"Discord 결제 알림 전송 실패: 사용자(ID:{}) 또는 상품(ID:{}) 정보를 찾을 수 없습니다.",
+							"Discord 결제 알림 및 사주 결과 생성 완료 이메일 전송 실패: 사용자(ID:{}) 또는 상품(ID:{}) 정보를 찾을 수 없습니다.",
 							savedOrder.getUserId(), savedOrder.getSubCategoryId());
 					}
 				} catch (Exception e) {
@@ -274,10 +322,12 @@ public class PaymentService {
 		}
 	}
 
+	@Transactional(readOnly = true)
 	public Payment getPayment(Long paymentId) {
 		return paymentRepository.findById(paymentId).orElseThrow(EntityNotFoundException::new);
 	}
 
+	@Transactional(readOnly = true)
 	public List<PaymentResponseDto> getPayments(String username) {
 		User user = userRepository.findByUsername(username)
 			.orElseThrow(() -> new IllegalArgumentException("사용자를 찾을 수 없습니다."));

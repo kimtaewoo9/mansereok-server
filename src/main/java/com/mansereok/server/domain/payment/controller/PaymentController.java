@@ -92,7 +92,6 @@ public class PaymentController {
 		paymentService.processWebhook(body);
 
 		return ResponseEntity.ok().build();
-
 	}
 
 	@GetMapping("/api/payments/me")
@@ -111,7 +110,7 @@ public class PaymentController {
 		log.info("Payment ID로 Order 조회 요청: username={}, paymentId={}", username, paymentId);
 		Order order = orderRepository.findByPaymentPkId(paymentId)
 			.orElseThrow(() -> new EntityNotFoundException(
-				"결제 ID에 해당하는 주문을 찾을 수 없습니다.")); // 👈 404 처리를 위해 예외 Throw
+				"결제 ID에 해당하는 주문을 찾을 수 없습니다."));
 
 		User currentUser = userService.findByUsername(username);
 
@@ -119,7 +118,6 @@ public class PaymentController {
 			log.warn("권한 없는 주문 조회 시도: 요청자={}, 주문 소유자={}",
 				currentUser.getId(), order.getUserId());
 			throw new AccessDeniedException("본인의 주문만 조회할 수 있습니다.");
-			// (AccessDeniedException 발생 시 GlobalExceptionHandler가 403으로 처리)
 		}
 		return ResponseEntity.ok(order);
 	}
