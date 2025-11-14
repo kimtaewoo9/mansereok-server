@@ -45,8 +45,10 @@ public class SecurityConfig {
 			.csrf(csrf -> csrf
 				.csrfTokenRepository(CookieCsrfTokenRepository.withHttpOnlyFalse())
 				.ignoringRequestMatchers("/api/payment/webhook",
-					"/member/**", // <-- 이 경로 추가
-					"/api/auth/**"
+					"/member/**",
+					"/api/auth/**",
+					"/swagger-ui/**",
+					"/v3/api-docs/**"
 				)
 			)
 
@@ -60,6 +62,7 @@ public class SecurityConfig {
 			.authorizeHttpRequests(auth -> auth
 				// 1. 인증 없이 접근 허용 (permitAll)
 				.requestMatchers(HttpMethod.OPTIONS, "/**").permitAll() // CORS Preflight 요청
+				.requestMatchers("/", "/error", "/favicon.ico").permitAll()
 				// AuthController: 회원가입, 로그인, 토큰갱신, 로그아웃, CSRF 토큰 발급
 				.requestMatchers("/api/auth/**").permitAll()
 				// OauthController: 소셜 로그인 콜백 처리
@@ -71,8 +74,6 @@ public class SecurityConfig {
 				.permitAll()
 				// Swagger UI 접근 (개발/테스트 환경용)
 				.requestMatchers("/swagger-ui/**", "/v3/api-docs/**").permitAll()
-				// Posteller 프록시 API (InterpretationController, PostellerController) - 일단 인증 없이 허용
-				// 만약 이 API들도 인증이 필요하다면 아래 .authenticated() 섹션으로 이동
 				.requestMatchers(
 					"/api/v1/manseryeok/interpretation/{subcategoryId}/posteller",
 					"/api/v1/manseryeok/compatibility/{subcategoryId}/posteller"
@@ -80,6 +81,7 @@ public class SecurityConfig {
 				.requestMatchers("/api/v1/manseryeok/daeun", "/api/v1/manseryeok/chart",
 					"/api/v1/manseryeok/points").permitAll()
 				.requestMatchers("/actuator/health").permitAll()
+				.requestMatchers("/api/payment/discount").permitAll()
 
 				// ProfileController: 내 정보 관련 모든 API
 				.requestMatchers("/api/v1/users/me/**").authenticated()
@@ -122,7 +124,8 @@ public class SecurityConfig {
 				"http://localhost:3000",
 				"https://namedsaju.com",
 				"https://www.namedsaju.com",
-				"https://findme-jet.vercel.app"
+				"https://findme-jet.vercel.app",
+				"https://dev-front.namedsaju.com/"
 			)
 		);
 

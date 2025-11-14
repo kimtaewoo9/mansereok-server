@@ -42,6 +42,9 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 	private final AntPathMatcher pathMatcher = new AntPathMatcher();
 
 	private static final List<String> PERMIT_ALL_PATHS = Arrays.asList(
+		"/",
+		"/error",
+		"/favicon.ico",
 		"/member/**",
 		"/api/auth/**",
 		"/swagger-ui/**",
