@@ -48,7 +48,8 @@ public class SecurityConfig {
 					"/member/**",
 					"/api/auth/**",
 					"/swagger-ui/**",
-					"/v3/api-docs/**"
+					"/v3/api-docs/**",
+					"/actuator/**"
 				)
 			)
 
@@ -80,7 +81,7 @@ public class SecurityConfig {
 				).permitAll()
 				.requestMatchers("/api/v1/manseryeok/daeun", "/api/v1/manseryeok/chart",
 					"/api/v1/manseryeok/points").permitAll()
-				.requestMatchers("/actuator/health").permitAll()
+				.requestMatchers("/actuator/**").permitAll()
 				.requestMatchers("/api/payment/discount").permitAll()
 
 				// ProfileController: 내 정보 관련 모든 API
