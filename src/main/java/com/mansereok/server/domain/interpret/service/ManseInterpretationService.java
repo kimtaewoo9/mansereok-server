@@ -488,7 +488,8 @@ public class ManseInterpretationService {
 			case 3 -> createCareerAptitudePrompt(name, response);
 			case 5 -> createIdolAnalysisPrompt(name, response);
 			case 9 -> createCharacterSajuPrompt(name, response);
-			default -> createComprehensiveAnalysisPrompt(name, response); // 기본 종합
+			case 13 -> createActorAnalysisPrompt(name, response);  // ← 추가
+			default -> createComprehensiveAnalysisPrompt(name, response);
 		};
 	}
 
@@ -506,6 +507,11 @@ public class ManseInterpretationService {
 				person2Response);
 			case 8 -> createTriangleRelationshipPrompt(person1Name, person1Response, person2Name,
 				person2Response);
+			case 14 -> createLoveStoryPrompt(person1Name, person1Response, person2Name,  // ← 추가
+				person2Response);
+			case 15 ->
+				createActorCompatibilityPrompt(person1Name, person1Response, person2Name,  // ← 추가
+					person2Response);
 			default -> createCompatibilityPrompt(person1Name, person1Response, person2Name,
 				person2Response);
 		};
@@ -795,7 +801,7 @@ public class ManseInterpretationService {
 		return prompt.toString();
 	}
 
-	// ==================== [수정] 5. 최애 분석 프롬프트 (혜안 적용) ====================
+	// ==================== 5. 아이돌 최애 분석 프롬프트 (혜안 적용) ====================
 	private String createIdolAnalysisPrompt(String name, ManseryeokCalculationResponse response) {
 		StringBuilder prompt = new StringBuilder();
 		ManseryeokCalculationResponse.SajuInfo saju = response.getSaju();
@@ -841,16 +847,19 @@ public class ManseInterpretationService {
 			name, formattedDate, formattedTime,
 			saju.getDaySky().getKorean() + saju.getDaySky().getFiveCircle()));
 
-		prompt.append("## 타고난 기질, 성격, 인성, 그룹 내 역할)\n");
+		prompt.append("## 아이돌의 타고난 기질, 성격, 인성, 그룹 내 역할)\n");
 		prompt.append(String.format(
-			"(일간, 월지, 십성 분포를 바탕으로 %s님의 근본적인 성격과 인성을 심층 분석해주세요.)\n", name));
+			"(일간, 월지, 십성 분포를 바탕으로 %s님의 근본적인 성격과 인성을 심층 분석해주세요. 만세력 기반으로 설명하되, 알아듣기 쉽도록 풀어서 재미있게 설명해주세요.)\n",
+			name));
 		prompt.append(
-			"(만약 그룹이라면 이 성격이 팀 내에서 어떻게 작용할지, 어떤 역할(리더형, 조율자형, 마이웨이형 등)을 맡을지도 함께 예측해주세요.)\n\n");
+			"(만약 팀이라면, 이 사람의 성격이 팀 내에서 어떻게 작용할지, 어떤 역할(리더형, 조율자형, 마이웨이형 등)을 맡을지도 함께 예측해주세요.)\n\n");
+		prompt.append(
+			"(아이돌로서 보여지는 것과 달리, 이 사람의 실제 성격은 어떤지, 끼를 타고난 아이돌인가 아니면 노력형인가, 만세력 기반으로 분석 하되 알아듣기 쉽도록 풀어서 재미있게 설명해주세요.)\n\n");
 
 		prompt.append("## 병크 및 리스크 예측\n");
 		prompt.append("(사주 원국과 신살, 운의 흐름을 볼 때, 이 아이돌이 아이돌 활동 중 가장 조심해야 할 '병크'나 리스크는 무엇인가요?)\n");
 		prompt.append(
-			"(예: 구설수, 건강 문제, 재물 문제, 이성 문제 등. 흉살이나 충/형을 근거로 설명하되, 알아듣기 쉽게 풀어서 설명해주세요.)\n\n");
+			"(예: 구설수, 건강 문제, 이성 문제 등. 흉살이나 충/형을 근거로 설명하되, 알아듣기 쉽게 풀어서 설명해주세요.)\n\n");
 
 		prompt.append("## 아이돌이 아니었다면? (타고난 재능)\n");
 		prompt.append(
@@ -858,6 +867,8 @@ public class ManseInterpretationService {
 
 		prompt.append("## 연애관 및 이상형 (가장 마지막)\n");
 		prompt.append("(팬들이 궁금해하는 부분입니다. 이 사람의 연애 스타일, 본능적으로 끌리는 이상형(외모, 성격)을 솔직하게 분석해주세요.)\n");
+		prompt.append(
+			"(이 사람의 어떤 부분이 이성에게 매력으로 다가올지에 대해서 설명 (외적인 것, 내적인 것 만세력 기반으로 분석하되 알아듣기 쉽고 편하게 설명해주세요.))\n");
 		prompt.append("(결혼은 언제쯤 할지 정확한 년도 예측, 배우자궁(일지)의 모습은 어떤지도 포함해주세요.)\n\n");
 
 		appendSajuJsonResponseFormat(prompt, name);
@@ -865,7 +876,7 @@ public class ManseInterpretationService {
 		return prompt.toString();
 	}
 
-	// ==================== [수정] 9. 캐릭터 사주 프롬프트 (혜안 적용) ====================
+	// ==================== 9. 캐릭터 사주 프롬프트 (혜안 적용) ====================
 	private String createCharacterSajuPrompt(String name, ManseryeokCalculationResponse response) {
 		StringBuilder prompt = new StringBuilder();
 		ManseryeokCalculationResponse.SajuInfo saju = response.getSaju();
@@ -927,7 +938,80 @@ public class ManseInterpretationService {
 		return prompt.toString();
 	}
 
-	// ==================== [수정] 4,6 러브 스토리 프롬프트 (혜안 적용) ====================
+	// ==================== 13. 배우 분석 프롬프트 ====================
+	private String createActorAnalysisPrompt(String name, ManseryeokCalculationResponse response) {
+		StringBuilder prompt = new StringBuilder();
+		ManseryeokCalculationResponse.SajuInfo saju = response.getSaju();
+		ManseryeokCalculationResponse.InputInfo input = response.getInput();
+
+		String solarDate = input.getSolarDate().toString();
+		String solarTime = input.getSolarTime().toString();
+
+		String formattedDate = solarDate.substring(0, 4) + "년 "
+			+ solarDate.substring(5, 7) + "월 "
+			+ solarDate.substring(8, 10) + "일";
+
+		String formattedTime = solarTime.substring(0, 2) + "시 "
+			+ solarTime.substring(3, 5) + "분";
+
+		// 1. '혜안' 공통 페르소나 주입 (유지)
+		appendHyeanPersonaHeader(prompt);
+
+		// 2. 3인칭 서술 지시 (유지)
+		prompt.append("### ⚠️ 매우 중요: 3인칭 서술 ###\n");
+		prompt.append("이 분석은 '%s'라는 제3자(배우)에 대한 것입니다.\n");
+		prompt.append("쉼표, 마침표, '-', 이런 표현 최대한 줄여주세요. AI가 작성한 글이라는 티가 나면 안됩니다.\n");
+		prompt.append(
+			"절대로 2인칭(%s님, 당신)을 사용하지 말고, **'그는', '그녀는', '%s님은', '이 사람은'** 등 3인칭 관찰자 시점으로만 서술해야 합니다.\n\n");
+
+		// 3. 분석 대상자 정보 주입
+		prompt.append("### 분석 대상자 상세 정보 ###\n");
+		appendPersonDetailInfo(prompt, name, response);
+
+		// 4. 분석 요청
+		prompt.append("\n### [배우 심층 분석] 요청 ###\n");
+		prompt.append(String.format(
+			"혜안 선생님, 배우 '%s'님의 사주를 팬의 관점에서 **아래 요청된 순서대로** 깊이 있게 분석해주세요.\n", name));
+
+		prompt.append(
+			"**[가장 중요!]** 말투는 **'~입니다', '~네요', '~로군요', '~이군요' 같은 따뜻하고 명료한 말투**를 사용하세요.\n");
+		prompt.append(
+			"AI가 쓴 것 같은 뻔한 서론/결론, 억지 비유는 절대 쓰지 마세요. 부드럽고, 심각하지 않게, '발견한 사실'을 설명하는 방식이어야 합니다.\n\n");
+
+		prompt.append("--- [분석 시작] ---\n");
+		prompt.append(String.format(
+			"\"%s님은 %s %s에 태어나신, [일간(%s) 자연물 비유]와 같은 기운을 지니셨습니다.\"와 같이 자연스럽게 분석을 시작해주세요.\n\n",
+			name, formattedDate, formattedTime,
+			saju.getDaySky().getKorean() + saju.getDaySky().getFiveCircle()));
+
+		prompt.append("## 배우의 타고난 기질, 성격, 인성, 작품 선택 능력)\n");
+		prompt.append(String.format(
+			"(일간, 월지, 십성 분포를 바탕으로 %s님의 근본적인 성격과 인성을 심층 분석해주세요. 만세력 기반으로 자세하게 설명하되, 보는 사람이 알아 듣기 편하게 쉽고 재미있게 풀어서 설명해주세요.)\n",
+			name));
+		prompt.append(
+			"(배우로서 어떤 작품을 선택하는지, 작품에 임하는 태도가 어떤지(작품을 준비할때 모든걸 하나하나 준비하는 스타일이라던가, 노력을 하기 보다는 재능을 믿고 가는 스타일이라던가), 대중들에게 인기 많은 이유가 무엇인지? 어떤 점에 대중들이 매료됐는지 설명)\n\n");
+		prompt.append(
+			"(촬영장에서 스태프들과의 사이가 어떨지, 상대 배우나 다른 배우들과의 사이가 어떨지(현장 케미) 실제 이 배우의 성격이 어떨지에 대해서 만세력 기반으로 자세하게 설명하되 알아듣기 쉽고 재미있게 풀어서 설명해주세요.)\n\n");
+
+		prompt.append("## 병크 및 리스크 예측\n");
+		prompt.append("(사주 원국과 신살, 운의 흐름을 볼 때, 이 배우가 연예 활동 중 가장 조심해야 할 '병크'나 리스크는 무엇인가요?)\n");
+		prompt.append(
+			"(예: 구설수, 건강 문제, 이성 문제 등. 흉살이나 충/형을 근거로 설명하되, 알아듣기 쉽게 풀어서 재미있게 설명해주세요.)\n\n");
+
+		prompt.append("## 배우가 아니었다면? (타고난 재능)\n");
+		prompt.append(
+			"(사주에 나타난 핵심 재능(식상, 인성, 관성 등)을 바탕으로, 배우가 아니었다면 어떤 직업에서 성공 했을지, 어떤 직업이 잘 어울리는지, 1~2가지 구체적으로 분석해주세요.)\n\n");
+
+		prompt.append("## 연애관 및 이상형 (가장 마지막)\n");
+		prompt.append("(팬들이 궁금해하는 부분입니다. 이 사람의 연애 스타일, 본능적으로 끌리는 이상형(외모, 성격)을 솔직하게 분석해주세요.)\n");
+		prompt.append("(결혼은 언제쯤 할지 정확한 년도 예측, 배우자궁(일지)의 모습은 어떤지도 포함해주세요.)\n\n");
+
+		appendSajuJsonResponseFormat(prompt, name);
+
+		return prompt.toString();
+	}
+
+	// ==================== 4,6,14 러브 스토리 프롬프트 (혜안 적용) ====================
 	private String createLoveStoryPrompt(
 		String person1Name,
 		ManseryeokCalculationResponse person1Response,
@@ -1282,6 +1366,175 @@ public class ManseInterpretationService {
 		prompt.append("이 삼각관계가 맞이할 가능성이 높은 결말 시나리오 1~2가지 제시 (명리학적 근거 포함).\n");
 		prompt.append("각 당사자(%s님, %s님, 그리고 가상의 제3자)가 이 상황을 현명하게 대처하기 위한 조언.\n");
 		prompt.append("관계의 복잡성 속에서도 각자가 '성장'할 수 있는 방법에 대한 메시지로 마무리.\n\n");
+
+		appendCompatibilityJsonResponseFormat(prompt, person1Name, person2Name);
+
+		return prompt.toString();
+	}
+
+	// ==================== 15. 배우 궁합 프롬프트 ====================
+	private String createActorCompatibilityPrompt(
+		String person1Name,
+		ManseryeokCalculationResponse person1Response,
+		String person2Name,
+		ManseryeokCalculationResponse person2Response
+	) {
+		StringBuilder prompt = new StringBuilder();
+
+		// 1. '혜안' 궁합 페르소나 주입
+		appendHyeanCompatibilityPersonaHeader(prompt);
+
+		// 2. 3인칭 서술 지시 (배우용으로 수정)
+		prompt.append("\n### ⚠️ 매우 중요: 3인칭 서술 (배우 팬픽 관점) ###\n");
+		prompt.append(
+			String.format("- 이 분석은 '%s'와 '%s'라는 제3자(배우)들에 대한 것입니다.\n", person1Name, person2Name));
+		prompt.append("- 절대로 2인칭(당신, 당신들)을 사용하지 마세요.\n");
+		prompt.append(
+			String.format("- [개인 분석]은 '%s님은...', '%s님은...' 처럼 3인칭 단수로 서술해야 합니다.\n", person1Name,
+				person2Name));
+		prompt.append("- [궁합 분석]은 '두 사람은...', '%s님과 %s님은...' 처럼 3인칭 관찰자 시점으로 서술해야 합니다.\n");
+		prompt.append("- 팬들의 상상력을 자극할 수 있는 서사적이고 감성적인 어조를 사용해주세요.\n");
+
+		// 3. 분석 대상자들 정보 주입
+		prompt.append("\n### 3. 분석 대상자 상세 정보 ###\n");
+		prompt.append("--- 첫 번째 배우: ").append(person1Name).append(" ---\n");
+		appendPersonDetailInfo(prompt, person1Name, person1Response);
+		prompt.append("\n--- 두 번째 배우: ").append(person2Name).append(" ---\n");
+		appendPersonDetailInfo(prompt, person2Name, person2Response);
+
+		// 4. 분석 구조 설명 (3단계로 수정)
+		prompt.append("\n### 4. [분석 구조] ###\n");
+		prompt.append(String.format("1. %s님 개인 심층 분석\n", person1Name));
+		prompt.append(String.format("2. %s님 개인 심층 분석\n", person2Name));
+		prompt.append(String.format("3. %s님과 %s님의 관계 서사 (궁합)\n\n", person1Name, person2Name));
+
+		// ===== 5. 1단계: 첫 번째 사람 개인 분석 =====
+		prompt.append("### 5. [1단계: ").append(person1Name).append("님 개인 심층 분석] ###\n");
+		prompt.append(String.format(
+			"먼저 %s님의 사주를 통해 이 분이 어떤 사람인지, 연애에서 어떤 모습을 보이는지 분석해주세요.\n\n",
+			person1Name));
+
+		prompt.append("타고난 성격과 가치관\n");
+		prompt.append(String.format(
+			"%s님의 일간, 오행, 십성을 바탕으로 연애 할때의 성격을 쉽고 재미있게 풀어서 설명해주세요.\n",
+			person1Name));
+		prompt.append(String.format(
+			"%s님이 인생에서 중요하게 생각하는 가치관(사랑/일/돈/안정 등)은 무엇인지 설명해주세요.\n",
+			person1Name));
+		prompt.append("일지(배우자궁)와 지장간을 통해 내면의 모습과 결혼관을 분석해주세요.\n\n");
+
+		prompt.append("연애 스타일과 특징\n");
+		prompt.append(String.format(
+			"%s님은 어떤 방식으로 사랑에 빠지나요? (적극적/소극적, 빠르게/천천히)\n",
+			person1Name));
+		prompt.append(String.format(
+			"%s님의 애정 표현 방식은? (말로 표현/행동으로 표현/조용히 배려), 만세력 기반으로 질투나 집착이 많은 타입인지 분석\n",
+			person1Name));
+		prompt.append(String.format(
+			"%s님은 연애할 때 어떤 장점이 있고, 어떤 점을 조심해야 하나요?\n\n",
+			person1Name));
+
+		prompt.append("이상형과 끌리는 타입\n");
+		prompt.append(String.format(
+			"%s님이 본능적으로 끌리는 사람의 특징 (외모, 성격, 분위기, 직업 등)을 구체적으로 설명해주세요.\n",
+			person1Name));
+		prompt.append(String.format(
+			"%s님과 궁합이 잘 맞는 오행/일간은 무엇이며, 어떤 성향의 사람이 좋은지 설명해주세요.\n\n",
+			person1Name));
+
+		// ===== 6. 2단계: 두 번째 사람 개인 분석 (추가된 부분) =====
+		prompt.append("### 6. [2단계: ").append(person2Name).append("님 개인 심층 분석] ###\n");
+		prompt.append(String.format(
+			"다음으로 %s님의 사주를 통해 이 분이 어떤 사람인지, 연애에서 어떤 모습을 보이는지 분석해주세요.\n\n",
+			person2Name));
+
+		prompt.append("타고난 성격과 가치관\n");
+		prompt.append(String.format(
+			"%s님의 일간, 오행, 십성을 바탕으로 연애 할때의 성격을 쉽고 재미있게 풀어서 설명해주세요.\n",
+			person2Name));
+		prompt.append(String.format(
+			"%s님이 인생에서 중요하게 생각하는 가치관(사랑/일/돈/안정 등)은 무엇인지 설명해주세요.\n",
+			person2Name));
+		prompt.append("일지(배우자궁)와 지장간을 통해 내면의 모습과 결혼관을 분석해주세요.\n\n");
+
+		prompt.append("연애 스타일과 특징\n");
+		prompt.append(String.format(
+			"%s님은 어떤 방식으로 사랑에 빠지나요? (적극적/소극적, 빠르게/천천히)\n",
+			person2Name));
+		prompt.append(String.format(
+			"%s님의 애정 표현 방식은? (말로 표현/행동으로 표현/조용히 배려), 만세력 기반으로 질투나 집착이 많은 타입인지 재미있게 풀어서 설명\n",
+			person2Name));
+		prompt.append(String.format(
+			"%s님은 연애할 때 어떤 장점이 있고, 어떤 점을 조심해야 하나요?\n\n",
+			person2Name));
+
+		prompt.append("이상형과 끌리는 타입\n");
+		prompt.append(String.format(
+			"%s님이 본능적으로 끌리는 사람의 특징 (외모, 성격, 분위기, 직업 등)을 구체적으로 설명해주세요.\n",
+			person2Name));
+		prompt.append(String.format(
+			"%s님과 궁합이 잘 맞는 오행/일간은 무엇이며, 어떤 성향의 사람이 좋은지 설명해주세요.\n\n",
+			person2Name));
+
+		// ===== 7. 3단계: 두 사람 궁합 분석 (번호 수정 및 내용 보강) =====
+		prompt.append("\n### 7. [3단계: ").append(person1Name).append("님과 ").append(person2Name)
+			.append("님의 관계 서사] ###\n");
+		prompt.append(String.format(
+			"이제 [1단계]와 [2단계]의 개인 분석을 바탕으로, %s님과 %s님 두 분의 궁합을 단계별로 분석해주세요.\n\n",
+			person1Name, person2Name));
+
+		prompt.append(String.format(
+			"\"%s님과 %s님, 두 분의 사주 인연을 보니... [두 사람의 일간을 자연물에 비유]처럼 [어떤 느낌]의 만남이네요.\" 라는 느낌으로 시작해주세요.\n\n",
+			person1Name, person2Name));
+
+		prompt.append("첫 만남: 서로의 첫인상\n");
+		prompt.append(String.format(
+			"%s님이 %s님을 처음 봤을 때 어떤 인상을 받을까요? (호감/무관심/경계)\n",
+			person1Name, person2Name));
+		prompt.append(String.format(
+			"%s님이 %s님을 처음 봤을 때는 어떨까요?\n",
+			person2Name, person1Name));
+		prompt.append("누가 먼저 다가가거나 호감을 표현할 가능성이 높은지 [1, 2단계 성격]을 기반으로 예측해주세요.\n");
+		prompt.append(String.format(
+			"**[중요]** %s님의 이상형([1단계 분석])과 %s님의 매력([2단계 분석])이 얼마나 부합하는지 교차 분석해주세요.\n",
+			person1Name, person2Name));
+		prompt.append(String.format(
+			"**[중요]** %s님의 이상형([2단계 분석])과 %s님의 매력([1단계 분석])이 얼마나 부합하는지 교차 분석해주세요.\n\n",
+			person2Name, person1Name));
+
+		prompt.append("썸과 관계 발전\n");
+		prompt.append("관계가 친구에서 연인으로 발전하는 속도는? (빠른 편/천천히)\n");
+		prompt.append("썸 기간 동안 누가 관계를 리드하고, 밀당 주도권은 누가 쥘까요?\n");
+		prompt.append("서로의 어떤 점에 매력을 느끼고 마음을 열게 될까요? (구체적으로)\n");
+		prompt.append(
+			"두 사람의 오행 관계(상생/상극)를 쉽게 풀어서 설명하고, 서로에게 어떤 영향을 주는지 분석해주세요.\n\n");
+
+		prompt.append("연애의 모습: 두 사람만의 케미\n");
+		prompt.append("연인이 된 후 두 사람의 데이트 스타일은? (활동적/조용한/감성적)\n");
+		prompt.append("애정 표현 방식이 서로 잘 맞을까요? 차이가 있다면 어떻게 조율해야 할까요?\n");
+		prompt.append("스킨십 성향과 친밀도는?\n");
+		prompt.append(
+			"**[질투 분석] 누가 더 질투심이 많을까요?** 각자의 사주(비겁, 관성, 일간 특성 등)를 근거로 누가 어떤 상황에서 질투를 느끼는지, 그리고 어떻게 표현하는지 서사적으로 분석해주세요.\n");
+		prompt.append("연애 vs 일, 두 사람의 우선순위는 비슷할까요? 다를까요?\n");
+		prompt.append(
+			"성격 궁합: 서로 잘 맞는 부분(합)과 서로 노력해야 하는 부분(충/형)을 **사주 용어를 쉽게 풀어서** 설명해주세요. AI 티 나는 말투 절대 금지\n\n");
+
+		prompt.append("갈등과 극복\n");
+		prompt.append(
+			"두 사람 사이에 발생할 수 있는 주요 갈등 원인 3가지 (성격 차이, 가치관 충돌, 생활 패턴 등)를 예측하고, **지지 충/형을 쉽게 풀어서** 설명해주세요.\n");
+		prompt.append("관계의 위기(권태기, 이별 위기)가 올 수 있는 시점은 언제일까요?\n");
+		prompt.append(
+			"각자의 특성을 고려했을 때, 갈등을 어떻게 극복하는 유형인지 구체적으로 설명해주세요.\n\n");
+
+		prompt.append("미래: 결혼 가능성과 장기 전망\n");
+		prompt.append(String.format(
+			"%s님의 결혼관([1단계 분석])과 %s님의 결혼관([2단계 분석])을 비교 분석해주세요.\n",
+			person1Name, person2Name));
+		prompt.append("이 커플의 결혼 가능성은? (냉철하게 판단해도 됩니다. 높음/중간/낮음)\n");
+		prompt.append(
+			"만약 결혼한다면 몇 년도에 할 가능성이 높은지, 대운과 세운을 참고하여 **구체적인 연도** 예측해주세요.\n");
+		prompt.append(
+			"두 사람의 인연에 대한 최종 조언과 응원 메시지로 따뜻하게 마무리해주세요.\n\n");
 
 		appendCompatibilityJsonResponseFormat(prompt, person1Name, person2Name);
 
