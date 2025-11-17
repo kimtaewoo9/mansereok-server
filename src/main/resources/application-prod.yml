@@ -136,15 +136,19 @@ server:
     mime-types: application/json,application/xml,text/html,text/xml,text/plain
     min-response-size: 1024
 
-# Actuator (헬스체크 및 모니터링)
+# Actuator
 management:
   endpoints:
     web:
       exposure:
-        include: "health"
+        include: "health,prometheus,metrics"
   endpoint:
     health:
       show-details: always
+  metrics:
+    tags:
+      application: ${spring.application.name}
+      environment: dev
 
 # Logging (운영 환경)
 logging:

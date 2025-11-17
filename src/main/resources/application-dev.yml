@@ -141,12 +141,12 @@ server:
         same-site: none
         secure: true
 
-# Actuator (헬스체크 및 모니터링)
+# Actuator
 management:
   endpoints:
     web:
       exposure:
-        include: "health,prometheus,metrics"  # ← prometheus, metrics 추가
+        include: "health,prometheus,metrics"
   endpoint:
     health:
       show-details: always
