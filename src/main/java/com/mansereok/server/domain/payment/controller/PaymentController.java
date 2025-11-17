@@ -51,22 +51,11 @@ public class PaymentController {
 		return ResponseEntity.ok(response);
 	}
 
-	// 결제 완료 API (결제 후 검증) // 이렇게 구현하면 프론트엔드에서 폴링으로 계속 결제 정보 확인해야함 .
+	// 결제 완료 API (결제 후 검증)
 	@PostMapping("/api/payment/complete")
 	public ResponseEntity<?> completePayment(@RequestBody PaymentCompleteRequest request) {
 		Order order = paymentService.completePayment(request);
 		log.info("Order: {}", order);
-		return ResponseEntity.ok(order);
-	}
-
-	@GetMapping("/api/payment/orders/{orderId}")
-	public ResponseEntity<?> getOrder(
-		@PathVariable Long orderId,
-		@AuthenticationPrincipal String username
-	) {
-		Order order = orderRepository.findById(orderId)
-			.orElseThrow(
-				() -> new EntityNotFoundException("주문을 찾을 수 없습니다.")); // 👈 404 처리를 위해 예외 Throw
 		return ResponseEntity.ok(order);
 	}
 
@@ -92,6 +81,17 @@ public class PaymentController {
 		paymentService.processWebhook(body);
 
 		return ResponseEntity.ok().build();
+	}
+
+	@GetMapping("/api/payment/orders/{orderId}")
+	public ResponseEntity<?> getOrder(
+		@PathVariable Long orderId,
+		@AuthenticationPrincipal String username
+	) {
+		Order order = orderRepository.findById(orderId)
+			.orElseThrow(
+				() -> new EntityNotFoundException("주문을 찾을 수 없습니다.")); // 👈 404 처리를 위해 예외 Throw
+		return ResponseEntity.ok(order);
 	}
 
 	@GetMapping("/api/payments/me")
