@@ -86,7 +86,8 @@ public class PaymentService {
 			// 2. [핵심] 락 걸고, 검증하고, 엔티티까지 받아옴
 			DiscountValidationResult validationResult = discountCodeService.validateAndCalculateDiscountForPayment(
 				request.getDiscountCode(),
-				originalAmount
+				originalAmount,
+				request.getSubCategoryId()
 			);
 
 			Integer finalAmount = validationResult.getFinalAmount();
@@ -180,7 +181,8 @@ public class PaymentService {
 		// 3. 할인 코드 재검증 (PESSIMISTIC_WRITE 락)
 		DiscountValidationResult validationResult = discountCodeService.validateAndCalculateDiscountForPayment(
 			request.getDiscountCode(),
-			originalAmount
+			originalAmount,
+			request.getSubCategoryId()
 		);
 
 		// 4. 0원 할인 검증

@@ -34,11 +34,14 @@ public class DiscountCode {
 
 	private LocalDateTime expiresAt; // 만료 일시
 
-	private int maxUses;
+	private int maxUses; //
 	private int currentUses; // 현재 사용 횟수 .
 
 	private int minPurchaseAmount; // 최소 주문 금액.
-	private boolean isActive; // 현재 활성화 중인가 ?
+	private boolean isActive; // 현재 활성화 중인가.
+
+	@Column(name = "sub_category_id")
+	private Long subCategoryId; // 특정 상품(subCategory) ID. // null 이면 모든 상품 가능 .
 
 	public void validate() {
 		if (!this.isActive) {
@@ -70,6 +73,10 @@ public class DiscountCode {
 
 		// 10원 단위로 가격 내림 .. (1의 자리 제거)
 		discountedAmount = (discountedAmount / 10) * 10;
+
+		if (this.discountType == DiscountType.PERCENTAGE && this.discountValue == 100) {
+			return Math.max(0, discountedAmount); // 0원 결제를 허용
+		}
 
 		return Math.max(1000, discountedAmount); // 천원 미만 방지.
 	}
