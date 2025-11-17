@@ -168,8 +168,10 @@ public class UserService {
 		if (requestDto.getBirthDate() != null) {
 			user.setBirthDate(requestDto.getBirthDate());
 		}
-		if (requestDto.getGender() != null) {
+		if (requestDto.getGender() != null && !requestDto.getGender().isBlank()) {
 			user.setGender(Gender.valueOf(requestDto.getGender()));
+		} else {
+			user.setGender(Gender.FEMALE);
 		}
 
 		return userRepository.save(user);
