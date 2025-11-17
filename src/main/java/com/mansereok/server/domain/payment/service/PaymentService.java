@@ -11,6 +11,7 @@ import com.mansereok.server.domain.interpret.entity.CompatibilityResult;
 import com.mansereok.server.domain.interpret.entity.Result;
 import com.mansereok.server.domain.interpret.repository.CompatibilityResultRepository;
 import com.mansereok.server.domain.interpret.repository.ResultRepository;
+import com.mansereok.server.domain.interpret.service.ResultService;
 import com.mansereok.server.domain.notification.service.DiscordNotificationService;
 import com.mansereok.server.domain.order.dto.request.OrderCreateRequest;
 import com.mansereok.server.domain.order.dto.response.OrderCreateResponse;
@@ -62,6 +63,8 @@ public class PaymentService {
 
 	private final ObjectMapper objectMapper;
 	private final UserRepository userRepository;
+
+	private final ResultService resultService;
 
 	private final RestClient restClient = RestClient.create();
 
@@ -158,6 +161,85 @@ public class PaymentService {
 
 		// 상태만 반환 (DB 업데이트 안함!)
 		return order;
+	}
+
+	@Transactional
+	public OrderCreateResponse redeemFreeProduct(String username, OrderCreateRequest request) {
+		log.info("0원 결제(무료 제공) 요청: username={}, subCategoryId={}", username,
+			request.getSubCategoryId());
+
+		// 1. 사용자 조회
+		User user = userRepository.findByUsername(username)
+			.orElseThrow(() -> new PaymentException("사용자를 찾을 수 없습니다."));
+
+		// 2. 상품 조회
+		SubCategory subCategory = subCategoryRepository.findById(request.getSubCategoryId())
+			.orElseThrow(() -> new PaymentException("존재하지 않는 상품입니다."));
+		Integer originalAmount = subCategory.getPrice();
+
+		// 3. 할인 코드 재검증 (PESSIMISTIC_WRITE 락)
+		DiscountValidationResult validationResult = discountCodeService.validateAndCalculateDiscountForPayment(
+			request.getDiscountCode(),
+			originalAmount
+		);
+
+		// 4. 0원 할인 검증
+		if (validationResult.getFinalAmount() != 0) {
+			log.warn("0원 결제 시도 실패: 최종 금액이 0원이 아닙니다. ({}원)", validationResult.getFinalAmount());
+			throw new PaymentException("유효한 100% 할인 코드가 아닙니다.");
+		}
+
+		// 5. 0원짜리 Order, Payment, Result 동시 생성 (하나의 트랜잭션)
+
+		// 5-1. Order 생성 (상태: PAID)
+		String merchantUid =
+			"free_" + System.currentTimeMillis() + "_" + UUID.randomUUID().toString()
+				.substring(0, 8);
+		Order order = Order.create(
+			merchantUid,
+			user.getId(),
+			subCategory.getId(),
+			originalAmount,
+			0, // finalAmount = 0
+			request.getDiscountCode(),
+			OrderStatus.PAID
+		);
+		order.setPaidAt(LocalDateTime.now());
+		Order savedOrder = orderRepository.save(order);
+
+		// 5-2. Payment 생성 (상태: PAID)
+		String paymentId = "free_" + merchantUid; // paymentId 가 없으니까 그냥 merchantId 넣어줌 .
+		Payment payment = Payment.create(
+			paymentId,
+			merchantUid,
+			0L, // amount = 0
+			PaymentStatus.PAID,
+			savedOrder.getId(),
+			user.getId(),
+			subCategory.getId()
+		);
+		Payment savedPayment = paymentRepository.save(payment);
+
+		// 5-3. Order에 Payment PK 연결
+		savedOrder.setPaymentPkId(savedPayment.getId());
+		orderRepository.save(savedOrder);
+
+		// 5-4. 분리된 ResultCreationService 호출
+		resultService.createInitialResult(savedPayment, savedOrder);
+
+		// 5-5. 할인 코드 사용 횟수 증가
+		discountCodeService.incrementUsage(validationResult.getDiscountCodeEntity());
+
+		log.info("0원 결제(무료 제공) 처리 완료: paymentId(PK)={}, orderId={}", savedPayment.getId(),
+			savedOrder.getId());
+
+		// 6. 응답 반환
+		return new OrderCreateResponse(
+			savedOrder.getId(),
+			savedOrder.getMerchantUid(),
+			savedOrder.getAmount(),
+			subCategory.getTitle()
+		);
 	}
 
 	public void processWebhook(String body) {
@@ -283,7 +365,8 @@ public class PaymentService {
 
 				order.setPaymentPkId(savedPayment.getId());
 
-				createInitialResult(savedPayment, savedOrder);
+				resultService.createInitialResult(savedPayment, savedOrder);
+//				createInitialResult(savedPayment, savedOrder);
 
 				try {
 					User user = userRepository.findById(savedOrder.getUserId())
@@ -404,7 +487,8 @@ public class PaymentService {
 		log.info("[PaymentService.createInitialResult] subcategoryId = {}", subCategoryId);
 
 		// Category ID에 따라 Result 또는 CompatibilityResult 생성 분기
-		if (subCategoryId == 4 || subCategoryId == 6 || subCategoryId == 7) {
+		if (subCategoryId == 4 || subCategoryId == 6 || subCategoryId == 7 || subCategoryId == 14
+			|| subCategoryId == 15) {
 			if (compatibilityResultRepository.findByPaymentId(paymentPkId).isEmpty()) {
 				CompatibilityResult initialCompResult = CompatibilityResult.createInitial(userId,
 					paymentPkId, productName);
