@@ -126,7 +126,7 @@ public class SecurityConfig {
 				"https://namedsaju.com",
 				"https://www.namedsaju.com",
 				"https://findme-jet.vercel.app",
-				"https://dev-front.namedsaju.com/"
+				"https://dev-front.namedsaju.com"
 			)
 		);
 
