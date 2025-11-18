@@ -178,7 +178,7 @@ public class PaymentService {
 			.orElseThrow(() -> new PaymentException("존재하지 않는 상품입니다."));
 		Integer originalAmount = subCategory.getPrice();
 
-		// 3. 할인 코드 재검증 (PESSIMISTIC_WRITE 락)
+		// 3. 할인 코드 재검증
 		DiscountValidationResult validationResult = discountCodeService.validateAndCalculateDiscountForPayment(
 			request.getDiscountCode(),
 			originalAmount,
