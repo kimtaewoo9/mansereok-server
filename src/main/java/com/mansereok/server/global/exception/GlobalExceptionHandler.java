@@ -151,6 +151,13 @@ public class GlobalExceptionHandler {
 		return ResponseEntity.status(HttpStatus.NOT_FOUND).build();
 	}
 
+	// 409 에러 .. DuplicateEmailException
+	@ExceptionHandler(DuplicateEmailException.class)
+	public ResponseEntity<?> handleDuplicateEmail(DuplicateEmailException e) {
+		return ResponseEntity.status(HttpStatus.CONFLICT)
+			.body(Map.of("error", e.getMessage()));
+	}
+
 	/**
 	 * [500 Internal Server Error] 처리되지 않은 모든 서버 내부 오류 RuntimeException 포함하여 모든 예외를 마지막에 처리
 	 */
