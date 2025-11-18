@@ -18,7 +18,9 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.core.Authentication;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -46,7 +48,12 @@ public class PaymentController {
 		@RequestBody OrderCreateRequest request,
 		@AuthenticationPrincipal String username
 	) {
-		log.info("주문 생성 요청자: " + username);
+
+		Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+		log.info("Username: {}", username);
+		log.info("Authorities: {}", auth.getAuthorities());
+		log.info("Is Authenticated: {}", auth.isAuthenticated());
+
 		OrderCreateResponse response = paymentService.createOrder(username, request);
 		return ResponseEntity.ok(response);
 	}
