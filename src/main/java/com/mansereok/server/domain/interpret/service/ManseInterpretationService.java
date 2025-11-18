@@ -173,7 +173,7 @@ public class ManseInterpretationService {
 			result.completeInterpretation(
 				gptData.getFullAnalysis(),
 				gptData.getSummary()
-			); // complete 포함 .
+			); // complete로 상태 변경 추가 .
 
 			Result savedResult = resultRepository.save(result);
 
@@ -188,9 +188,7 @@ public class ManseInterpretationService {
 			} catch (Exception e) { // 7. 👈 GptApiFailedException catch
 				log.error("[Async] GPT API 요청 또는 처리 중 오류 발생: paymentId={}, Error: {}", paymentId,
 					e.getMessage(), e);
-				// ... (오류 롤백 로직 동일) ...
 			}
-
 			log.info("Result 해석 결과 저장 및 상태 COMPLETED 변경 완료: resultId={}", savedResult.getId());
 		} catch (Exception e) {
 			log.error("[Async] GPT API 요청 또는 처리 중 오류 발생: paymentId={}, Error: {}", paymentId,
@@ -312,7 +310,6 @@ public class ManseInterpretationService {
 				}
 			} catch (Exception e) {
 				log.error("[Async] 궁합 결과 완료 이메일 전송 중 오류 발생: {}", e.getMessage(), e);
-				// 이메일 실패가 메인 해석 로직을 롤백시키면 안 됨
 			}
 
 		} catch (EntityNotFoundException enfe) {
