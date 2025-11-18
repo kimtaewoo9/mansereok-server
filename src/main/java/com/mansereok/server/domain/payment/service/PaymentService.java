@@ -352,6 +352,20 @@ public class PaymentService {
 				log.info("웹훅으로 결제 완료 처리: orderId={}, paymentId={}",
 					savedOrder.getId(), paymentId);
 
+				// 할인 코드 써서 결제했다면, 로그 남기기.
+				if (savedOrder.getAppliedDiscountCode() != null &&
+					!savedOrder.getAppliedDiscountCode().isEmpty()) {
+
+					int discountAmount = savedOrder.getOriginalAmount() - savedOrder.getAmount();
+					double discountRate =
+						(discountAmount / (double) savedOrder.getOriginalAmount()) * 100;
+
+					log.info("주문 ID: {}", savedOrder.getId());
+					log.info("사용한 할인 코드: {}", savedOrder.getAppliedDiscountCode());
+					log.info("할인액: {}원 ({}% 할인)", discountAmount,
+						String.format("%.1f", discountRate));
+				}
+
 				// payment 저장
 				Payment savedPayment = paymentRepository.save(
 					Payment.create(
@@ -382,7 +396,9 @@ public class PaymentService {
 							user.getEmail(),
 							savedPayment.getAmount(),
 							subCategory.getTitle(),
-							savedOrder.getPaidAt()
+							savedOrder.getPaidAt(),
+							savedOrder.getAppliedDiscountCode(),
+							savedOrder.getOriginalAmount()
 						);
 					} else {
 						log.warn(

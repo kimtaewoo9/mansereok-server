@@ -76,7 +76,7 @@ public class PaymentController {
 		return ResponseEntity.ok(response);
 	}
 
-	// 포트원이 결제완료 사실을 백엔드에 알려주는 알림 시스템
+	// 포트원이 결제완료 사실을 백엔드에 알려주는 웹훅
 	// 웹훅은 누구나 요청을 보낼 수 있기 때문에 신뢰하지 않고 서명 검증 + API 재조회
 	@PostMapping("/api/payment/webhook")
 	public ResponseEntity<Void> handleWebhook(

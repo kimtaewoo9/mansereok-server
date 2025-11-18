@@ -85,20 +85,36 @@ public class DiscordNotificationService {
 		String userEmail,
 		Long amount,
 		String productName,
-		LocalDateTime paidAt
+		LocalDateTime paidAt,
+		String discountCode,
+		Integer originalAmount
 	) {
 		try {
 			String formattedPaidAt =
 				(paidAt != null) ? paidAt.format(dateTimeFormatter) : "시간 정보 없음";
 
+			// 할인 정보 추가
+			String priceInfo;
+			if (discountCode != null && !discountCode.isEmpty() && originalAmount != null) {
+				int discountAmount = originalAmount - amount.intValue();
+				double discountRate = (discountAmount / (double) originalAmount) * 100;
+
+				priceInfo = String.format(
+					"**할인 코드:** `%s`\n**원가:** %,d원\n**할인가:** %,d원 (%.0f%% 할인)",
+					discountCode, originalAmount, amount, discountRate
+				);
+			} else {
+				priceInfo = String.format("**결제 금액:** %,d원", amount);
+			}
+
 			Map<String, Object> embed = new HashMap<>();
 			embed.put("title", "💰 결제 완료");
-			embed.put("color", 16766720); // 금색 (비슷하게)
+			embed.put("color", 16766720); // 금색
 			embed.put("description", String.format(
-				"**상품명:** %s\n**결제 금액:** %,d원\n\n" +
+				"**상품명:** %s\n%s\n\n" +
 					"**구매자:** %s (%s)\n" +
 					"**결제 시간:** %s",
-				productName, amount, userName, userEmail,
+				productName, priceInfo, userName, userEmail,
 				formattedPaidAt
 			));
 
