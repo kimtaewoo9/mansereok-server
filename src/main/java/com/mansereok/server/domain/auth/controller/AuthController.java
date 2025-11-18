@@ -68,7 +68,7 @@ public class AuthController {
 
 		Map<String, Object> claims = Map.of(
 			"name", user.getName(),
-			"role", "ROLE_" + user.getRole().name(),
+			"role", user.getRole().getAuthority(),
 			"email", user.getEmail(),
 			"userId", user.getId()
 		);
@@ -117,7 +117,7 @@ public class AuthController {
 			"message", "회원가입이 완료되었습니다.",
 			"name", user.getName(),
 			"email", user.getEmail(),
-			"role", "ROLE_" + user.getRole().name()
+			"role", user.getRole().name()
 		));
 	}
 
@@ -152,7 +152,7 @@ public class AuthController {
 		Map<String, Object> claims = new java.util.HashMap<>();
 
 		claims.put("name", user.getName());
-		claims.put("role", "ROLE_" + user.getRole().name());
+		claims.put("role", user.getRole().getAuthority());
 		claims.put("email", user.getEmail());
 		claims.put("userId", user.getId());
 

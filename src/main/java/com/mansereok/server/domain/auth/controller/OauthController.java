@@ -18,6 +18,7 @@ import com.mansereok.server.domain.user.entity.SocialType;
 import com.mansereok.server.domain.user.entity.User;
 import com.mansereok.server.domain.user.service.RefreshTokenService;
 import com.mansereok.server.domain.user.service.UserService;
+import com.mansereok.server.global.exception.DuplicateEmailException;
 import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletResponse;
 import java.util.Map;
@@ -57,7 +58,20 @@ public class OauthController {
 
 		// 회원가입이 되어 있지 않다면, 회원가입 해야함.
 		User user = userService.getUserBySocialId(googleProfileDto.getSub());
+
 		if (user == null) {
+			// 2. 구글로 가입 안 되어 있으면 → 이메일로 일반 가입 여부 확인
+			User existingUser = userService.findByEmail(googleProfileDto.getEmail());
+
+			if (existingUser != null) {
+				// 이미 일반 회원가입으로 가입된 이메일
+				throw new DuplicateEmailException(
+					"해당 이메일은 이미 일반 회원가입으로 등록되어 있습니다. " +
+						"일반 로그인을 이용해주세요."
+				);
+			}
+
+			// 3. 신규 구글 회원가입
 			user = userService.registerWithOauth(
 				googleProfileDto.getSub(),
 				googleProfileDto.getEmail(),
@@ -69,7 +83,7 @@ public class OauthController {
 
 		// 회원가입이 되어있는 회원이라면, JWT 토큰 발급 + refresh token 발급
 		Map<String, Object> claims = Map.of(
-			"role", user.getRole().name(),
+			"role", user.getRole().getAuthority(),
 			"email", user.getEmail(),
 			"userId", user.getId()
 		);
@@ -131,7 +145,7 @@ public class OauthController {
 
 			if (existingUser != null) {
 				// 이미 일반 회원가입으로 가입된 이메일
-				throw new RuntimeException(
+				throw new DuplicateEmailException(
 					"해당 이메일은 이미 일반 회원가입으로 등록되어 있습니다. " +
 						"일반 로그인을 이용해주세요."
 				);
@@ -150,7 +164,7 @@ public class OauthController {
 		// 회원가입 되어 있으면 access token + refresh token 발급 .
 		// access token
 		Map<String, Object> claims = Map.of(
-			"role", user.getRole().name(),
+			"role", user.getRole().getAuthority(),
 			"email", user.getEmail(),
 			"userId", user.getId()
 		);
@@ -197,6 +211,19 @@ public class OauthController {
 		User user = userService.getUserBySocialId(naverProfileDto.getResponse().getId());
 		// 회원가입 안되어있으면 회원가입
 		if (user == null) {
+			// 2. 네이버로 가입 안 되어 있으면 → 이메일로 일반 가입 여부 확인
+			User existingUser = userService.findByEmail(
+				naverProfileDto.getResponse().getEmail());
+
+			if (existingUser != null) {
+				// 이미 일반 회원가입으로 가입된 이메일
+				throw new DuplicateEmailException(
+					"해당 이메일은 이미 일반 회원가입으로 등록되어 있습니다. " +
+						"일반 로그인을 이용해주세요."
+				);
+			}
+
+			// 3. 신규 네이버 회원가입
 			user = userService.registerWithOauth(
 				naverProfileDto.getResponse().getId(),
 				naverProfileDto.getResponse().getEmail(),
@@ -207,7 +234,7 @@ public class OauthController {
 		}
 		// 회원가입 되어있으면, access token 이랑 refresh token 전달 .
 		Map<String, Object> claims = Map.of(
-			"role", user.getRole().name(),
+			"role", user.getRole().getAuthority(),
 			"email", user.getEmail(),
 			"userId", user.getId()
 		);
@@ -261,7 +288,7 @@ public class OauthController {
 
 		// access token + refresh 토큰 전달.
 		Map<String, Object> claims = Map.of(
-			"role", user.getRole().name(),
+			"role", user.getRole().getAuthority(),
 			"email", user.getEmail() != null ? user.getEmail() : "",
 			"userId", user.getId()
 		);
