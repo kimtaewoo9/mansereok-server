@@ -66,7 +66,6 @@ public class ManseryeokController {
 			)
 		);
 
-		// (비동기 호출 전 예외 발생 시 GlobalExceptionHandler가 500으로 처리)
 		manseInterpretationService.interpret(
 			request.getName(),
 			manse,
@@ -92,8 +91,6 @@ public class ManseryeokController {
 		ManseCompatibilityAnalysisRequest.PersonInfo person1 = request.getPerson1();
 		ManseCompatibilityAnalysisRequest.PersonInfo person2 = request.getPerson2();
 
-		// 👈 try-catch 제거!
-		// (EntityNotFoundException 발생 시 GlobalExceptionHandler가 404로 처리)
 		updateCompatibilityResultStatusToProcessing(request.getPaymentId());
 
 		ManseryeokCalculationResponse person1Response = manseCalculationService.calculate(
@@ -116,8 +113,6 @@ public class ManseryeokController {
 			)
 		);
 
-		// 👈 try-catch 제거!
-		// (비동기 호출 전 예외 발생 시 GlobalExceptionHandler가 500으로 처리)
 		manseInterpretationService.analyzeCompatibilityWithSubcategory(
 			person1.getName(), person1Response,
 			person2.getName(), person2Response,
