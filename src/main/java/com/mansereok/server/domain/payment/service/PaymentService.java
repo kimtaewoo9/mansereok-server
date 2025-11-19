@@ -504,7 +504,8 @@ public class PaymentService {
 
 		log.info("[PaymentService.createInitialResult] subcategoryId = {}", subCategoryId);
 
-		// Category ID에 따라 Result 또는 CompatibilityResult 생성 분기
+		// Category ID에 따라 Result 또는 CompatibilityResult 생성 분기..
+		// 궁합이면 매번 여기에 추가해야함 TODO: 하드 코딩한거 리팩토링하기
 		if (subCategoryId == 4 || subCategoryId == 6 || subCategoryId == 7 || subCategoryId == 14
 			|| subCategoryId == 15) {
 			if (compatibilityResultRepository.findByPaymentId(paymentPkId).isEmpty()) {
