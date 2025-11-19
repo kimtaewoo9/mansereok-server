@@ -485,7 +485,8 @@ public class ManseInterpretationService {
 			case 3 -> createCareerAptitudePrompt(name, response);
 			case 5 -> createIdolAnalysisPrompt(name, response);
 			case 9 -> createCharacterSajuPrompt(name, response);
-			case 13 -> createActorAnalysisPrompt(name, response);  // ← 추가
+			case 13 -> createActorAnalysisPrompt(name, response);
+			case 17 -> createLoveLuckPrompt(name, response);
 			default -> createComprehensiveAnalysisPrompt(name, response);
 		};
 	}
@@ -1004,6 +1005,88 @@ public class ManseInterpretationService {
 		prompt.append("(팬들이 궁금해하는 부분입니다. 이 사람의 연애 스타일, 본능적으로 끌리는 이상형(외모, 성격)을 솔직하게 분석해주세요.)\n");
 		prompt.append("(결혼은 언제쯤 할지 정확한 년도 예측, 배우자궁(일지)의 모습은 어떤지도 포함해주세요.)\n\n");
 
+		appendSajuJsonResponseFormat(prompt, name);
+
+		return prompt.toString();
+	}
+
+	// ==================== 17. 연애운 ====================
+	private String createLoveLuckPrompt(String name, ManseryeokCalculationResponse response) {
+		StringBuilder prompt = new StringBuilder();
+		ManseryeokCalculationResponse.SajuInfo saju = response.getSaju();
+		ManseryeokCalculationResponse.InputInfo input = response.getInput();
+
+		// 날짜 포맷팅
+		String solarDate = input.getSolarDate().toString();
+		String solarTime = input.getSolarTime().toString();
+		String formattedDate = solarDate.substring(0, 4) + "년 "
+			+ solarDate.substring(5, 7) + "월 "
+			+ solarDate.substring(8, 10) + "일";
+		String formattedTime = solarTime.substring(0, 2) + "시 "
+			+ solarTime.substring(3, 5) + "분";
+
+		// 1. '혜안' 공통 페르소나 주입
+		appendHyeanPersonaHeader(prompt);
+
+		// 2. 분석 대상자 정보 주입
+		prompt.append("### 5. 분석 대상자 상세 정보 ###\n");
+		appendPersonDetailInfo(prompt, name, response);
+
+		// 3. 분석 요청
+		prompt.append("\n### 6. [연애운 심층 분석] 요청 ###\n");
+		prompt.append(String.format(
+			"혜안 선생님, 위 데이터를 바탕으로 %s님의 '사랑과 연애'에 대한 모든 것을 **아래 5가지 핵심 주제**로 깊이 있게 풀어주세요.\n", name));
+		prompt.append("단순한 위로보다는, 사주 원국에 나타난 기질과 운의 흐름을 냉철하면서도 따뜻하게 분석해주세요.\n\n");
+
+		prompt.append("--- [분석 시작] ---\n");
+		prompt.append(String.format(
+			"\"%s님은 %s %s에 태어나신, [일간(%s) 자연물 비유]와 같은 사랑을 하시는군요.\" 로 시작해주세요.\n\n",
+			name, formattedDate, formattedTime,
+			saju.getDaySky().getKorean() + saju.getDaySky().getFiveCircle()));
+
+		prompt.append("## 타고난 연애 세포\n");
+		prompt.append(
+			"일간과 월지, 그리고 '도화살/홍염살' 등의 신살을 확인하여 %s님이 가진 고유의 매력 포인트가 무엇인지 분석하되, 이해하기 쉽게 풀어서 재미있게 설명해주세요.\n");
+		prompt.append(
+			"%s님은 연애할 때 어떤 스타일인가요? 만세력 기반으로 분석하되, 쉽고 재미있게 풀어서 설명. (예: 불같은 사랑, 친구 같은 편안함, 헌신적인 타입, 혹은 철벽 등)\n");
+		prompt.append(
+			"이성이 %s님을 볼 때 가장 매력적으로 느끼는 부분과, 반대로 질려할 수 있는 단점을 솔직하게 말해주세요. 만세력 기반으로 대상자의 성격, 장점, 단점 등을 자세하게 설명하되 쉽고 재미있게 풀어서 설명해주세요.\n\n");
+
+		prompt.append("## 나의 이상형과 운명적인 상대\n");
+		prompt.append(
+			"**일지(배우자궁)**에 있는 글자와 십성을 분석하여, %s님이 본능적으로 끌리는 이성은 어떤 스타일인지 설명해주세요.\n");
+		prompt.append(
+			"실제로 %s님에게 자꾸 꼬이는 이성들의 특징은 어떤가요? (나쁜 남자/여자가 꼬이는지, 능력자가 꼬이는지 등)\n");
+		prompt.append(
+			"**[운명적인 상대방 예측]** %s님의 사주에 가장 잘 맞는 '진정한 사랑'의 특징을 아래 항목에 맞춰 **구체적이고 창의적으로** 예측하여 설명해주세요:\n");
+		prompt.append(
+			"- **예상 MBTI**: (예: ENFP, ISTJ 등 4자리)\n");
+		prompt.append(
+			"- **나이 차이**: (예: 연상, 동갑, 연하 등 구체적인 범위 제시)\n");
+		prompt.append(
+			"- **직업군/성격**: (예: 안정적인 공무원, 자유로운 예술가 등)\n");
+		prompt.append(
+			"결론적으로 어떤 사람을 만나야 팔자가 피고 행복할 수 있는지 구체적인 '이성상'을 추천해주세요. 만세력 기반으로 자세하게 설명하되, 흥미롭고 재미있게 이야기를 풀어내주세요.\n\n");
+
+		prompt.append("## 연애를 가로막는 장애물\n");
+		prompt.append(
+			"사주 원국에서 연애를 방해하는 요소(예: 무관/무재, 관살혼잡, 고란살, 식상과다 등)가 있다면 솔직하게 지적해주세요.\n");
+		prompt.append(
+			"연애만 하면 반복되는 문제 패턴이 있나요? (집착, 의심, 금방 식음 등) 그것을 해결하기 위한 현실적인 조언을 해주세요.\n\n");
+
+		prompt.append("## 2026년 연애운, 연애 타이밍\n");
+		prompt.append(
+			"현재 대운의 흐름이 연애에 유리한지 불리한지 분석해주세요. 솔직하게 분석해주세요. \n");
+		prompt.append(
+			"**2026년(병오년)** 세운을 분석하여, 솔로라면 언제쯤 인연이 들어올지(몇 월?), 커플이라면 관계가 어떻게 변할지 예측해주세요.\n");
+		prompt.append("이 시기에 들어오는 인연은 좋은 인연일까요, 스쳐가는 인연일까요?\n\n");
+
+		prompt.append("## 혜안의 시크릿 연애 코칭\n");
+		prompt.append(
+			"%s님의 사주에 부족한 오행을 채워줄 수 있는 데이트 장소, 행운의 컬러, 혹은 연애운을 올리기 위한 마인드셋을 하나 추천해주세요.\n");
+		prompt.append("마지막으로 사랑 때문에 고민하는 %s님을 위한 따뜻한 응원의 한마디.\n\n");
+
+		// JSON 포맷 추가
 		appendSajuJsonResponseFormat(prompt, name);
 
 		return prompt.toString();
