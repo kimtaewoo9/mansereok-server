@@ -85,19 +85,29 @@ public class PaymentController {
 		@RequestHeader("webhook-timestamp") String webhookTimestamp,
 		@RequestHeader("webhook-signature") String webhookSignature
 	) throws WebhookVerificationException {
-		log.info("webhook-id: " + webhookId);
-		log.info("webhook-timestamp: " + webhookTimestamp);
-		log.info("webhook-signature: " + webhookSignature);
-		log.info("webhook body: " + body);
+		long startTime = System.currentTimeMillis();
 
-		WebhookVerifier verifier = new WebhookVerifier(webhookSecret);
-		verifier.verify(body, webhookId, webhookSignature, webhookTimestamp);
+		try {
+			log.info("webhook-id: " + webhookId);
+			log.info("webhook-timestamp: " + webhookTimestamp);
+			log.info("webhook-signature: " + webhookSignature);
+			log.info("webhook body: " + body);
 
-		log.info("웹훅 서명 검증 성공: webhookId={}", webhookId);
+			WebhookVerifier verifier = new WebhookVerifier(webhookSecret);
+			verifier.verify(body, webhookId, webhookSignature, webhookTimestamp);
 
-		paymentService.processWebhook(body);
+			log.info("웹훅 서명 검증 성공: webhookId={}", webhookId);
 
-		return ResponseEntity.ok().build();
+			paymentService.processWebhook(body);
+
+			return ResponseEntity.ok().build();
+
+		} finally {
+			// 2. 종료 시간 기록 및 로그 출력
+			long endTime = System.currentTimeMillis();
+			long duration = endTime - startTime;
+			log.info("=== 웹훅 API 총 응답 시간: {}ms (ID: {}) ===", duration, webhookId); // 3. 결과 로그
+		}
 	}
 
 	@GetMapping("/api/payment/orders/{orderId}")
@@ -107,7 +117,7 @@ public class PaymentController {
 	) {
 		Order order = orderRepository.findById(orderId)
 			.orElseThrow(
-				() -> new EntityNotFoundException("주문을 찾을 수 없습니다.")); // 👈 404 처리를 위해 예외 Throw
+				() -> new EntityNotFoundException("주문을 찾을 수 없습니다."));
 		return ResponseEntity.ok(order);
 	}
 
