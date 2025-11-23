@@ -1,4 +1,4 @@
-package com.mansereok.server.domain.discount;
+package com.mansereok.server.domain.discount.service;
 
 import com.mansereok.server.domain.discount.dto.request.DiscountCheckRequest;
 import com.mansereok.server.domain.discount.dto.response.DiscountCheckResponse;
@@ -8,6 +8,7 @@ import com.mansereok.server.domain.product.entity.SubCategory;
 import com.mansereok.server.domain.product.repository.SubCategoryRepository;
 import com.mansereok.server.global.exception.PaymentException;
 import jakarta.persistence.EntityNotFoundException;
+import java.time.LocalDateTime;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -64,7 +65,7 @@ public class DiscountCodeService {
 			return new DiscountValidationResult(originalAmount, null, null);
 		}
 
-		// 2. [핵심] 락을 거는 findByCode 사용
+		// 2. 락을 거는 findByCode 사용
 		DiscountCode discountCode = discountCodeRepository.findByCode(code)
 			.orElseThrow(() -> new PaymentException("유효하지 않은 코드입니다."));
 
@@ -89,6 +90,25 @@ public class DiscountCodeService {
 		// 락이 걸린 엔티티의 횟수 증가
 		discountCode.incrementUsage();
 		discountCodeRepository.save(discountCode); // 변경 감지(Dirty checking)
+	}
+
+	@Transactional
+	public DiscountCode createReviewRewardCode(Long userId, int discountAmount) {
+		// 1. 고유 코드 생성 (유일성 보장)
+		String uniqueCode = "리뷰감사쿠폰" + System.currentTimeMillis();
+
+		// 2. 만료일 설정 (30일 후)
+		LocalDateTime expiresAt = LocalDateTime.now().plusDays(30);
+
+		// 3. DiscountCode 엔티티의 정적 팩토리 메서드를 사용하여 객체 생성 및 초기화
+		DiscountCode rewardCode = DiscountCode.createReviewReward(
+			uniqueCode,
+			discountAmount,
+			expiresAt
+		);
+
+		// 4. 저장
+		return discountCodeRepository.save(rewardCode);
 	}
 
 	private void validateSubCategory(DiscountCode discountCode, Long subCategoryId) {

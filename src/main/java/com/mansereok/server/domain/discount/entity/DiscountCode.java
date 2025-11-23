@@ -91,4 +91,20 @@ public class DiscountCode {
 			throw new PaymentException("할인 코드 사용 횟수가 초과되었습니다.");
 		}
 	}
+
+	public static DiscountCode createReviewReward(String code, int discountAmount,
+		LocalDateTime expiresAt) {
+
+		DiscountCode discountCode = new DiscountCode();
+		discountCode.code = code;
+		discountCode.discountType = DiscountType.FIXED_AMOUNT;
+		discountCode.discountValue = discountAmount;
+		discountCode.expiresAt = expiresAt;
+		discountCode.maxUses = 1;
+		discountCode.currentUses = 0;
+		discountCode.minPurchaseAmount = 0;
+		discountCode.isActive = true;
+		discountCode.subCategoryId = null;
+		return discountCode;
+	}
 }

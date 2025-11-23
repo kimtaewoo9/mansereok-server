@@ -497,4 +497,109 @@ public class EmailService {
 			</html>
 			""".formatted(mypageUrl);
 	}
+
+	private String createReviewRewardEmailHtml(String discountCode, int amount) {
+
+		return """
+			<!DOCTYPE html>
+			<html lang="ko">
+			<head>
+			    <meta charset="UTF-8">
+			    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+			    <meta name="color-scheme" content="light only">
+			    <meta name="supported-color-schemes" content="light">
+			    <title>[NAMED] 소중한 리뷰 작성 감사드립니다.</title>
+			    <style type="text/css">
+			        :root { color-scheme: light only; supported-color-schemes: light; }
+			        * { color-scheme: light only !important; }
+			        img { -webkit-filter: none !important; filter: none !important; }
+			        body, table, td { background-color: #ffffff !important; }
+			        .email-container { background-color: #ffffff !important; }
+			        @media (prefers-color-scheme: dark) {
+			            body, table, td, .email-container { background-color: #ffffff !important; color: #000000 !important; }
+			            img { opacity: 1 !important; }
+			        }
+			    </style>
+			    </head>
+			<body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Malgun Gothic', 'Apple SD Gothic Neo', sans-serif; background-color: #ffffff !important;">
+			
+			    <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%%" style="background-color: #ffffff !important;" class="email-container">
+			        <tr>
+			            <td align="center" style="padding: 40px 20px; background-color: #ffffff !important;">
+			
+			                <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="700" style="max-width: 700px; background-image: url('https://named-logo.s3.ap-northeast-2.amazonaws.com/email-gradient-border.png'); background-size: cover; background-position: center; background-repeat: no-repeat; background-color: #00D4FF;">
+			                    <tr>
+			                        <td style="padding: 15px;">
+			
+			                            <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%%" style="background-color: #ffffff !important;">
+			                                <tr>
+			                                    <td style="padding: 60px 50px; text-align: center; background-color: #ffffff !important;">
+			
+			                                        <div style="background-color: #ffffff !important; padding: 10px 0;">
+			                                            <img src="https://named-logo.s3.ap-northeast-2.amazonaws.com/named-logo.png" 
+			                                                 alt="NAMED Logo" 
+			                                                 width="80" 
+			                                                 height="80" 
+			                                                 style="display: block; margin: 0 auto 25px; border: 0; max-width: 80px; height: auto;">
+			                                            <h1 style="margin: 0 0 25px 0; font-size: 35px; font-weight: 700; color: #000000 !important; letter-spacing: -1px; line-height: 1.2;">
+			                                                리뷰 작성 감사 보상!
+			                                            </h1>
+			                                        </div>
+			
+			                                        <p style="margin: 0 0 30px 0; font-size: 18px; line-height: 1.6; color: #333333 !important; font-weight: 500;">
+			                                            회원님의 소중한 리뷰에 감사드립니다.
+			                                        </p>
+			                                        <p style="margin: 0 0 40px 0; font-size: 17px; line-height: 1.6; color: #555555 !important;">
+			                                            다음 결제 시 사용할 수 있는 %s원 할인 코드입니다.
+			                                        </p>
+			
+			                                        <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%%" style="background-color: #F0F8FF !important; border: 1px dashed #AEE0FF; margin: 0 0 40px 0; border-radius: 8px;">
+			                                            <tr>
+			                                                <td style="padding: 25px 35px; background-color: #F0F8FF !important;">
+			                                                    <p style="margin: 0 0 10px 0; font-size: 16px; line-height: 1.4; color: #005A87 !important; text-align: center; font-weight: 700;">
+			                                                        할인 금액: **%,d원**
+			                                                    </p>
+			                                                    <p style="margin: 0 0 5px 0; font-size: 14px; line-height: 1.4; color: #666666 !important; text-align: center;">
+			                                                        사용 기한: 30일
+			                                                    </p>
+			                                                    <h2 style="margin: 15px 0 0 0; font-size: 26px; font-weight: 700; color: #000000 !important; letter-spacing: 2px;">
+			                                                        %s
+			                                                    </h2>
+			                                                </td>
+			                                            </tr>
+			                                        </table>
+			
+			                                        <p style="margin: 0; font-size: 16px; line-height: 1.4; color: #333333 !important; text-align: center;">
+			                                            앞으로도 NAMED에 많은 관심과 이용 부탁드립니다.
+			                                        </p>
+			
+			                                        <!-- 하단 정보 -->
+			                                        <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%%" style="border-top: 1px solid #E5E5E5; padding-top: 35px; margin-top: 50px; background-color: #ffffff !important;">
+			                                            <tr>
+			                                                <td align="center" style="background-color: #ffffff !important;">
+			                                                    <p style="margin: 0 0 6px 0; font-size: 13px; line-height: 1.5; color: #999999 !important;">네임드사주 NAMED</p>
+			                                                    <p style="margin: 0 0 6px 0; font-size: 13px; line-height: 1.5; color: #999999 !important;">문의: help@namedsaju.com</p>
+			                                                    <p style="margin: 0; font-size: 13px; line-height: 1.5;">
+			                                                        <a href="https://www.namedsaju.com" style="color: #6B9FF5 !important; text-decoration: underline;">수신거부</a>
+			                                                        <span style="color: #CCCCCC !important;"> | </span>
+			                                                        <a href="https://www.namedsaju.com" style="color: #6B9FF5 !important; text-decoration: underline;">Unsubscribe</a>
+			                                                    </p>
+			                                                </td>
+			                                            </tr>
+			                                        </table>
+			                                    </td>
+			                                </tr>
+			                            </table>
+			                        </td>
+			                    </tr>
+			                    </table>
+			
+			            </td>
+			        </tr>
+			    </table>
+			
+			</body>
+			</html>
+			""".formatted(amount, amount, discountCode);
+	}
 }
