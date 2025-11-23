@@ -177,7 +177,13 @@ public class ManseInterpretationService {
 
 			Result savedResult = resultRepository.save(result);
 
-			ogImageGenerationService.generateAndUploadOgImage(savedResult);
+			// OG 이미지 생성 별도 처리 ..
+			try {
+				ogImageGenerationService.generateAndUploadOgImage(savedResult);
+			} catch (Exception e) {
+				log.error("OG 이미지 생성 실패 (Result 저장은 유지): resultId={}",
+					savedResult.getId(), e);
+			}
 
 			try {
 				if (user.getEmail() != null) {
@@ -185,14 +191,15 @@ public class ManseInterpretationService {
 				} else {
 					log.warn("[Async] 결과 완료 이메일 전송 실패: 사용자 이메일이 없습니다. username={}", username);
 				}
-			} catch (Exception e) { // 7. 👈 GptApiFailedException catch
+			} catch (Exception e) {
 				log.error("[Async] GPT API 요청 또는 처리 중 오류 발생: paymentId={}, Error: {}", paymentId,
 					e.getMessage(), e);
 			}
 			log.info("Result 해석 결과 저장 및 상태 COMPLETED 변경 완료: resultId={}", savedResult.getId());
-		} catch (Exception e) {
-			log.error("[Async] GPT API 요청 또는 처리 중 오류 발생: paymentId={}, Error: {}", paymentId,
-				e.getMessage(), e);
+		} catch (Throwable t) {
+			log.error("[Async] 비동기 트랜잭션 최종 실패 (롤백 원인 확인 필요): paymentId={}, Error: {}",
+				paymentId, t.getMessage(), t);
+
 			// 오류 발생 시 상태 롤백 처리
 			if (paymentId != null) {
 				try {
@@ -1048,7 +1055,7 @@ public class ManseInterpretationService {
 		prompt.append(
 			"일간과 월지, 그리고 '도화살/홍염살' 등의 신살을 확인하여 %s님이 가진 고유의 매력 포인트가 무엇인지 분석하되, 이해하기 쉽게 풀어서 재미있게 설명해주세요.\n");
 		prompt.append(
-			"%s님은 연애할 때 어떤 스타일인가요? 만세력 기반으로 분석하되, 쉽고 재미있게 풀어서 설명. (예: 불같은 사랑, 친구 같은 편안함, 헌신적인 타입, 혹은 철벽 등)\n");
+			"%s님은 연애할 때 어떤 스타일인가요? 만세력 기반으로 분석하되, 쉽고 재미있게 풀어서 설명.\n");
 		prompt.append(
 			"이성이 %s님을 볼 때 가장 매력적으로 느끼는 부분과, 반대로 질려할 수 있는 단점을 솔직하게 말해주세요. 만세력 기반으로 대상자의 성격, 장점, 단점 등을 자세하게 설명하되 쉽고 재미있게 풀어서 설명해주세요.\n\n");
 
@@ -1081,7 +1088,7 @@ public class ManseInterpretationService {
 			"**2026년(병오년)** 세운을 분석하여, 솔로라면 언제쯤 인연이 들어올지(몇 월?), 커플이라면 관계가 어떻게 변할지 예측해주세요.\n");
 		prompt.append("이 시기에 들어오는 인연은 좋은 인연일까요, 스쳐가는 인연일까요?\n\n");
 
-		prompt.append("## 혜안의 시크릿 연애 코칭\n");
+		prompt.append("## 연애 코칭 및 조언\n");
 		prompt.append(
 			"%s님의 사주에 부족한 오행을 채워줄 수 있는 데이트 장소, 행운의 컬러, 혹은 연애운을 올리기 위한 마인드셋을 하나 추천해주세요.\n");
 		prompt.append("마지막으로 사랑 때문에 고민하는 %s님을 위한 따뜻한 응원의 한마디.\n\n");
