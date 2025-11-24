@@ -73,6 +73,7 @@ public class SecurityConfig {
 				// ProductController: 상품 목록 및 상세 정보 조회 (GET 요청만 허용)
 				.requestMatchers(HttpMethod.GET, "/api/v1/products", "/api/v1/products/{productId}")
 				.permitAll()
+				.requestMatchers(HttpMethod.GET, "/api/v1/reviews").permitAll()
 				// Swagger UI 접근 (개발/테스트 환경용)
 				.requestMatchers("/swagger-ui/**", "/v3/api-docs/**").permitAll()
 				.requestMatchers(

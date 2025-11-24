@@ -15,7 +15,6 @@ import jakarta.persistence.EntityNotFoundException;
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
-import java.util.Optional;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -64,17 +63,17 @@ public class ReviewService {
 			throw new PaymentException("리뷰 내용은 최소 " + MIN_CONTENT_LENGTH + "자 이상이어야 합니다.");
 		}
 
-		Long eligibleOrderId = findEligibleOrderId(user.getId(), request.getSubCategoryId());
+		Order order = orderRepository.findById(request.getOrderId())
+			.orElseThrow(() -> new EntityNotFoundException("주문 정보를 찾을 수 없습니다."));
 
-		// 3. 주문 정보를 다시 조회
-		Order eligibleOrder = orderRepository.findById(eligibleOrderId)
-			.orElseThrow(() -> new PaymentException("유효한 주문 정보를 찾았으나 즉시 조회 실패. DB 상태 확인 필요."));
+		// 3. 해당 주문이 리뷰 작성 가능한지 검증
+		validateOrderForReview(order, user, request.getSubCategoryId());
 
 		// --- 리뷰 저장 (찾은 Order ID 사용) ---
 		Review newReview = Review.create(
 			user.getId(),
 			request.getSubCategoryId(),
-			eligibleOrderId,
+			order.getId(),
 			request.getContent(),
 			user.getName()
 		);
@@ -110,40 +109,33 @@ public class ReviewService {
 		reviewRepository.save(review);
 	}
 
-	private Long findEligibleOrderId(Long userId, Long subCategoryId) {
-		// 1. PAID 상태인 모든 주문 목록을 최신 순으로 가져옵니다.
-		List<Order> paidOrders = orderRepository.findPaidOrdersForReview(userId, subCategoryId);
-
-		if (paidOrders.isEmpty()) {
-			throw new PaymentException("해당 상품에 대한 유효한 구매 이력이 없습니다.");
+	private void validateOrderForReview(Order order, User user, Long requestedSubCategoryId) {
+		// 1. 본인의 주문인지 확인
+		if (!order.getUserId().equals(user.getId())) {
+			throw new AccessDeniedException("본인의 주문에 대해서만 리뷰를 작성할 수 있습니다.");
 		}
 
-		// 2. 각 주문에 대해 리뷰 가능 여부를 확인합니다. (가장 최근의 유효한 주문을 찾음)
-		Optional<Order> eligibleOrder = paidOrders.stream()
-			.filter(order -> {
-				// 2-a. 구매 후 30일 이내인지 확인
-				// LocalDateTime 기준으로 날짜만 비교하기 위해 ChronoUnit.DAYS 사용
-				if (order.getPaidAt() == null ||
-					ChronoUnit.DAYS.between(order.getPaidAt().toLocalDate(),
-						LocalDateTime.now().toLocalDate()) > REVIEW_DEADLINE_DAYS) {
-					log.debug("주문 ID {}는 구매 기한(30일) 초과로 리뷰 불가능. PaidAt: {}", order.getId(),
-						order.getPaidAt());
-					return false;
-				}
+		// 2. 요청한 상품(SubCategory)에 대한 주문인지 확인
+		if (!order.getSubCategoryId().equals(requestedSubCategoryId)) {
+			throw new PaymentException("주문한 상품과 리뷰하려는 상품이 일치하지 않습니다.");
+		}
 
-				// 2-b. 해당 주문으로 이미 리뷰가 작성되었는지 확인
-				if (reviewRepository.existsByOrderId(order.getId())) {
-					log.debug("주문 ID {}는 이미 리뷰가 작성되어 리뷰 불가능.", order.getId());
-					return false;
-				}
+		// 3. 결제 완료 여부 확인
+		if (order.getPaidAt() == null) {
+			throw new PaymentException("결제가 완료된 주문만 리뷰를 작성할 수 있습니다.");
+		}
 
-				return true;
-			})
-			.findFirst(); // 최신 순으로 정렬했으므로, 처음 발견된 것이 가장 최근에 리뷰 가능한 주문입니다.
+		// 4. 기간 확인 (30일 이내)
+		long daysSincePayment = ChronoUnit.DAYS.between(order.getPaidAt().toLocalDate(),
+			LocalDateTime.now().toLocalDate());
+		if (daysSincePayment > REVIEW_DEADLINE_DAYS) {
+			throw new PaymentException(
+				"구매 후 " + REVIEW_DEADLINE_DAYS + "일이 지난 주문은 리뷰를 작성할 수 없습니다.");
+		}
 
-		return eligibleOrder.map(Order::getId).orElseThrow(() ->
-			new PaymentException(
-				"해당 상품에 대해 리뷰 가능한 주문(구매 후 30일 이내 & 미작성)이 없습니다. 여러 번 구매했더라도 리뷰는 한 번만 가능합니다.")
-		);
+		// 5. 중복 리뷰 확인 (이미 해당 주문으로 리뷰가 존재하는지)
+		if (reviewRepository.existsByOrderId(order.getId())) {
+			throw new PaymentException("해당 주문에 대해 이미 리뷰를 작성했습니다.");
+		}
 	}
 }
