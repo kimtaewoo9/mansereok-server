@@ -4,6 +4,9 @@ import com.mansereok.server.domain.interpret.entity.CompatibilityResult;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 @Repository
@@ -13,4 +16,8 @@ public interface CompatibilityResultRepository extends JpaRepository<Compatibili
 	List<CompatibilityResult> findByUserIdOrderByCreatedAtDesc(Long userId);
 
 	Optional<CompatibilityResult> findByPaymentId(Long paymentId);
+
+	@Modifying(clearAutomatically = true)
+	@Query("UPDATE CompatibilityResult c SET c.ogImageUrl = :ogImageUrl WHERE c.id = :id")
+	void updateOgImageUrl(@Param("id") Long id, @Param("ogImageUrl") String ogImageUrl);
 }

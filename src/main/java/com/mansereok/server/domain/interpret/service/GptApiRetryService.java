@@ -4,6 +4,7 @@ import com.mansereok.server.global.exception.GptApiFailedException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.MediaType;
+import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.retry.annotation.Backoff;
 import org.springframework.retry.annotation.Recover;
 import org.springframework.retry.annotation.Retryable;
@@ -20,7 +21,12 @@ public class GptApiRetryService {
 	// 1. 이 "비서"가 API 키와 URL을 직접 받아서 RestClient를 생성합니다.
 	public GptApiRetryService(@Value("${openai.api.key}") String apiKey,
 		@Value("${openai.api.base-url:https://api.openai.com}") String baseUrl) {
+		SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
+		requestFactory.setConnectTimeout(10 * 1000);
+		requestFactory.setReadTimeout(300 * 1000); // readtimeout 을 300초로 솔정
+
 		this.restClient = RestClient.builder()
+			.requestFactory(requestFactory)
 			.baseUrl(baseUrl + "/v1")
 			.defaultHeader("Authorization", "Bearer " + apiKey)
 			.defaultHeader("Content-Type", MediaType.APPLICATION_JSON_VALUE)
@@ -29,7 +35,7 @@ public class GptApiRetryService {
 
 	@Retryable(
 		value = {RestClientException.class},
-		maxAttempts = 4,
+		maxAttempts = 3,
 		backoff = @Backoff(delay = 2000, multiplier = 2)
 	)
 	public String callGptApiWithRetry(String requestBody) {

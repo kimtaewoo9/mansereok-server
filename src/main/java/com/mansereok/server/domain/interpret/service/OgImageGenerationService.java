@@ -1,8 +1,8 @@
 package com.mansereok.server.domain.interpret.service;
 
-import com.mansereok.server.domain.interpret.repository.CompatibilityResultRepository;
 import com.mansereok.server.domain.interpret.entity.CompatibilityResult;
 import com.mansereok.server.domain.interpret.entity.Result;
+import com.mansereok.server.domain.interpret.repository.CompatibilityResultRepository;
 import com.mansereok.server.domain.interpret.repository.ResultRepository;
 import java.awt.Color;
 import java.awt.Font;
@@ -89,13 +89,7 @@ public class OgImageGenerationService {
 			);
 
 			// (3) DB에 URL 저장
-			Result resultToUpdate = resultRepository.findById(savedResult.getId())
-				.orElseThrow(() -> new RuntimeException(
-					"OG 이미지 저장 중 Result를 찾을 수 없음: " + savedResult.getId()));
-
-			resultToUpdate.setOgImageUrl(
-				publicUrl);
-			resultRepository.save(resultToUpdate);
+			resultRepository.updateOgImageUrl(savedResult.getId(), publicUrl);
 
 			log.info("Result(id={}) OG 이미지 URL 저장 완료: {}", savedResult.getId(), publicUrl);
 
@@ -130,15 +124,8 @@ public class OgImageGenerationService {
 			);
 
 			// (3) DB에 URL 저장
-			CompatibilityResult resultToUpdate = compatibilityResultRepository.findById(
-					savedResult.getId())
-				.orElseThrow(() -> new RuntimeException(
-					"OG 이미지 저장 중 CompatibilityResult를 찾을 수 없음: " + savedResult.getId()));
-
-			resultToUpdate.setOgImageUrl(
-				publicUrl);
-			compatibilityResultRepository.save(resultToUpdate);
-
+			compatibilityResultRepository.updateOgImageUrl(savedResult.getId(), publicUrl);
+			
 			log.info("CompatResult(id={}) OG 이미지 URL 저장 완료: {}", savedResult.getId(), publicUrl);
 
 		} catch (Exception e) {
