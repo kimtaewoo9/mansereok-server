@@ -11,11 +11,13 @@ public class ProfileResponseDto {
 	private final String email;
 	private final LocalDate birthDate;
 	private final String gender;
+	private final boolean marketingAgreed;
 
 	public ProfileResponseDto(User user) {
 		this.name = user.getName();
 		this.email = user.getEmail();
 		this.birthDate = user.getBirthDate();
 		this.gender = user.getGender() != null ? user.getGender().name() : null;
+		this.marketingAgreed = user.isMarketingAgreed();
 	}
 }

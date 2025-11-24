@@ -110,7 +110,8 @@ public class AuthController {
 			registerRequest.getPassword(),
 			registerRequest.getBirthDate(),
 			registerRequest.getGender(),
-			registerRequest.isPrivacyPolicyAgreed()
+			registerRequest.isPrivacyPolicyAgreed(),
+			registerRequest.isMarketingAgreed()
 		);
 
 		return ResponseEntity.ok(Map.of(

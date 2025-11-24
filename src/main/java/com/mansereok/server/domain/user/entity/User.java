@@ -37,6 +37,8 @@ public class User {
 	private SocialType socialType;
 	private String socialId;
 
+	private boolean marketingAgreed = false;
+
 	// profile 정보
 	private LocalDate birthDate; // 생년월일 필드 추가
 	@Enumerated(EnumType.STRING)
@@ -49,7 +51,8 @@ public class User {
 	private LocalDateTime updatedAt;
 
 	public static User create(String username, String name, String password, String email,
-		LocalDate birthDate, Gender gender, boolean enabled, boolean privacyPolicyAgreed) {
+		LocalDate birthDate, Gender gender, boolean enabled, boolean privacyPolicyAgreed,
+		boolean marketingAgreed) {
 		User user = new User();
 		user.username = username;
 		user.name = name;
@@ -59,6 +62,7 @@ public class User {
 		user.gender = gender;
 		user.enabled = enabled;
 		user.privacyPolicyAgreed = privacyPolicyAgreed;
+		user.marketingAgreed = marketingAgreed;
 
 		user.createdAt = LocalDateTime.now();
 		user.updatedAt = LocalDateTime.now();
@@ -75,6 +79,7 @@ public class User {
 		user.updatedAt = LocalDateTime.now();
 		user.socialId = socialId;
 		user.socialType = socialType;
+		user.marketingAgreed = false;
 		return user;
 	}
 

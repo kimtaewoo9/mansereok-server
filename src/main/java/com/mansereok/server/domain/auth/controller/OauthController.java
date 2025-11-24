@@ -59,6 +59,8 @@ public class OauthController {
 		// 회원가입이 되어 있지 않다면, 회원가입 해야함.
 		User user = userService.getUserBySocialId(googleProfileDto.getSub());
 
+		boolean isNewUser = false;
+
 		if (user == null) {
 			// 2. 구글로 가입 안 되어 있으면 → 이메일로 일반 가입 여부 확인
 			User existingUser = userService.findByEmail(googleProfileDto.getEmail());
@@ -79,6 +81,7 @@ public class OauthController {
 				googleProfileDto.getSub(),
 				SocialType.GOOGLE
 			);
+			isNewUser = true;
 		}
 
 		// 회원가입이 되어있는 회원이라면, JWT 토큰 발급 + refresh token 발급
@@ -105,6 +108,7 @@ public class OauthController {
 		Map<String, Object> responseBody = Map.of(
 			"accessToken", accessToken,
 			"type", "Bearer",
+			"isNewUser", isNewUser,
 			"user", Map.of(
 				"username", user.getUsername(),
 				"email", user.getEmail(),
@@ -138,6 +142,8 @@ public class OauthController {
 
 		User user = userService.getUserBySocialId(kakaoProfileDto.getId());
 
+		boolean isNewUser = false;
+
 		if (user == null) {
 			// 2. 카카오로 가입 안 되어 있으면 → 이메일로 일반 가입 여부 확인
 			User existingUser = userService.findByEmail(
@@ -159,6 +165,8 @@ public class OauthController {
 				kakaoProfileDto.getId(),
 				SocialType.KAKAO
 			);
+
+			isNewUser = true; // 신규 가입시 isNewUser 표시해주기.
 		}
 
 		// 회원가입 되어 있으면 access token + refresh token 발급 .
@@ -182,6 +190,7 @@ public class OauthController {
 		Map<String, Object> responseBody = Map.of(
 			"accessToken", accessToken,
 			"type", "Bearer",
+			"isNewUser", isNewUser,
 			"user", Map.of(
 				"username", user.getUsername(),
 				"email", user.getEmail(),
@@ -210,6 +219,9 @@ public class OauthController {
 
 		User user = userService.getUserBySocialId(naverProfileDto.getResponse().getId());
 		// 회원가입 안되어있으면 회원가입
+
+		boolean isNewUser = false;
+
 		if (user == null) {
 			// 2. 네이버로 가입 안 되어 있으면 → 이메일로 일반 가입 여부 확인
 			User existingUser = userService.findByEmail(
@@ -231,6 +243,8 @@ public class OauthController {
 				naverProfileDto.getResponse().getId(),
 				SocialType.NAVER
 			);
+
+			isNewUser = true;
 		}
 		// 회원가입 되어있으면, access token 이랑 refresh token 전달 .
 		Map<String, Object> claims = Map.of(
@@ -251,6 +265,7 @@ public class OauthController {
 		Map<String, Object> responseBody = Map.of(
 			"accessToken", accessToken,
 			"type", "Bearer",
+			"isNewUser", isNewUser,
 			"user", Map.of(
 				"username", user.getUsername(),
 				"email", user.getEmail(),
@@ -275,15 +290,35 @@ public class OauthController {
 		XProfileDto xProfileDto = xService.getXProfileDto(accessTokenDto.getAccess_token());
 
 		User user = userService.getUserBySocialId(xProfileDto.getId());
-		if (user == null) {
-			user = userService.registerWithOauth(
-				xProfileDto.getId(), // social id 로 로그인하게함 .
-				xProfileDto.getName(),
-				xProfileDto.getEmail() != null ? xProfileDto.getEmail() : "",
 
+		boolean isNewUser = false;
+
+		if (user == null) {
+			String email = xProfileDto.getEmail();
+
+			// ⭐ 추가: 이메일 중복 검사 로직
+			// X는 이메일이 없을 수도 있으므로, 이메일이 있는 경우에만 체크
+			if (email != null && !email.isBlank()) {
+				User existingUser = userService.findByEmail(email);
+				if (existingUser != null) {
+					throw new DuplicateEmailException(
+						"해당 이메일은 이미 일반 회원가입으로 등록되어 있습니다. " +
+							"일반 로그인을 이용해주세요."
+					);
+				}
+			}
+
+			// 3. 신규 X 회원가입
+			user = userService.registerWithOauth(
+				xProfileDto.getId(), // social id
+				xProfileDto.getName(),
+				email != null ? email : "", // 이메일 없으면 빈 문자열 처리
 				xProfileDto.getId(),
 				SocialType.X
 			);
+
+			// 신규 가입임을 표시
+			isNewUser = true;
 		}
 
 		// access token + refresh 토큰 전달.
@@ -305,6 +340,7 @@ public class OauthController {
 		Map<String, Object> responseBody = Map.of(
 			"accessToken", accessToken,
 			"type", "Bearer",
+			"isNewUser", isNewUser,
 			"user", Map.of(
 				"username", user.getUsername(),
 				"email", user.getEmail() != null ? user.getEmail() : "",

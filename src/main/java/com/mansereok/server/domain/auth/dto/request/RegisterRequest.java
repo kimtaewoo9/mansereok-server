@@ -32,5 +32,7 @@ public class RegisterRequest {
 
 	private Role role = Role.USER;
 
-	private boolean privacyPolicyAgreed;
+	private boolean privacyPolicyAgreed; //
+
+	private boolean marketingAgreed; // 마케팅 동의 항목
 }

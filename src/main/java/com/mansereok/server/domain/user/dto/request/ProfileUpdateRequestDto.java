@@ -11,4 +11,6 @@ public class ProfileUpdateRequestDto {
 	private String name;
 	private LocalDate birthDate;
 	private String gender; // "MALE" or "FEMALE"
+
+	private Boolean marketingAgreed;
 }
