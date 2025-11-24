@@ -1,6 +1,7 @@
 package com.mansereok.server.domain.review.controller;
 
 import com.mansereok.server.domain.review.dto.request.ReviewCreateRequest;
+import com.mansereok.server.domain.review.dto.response.ReviewEligibilityResponse;
 import com.mansereok.server.domain.review.dto.response.ReviewResponse;
 import com.mansereok.server.domain.review.service.ReviewService;
 import jakarta.validation.Valid;
@@ -34,6 +35,20 @@ public class ReviewController {
 	) {
 		ReviewResponse response = reviewService.createReview(username, request);
 		return ResponseEntity.status(HttpStatus.CREATED).body(response);
+	}
+
+	@GetMapping("/api/v1/reviews/eligibility")
+	public ResponseEntity<ReviewEligibilityResponse> checkReviewEligibility(
+		@RequestParam Long orderId,
+		@RequestParam Long subCategoryId,
+		@AuthenticationPrincipal String username
+	) {
+		ReviewEligibilityResponse response = reviewService.checkReviewEligibility(
+			username,
+			orderId,
+			subCategoryId
+		);
+		return ResponseEntity.ok(response);
 	}
 
 	@GetMapping("/api/v1/reviews")

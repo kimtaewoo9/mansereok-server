@@ -4,6 +4,7 @@ import com.mansereok.server.domain.discount.service.DiscountCodeService;
 import com.mansereok.server.domain.order.entity.Order;
 import com.mansereok.server.domain.order.repository.OrderRepository;
 import com.mansereok.server.domain.review.dto.request.ReviewCreateRequest;
+import com.mansereok.server.domain.review.dto.response.ReviewEligibilityResponse;
 import com.mansereok.server.domain.review.dto.response.ReviewResponse;
 import com.mansereok.server.domain.review.entity.Review;
 import com.mansereok.server.domain.review.repository.ReviewRepository;
@@ -107,6 +108,65 @@ public class ReviewService {
 		// 2. 논리적 삭제 처리
 		review.markAsDeleted();
 		reviewRepository.save(review);
+	}
+
+	public ReviewEligibilityResponse checkReviewEligibility(String username, Long orderId,
+		Long subCategoryId) {
+		User user = userService.findByUsername(username);
+
+		// 1. 주문 존재 여부 확인
+		Order order = orderRepository.findById(orderId).orElse(null);
+		if (order == null) {
+			return ReviewEligibilityResponse.ineligible(
+				ReviewEligibilityResponse.RejectionReason.ORDER_NOT_FOUND,
+				"유효하지 않은 주문 정보입니다."
+			);
+		}
+
+		// 2. 본인의 주문인지 확인
+		if (!order.getUserId().equals(user.getId())) {
+			return ReviewEligibilityResponse.ineligible(
+				ReviewEligibilityResponse.RejectionReason.NOT_OWNER,
+				"본인의 주문에 대해서만 리뷰를 작성할 수 있습니다."
+			);
+		}
+
+		// 3. 상품 일치 여부 확인
+		if (!order.getSubCategoryId().equals(subCategoryId)) {
+			return ReviewEligibilityResponse.ineligible(
+				ReviewEligibilityResponse.RejectionReason.MISMATCH_PRODUCT,
+				"주문한 상품 정보와 일치하지 않습니다."
+			);
+		}
+
+		// 4. 결제 상태 확인
+		if (order.getPaidAt() == null) {
+			return ReviewEligibilityResponse.ineligible(
+				ReviewEligibilityResponse.RejectionReason.NOT_PAID,
+				"결제가 완료되지 않은 주문입니다."
+			);
+		}
+
+		// 5. 기간 확인 (30일 이내)
+		long daysSincePayment = ChronoUnit.DAYS.between(order.getPaidAt().toLocalDate(),
+			LocalDateTime.now().toLocalDate());
+		if (daysSincePayment > REVIEW_DEADLINE_DAYS) {
+			return ReviewEligibilityResponse.ineligible(
+				ReviewEligibilityResponse.RejectionReason.EXPIRED,
+				"구매 후 " + REVIEW_DEADLINE_DAYS + "일이 지나 리뷰를 작성할 수 없습니다."
+			);
+		}
+
+		// 6. 중복 작성 확인
+		if (reviewRepository.existsByOrderId(order.getId())) {
+			return ReviewEligibilityResponse.ineligible(
+				ReviewEligibilityResponse.RejectionReason.ALREADY_WRITTEN,
+				"이미 해당 주문에 대한 리뷰를 작성하셨습니다."
+			);
+		}
+
+		// 통과!
+		return ReviewEligibilityResponse.eligible();
 	}
 
 	private void validateOrderForReview(Order order, User user, Long requestedSubCategoryId) {
