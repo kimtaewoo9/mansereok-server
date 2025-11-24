@@ -31,7 +31,7 @@ public class OgImageGenerationService {
 	private final ResultRepository resultRepository;
 	private final CompatibilityResultRepository compatibilityResultRepository;
 
-	// 1. 폰트 경로 (Regular만 사용)
+	// 1. 폰트 경로
 	private static final String FONT_PATH_REGULAR = "fonts/NotoSansKR-Regular.ttf";
 	// private static final String FONT_PATH_BOLD = "fonts/NotoSansKR-Bold.ttf"; // Bold 제거
 
@@ -41,7 +41,7 @@ public class OgImageGenerationService {
 	private Font notoSansRegular;
 	// private Font notoSansBold; // Bold 제거
 
-	// 2. 폰트 로드 (생성자 수정)
+	// 2. 폰트 로드
 	public OgImageGenerationService(S3UploadService s3UploadService,
 		ResultRepository resultRepository,
 		CompatibilityResultRepository compatibilityResultRepository) {
@@ -64,7 +64,6 @@ public class OgImageGenerationService {
 		}
 	}
 
-	// --- 1인 사주(Result)용 비동기 처리 ---
 	@Async
 	@Transactional
 	public void generateAndUploadOgImage(Result savedResult) {
@@ -98,7 +97,6 @@ public class OgImageGenerationService {
 		}
 	}
 
-	// --- 궁합(CompatibilityResult)용 비동기 처리 ---
 	@Async
 	@Transactional
 	public void generateAndUploadOgImage(CompatibilityResult savedResult) {
@@ -125,7 +123,7 @@ public class OgImageGenerationService {
 
 			// (3) DB에 URL 저장
 			compatibilityResultRepository.updateOgImageUrl(savedResult.getId(), publicUrl);
-			
+
 			log.info("CompatResult(id={}) OG 이미지 URL 저장 완료: {}", savedResult.getId(), publicUrl);
 
 		} catch (Exception e) {
