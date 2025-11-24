@@ -22,7 +22,7 @@ import lombok.ToString;
 	},
 	indexes = {
 		// 1. 특정 상품 리뷰 조회 및 최신순 정렬 (subCategoryId, is_deleted, createdAt DESC)
-		@Index(name = "idx_subcategories_del_created", columnList = "sub_category_id, is_deleted, created_at DESC"),
+		@Index(name = "idx_subcat_del_created", columnList = "sub_category_id, is_deleted, created_at DESC"),
 
 		// 2. 전체 리뷰 최신순 정렬 (is_deleted, createdAt DESC)
 		@Index(name = "idx_del_created", columnList = "is_deleted, created_at DESC"),
@@ -59,7 +59,10 @@ public class Review {
 	@Column(name = "is_deleted", nullable = false)
 	private boolean isDeleted = false; // 삭제는 관리자만 (논리적 삭제)
 
+	@Column(name = "created_at")
 	private LocalDateTime createdAt;
+
+	@Column(name = "updated_at")
 	private LocalDateTime updatedAt;
 
 	@PrePersist
