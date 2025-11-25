@@ -11,6 +11,8 @@ import com.mansereok.server.domain.interpret.repository.CompatibilityResultRepos
 import com.mansereok.server.domain.interpret.repository.ResultRepository;
 import com.mansereok.server.domain.notification.service.DiscordNotificationService;
 import com.mansereok.server.domain.notification.service.SlackNotificationService;
+import com.mansereok.server.domain.order.repository.OrderRepository;
+import com.mansereok.server.domain.payment.repository.PaymentRepository;
 import com.mansereok.server.domain.user.dto.request.ProfileUpdateRequestDto;
 import com.mansereok.server.domain.user.entity.Gender;
 import com.mansereok.server.domain.user.entity.SocialType;
@@ -38,6 +40,9 @@ public class UserService {
 	private final ResultRepository resultRepository;
 	private final CompatibilityResultRepository compatibilityResultRepository;
 	private final RefreshTokenRepository refreshTokenRepository;
+
+	private final OrderRepository orderRepository;
+	private final PaymentRepository paymentRepository;
 
 	private final PasswordEncoder passwordEncoder;
 
@@ -315,6 +320,8 @@ public class UserService {
 		Long userId = user.getId();
 
 		// 1. 주문/결제 내역은 보존 처리
+		paymentRepository.detachUser(userId);
+		orderRepository.detachUser(userId);
 
 		// 2. 개인정보 및 서비스 데이터는 완전 삭제 (Hard Delete)
 		refreshTokenRepository.deleteByUser(user);       // 리프레시 토큰 삭제

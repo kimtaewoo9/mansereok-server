@@ -99,7 +99,7 @@ public class ProfileController {
 	}
 
 	@DeleteMapping("/api/v1/users/me")
-	public ResponseEntity<Void> withdraw(
+	public ResponseEntity<Void> deleteUser(
 		@AuthenticationPrincipal String username,
 		HttpServletResponse response
 	) {

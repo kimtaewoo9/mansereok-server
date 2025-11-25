@@ -13,6 +13,7 @@ import com.mansereok.server.domain.discount.service.DiscountCodeService.Discount
 import com.mansereok.server.domain.order.dto.request.OrderCreateRequest;
 import com.mansereok.server.domain.order.entity.Order;
 import com.mansereok.server.domain.order.repository.OrderRepository;
+import com.mansereok.server.domain.payment.repository.PaymentRepository;
 import com.mansereok.server.domain.product.entity.SubCategory;
 import com.mansereok.server.domain.product.repository.SubCategoryRepository;
 import com.mansereok.server.domain.user.entity.Gender;
@@ -34,6 +35,8 @@ class PaymentServiceTest {
 	@InjectMocks
 	private PaymentService paymentService;
 
+	@Mock
+	private PaymentRepository paymentRepository;
 	@Mock
 	private OrderRepository orderRepository;
 	@Mock
