@@ -107,7 +107,9 @@ public class PaymentService {
 					originalAmount, // 원본 금액
 					finalAmount,    // 최종 결제 금액
 					appliedCode,    // 적용된 코드
-					OrderStatus.PENDING
+					OrderStatus.PENDING,
+					user.getName(),
+					user.getEmail()
 				)
 			);
 
@@ -204,7 +206,9 @@ public class PaymentService {
 			originalAmount,
 			0, // finalAmount = 0
 			request.getDiscountCode(),
-			OrderStatus.PAID
+			OrderStatus.PAID,
+			user.getName(),
+			user.getEmail()
 		);
 		order.setPaidAt(LocalDateTime.now());
 		Order savedOrder = orderRepository.save(order);

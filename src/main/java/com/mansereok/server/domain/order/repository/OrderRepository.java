@@ -1,9 +1,9 @@
 package com.mansereok.server.domain.order.repository;
 
 import com.mansereok.server.domain.order.entity.Order;
-import java.util.List;
 import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
@@ -21,13 +21,10 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
 
 	Optional<Order> findByPaymentPkId(Long paymentPkId);
 
-	@Query("SELECT o FROM Order o "
-		+ "WHERE o.userId = :userId "
-		+ "AND o.subCategoryId = :subCategoryId "
-		+ "AND o.status = com.mansereok.server.domain.order.entity.OrderStatus.PAID "
-		+ "ORDER BY o.paidAt DESC")
-	List<Order> findPaidOrdersForReview(
-		@Param("userId") Long userId,
-		@Param("subCategoryId") Long subCategoryId
-	);
+	@Modifying(clearAutomatically = true)
+	@Query(
+		value = "UPDATE orders SET user_id = NULL WHERE user_id = :userId",
+		nativeQuery = true
+	)
+	void detachUser(@Param("userId") Long userId);
 }

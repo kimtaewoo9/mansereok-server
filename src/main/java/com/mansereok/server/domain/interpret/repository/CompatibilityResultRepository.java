@@ -20,4 +20,6 @@ public interface CompatibilityResultRepository extends JpaRepository<Compatibili
 	@Modifying(clearAutomatically = true)
 	@Query("UPDATE CompatibilityResult c SET c.ogImageUrl = :ogImageUrl WHERE c.id = :id")
 	void updateOgImageUrl(@Param("id") Long id, @Param("ogImageUrl") String ogImageUrl);
+
+	void deleteAllByUserId(Long userId);
 }

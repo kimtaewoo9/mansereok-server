@@ -35,6 +35,9 @@ public class Order {
 	private Long userId; // 사용자 ID (누가 주문 했는가)
 	private Long subCategoryId;  // 구매한 상품 ID
 
+	private String buyerName;
+	private String buyerEmail;
+
 	private Integer amount; // 최종 결제 금액 .
 	@Enumerated(EnumType.STRING)
 	private OrderStatus status; // 주문 상태
@@ -53,7 +56,7 @@ public class Order {
 
 	public static Order create(String merchantUid, Long userId, Long subCategoryId,
 		Integer originalAmount, Integer finalAmount, String appliedDiscountCode,
-		OrderStatus status) {
+		OrderStatus status, String buyerName, String buyerEmail) {
 		Order order = new Order();
 		order.merchantUid = merchantUid;
 		order.userId = userId;
@@ -62,6 +65,9 @@ public class Order {
 		order.amount = finalAmount;
 		order.appliedDiscountCode = appliedDiscountCode;
 		order.status = status;
+
+		order.buyerName = buyerName;
+		order.buyerEmail = buyerEmail;
 		return order;
 	}
 

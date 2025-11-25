@@ -15,6 +15,7 @@ import com.mansereok.server.domain.user.dto.request.ProfileUpdateRequestDto;
 import com.mansereok.server.domain.user.entity.Gender;
 import com.mansereok.server.domain.user.entity.SocialType;
 import com.mansereok.server.domain.user.entity.User;
+import com.mansereok.server.domain.user.repository.RefreshTokenRepository;
 import com.mansereok.server.domain.user.repository.UserRepository;
 import java.time.LocalDate;
 import java.util.Comparator;
@@ -36,6 +37,7 @@ public class UserService {
 	private final UserRepository userRepository;
 	private final ResultRepository resultRepository;
 	private final CompatibilityResultRepository compatibilityResultRepository;
+	private final RefreshTokenRepository refreshTokenRepository;
 
 	private final PasswordEncoder passwordEncoder;
 
@@ -182,7 +184,7 @@ public class UserService {
 		if (requestDto.getMarketingAgreed() != null) {
 			user.setMarketingAgreed(requestDto.getMarketingAgreed());
 		}
-		
+
 		if (user.isMarketingAgreed()) {
 			if (user.getName() == null || user.getName().isBlank()) {
 				throw new IllegalArgumentException("이름을 입력해주세요.");
@@ -305,5 +307,31 @@ public class UserService {
 			result.getSummary(),
 			result.getOgImageUrl()
 		);
+	}
+
+	@Transactional
+	public void deleteUser(String username) {
+		User user = findByUsername(username);
+		Long userId = user.getId();
+
+		// 1. 주문/결제 내역은 보존 처리
+
+		// 2. 개인정보 및 서비스 데이터는 완전 삭제 (Hard Delete)
+		refreshTokenRepository.deleteByUser(user);       // 리프레시 토큰 삭제
+		resultRepository.deleteAllByUserId(userId);      // 사주 결과 삭제
+		compatibilityResultRepository.deleteAllByUserId(userId); // 궁합 결과 삭제
+
+		// 3. 유저 삭제 (Hard Delete)
+		userRepository.delete(user);
+
+		log.info("회원 탈퇴 처리 완료: userId={}, username={}", userId, username);
+
+		// 알림 전송
+		try {
+			discordNotificationService.sendUserWithdrawnNotification(user.getName(),
+				user.getEmail());
+		} catch (Exception e) {
+			log.warn("탈퇴 알림 전송 실패", e);
+		}
 	}
 }

@@ -19,4 +19,6 @@ public interface ResultRepository extends JpaRepository<Result, Long> {
 	@Modifying(clearAutomatically = true)
 	@Query("UPDATE Result r SET r.ogImageUrl = :ogImageUrl WHERE r.id = :id")
 	void updateOgImageUrl(@Param("id") Long id, @Param("ogImageUrl") String ogImageUrl);
+
+	void deleteAllByUserId(Long userId);
 }

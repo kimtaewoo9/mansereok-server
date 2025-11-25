@@ -220,4 +220,44 @@ public class DiscordNotificationService {
 			log.error("Discord 궁합 요청 알림 전송 실패", e);
 		}
 	}
+
+	public void sendUserWithdrawnNotification(String userName, String email) {
+		try {
+			Map<String, Object> embed = new HashMap<>();
+			embed.put("title", "⛔ 회원 탈퇴");
+			embed.put("color", 15158332);  // 빨간색
+			embed.put("description", String.format(
+				"**이름:** %s\n**이메일:** %s\n**탈퇴 시간:** %s",
+				userName, email, LocalDateTime.now().format(dateTimeFormatter)
+			));
+
+			Map<String, Object> footer = new HashMap<>();
+			footer.put("text", "만세력 서비스");
+			embed.put("footer", footer);
+
+			Map<String, Object> message = new HashMap<>();
+			message.put("username", "회원관리 Bot");
+			message.put("embeds", new Object[]{embed});
+
+			HttpHeaders headers = new HttpHeaders();
+			headers.setContentType(MediaType.APPLICATION_JSON);
+
+			HttpEntity<Map<String, Object>> request = new HttpEntity<>(message, headers);
+
+			// 회원가입 알림 웹훅 URL을 재사용 (필요 시 별도 URL 분리 가능)
+			if (signupWebhookUrl != null && !signupWebhookUrl.isBlank()) {
+				restTemplate.postForEntity(signupWebhookUrl, request, String.class);
+			}
+
+			// 두 번째 채널에도 전송
+			if (signupWebhookUrl2 != null && !signupWebhookUrl2.isBlank()) {
+				restTemplate.postForEntity(signupWebhookUrl2, request, String.class);
+			}
+
+			log.info("Discord 회원 탈퇴 알림 전송 완료: email={}", email);
+
+		} catch (Exception e) {
+			log.error("Discord 회원 탈퇴 알림 전송 실패", e);
+		}
+	}
 }
