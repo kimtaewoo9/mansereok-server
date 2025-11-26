@@ -101,7 +101,7 @@ public class UserService {
 			savedUser.getCreatedAt()
 		);
 
-		emailService.sendWelcomeEmail(savedUser.getEmail(), savedUser.getName());
+//		emailService.sendWelcomeEmail(savedUser.getEmail(), savedUser.getName());
 
 		return savedUser;
 	}
@@ -156,7 +156,7 @@ public class UserService {
 			savedUser.getCreatedAt()
 		);
 
-		emailService.sendWelcomeEmail(savedUser.getEmail(), savedUser.getName());
+//		emailService.sendWelcomeEmail(savedUser.getEmail(), savedUser.getName());
 
 		return savedUser;
 	}
