@@ -373,7 +373,6 @@ public class EmailService {
 			    <meta name="supported-color-schemes" content="light">
 			    <title>NAMED 사주 리포트 완성</title>
 			    <style type="text/css">
-			        /* 다크모드 방지 스타일... (웰컴 이메일과 동일) */
 			        :root { color-scheme: light only; supported-color-schemes: light; }
 			        * { color-scheme: light only !important; }
 			        img { -webkit-filter: none !important; filter: none !important; }
@@ -384,7 +383,7 @@ public class EmailService {
 			            img { opacity: 1 !important; }
 			        }
 			    </style>
-			    </head>
+			</head>
 			<body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Malgun Gothic', 'Apple SD Gothic Neo', sans-serif; background-color: #ffffff !important;">
 			
 			    <div style="display: none; max-height: 0px; overflow: hidden;">
@@ -443,39 +442,16 @@ public class EmailService {
 			                                            </tr>
 			                                        </table>
 			
-			                                        <p style="margin: 0 0 25px 0; font-size: 15px; line-height: 1.5; color: #666666 !important; text-align: center; font-weight: 500;">
-			                                            다양한 곳에서 네임드사주를 만나 보세요!
-			                                        </p>
-			                                        <div style="background-color: #ffffff !important; padding: 0 0 20px 0;">
-			                                            <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%%" style="margin: 0 0 30px 0;">
-			                                                <tr>
-			                                                    <td align="center" style="background-color: #ffffff !important;">
-			                                                        <a href="https://www.instagram.com/namedsaju_official/" style="display: inline-block; margin: 0 10px; text-decoration: none;">
-			                                                            <img src="https://named-logo.s3.ap-northeast-2.amazonaws.com/instagram.png" alt="Instagram" width="40" height="40" style="border: 0; display: inline-block; vertical-align: middle; max-width: 40px;">
-			                                                        </a>
-			                                                        <a href="https://x.com/namedsaju_" style="display: inline-block; margin: 0 11.5px; text-decoration: none;">
-			                                                            <img src="https://named-logo.s3.ap-northeast-2.amazonaws.com/X.png" alt="X" width="37" height="37" style="border: 0; display: inline-block; vertical-align: middle; max-width: 40px;">
-			                                                        </a>
-			                                                        <a href="https://blog.naver.com/namedsaju_official" style="display: inline-block; margin: 0 13.5px; text-decoration: none;">
-			                                                            <img src="https://named-logo.s3.ap-northeast-2.amazonaws.com/naver_blog.png" alt="Naver Blog" width="33" height="33" style="border: 0; display: inline-block; vertical-align: middle; max-width: 50px;">
-			                                                        </a>
-			                                                        <a href="https://www.namedsaju.com/" style="display: inline-block; margin: 0 10px; text-decoration: none;">
-			                                                            <img src="https://named-logo.s3.ap-northeast-2.amazonaws.com/homepage.png" alt="Homepage" width="40" height="40" style="border: 0; display: inline-block; vertical-align: middle; max-width: 40px;">
-			                                                        </a>
-			                                                    </td>
-			                                                </tr>
-			                                            </table>
-			                                        </div>
-			
 			                                        <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%%" style="border-top: 1px solid #E5E5E5; padding-top: 35px; background-color: #ffffff !important;">
 			                                            <tr>
 			                                                <td align="center" style="background-color: #ffffff !important;">
 			                                                    <p style="margin: 0 0 6px 0; font-size: 13px; line-height: 1.5; color: #999999 !important;">네임드사주 NAMED</p>
-			                                                    <p style="margin: 0 0 6px 0; font-size: 13px; line-height: 1.5; color: #999999 !important;">문의: help@namedsaju.com</p>
-			                                                    <p style="margin: 0; font-size: 13px; line-height: 1.5;">
-			                                                        <a href="https://www.namedsaju.com" style="color: #6B9FF5 !important; text-decoration: underline;">수신거부</a>
-			                                                        <span style="color: #CCCCCC !important;"> | </span>
-			                                                        <a href="https://www.namedsaju.com" style="color: #6B9FF5 !important; text-decoration: underline;">Unsubscribe</a>
+			                                                    <p style="margin: 0 0 15px 0; font-size: 13px; line-height: 1.5; color: #999999 !important;">문의: help@namedsaju.com</p>
+			
+			                                                    <p style="margin: 0; font-size: 12px; line-height: 1.5; color: #CCCCCC !important;">
+			                                                        본 메일은 정보통신망법에 의거하여<br>
+			                                                        서비스 이용에 필수적인 정보성 메일로,<br>
+			                                                        수신 동의 여부와 관계없이 발송됩니다.
 			                                                    </p>
 			                                                </td>
 			                                            </tr>
@@ -487,7 +463,7 @@ public class EmailService {
 			
 			                        </td>
 			                    </tr>
-			                    </table>
+			                </table>
 			
 			            </td>
 			        </tr>
