@@ -1931,6 +1931,26 @@ public class ManseInterpretationService {
 		// 8. 대운
 		prompt.append("### 대운 ###\n");
 		appendDaewoonCompact(prompt, saju, input.getGender());
+
+		// 9. 관계성 분석
+		prompt.append("### 지지 관계성 (합/충/원진) ###\n");
+
+		if (saju.getDayMonthRelation() != null && !saju.getDayMonthRelation().isEmpty()) {
+			prompt.append(
+				"- 일지(나) vs 월지(환경/부모): " + String.join(", ", saju.getDayMonthRelation()) + "\n");
+		}
+
+		if (saju.getDayYearRelation() != null && !saju.getDayYearRelation().isEmpty()) {
+			prompt.append(
+				"- 일지(나) vs 년지(배경/조상): " + String.join(", ", saju.getDayYearRelation()) + "\n");
+		}
+
+		if (saju.getSamhap() != null && !saju.getSamhap().isEmpty()) {
+			prompt.append("- 특수 국(局) 형성: " + String.join(", ", saju.getSamhap()) + "\n");
+		} else {
+			prompt.append("- 특수 국(局): 없음\n");
+		}
+		prompt.append("\n");
 	}
 
 	private void appendJijangganDetail(StringBuilder prompt, String pillarName,

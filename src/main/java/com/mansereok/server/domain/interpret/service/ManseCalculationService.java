@@ -1,17 +1,20 @@
 package com.mansereok.server.domain.interpret.service;
 
+import com.mansereok.server.domain.interpret.calculator.RelationCalculator;
 import com.mansereok.server.domain.interpret.calculator.SinsalCalculator;
 import com.mansereok.server.domain.interpret.calculator.UnseongCalculator;
-import com.mansereok.server.domain.interpret.repository.ManseRepository;
-import com.mansereok.server.domain.interpret.entity.Manse;
 import com.mansereok.server.domain.interpret.dto.request.ManseryeokCalculationRequest;
 import com.mansereok.server.domain.interpret.dto.response.ManseryeokCalculationResponse;
+import com.mansereok.server.domain.interpret.entity.Manse;
+import com.mansereok.server.domain.interpret.repository.ManseRepository;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -25,6 +28,7 @@ public class ManseCalculationService {
 	private final SajuDataService sajuDataService;
 	private final UnseongCalculator unseongCalculator;
 	private final SinsalCalculator sinsalCalculator;
+	private final RelationCalculator relationCalculator;
 
 	public ManseryeokCalculationResponse calculate(ManseryeokCalculationRequest request) {
 		try {
@@ -78,7 +82,28 @@ public class ManseCalculationService {
 			List<String> gongmang = sinsalCalculator.calculateGongmang(ilganChinese,
 				samju.getDayGround());
 
-			// 12. 응답 생성
+			// [추가] 12. 지지 간 관계 분석 (합, 충, 원진 등)
+			// 일지 vs 월지 (사회적 환경과의 조화)
+			List<String> dayMonthRel = relationCalculator.analyzeRelation(samju.getDayGround(),
+				samju.getMonthGround());
+
+			// 일지 vs 년지 (배경과의 조화)
+			List<String> dayYearRel = relationCalculator.analyzeRelation(samju.getDayGround(),
+				samju.getYearGround());
+
+			// [추가] 13. 사주 전체에서 삼합(국)이 형성되었는지 체크
+			List<String> fullSamhap = relationCalculator.findFullSamhap(
+				java.util.stream.Stream.of(
+						samju.getYearGround(),
+						samju.getMonthGround(),
+						samju.getDayGround(),
+						timePillar.getTimeGround()
+					)
+					.filter(Objects::nonNull) // null 값(시주가 없는 경우) 자동 제거
+					.collect(Collectors.toList())
+			);
+
+			// 14. 응답 생성
 			return ManseryeokCalculationResponse.builder()
 				.input(ManseryeokCalculationResponse.InputInfo.builder()
 					.solarDate(request.getSolarDate())
@@ -122,6 +147,10 @@ public class ManseCalculationService {
 					.hasGoegang(hasGoegang)
 					.hasBaekho(hasBaekho)
 					.gongmang(gongmang)
+
+					.dayMonthRelation(dayMonthRel)
+					.dayYearRelation(dayYearRel)
+					.samhap(fullSamhap)
 
 					.build())
 				.build();

@@ -102,6 +102,20 @@ public class ManseryeokCalculationResponse {
 		@JsonProperty("gongmang")
 		@Schema(description = "공망 지지 목록")
 		private List<String> gongmang;
+
+		// [추가] 12. 지지 관계 분석 결과 (일지-월지, 일지-년지)
+		@JsonProperty("day_month_relation")
+		@Schema(description = "일지(나)와 월지(사회/부모) 간의 관계 (합, 충, 원진 등)", example = "[\"충(자오충)\", \"원진살\"]")
+		private List<String> dayMonthRelation;
+
+		@JsonProperty("day_year_relation")
+		@Schema(description = "일지(나)와 년지(배경/조상) 간의 관계", example = "[\"육합\"]")
+		private List<String> dayYearRelation;
+
+		// [추가] 13. 삼합(국) 형성 여부
+		@JsonProperty("samhap")
+		@Schema(description = "사주 전체에서 형성된 삼합(국) 정보", example = "[\"삼합(수국 완성)\"]")
+		private List<String> samhap;
 	}
 
 	@Data
