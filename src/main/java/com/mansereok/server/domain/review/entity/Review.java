@@ -56,6 +56,9 @@ public class Review {
 	@Column(name = "user_name")
 	private String userName; // 조회를 빠르게 하기 위해 사용자 이름도 저장
 
+	@Column(name = "user_email") // [추가] 이메일 컬럼 추가
+	private String userEmail;
+
 	@Column(name = "is_deleted", nullable = false)
 	private boolean isDeleted = false; // 삭제는 관리자만 (논리적 삭제)
 
@@ -77,13 +80,14 @@ public class Review {
 	}
 
 	public static Review create(Long userId, Long subCategoryId, Long orderId, String content,
-		String userName) {
+		String userName, String userEmail) {
 		Review review = new Review();
 		review.userId = userId;
 		review.subCategoryId = subCategoryId;
 		review.orderId = orderId;
 		review.content = content;
 		review.userName = userName;
+		review.userEmail = userEmail;
 		return review;
 	}
 

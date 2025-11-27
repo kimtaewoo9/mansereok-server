@@ -12,14 +12,14 @@ public class ReviewResponse {
 	private Long reviewId;
 	private Long subCategoryId;
 	private String content;
-	private String userName;
+	private String email;
 	private LocalDateTime createdAt;
 
 	public ReviewResponse(Review review, String productName) {
 		this.reviewId = review.getId();
 		this.subCategoryId = review.getSubCategoryId();
 		this.content = review.getContent();
-		this.userName = review.getUserName();
+		this.email = review.getUserEmail();
 		this.createdAt = review.getCreatedAt();
 	}
 
@@ -28,7 +28,7 @@ public class ReviewResponse {
 		response.reviewId = review.getId();
 		response.subCategoryId = review.getSubCategoryId();
 		response.content = review.getContent();
-		response.userName = review.getUserName();
+		response.email = review.getUserEmail();
 		response.createdAt = review.getCreatedAt();
 		return response;
 	}

@@ -76,7 +76,8 @@ public class ReviewService {
 			request.getSubCategoryId(),
 			order.getId(),
 			request.getContent(),
-			user.getName()
+			user.getName(),
+			user.getEmail()
 		);
 		Review savedReview = reviewRepository.save(newReview);
 
