@@ -37,95 +37,85 @@ public class ManseCalculationService {
 
 	public ManseryeokCalculationResponse calculate(ManseryeokCalculationRequest request) {
 		try {
+			// ... (기존 1~11번 로직: 생년월일 변환, 신살 계산 등 동일) ...
+			// 파일 길이가 길어 생략된 부분은 기존 코드를 그대로 두세요!
+			// 변경된 부분은 12번부터입니다.
+
 			log.info("만세력 계산 시작: solarDate={}, gender={}, isLunar={}",
 				request.getSolarDate(), request.getGender(), request.getIsLunar());
 
-			// 1. 생년월일을 삼주(양력)로 변환
 			SamjuResult samju = convertBirthToSamju(
 				request.getIsLunar() ? "LUNAR" : "SOLAR",
 				request.getSolarDate(),
 				request.getSolarTime()
 			);
-
-			// 2. 생년월일시(양력) 생성
-			LocalDateTime solarDatetime = LocalDateTime.of(
-				samju.getSolarDate(),
-				request.getSolarTime()
-			);
-
-			// 3. 순행(true), 역행(false) 판단
+			LocalDateTime solarDatetime = LocalDateTime.of(samju.getSolarDate(),
+				request.getSolarTime());
 			boolean direction = isRightDirection(request.getGender(), samju.getYearSky());
-
-			// 4. 절입시간 가져오기
 			LocalDateTime seasonTime = getSeasonStartTime(direction, solarDatetime);
-
-			// 5. 대운수 및 대운 시작년 가져오기
 			BigFortuneResult bigFortune = getBigFortuneNumber(direction, seasonTime, solarDatetime);
-
-			// 6. 시주 가져오기
 			TimePillarResult timePillar = getTimePillar(samju.getDaySky(), request.getSolarTime());
-
-			// 7. 일간 한자
 			String ilganChinese = samju.getDaySky();
 
-			// 8. 신살 계산
 			Map<String, List<String>> sinsalInfo = sinsalCalculator.analyzeAllSinsal(
-				ilganChinese,
-				samju.getYearGround(),
-				samju.getMonthGround(),
-				samju.getDayGround(),
+				ilganChinese, samju.getYearGround(), samju.getMonthGround(), samju.getDayGround(),
 				timePillar.getTimeGround()
 			);
-
-			// 9. 괴강살 체크
 			boolean hasGoegang = sinsalCalculator.hasGoegang(ilganChinese, samju.getDayGround());
-
-			// 10. 백호대살 체크
 			boolean hasBaekho = sinsalCalculator.hasBaekho(ilganChinese, samju.getDayGround());
-
-			// 11. 공망 계산
 			List<String> gongmang = sinsalCalculator.calculateGongmang(ilganChinese,
 				samju.getDayGround());
 
-			// [추가] 12. 지지 간 관계 분석 (합, 충, 원진 등)
-			// 일지 vs 월지 (사회적 환경과의 조화)
-			List<String> dayMonthRel = relationCalculator.analyzeRelation(samju.getDayGround(),
-				samju.getMonthGround());
+			// [100점짜리 수정] 12. 지지 관계 분석 (모든 조합 6개)
+			List<String> allGroundRelations = new ArrayList<>();
+			addRelations(allGroundRelations, "년지-월지",
+				relationCalculator.analyzeRelation(samju.getYearGround(), samju.getMonthGround()));
+			addRelations(allGroundRelations, "년지-일지",
+				relationCalculator.analyzeRelation(samju.getYearGround(), samju.getDayGround()));
+			addRelations(allGroundRelations, "월지-일지",
+				relationCalculator.analyzeRelation(samju.getMonthGround(), samju.getDayGround()));
 
-			// 일지 vs 년지 (배경과의 조화)
-			List<String> dayYearRel = relationCalculator.analyzeRelation(samju.getDayGround(),
-				samju.getYearGround());
+			if (timePillar.getTimeGround() != null) {
+				addRelations(allGroundRelations, "년지-시지",
+					relationCalculator.analyzeRelation(samju.getYearGround(),
+						timePillar.getTimeGround()));
+				addRelations(allGroundRelations, "월지-시지",
+					relationCalculator.analyzeRelation(samju.getMonthGround(),
+						timePillar.getTimeGround()));
+				addRelations(allGroundRelations, "일지-시지",
+					relationCalculator.analyzeRelation(samju.getDayGround(),
+						timePillar.getTimeGround()));
+			}
 
-			// [추가] 13. 사주 전체에서 삼합(국)이 형성되었는지 체크
+			// 13. 천간 관계 분석 (모든 조합)
+			List<String> allSkyRelations = new ArrayList<>();
+			addRelations(allSkyRelations, "년간-월간",
+				relationCalculator.analyzeSkyRelation(samju.getYearSky(), samju.getMonthSky()));
+			addRelations(allSkyRelations, "년간-일간",
+				relationCalculator.analyzeSkyRelation(samju.getYearSky(), samju.getDaySky()));
+			addRelations(allSkyRelations, "월간-일간",
+				relationCalculator.analyzeSkyRelation(samju.getMonthSky(), samju.getDaySky()));
+
+			if (timePillar.getTimeSky() != null) {
+				addRelations(allSkyRelations, "년간-시간",
+					relationCalculator.analyzeSkyRelation(samju.getYearSky(),
+						timePillar.getTimeSky()));
+				addRelations(allSkyRelations, "월간-시간",
+					relationCalculator.analyzeSkyRelation(samju.getMonthSky(),
+						timePillar.getTimeSky()));
+				addRelations(allSkyRelations, "일간-시간",
+					relationCalculator.analyzeSkyRelation(samju.getDaySky(),
+						timePillar.getTimeSky()));
+			}
+
+			// 14. 삼합 체크
 			List<String> fullSamhap = relationCalculator.findFullSamhap(
-				java.util.stream.Stream.of(
-						samju.getYearGround(),
-						samju.getMonthGround(),
-						samju.getDayGround(),
-						timePillar.getTimeGround()
-					)
-					.filter(Objects::nonNull) // null 값(시주가 없는 경우) 자동 제거
-					.collect(Collectors.toList())
+				java.util.stream.Stream.of(samju.getYearGround(), samju.getMonthGround(),
+						samju.getDayGround(), timePillar.getTimeGround())
+					.filter(Objects::nonNull).collect(Collectors.toList())
 			);
 
-			List<String> skyRelations = new ArrayList<>();
-			// 일간 vs 월간 (사회적 정신적 조화)
-			List<String> dayMonthSky = relationCalculator.analyzeSkyRelation(samju.getDaySky(),
-				samju.getMonthSky());
-			if (!dayMonthSky.isEmpty()) {
-				skyRelations.add("일간-월간: " + String.join(",", dayMonthSky));
-			}
-
-			// 일간 vs 시간 (말년/자식/생각)
-			if (timePillar.getTimeSky() != null) {
-				List<String> dayTimeSky = relationCalculator.analyzeSkyRelation(samju.getDaySky(),
-					timePillar.getTimeSky());
-				if (!dayTimeSky.isEmpty()) {
-					skyRelations.add("일간-시간: " + String.join(",", dayTimeSky));
-				}
-			}
-			String skyRelationStr = String.join(" / ", skyRelations);
-
+			// 15. DTO 빌드
 			SajuInfo sajuInfo = SajuInfo.builder()
 				.bigFortuneNumber(bigFortune.getBigFortuneNumber())
 				.bigFortuneStartYear(bigFortune.getBigFortuneStart())
@@ -151,17 +141,16 @@ public class ManseCalculationService {
 				.hasGoegang(hasGoegang)
 				.hasBaekho(hasBaekho)
 				.gongmang(gongmang)
-				.dayMonthRelation(dayMonthRel)
-				.dayYearRelation(dayYearRel)
+				// [수정] 통합된 리스트 주입
+				.groundRelations(allGroundRelations)
+				.skyRelations(allSkyRelations)
 				.samhap(fullSamhap)
-				.skyRelation(skyRelationStr) // [추가]
 				.build();
 
-			// 용신 계산
+			// 16. 용신 계산
 			YongsinResult yongsinResult = yongsinCalculator.analyzeYongsin(sajuInfo);
 			sajuInfo.setYongsinInfo(yongsinResult);
 
-			// 응답 생성
 			return ManseryeokCalculationResponse.builder()
 				.input(ManseryeokCalculationResponse.InputInfo.builder()
 					.solarDate(request.getSolarDate())
@@ -171,15 +160,22 @@ public class ManseCalculationService {
 					.build())
 				.saju(sajuInfo)
 				.build();
+
 		} catch (Exception e) {
 			log.error("만세력 계산 중 오류 발생", e);
 			throw new RuntimeException("만세력 계산 중 오류가 발생했습니다: " + e.getMessage());
 		}
 	}
 
-	/**
-	 * 운성을 포함한 지지 정보 포맷팅
-	 */
+	// 헬퍼 메서드: 관계 리스트에 추가
+	private void addRelations(List<String> targetList, String label, List<String> relations) {
+		if (relations != null && !relations.isEmpty()) {
+			targetList.add(label + ": " + String.join(", ", relations));
+		}
+	}
+
+	// ... (나머지 private 메서드들은 기존 코드 그대로 사용) ...
+	// formatChinese, convertBirthToSamju 등등 복사 붙여넣기 하세요.
 	private ManseryeokCalculationResponse.PillarElement formatChineseWithUnseong(
 		String chinese, String ilganChinese, String daySky, boolean isGround,
 		String ilganChineseForJijanggan) {
@@ -187,24 +183,18 @@ public class ManseCalculationService {
 		ManseryeokCalculationResponse.PillarElement.PillarElementBuilder builder =
 			formatChineseToBuilder(chinese, daySky, isGround, ilganChineseForJijanggan);
 
-		// 운성 계산 및 추가
 		if (isGround) {
 			String unseong = unseongCalculator.calculate(ilganChinese, chinese);
 			if (unseong != null) {
 				builder.unseong(unseong);
 				builder.unseongDescription(unseongCalculator.getUnseongDescription(unseong));
 			} else {
-				// ⭐ 운성 계산 실패 경고 로깅 강화
 				log.warn("⚠️ 운성 계산 실패: 일간={}, 지지={}", ilganChinese, chinese);
 			}
 		}
-
 		return builder.build();
 	}
 
-	/**
-	 * 기존 formatChinese를 Builder 패턴으로 분리 ⭐ ilganChinese 파라미터 추가 (지장간 십성 계산용)
-	 */
 	private ManseryeokCalculationResponse.PillarElement.PillarElementBuilder formatChineseToBuilder(
 		String chinese, String daySky, boolean isGround, String ilganChinese) {
 
@@ -237,7 +227,7 @@ public class ManseCalculationService {
 				.minusPlus(minusPlusData.get(chinese));
 
 		if (isGround) {
-			builder.jijanggan(getJijangganInfo(chinese, ilganChinese));  // ⭐ ilganChinese 전달
+			builder.jijanggan(getJijangganInfo(chinese, ilganChinese));
 		}
 
 		return builder;
@@ -248,14 +238,10 @@ public class ManseCalculationService {
 		return formatChineseToBuilder(chinese, daySky, isGround, ilganChinese).build();
 	}
 
-	/**
-	 * 생년월일을 삼주로 변환
-	 */
 	private SamjuResult convertBirthToSamju(String birthdayType, LocalDate birthday,
 		LocalTime time) {
 		LocalTime birthtime = time != null ? time : LocalTime.of(12, 0);
 
-		// 23:30 ~ 23:59 자시에 태어난 경우 다음날로 처리
 		if (time != null &&
 			((time.isAfter(LocalTime.of(23, 30)) || time.equals(LocalTime.of(23, 30))) &&
 				time.isBefore(LocalTime.of(23, 59, 59)))) {
@@ -271,7 +257,6 @@ public class ManseCalculationService {
 			manseRepository.findByLunarDate(birthday)
 				.orElseThrow(() -> new RuntimeException("해당 음력 날짜의 만세력 데이터를 찾을 수 없습니다."));
 
-		// 절입일인 경우 처리
 		if (samju.getSeason() != null && !samju.getSeason().isEmpty()) {
 			log.info("절입일 처리: season={}, seasonStartTime={}", samju.getSeason(),
 				samju.getSeasonStartTime());
@@ -311,9 +296,6 @@ public class ManseCalculationService {
 			.build();
 	}
 
-	/**
-	 * 순행(true), 역행(false) 판단 (성별, 연간)
-	 */
 	private boolean isRightDirection(String gender, String yearSky) {
 		String minusPlus = sajuDataService.getMinusPlus().get(yearSky);
 
@@ -324,9 +306,9 @@ public class ManseCalculationService {
 		boolean result;
 		if (("MALE".equals(gender) && "양".equals(minusPlus)) ||
 			("FEMALE".equals(gender) && "음".equals(minusPlus))) {
-			result = true; // 순행
+			result = true;
 		} else {
-			result = false; // 역행
+			result = false;
 		}
 
 		log.info("대운 방향 판단: gender={}, yearSky={}, minusPlus={}, direction={}",
@@ -335,9 +317,6 @@ public class ManseCalculationService {
 		return result;
 	}
 
-	/**
-	 * 절입 시간 가져오기
-	 */
 	private LocalDateTime getSeasonStartTime(boolean direction, LocalDateTime solarDatetime) {
 		Manse manse;
 
@@ -357,9 +336,6 @@ public class ManseCalculationService {
 		return manse.getSeasonStartTime();
 	}
 
-	/**
-	 * 대운수 및 대운 시작 구하기
-	 */
 	private BigFortuneResult getBigFortuneNumber(boolean direction, LocalDateTime seasonStartTime,
 		LocalDateTime solarDatetime) {
 		long diffDays;
@@ -393,9 +369,6 @@ public class ManseCalculationService {
 			.build();
 	}
 
-	/**
-	 * 시주 계산하기
-	 */
 	private TimePillarResult getTimePillar(String daySky, LocalTime time) {
 		if (time == null) {
 			log.info("출생시간이 없어 시주 계산 생략");
@@ -444,7 +417,6 @@ public class ManseCalculationService {
 			}
 		}
 
-		// 자시 특별 처리 (23:30-01:29)
 		if ((time.isAfter(LocalTime.of(23, 30)) || time.equals(LocalTime.of(23, 30))) ||
 			(time.isBefore(LocalTime.of(1, 30)) && time.isAfter(LocalTime.of(0, 0)))) {
 			return "0";
@@ -464,12 +436,6 @@ public class ManseCalculationService {
 		};
 	}
 
-	/**
-	 * ⭐ 지장간 정보 가져오기 (십성 계산 포함)
-	 *
-	 * @param jiji         지지 한자
-	 * @param ilganChinese 일간 한자 (십성 계산용)
-	 */
 	private ManseryeokCalculationResponse.JijangganInfo getJijangganInfo(String jiji,
 		String ilganChinese) {
 		Map<String, Map<String, Object>> jijangganData = sajuDataService.getJijangan();
@@ -489,12 +455,6 @@ public class ManseCalculationService {
 			.build();
 	}
 
-	/**
-	 * ⭐ 지장간 요소 생성 (십성 계산 추가)
-	 *
-	 * @param elementData  지장간 요소 데이터
-	 * @param ilganChinese 일간 한자 (십성 계산용)
-	 */
 	@SuppressWarnings("unchecked")
 	private ManseryeokCalculationResponse.JijangganElement createJijangganElement(
 		Map<String, Object> elementData, String ilganChinese) {
@@ -504,7 +464,6 @@ public class ManseCalculationService {
 
 		String chinese = (String) elementData.get("chinese");
 
-		// ⭐ 지장간의 십성 계산 (SajuDataService.getTenStar() 활용)
 		String tenStar = null;
 		if (chinese != null && ilganChinese != null) {
 			Map<String, Map<String, String>> tenStarData = sajuDataService.getTenStar();
@@ -513,8 +472,7 @@ public class ManseCalculationService {
 				String tenStarInfo = ilganTenStarMap.get(chinese);
 				if (tenStarInfo != null) {
 					String[] parts = tenStarInfo.split(",");
-					tenStar = parts.length > 0 ? parts[0] : null; // "편인,수" → "편인"
-					log.debug("지장간 십성 계산: 일간={}, 지장간천간={}, 십성={}", ilganChinese, chinese, tenStar);
+					tenStar = parts.length > 0 ? parts[0] : null;
 				}
 			}
 		}
@@ -526,11 +484,10 @@ public class ManseCalculationService {
 			.fiveCircleColor((String) elementData.get("fiveCircleColor"))
 			.minusPlus((String) elementData.get("minusPlus"))
 			.rate((Integer) elementData.get("rate"))
-			.tenStar(tenStar)  // ⭐ 십성 추가
+			.tenStar(tenStar)
 			.build();
 	}
 
-	// Inner classes for return types
 	@lombok.Data
 	@lombok.Builder
 	private static class SamjuResult {
