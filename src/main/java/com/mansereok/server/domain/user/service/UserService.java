@@ -19,6 +19,7 @@ import com.mansereok.server.domain.user.entity.SocialType;
 import com.mansereok.server.domain.user.entity.User;
 import com.mansereok.server.domain.user.repository.RefreshTokenRepository;
 import com.mansereok.server.domain.user.repository.UserRepository;
+import com.mansereok.server.global.exception.DuplicateEmailException;
 import java.time.LocalDate;
 import java.util.Comparator;
 import java.util.List;
@@ -69,7 +70,7 @@ public class UserService {
 		boolean isMarketingAgreed
 	) {
 		if (userRepository.existsByEmail(email)) {
-			throw new RuntimeException("이미 존재하는 이메일 입니다: " + email);
+			throw new DuplicateEmailException("이미 존재하는 이메일 입니다: " + email);
 		}
 
 		User savedUser = userRepository.save(
@@ -126,7 +127,7 @@ public class UserService {
 	public User registerWithOauth(String username, String email, String name,
 		String sub, SocialType socialType) {
 		if (userRepository.existsByEmail(email)) {
-			throw new RuntimeException("이미 존재하는 이메일 입니다: " + email);
+			throw new DuplicateEmailException("이미 존재하는 이메일 입니다: " + email);
 		}
 
 		User savedUser = userRepository.save(
