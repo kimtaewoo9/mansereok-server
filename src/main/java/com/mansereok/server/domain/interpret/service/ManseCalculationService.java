@@ -3,14 +3,18 @@ package com.mansereok.server.domain.interpret.service;
 import com.mansereok.server.domain.interpret.calculator.RelationCalculator;
 import com.mansereok.server.domain.interpret.calculator.SinsalCalculator;
 import com.mansereok.server.domain.interpret.calculator.UnseongCalculator;
+import com.mansereok.server.domain.interpret.calculator.YongsinCalculator;
+import com.mansereok.server.domain.interpret.calculator.YongsinCalculator.YongsinResult;
 import com.mansereok.server.domain.interpret.dto.request.ManseryeokCalculationRequest;
 import com.mansereok.server.domain.interpret.dto.response.ManseryeokCalculationResponse;
+import com.mansereok.server.domain.interpret.dto.response.ManseryeokCalculationResponse.SajuInfo;
 import com.mansereok.server.domain.interpret.entity.Manse;
 import com.mansereok.server.domain.interpret.repository.ManseRepository;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -29,6 +33,7 @@ public class ManseCalculationService {
 	private final UnseongCalculator unseongCalculator;
 	private final SinsalCalculator sinsalCalculator;
 	private final RelationCalculator relationCalculator;
+	private final YongsinCalculator yongsinCalculator;
 
 	public ManseryeokCalculationResponse calculate(ManseryeokCalculationRequest request) {
 		try {
@@ -103,7 +108,60 @@ public class ManseCalculationService {
 					.collect(Collectors.toList())
 			);
 
-			// 14. 응답 생성
+			List<String> skyRelations = new ArrayList<>();
+			// 일간 vs 월간 (사회적 정신적 조화)
+			List<String> dayMonthSky = relationCalculator.analyzeSkyRelation(samju.getDaySky(),
+				samju.getMonthSky());
+			if (!dayMonthSky.isEmpty()) {
+				skyRelations.add("일간-월간: " + String.join(",", dayMonthSky));
+			}
+
+			// 일간 vs 시간 (말년/자식/생각)
+			if (timePillar.getTimeSky() != null) {
+				List<String> dayTimeSky = relationCalculator.analyzeSkyRelation(samju.getDaySky(),
+					timePillar.getTimeSky());
+				if (!dayTimeSky.isEmpty()) {
+					skyRelations.add("일간-시간: " + String.join(",", dayTimeSky));
+				}
+			}
+			String skyRelationStr = String.join(" / ", skyRelations);
+
+			SajuInfo sajuInfo = SajuInfo.builder()
+				.bigFortuneNumber(bigFortune.getBigFortuneNumber())
+				.bigFortuneStartYear(bigFortune.getBigFortuneStart())
+				.seasonStartTime(samju.getSeasonStartTime())
+				.yearSky(formatChinese(samju.getYearSky(), samju.getDaySky(), false, ilganChinese))
+				.yearGround(
+					formatChineseWithUnseong(samju.getYearGround(), ilganChinese, samju.getDaySky(),
+						true, ilganChinese))
+				.monthSky(
+					formatChinese(samju.getMonthSky(), samju.getDaySky(), false, ilganChinese))
+				.monthGround(formatChineseWithUnseong(samju.getMonthGround(), ilganChinese,
+					samju.getDaySky(), true, ilganChinese))
+				.daySky(formatChinese(samju.getDaySky(), samju.getDaySky(), false, ilganChinese))
+				.dayGround(
+					formatChineseWithUnseong(samju.getDayGround(), ilganChinese, samju.getDaySky(),
+						true, ilganChinese))
+				.timeSky(timePillar.getTimeSky() != null ? formatChinese(timePillar.getTimeSky(),
+					samju.getDaySky(), false, ilganChinese) : null)
+				.timeGround(timePillar.getTimeGround() != null ? formatChineseWithUnseong(
+					timePillar.getTimeGround(), ilganChinese, samju.getDaySky(), true, ilganChinese)
+					: null)
+				.sinsalInfo(sinsalInfo)
+				.hasGoegang(hasGoegang)
+				.hasBaekho(hasBaekho)
+				.gongmang(gongmang)
+				.dayMonthRelation(dayMonthRel)
+				.dayYearRelation(dayYearRel)
+				.samhap(fullSamhap)
+				.skyRelation(skyRelationStr) // [추가]
+				.build();
+
+			// 용신 계산
+			YongsinResult yongsinResult = yongsinCalculator.analyzeYongsin(sajuInfo);
+			sajuInfo.setYongsinInfo(yongsinResult);
+
+			// 응답 생성
 			return ManseryeokCalculationResponse.builder()
 				.input(ManseryeokCalculationResponse.InputInfo.builder()
 					.solarDate(request.getSolarDate())
@@ -111,50 +169,8 @@ public class ManseCalculationService {
 					.gender(request.getGender())
 					.isLunar(request.getIsLunar())
 					.build())
-				.saju(ManseryeokCalculationResponse.SajuInfo.builder()
-					.bigFortuneNumber(bigFortune.getBigFortuneNumber())
-					.bigFortuneStartYear(bigFortune.getBigFortuneStart())
-					.seasonStartTime(samju.getSeasonStartTime())
-
-					// 운성 포함
-					.yearSky(
-						formatChinese(samju.getYearSky(), samju.getDaySky(), false, ilganChinese))
-					.yearGround(formatChineseWithUnseong(
-						samju.getYearGround(), ilganChinese, samju.getDaySky(), true, ilganChinese))
-
-					.monthSky(
-						formatChinese(samju.getMonthSky(), samju.getDaySky(), false, ilganChinese))
-					.monthGround(formatChineseWithUnseong(
-						samju.getMonthGround(), ilganChinese, samju.getDaySky(), true,
-						ilganChinese))
-
-					.daySky(
-						formatChinese(samju.getDaySky(), samju.getDaySky(), false, ilganChinese))
-					.dayGround(formatChineseWithUnseong(
-						samju.getDayGround(), ilganChinese, samju.getDaySky(), true, ilganChinese))
-
-					.timeSky(timePillar.getTimeSky() != null ?
-						formatChinese(timePillar.getTimeSky(), samju.getDaySky(), false,
-							ilganChinese) : null)
-					.timeGround(timePillar.getTimeGround() != null ?
-						formatChineseWithUnseong(
-							timePillar.getTimeGround(), ilganChinese, samju.getDaySky(), true,
-							ilganChinese)
-						: null)
-
-					// 신살 정보
-					.sinsalInfo(sinsalInfo)
-					.hasGoegang(hasGoegang)
-					.hasBaekho(hasBaekho)
-					.gongmang(gongmang)
-
-					.dayMonthRelation(dayMonthRel)
-					.dayYearRelation(dayYearRel)
-					.samhap(fullSamhap)
-
-					.build())
+				.saju(sajuInfo)
 				.build();
-
 		} catch (Exception e) {
 			log.error("만세력 계산 중 오류 발생", e);
 			throw new RuntimeException("만세력 계산 중 오류가 발생했습니다: " + e.getMessage());

@@ -1952,6 +1952,28 @@ public class ManseInterpretationService {
 			prompt.append("- 특수 국(局): 없음\n");
 		}
 		prompt.append("\n");
+
+		prompt.append("### 천간 관계 (정신적 조화) ###\n");
+		if (saju.getSkyRelation() != null && !saju.getSkyRelation().isEmpty()) {
+			prompt.append("- " + saju.getSkyRelation() + "\n");
+		} else {
+			prompt.append("- 특이사항 없음\n");
+		}
+		prompt.append("\n");
+
+		prompt.append("### 사주 강약 및 용신 (핵심) ###\n");
+		if (saju.getYongsinInfo() != null) {
+			prompt.append(String.format("- 사주 강약: %s (내 세력 %.1f vs 남의 세력 %.1f)\n",
+				saju.getYongsinInfo().getStrength(),
+				saju.getYongsinInfo().getMyScore(),
+				(saju.getYongsinInfo().getTotalScore() - saju.getYongsinInfo().getMyScore())
+			));
+			prompt.append(String.format("- 추천 용신(행운의 오행): %s (%s)\n",
+				saju.getYongsinInfo().getYongsin(),
+				saju.getYongsinInfo().getDescription()));
+			prompt.append("※ 이 정보를 바탕으로 인생의 개운법(행운의 색, 방향 등)을 추천해주세요.\n");
+		}
+		prompt.append("\n");
 	}
 
 	private void appendJijangganDetail(StringBuilder prompt, String pillarName,
