@@ -71,7 +71,8 @@ public class ManseryeokController {
 			manse,
 			username,
 			subcategoryId,
-			request.getPaymentId()
+			request.getPaymentId(),
+			request.getSourceTitle()
 		);
 
 		log.info("만세력 해석 요청 접수 완료 (비동기 처리 시작): paymentId={}", request.getPaymentId());
@@ -118,7 +119,9 @@ public class ManseryeokController {
 			person2.getName(), person2Response,
 			subcategoryId,
 			request.getPaymentId(),
-			username
+			username,
+			person1.getSourceTitle(),
+			person2.getSourceTitle() // 상대방 캐릭터
 		);
 
 		log.info("궁합 분석 요청 접수 완료 (비동기 처리 시작): paymentId={}", request.getPaymentId());

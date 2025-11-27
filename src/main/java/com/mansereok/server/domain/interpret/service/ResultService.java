@@ -39,8 +39,13 @@ public class ResultService {
 		log.info("[ResultCreationService] subcategoryId = {}", subCategoryId);
 
 		// Category ID에 따라 Result 또는 CompatibilityResult 생성 분기
-		if (subCategoryId == 4 || subCategoryId == 6 || subCategoryId == 7 || subCategoryId == 14
-			|| subCategoryId == 15) {
+		if (subCategoryId == 4 ||
+			subCategoryId == 6 ||
+			subCategoryId == 7 ||
+			subCategoryId == 10 ||
+			subCategoryId == 11 ||
+			subCategoryId == 14 ||
+			subCategoryId == 15) {
 			if (compatibilityResultRepository.findByPaymentId(paymentPkId).isEmpty()) {
 				CompatibilityResult initialCompResult = CompatibilityResult.createInitial(userId,
 					paymentPkId, productName);

@@ -7,8 +7,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mansereok.server.domain.discount.entity.DiscountCode;
 import com.mansereok.server.domain.discount.service.DiscountCodeService;
 import com.mansereok.server.domain.discount.service.DiscountCodeService.DiscountValidationResult;
-import com.mansereok.server.domain.interpret.entity.CompatibilityResult;
-import com.mansereok.server.domain.interpret.entity.Result;
 import com.mansereok.server.domain.interpret.repository.CompatibilityResultRepository;
 import com.mansereok.server.domain.interpret.repository.ResultRepository;
 import com.mansereok.server.domain.interpret.service.ResultService;
@@ -386,7 +384,6 @@ public class PaymentService {
 				order.setPaymentPkId(savedPayment.getId());
 
 				resultService.createInitialResult(savedPayment, savedOrder);
-//				createInitialResult(savedPayment, savedOrder);
 
 				try {
 					User user = userRepository.findById(savedOrder.getUserId())
@@ -490,50 +487,5 @@ public class PaymentService {
 
 		log.info("주문 처리 완료: orderId	={}, subCategoryId={}",
 			order.getId(), order.getSubCategoryId());
-	}
-
-	private void createInitialResult(Payment savedPayment, Order savedOrder) {
-		Long paymentPkId = savedPayment.getId(); // 상품의 PK 키 ..
-		Long userId = savedOrder.getUserId();
-		Long subCategoryId = savedOrder.getSubCategoryId();
-
-		// SubCategory 정보 조회 (상품 이름 가져오기)
-		SubCategory subCategory = subCategoryRepository.findById(subCategoryId)
-			.orElseThrow(() -> {
-				log.error("Payment 후 Result 생성 중 SubCategory 조회 실패: subCategoryId={}",
-					subCategoryId);
-				return new PaymentException("상품 정보를 찾을 수 없습니다: ID " + subCategoryId);
-			});
-		String productName = subCategory.getTitle();
-
-		log.info("[PaymentService.createInitialResult] subcategoryId = {}", subCategoryId);
-
-		// Category ID에 따라 Result 또는 CompatibilityResult 생성 분기..
-		// 궁합이면 매번 여기에 추가해야함 TODO: 하드 코딩한거 리팩토링하기
-		if (subCategoryId == 4 || subCategoryId == 6 || subCategoryId == 7 || subCategoryId == 14
-			|| subCategoryId == 15) {
-			if (compatibilityResultRepository.findByPaymentId(paymentPkId).isEmpty()) {
-				CompatibilityResult initialCompResult = CompatibilityResult.createInitial(userId,
-					paymentPkId, productName);
-				compatibilityResultRepository.save(initialCompResult);
-				log.info(
-					"초기 CompatibilityResult 생성 완료: paymentId(PK)={}, resultId={}, productName={}",
-					paymentPkId, initialCompResult.getId(), productName);
-			} else {
-				log.warn(
-					"이미 paymentId(PK) {}에 해당하는 CompatibilityResult가 존재하여 생성을 건너 뜁니다.",
-					paymentPkId);
-			}
-		} else { // 그 외 모든 경우는 일반 Result 생성
-			if (resultRepository.findByPaymentId(paymentPkId).isEmpty()) {
-				Result initialResult = Result.createInitial(userId, paymentPkId, productName);
-				resultRepository.save(initialResult);
-				log.info("초기 Result 생성 완료: paymentId(PK)={}, resultId={}, productName={}",
-					paymentPkId, initialResult.getId(), productName);
-			} else {
-				log.warn("이미 paymentId(PK) {}에 해당하는 Result가 존재하여 생성을 건너 뜁니다.",
-					paymentPkId);
-			}
-		}
 	}
 }
