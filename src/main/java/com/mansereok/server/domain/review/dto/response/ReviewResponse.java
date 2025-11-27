@@ -13,6 +13,7 @@ public class ReviewResponse {
 	private Long subCategoryId;
 	private String content;
 	private String email;
+	private String userName;
 	private LocalDateTime createdAt;
 
 	public ReviewResponse(Review review, String productName) {
@@ -29,6 +30,7 @@ public class ReviewResponse {
 		response.subCategoryId = review.getSubCategoryId();
 		response.content = review.getContent();
 		response.email = review.getUserEmail();
+		response.userName = review.getUserName();
 		response.createdAt = review.getCreatedAt();
 		return response;
 	}
