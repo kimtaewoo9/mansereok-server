@@ -1933,45 +1933,41 @@ public class ManseInterpretationService {
 		int birthYear = input.getSolarDate().getYear();
 		appendDaewoonCompact(prompt, saju, input.getGender(), birthYear);
 
-		// 9. 관계성 분석
+		// 9. 관계성 분석 (업그레이드 버전)
 		prompt.append("### 지지 관계성 (합/충/원진) ###\n");
-
-		if (saju.getDayMonthRelation() != null && !saju.getDayMonthRelation().isEmpty()) {
-			prompt.append(
-				"- 일지(나) vs 월지(환경/부모): " + String.join(", ", saju.getDayMonthRelation()) + "\n");
-		}
-
-		if (saju.getDayYearRelation() != null && !saju.getDayYearRelation().isEmpty()) {
-			prompt.append(
-				"- 일지(나) vs 년지(배경/조상): " + String.join(", ", saju.getDayYearRelation()) + "\n");
-		}
-
-		if (saju.getSamhap() != null && !saju.getSamhap().isEmpty()) {
-			prompt.append("- 특수 국(局) 형성: " + String.join(", ", saju.getSamhap()) + "\n");
-		} else {
-			prompt.append("- 특수 국(局): 없음\n");
-		}
-		prompt.append("\n");
-
-		prompt.append("### 천간 관계 (정신적 조화) ###\n");
-		if (saju.getSkyRelation() != null && !saju.getSkyRelation().isEmpty()) {
-			prompt.append("- " + saju.getSkyRelation() + "\n");
+		if (saju.getGroundRelations() != null && !saju.getGroundRelations().isEmpty()) {
+			saju.getGroundRelations().forEach(rel -> prompt.append("- " + rel + "\n"));
 		} else {
 			prompt.append("- 특이사항 없음\n");
 		}
+
+		// 10. 천간 관계 (업그레이드 버전)
+		prompt.append("### 천간 관계 (정신적 조화) ###\n");
+		if (saju.getSkyRelations() != null && !saju.getSkyRelations().isEmpty()) {
+			saju.getSkyRelations().forEach(rel -> prompt.append("- " + rel + "\n"));
+		} else {
+			prompt.append("- 특이사항 없음\n");
+		}
+
+		// 11. 삼합
+		if (saju.getSamhap() != null && !saju.getSamhap().isEmpty()) {
+			prompt.append("### 특수 국(局) ###\n");
+			prompt.append("- " + String.join(", ", saju.getSamhap()) + "\n");
+		}
 		prompt.append("\n");
 
+		// 12. 사주 강약 및 용신 (핵심 업그레이드)
 		prompt.append("### 사주 강약 및 용신 (핵심) ###\n");
 		if (saju.getYongsinInfo() != null) {
-			prompt.append(String.format("- 사주 강약: %s (내 세력 %.1f vs 남의 세력 %.1f)\n",
+			prompt.append(String.format("- 강약 판단: %s (내 세력 %.1f vs 남의 세력 %.1f)\n",
 				saju.getYongsinInfo().getStrength(),
 				saju.getYongsinInfo().getMyScore(),
 				(saju.getYongsinInfo().getTotalScore() - saju.getYongsinInfo().getMyScore())
 			));
-			prompt.append(String.format("- 추천 용신(행운의 오행): %s (%s)\n",
+			prompt.append(String.format("- 추천 용신: %s (%s)\n",
 				saju.getYongsinInfo().getYongsin(),
 				saju.getYongsinInfo().getDescription()));
-			prompt.append("※ 이 정보를 바탕으로 인생의 개운법(행운의 색, 방향 등)을 추천해주세요.\n");
+			prompt.append("※ 이 용신 정보를 바탕으로 사용자에게 행운의 조언을 해주세요.\n");
 		}
 		prompt.append("\n");
 	}

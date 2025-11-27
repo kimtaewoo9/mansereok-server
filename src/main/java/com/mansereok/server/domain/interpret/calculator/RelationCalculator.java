@@ -12,8 +12,7 @@ import org.springframework.stereotype.Component;
 @Component
 public class RelationCalculator {
 
-	// 1. 삼합(三合) 데이터 정의: {구성글자리스트, 국(오행), 왕지(중심)}
-	// 순서: 생지, 왕지, 묘지
+	// 1. 삼합(三合)
 	private static final List<SamhapGroup> SAMHAP_GROUPS = List.of(
 		new SamhapGroup(Set.of("申", "子", "辰"), "수국(물)", "子"),
 		new SamhapGroup(Set.of("寅", "午", "戌"), "화국(불)", "午"),
@@ -21,7 +20,7 @@ public class RelationCalculator {
 		new SamhapGroup(Set.of("亥", "卯", "未"), "목국(나무)", "卯")
 	);
 
-	// 2. 충(沖) 데이터
+	// 2. 충(沖)
 	private static final Map<String, String> CHUNG_MAP = Map.ofEntries(
 		entry("子", "午"), entry("午", "子"),
 		entry("丑", "未"), entry("未", "丑"),
@@ -31,7 +30,7 @@ public class RelationCalculator {
 		entry("巳", "亥"), entry("亥", "巳")
 	);
 
-	// 3. 원진(元嗔) 데이터 (이것도 12쌍이므로 똑같이 변경해야 함)
+	// 3. 원진(元嗔)
 	private static final Map<String, String> WONJIN_MAP = Map.ofEntries(
 		entry("子", "未"), entry("未", "子"),
 		entry("丑", "午"), entry("午", "丑"),
@@ -41,6 +40,7 @@ public class RelationCalculator {
 		entry("巳", "戌"), entry("戌", "巳")
 	);
 
+	// 4. 천간합(天干合)
 	private static final Map<String, String> SKY_HAP_MAP = Map.of(
 		"甲", "己", "己", "甲",
 		"乙", "庚", "庚", "乙",
@@ -49,8 +49,7 @@ public class RelationCalculator {
 		"戊", "癸", "癸", "戊"
 	);
 
-	// [신규] 5. 천간충(天干沖) 데이터 (칠살)
-	// 갑경충, 을신충, 병임충, 정계충
+	// 5. 천간충(天干沖)
 	private static final Map<String, String> SKY_CHUNG_MAP = Map.of(
 		"甲", "庚", "庚", "甲",
 		"乙", "辛", "辛", "乙",
@@ -58,51 +57,53 @@ public class RelationCalculator {
 		"丁", "癸", "癸", "丁"
 	);
 
-	/**
-	 * 두 지지 간의 관계 분석 (단일 관계)
-	 */
+	// 지지 관계 분석
 	public List<String> analyzeRelation(String jiji1, String jiji2) {
 		List<String> relations = new ArrayList<>();
 		if (jiji1 == null || jiji2 == null) {
 			return relations;
 		}
 
-		// 충 체크
 		if (jiji2.equals(CHUNG_MAP.get(jiji1))) {
-			relations.add("충(" + jiji1 + jiji2 + "충)");
+			relations.add("충");
 		}
-
-		// 원진 체크
 		if (jiji2.equals(WONJIN_MAP.get(jiji1))) {
-			relations.add("원진살");
+			relations.add("원진");
 		}
 
-		// 반합 체크 (두 글자만으로 성립하는지)
 		for (SamhapGroup group : SAMHAP_GROUPS) {
 			if (group.members.contains(jiji1) && group.members.contains(jiji2)) {
-				// 두 글자가 같은 삼합 그룹에 속함
 				if (jiji1.equals(group.center) || jiji2.equals(group.center)) {
-					// 둘 중 하나가 왕지(Center)라면 반합 인정
 					relations.add("반합(" + group.name + ")");
-				} else {
-					// 왕지가 없는 결합(가합) -> 보통은 무시하거나 약하게 처리
-					// relations.add("가합(" + group.name + ")"); // 필요시 주석 해제
 				}
 			}
+		}
+		return relations;
+	}
+
+	// 천간 관계 분석
+	public List<String> analyzeSkyRelation(String sky1, String sky2) {
+		List<String> relations = new ArrayList<>();
+		if (sky1 == null || sky2 == null) {
+			return relations;
+		}
+
+		if (sky2.equals(SKY_HAP_MAP.get(sky1))) {
+			relations.add("천간합");
+		}
+		if (sky2.equals(SKY_CHUNG_MAP.get(sky1))) {
+			relations.add("천간충");
 		}
 
 		return relations;
 	}
 
-	/**
-	 * 사주 전체 지지(4개)를 넣어서 완성된 '삼합'이 있는지 찾는 메서드 (이건 ManseCalculationService에서 한 번만 호출해서 전체 스캔용으로 쓰세요)
-	 */
+	// 삼합 전체 스캔
 	public List<String> findFullSamhap(List<String> allJijis) {
 		List<String> result = new ArrayList<>();
-		Set<String> myJijis = new HashSet<>(allJijis); // 내 지지들을 Set으로 변환
+		Set<String> myJijis = new HashSet<>(allJijis);
 
 		for (SamhapGroup group : SAMHAP_GROUPS) {
-			// 내 지지에 삼합의 모든 글자(3개)가 다 포함되어 있는지 확인
 			if (myJijis.containsAll(group.members)) {
 				result.add("삼합(" + group.name + " 완성)");
 			}
@@ -110,36 +111,16 @@ public class RelationCalculator {
 		return result;
 	}
 
-	// 삼합 그룹 정보 클래스
 	private static class SamhapGroup {
 
-		Set<String> members; // 구성 글자들
-		String name;         // 국 이름 (수국, 화국 등)
-		String center;       // 왕지 (가운데 글자)
+		Set<String> members;
+		String name;
+		String center;
 
 		public SamhapGroup(Set<String> members, String name, String center) {
 			this.members = members;
 			this.name = name;
 			this.center = center;
 		}
-	}
-
-	public List<String> analyzeSkyRelation(String sky1, String sky2) {
-		List<String> relations = new ArrayList<>();
-		if (sky1 == null || sky2 == null) {
-			return relations;
-		}
-
-		// 천간합 체크
-		if (sky2.equals(SKY_HAP_MAP.get(sky1))) {
-			relations.add("천간합");
-		}
-
-		// 천간충 체크
-		if (sky2.equals(SKY_CHUNG_MAP.get(sky1))) {
-			relations.add("천간충(편관/칠살)");
-		}
-
-		return relations;
 	}
 }

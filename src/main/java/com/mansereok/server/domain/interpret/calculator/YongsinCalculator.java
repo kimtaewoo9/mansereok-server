@@ -9,96 +9,78 @@ import org.springframework.stereotype.Component;
 @Component
 public class YongsinCalculator {
 
-	// 오행의 상생 관계 (나를 돕는 오행)
-	// 목<-수, 화<-목, 토<-화, 금<-토, 수<-금
 	private static final Map<String, String> SUPPORT_MAP = Map.of(
 		"목", "수", "화", "목", "토", "화", "금", "토", "수", "금"
 	);
-
-	// 오행의 극 관계 (나를 극하는 오행)
-	private static final Map<String, String> ATTACK_MAP = Map.of(
-		"목", "금", "화", "수", "토", "목", "금", "화", "수", "토"
-	);
-
-	// 오행의 설기 관계 (내가 생하는 오행 - 힘을 뺌)
 	private static final Map<String, String> DRAIN_MAP = Map.of(
 		"목", "화", "화", "토", "토", "금", "금", "수", "수", "목"
 	);
 
-	/**
-	 * 용신 분석 결과 반환
-	 */
 	public YongsinResult analyzeYongsin(SajuInfo saju) {
-		// 1. 일간(나)의 오행 확인
-		String ilganOhaeng = saju.getDaySky().getFiveCircle(); // 예: "목"
+		if (saju.getDaySky() == null) {
+			return null;
+		}
 
-		// 2. 전체 오행 점수 계산 (월지에 가중치 3.0, 일지/시지 1.5, 천간 1.0)
+		String ilganOhaeng = saju.getDaySky().getFiveCircle();
+		String monthOhaeng =
+			saju.getMonthGround() != null ? saju.getMonthGround().getFiveCircle() : "";
+
 		Map<String, Double> scores = calculateOhaengScores(saju);
-
-		// 3. 내 편(인성+비겁) vs 남의 편(식상+재성+관성) 세력 비교
-		String resource = SUPPORT_MAP.get(ilganOhaeng); // 인성 (나를 생함)
+		String resource = SUPPORT_MAP.get(ilganOhaeng);
 
 		double myPower = scores.getOrDefault(ilganOhaeng, 0.0) + scores.getOrDefault(resource, 0.0);
 		double totalPower = scores.values().stream().mapToDouble(Double::doubleValue).sum();
+		boolean isSinGang = myPower >= (totalPower * 0.45); // 45% 이상이면 신강
 
-		// 4. 신강/신약 판단 (내 편이 45% 이상이면 신강으로 간주 - 약간의 조정 가능)
-		boolean isSinGang = myPower >= (totalPower * 0.45);
-
-		// 5. 용신(가장 필요한 오행) 찾기 (억부법 기준)
 		String yongsin;
-		String yongsinType; // 억부, 조후, 통관 등
+		String yongsinType;
 
-		if (isSinGang) {
-			// 신강하면: 힘을 빼야 함 (식상/재성/관성 중 가장 점수가 낮은 것 or 유력한 것)
-			// 간단한 로직: 식상(설기) -> 재성(결과) -> 관성(통제) 순으로 고려
-			String sik = DRAIN_MAP.get(ilganOhaeng); // 식상
-			String gwan = ATTACK_MAP.get(
-				ilganOhaeng); // 관성 (나를 극하는게 아니라 내가 극당하는거라 좀 다름, 여기선 편의상 억제자로 봄)
-			// 정확히는 관성이 일간을 극하므로 신강할 때 씀.
-			// 여기서는 단순화하여: 너무 강하면 '설기(식상)'하거나 '극(관성)'을 쓴다.
-
-			// 식상이 너무 약하면 관성을 쓰고, 관성도 약하면 재성을 쓴다 등등 복잡하지만
-			// 가장 일반적인 '설기(식상)'를 1순위로 둡니다.
-			yongsin = sik;
-			yongsinType = "설기용신(강한 기운을 표출)";
-		} else {
-			// 신약하면: 힘을 보태야 함 (인성/비겁)
-			// 인성(나를 생함)을 최우선으로 봅니다.
-			yongsin = resource;
-			yongsinType = "부조용신(약한 기운을 보완)";
+		// 1. 조후 용신 (계절적 균형 - 여름/겨울생 필수)
+		// 여름(화)생인데 내가 물이 아니면 -> 물(수)이 용신
+		if ("화".equals(monthOhaeng) && !"수".equals(ilganOhaeng)) {
+			yongsin = "수";
+			yongsinType = "조후용신(더위를 식히는 물)";
 		}
+		// 겨울(수)생인데 내가 불이 아니면 -> 불(화)이 용신
+		else if ("수".equals(monthOhaeng) && !"화".equals(ilganOhaeng)) {
+			yongsin = "화";
+			yongsinType = "조후용신(추위를 녹이는 불)";
+		}
+		// 2. 억부 용신 (강약 조절)
+		else if (isSinGang) {
+			yongsin = DRAIN_MAP.get(ilganOhaeng); // 식상으로 설기
+			yongsinType = "설기용신(넘치는 힘을 표현)";
+		} else {
+			yongsin = resource; // 인성으로 보완
+			yongsinType = "부조용신(약한 기운을 도움)";
+		}
+
+		// 3. 행운 정보
+		String luckyColor = getLuckyColor(yongsin);
+		String luckyDirection = getLuckyDirection(yongsin);
+		String desc = String.format("%s / 행운색:%s, 방향:%s", yongsinType, luckyColor, luckyDirection);
 
 		return new YongsinResult(
 			isSinGang ? "신강(身强)" : "신약(身弱)",
 			myPower,
 			totalPower,
 			yongsin,
-			yongsinType
+			desc
 		);
 	}
 
 	private Map<String, Double> calculateOhaengScores(SajuInfo saju) {
 		Map<String, Double> scores = new HashMap<>();
-		// 초기화
 		for (String o : new String[]{"목", "화", "토", "금", "수"}) {
 			scores.put(o, 0.0);
 		}
 
-		// 가중치 정의
-		// 월지: 3.0 (가장 중요, 계절)
-		// 일지: 2.0
-		// 년지/시지: 1.0
-		// 천간: 1.0
-
 		addScore(scores, saju.getYearSky(), 1.0);
 		addScore(scores, saju.getYearGround(), 1.0);
-
 		addScore(scores, saju.getMonthSky(), 1.0);
-		addScore(scores, saju.getMonthGround(), 3.0); // 월지 가중치
-
-		addScore(scores, saju.getDaySky(), 1.0); // 일간
-		addScore(scores, saju.getDayGround(), 2.0); // 일지 가중치
-
+		addScore(scores, saju.getMonthGround(), 3.0); // 월지 가중치 3배
+		addScore(scores, saju.getDaySky(), 1.0);
+		addScore(scores, saju.getDayGround(), 2.0);   // 일지 가중치 2배
 		if (saju.getTimeSky() != null) {
 			addScore(scores, saju.getTimeSky(), 1.0);
 		}
@@ -116,14 +98,42 @@ public class YongsinCalculator {
 		}
 	}
 
+	private String getLuckyColor(String ohaeng) {
+		if (ohaeng == null) {
+			return "-";
+		}
+		return switch (ohaeng) {
+			case "목" -> "청색, 녹색";
+			case "화" -> "적색, 분홍";
+			case "토" -> "황색, 베이지";
+			case "금" -> "백색, 은색";
+			case "수" -> "검정, 남색";
+			default -> "-";
+		};
+	}
+
+	private String getLuckyDirection(String ohaeng) {
+		if (ohaeng == null) {
+			return "-";
+		}
+		return switch (ohaeng) {
+			case "목" -> "동쪽";
+			case "화" -> "남쪽";
+			case "토" -> "중앙, 거주지 근처";
+			case "금" -> "서쪽";
+			case "수" -> "북쪽";
+			default -> "-";
+		};
+	}
+
 	@lombok.Data
 	@lombok.AllArgsConstructor
 	public static class YongsinResult {
 
-		private String strength; // 신강/신약
+		private String strength;
 		private double myScore;
 		private double totalScore;
-		private String yongsin; // 용신 오행
-		private String description; // 설명
+		private String yongsin;
+		private String description;
 	}
 }
