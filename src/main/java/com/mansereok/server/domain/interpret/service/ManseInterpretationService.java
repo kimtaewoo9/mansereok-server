@@ -1930,7 +1930,8 @@ public class ManseInterpretationService {
 
 		// 8. 대운
 		prompt.append("### 대운 ###\n");
-		appendDaewoonCompact(prompt, saju, input.getGender());
+		int birthYear = input.getSolarDate().getYear();
+		appendDaewoonCompact(prompt, saju, input.getGender(), birthYear);
 
 		// 9. 관계성 분석
 		prompt.append("### 지지 관계성 (합/충/원진) ###\n");
@@ -2579,7 +2580,8 @@ public class ManseInterpretationService {
 		prompt.append("\n");
 	}
 
-	private void appendDaewoonCompact(StringBuilder prompt, SajuInfo saju, String gender) {
+	private void appendDaewoonCompact(StringBuilder prompt, SajuInfo saju, String gender,
+		int birthYear) {
 		if (saju.getYearSky() == null || saju.getMonthSky() == null
 			|| saju.getMonthGround() == null || saju.getBigFortuneNumber() == null) {
 			prompt.append("대운 정보 없음\n\n");
@@ -2605,10 +2607,11 @@ public class ManseInterpretationService {
 			return;
 		}
 
-		// 현재 나이 계산 (간단히 년도 차이로)
+		// [수정 완료] 기존의 parseInt("갑자") 로직 삭제됨.
+		// int birthYear = Integer.parseInt(saju.getYearSky().getKorean() + saju.getYearGround().getKorean()); // ❌ 삭제된 버그 라인
+
+		// 현재 나이 계산
 		int currentYear = java.time.LocalDate.now().getYear();
-		int birthYear = Integer.parseInt(
-			saju.getYearSky().getKorean() + saju.getYearGround().getKorean());
 		int currentAge = currentYear - birthYear + 1; // 한국 나이
 
 		// 현재 대운 찾기
