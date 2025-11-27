@@ -21,5 +21,7 @@ public class ManseCompatibilityAnalysisRequest {
 		private LocalTime solarTime;
 		private String gender;
 		private Boolean isLunar;
+
+		private String sourceTitle;
 	}
 }

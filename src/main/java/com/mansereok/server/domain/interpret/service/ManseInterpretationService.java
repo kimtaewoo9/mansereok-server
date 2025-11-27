@@ -98,7 +98,8 @@ public class ManseInterpretationService {
 		ManseryeokCalculationResponse response,
 		String username,
 		Long subcategoryId,
-		Long paymentId
+		Long paymentId,
+		String sourceTitle
 	) {
 		log.info("✅ 사주 해석 요청 시작 - name: {}, subcategoryId: {}", name, subcategoryId);
 
@@ -140,7 +141,9 @@ public class ManseInterpretationService {
 		}
 
 		try {
-			String userPrompt = createPromptBySubcategory(subcategoryId, name, response);
+			String userPrompt = createPromptBySubcategory(subcategoryId, name, response,
+				sourceTitle);
+
 			String input = GPT5_SYSTEM_INSTRUCTION + userPrompt;
 
 			Gpt5Request gpt5Request = new Gpt5Request(
@@ -233,7 +236,9 @@ public class ManseInterpretationService {
 		ManseryeokCalculationResponse person2Response,
 		Long subcategoryId,
 		Long paymentId,
-		String username
+		String username,
+		String person1SourceTitle,
+		String person2SourceTitle
 	) {
 		log.info("✅ 궁합 분석 요청 시작 - subcategoryId: {}, {} & {}", subcategoryId, person1Name,
 			person2Name);
@@ -269,7 +274,13 @@ public class ManseInterpretationService {
 
 			// ChatGPT 해석 로직 .
 			String userPrompt = createCompatibilityPromptBySubcategory(
-				subcategoryId, person1Name, person1Response, person2Name, person2Response);
+				subcategoryId,
+				person1Name, person1Response,
+				person2Name, person2Response,
+				person1SourceTitle,
+				person2SourceTitle
+			);
+
 			String input = GPT5_SYSTEM_INSTRUCTION + userPrompt;
 
 			Gpt5Request gpt5Request = new Gpt5Request(
@@ -484,14 +495,17 @@ public class ManseInterpretationService {
 
 	// ==================== 프롬프트 라우팅 메서드 (기존 유지) ====================
 	private String createPromptBySubcategory(Long subcategoryId, String name,
-		ManseryeokCalculationResponse response) {
+		ManseryeokCalculationResponse response, String sourceTitle) {
+
+		if (subcategoryId == 9) {
+			return createCharacterSajuPrompt(name, response, sourceTitle);
+		}
 
 		return switch (subcategoryId.intValue()) {
 			case 1 -> createLifeOverallPrompt(name, response);
 			case 2 -> createPersonalityAnalysisPrompt(name, response);
 			case 3 -> createCareerAptitudePrompt(name, response);
 			case 5 -> createIdolAnalysisPrompt(name, response);
-			case 9 -> createCharacterSajuPrompt(name, response);
 			case 13 -> createActorAnalysisPrompt(name, response);
 			case 17 -> createLoveLuckPrompt(name, response);
 			default -> createComprehensiveAnalysisPrompt(name, response);
@@ -503,8 +517,21 @@ public class ManseInterpretationService {
 		String person1Name,
 		ManseryeokCalculationResponse person1Response,
 		String person2Name,
-		ManseryeokCalculationResponse person2Response
+		ManseryeokCalculationResponse person2Response,
+		String person1SourceTitle,
+		String person2SourceTitle
 	) {
+		if (subcategoryId == 10) {
+			return createCharacterCompatibilityPrompt(person1Name, person1Response, person2Name,
+				person2Response, person2SourceTitle);
+		}
+		if (subcategoryId == 11) {
+			return createCharacterToCharacterCompatibilityPrompt(
+				person1Name, person1Response, person1SourceTitle,
+				person2Name, person2Response, person2SourceTitle
+			);
+		}
+
 		return switch (subcategoryId.intValue()) {
 			case 4, 6 -> createLoveStoryPrompt(person1Name, person1Response, person2Name,
 				person2Response);
@@ -875,68 +902,6 @@ public class ManseInterpretationService {
 		prompt.append(
 			"(이 사람의 어떤 부분이 이성에게 매력으로 다가올지에 대해서 설명 (외적인 것, 내적인 것 만세력 기반으로 분석하되 알아듣기 쉽고 편하게 설명해주세요.))\n");
 		prompt.append("(결혼은 언제쯤 할지 정확한 년도 예측, 배우자궁(일지)의 모습은 어떤지도 포함해주세요.)\n\n");
-
-		appendSajuJsonResponseFormat(prompt, name);
-
-		return prompt.toString();
-	}
-
-	// ==================== 9. 캐릭터 사주 프롬프트 (혜안 적용) ====================
-	private String createCharacterSajuPrompt(String name, ManseryeokCalculationResponse response) {
-		StringBuilder prompt = new StringBuilder();
-		ManseryeokCalculationResponse.SajuInfo saju = response.getSaju();
-		ManseryeokCalculationResponse.InputInfo input = response.getInput();
-
-		// 1. '혜안' 공통 페르소나 주입
-		appendHyeanPersonaHeader(prompt);
-
-		// 2. 3인칭 서술 지시
-		prompt.append("### ⚠️ 매우 중요: 3인칭 서술 ###\n");
-		prompt.append("이 분석은 '%s'라는 제3자(가상 캐릭터)에 대한 것입니다.\n");
-		prompt.append(
-			"절대로 2인칭(%s님, 당신)을 사용하지 말고, **'이 캐릭터는', '그는', '그녀는', '%s는'** 등 3인칭 관찰자 시점으로만 서술해야 합니다.\n\n");
-
-		// 3. 분석 대상자 정보 주입
-		prompt.append("### 5. 분석 대상자 상세 정보 ###\n");
-		appendPersonDetailInfo(prompt, name, response);
-
-		// 4. 분석 요청
-		prompt.append("\n### 6. [캐릭터 사주 심층 분석] 요청 ###\n");
-		prompt.append(String.format(
-			"혜안 선생님, 위 데이터를 바탕으로 가상 캐릭터 '%s'의 '운명 서사'를 아래 **5가지 핵심 주제**에 대해 깊이 있게 작성해주세요.\n",
-			name));
-		prompt.append(
-			"작품 속 설정과 '혜안'의 사주 분석을 창의적으로 연결하여 서술해주세요. **분량 제한은 없습니다.**\n\n");
-
-		prompt.append("--- [분석 시작] ---\n");
-		prompt.append(String.format(
-			"\"'%s'님은 %s %s에 태어나신, [일간(%s) 자연물 비유]와 같은 기운을 지니셨네요.\" 로 시작해주세요.\n\n",
-			name, input.getSolarDate(), input.getSolarTime(),
-			saju.getDaySky().getKorean() + saju.getDaySky().getFiveCircle()));
-
-		prompt.append("## 사주로 본 캐릭터 본질과 작품 속 모습\n");
-		prompt.append("이 사주가 부여하는 핵심 성격/기질과 작품 속 캐릭터 설정의 일치점/차이점 분석.\n");
-		prompt.append("작품 속 주요 행동이나 결정이 이 사주를 가졌기에 가능했던 이유 설명 (명리학적 근거, '비유' 활용).\n");
-		prompt.append("캐릭터의 핵심 매력을 사주(일간, '신살' 등)를 통해 재해석.\n\n");
-
-		prompt.append("## 작품 속 운명, 사주로 재해석하다\n");
-		prompt.append(
-			"캐릭터가 겪은 주요 사건(시련/성공/전환점)들을 사주 구조('충/형/합', '대운/세운 챕터' 변화)와 연결하여 명리학적으로 설명.\n");
-		prompt.append("작품의 결말(해피/새드/오픈)이 이 사주를 가졌다면 필연적이었는지, 혹은 다른 가능성은 없었는지 분석.\n\n");
-
-		prompt.append("## 작품 속 관계성, 궁합으로 엿보기\n");
-		prompt.append("주인공 또는 주요 인물과의 관계(동료/친구/연인/적대)를 '관계의 시너지' 관점에서 분석 (간단히).\n");
-		prompt.append("왜 특정 인물과 강하게 끌리거나 혹은 대립하게 되는지 명리학적 이유 설명.\n");
-
-		prompt.append("## 만약 현실 세계에 존재한다면? \n");
-		prompt.append("이 캐릭터가 2025년 대한민국에 이 사주를 가지고 태어났다면 어떤 모습일지 상상하여 서술.\n");
-		prompt.append("현실에서의 예상 직업 (가장 잘 어울리는 직업 1~2개 집중 분석).\n");
-		prompt.append("현실에서의 예상 연애 스타일 및 이상형.\n");
-		prompt.append("작품 속 모습과 현실 버전의 가장 큰 차이점은 무엇일지 예측.\n\n");
-
-		prompt.append("## 캐릭터의 성장과 팬들에게 주는 메시지\n");
-		prompt.append("이 사주를 가진 캐릭터의 매력 정리\n");
-		prompt.append("팬들이 이 캐릭터를 사랑하는 이유를 사주를 통해 설명하며 공감대 형성.\n");
 
 		appendSajuJsonResponseFormat(prompt, name);
 
@@ -1388,6 +1353,207 @@ public class ManseInterpretationService {
 			"두 사람의 인연에 대한 최종 조언과 응원 메시지로 따뜻하게 마무리해주세요.\n\n");
 
 		appendCompatibilityJsonResponseFormat(prompt, person1Name, person2Name);
+
+		return prompt.toString();
+	}
+
+	// ==================== 9. 캐릭터 사주 프롬프트 (혜안 적용) ====================
+	private String createCharacterSajuPrompt(String name, ManseryeokCalculationResponse response,
+		String sourceTitle) {
+		StringBuilder prompt = new StringBuilder();
+		ManseryeokCalculationResponse.SajuInfo saju = response.getSaju();
+		String dayIlgan = saju.getDaySky().getKorean() + saju.getDaySky().getFiveCircle(); // 예: 갑목
+
+		// 1. 혜안 페르소나
+		appendHyeanPersonaHeader(prompt);
+
+		// 2. 캐릭터 설정 주입
+		prompt.append("### ⚠️ 캐릭터 분석 모드 ###\n");
+		prompt.append(String.format("이 사주는 작품 **'%s'**에 등장하는 캐릭터 **'%s'**의 사주입니다.\n",
+			sourceTitle != null ? sourceTitle : "알 수 없는 작품", name));
+		prompt.append("캐릭터의 원작 설정(성격, 작중 행적)과 사주 풀이를 연결하여, '이 캐릭터가 왜 이런 운명을 가졌는지' 설명해주세요.\n\n");
+
+		// 3. 사주 정보
+		prompt.append("### 5. 캐릭터 사주 정보 ###\n");
+		appendPersonDetailInfo(prompt, name, response);
+
+		// 4. 분석 요청
+		prompt.append("\n### 6. [캐릭터 사주 심층 분석] 요청 ###\n");
+		prompt.append("원작의 내용과 사주 명리학을 결합하여 다음 항목들을 '해요체'로 재미있게 분석해주세요.\n\n");
+
+		prompt.append("--- [분석 시작] ---\n");
+		prompt.append(
+			String.format("\"작품 '%s'의 '%s'님은 [%s 자연물 비유]와 같은 기운을 타고나셨군요.\"로 시작\n\n", sourceTitle,
+				name, dayIlgan));
+
+		prompt.append("## 사주로 본 캐릭터에 대한 분석\n");
+		prompt.append(
+			"작중에서 보여주는 성격과 실제 사주(일간, 십성)의 싱크로율을 분석해주세요. 만세력을 바탕으로 자세하게 설명하되, 쉽고 재미있게 풀어서 설명해주세요.\n");
+		prompt.append(
+			"왜 그런 행동을 했는지, 사주적 근거(충, 합, 신살 등)를 들어 설명해주세요. 만세력을 바탕으로 자세하게 설명하되, 쉽고 재미있게 풀어서 설명해주세요.\n\n");
+
+		prompt.append("## 작중 시련과 운명의 흐름\n");
+		prompt.append(
+			"캐릭터가 겪은 주요 사건이나 시련이 사주상 어떤 기운 때문이었는지 해석해주세요. 만세력 기반으로 설명하되, 쉽고 재미있게 풀어서 설명해주세요.\n\n");
+
+		prompt.append("## 숨겨진 매력과 인간관계\n");
+		prompt.append(
+			"팬들이 사랑하는 이 캐릭터의 매력 포인트(도화살, 홍염살 등)는 무엇인가요? 만세력 기반으로 자세하게 설명하되, 쉽고 재미있게 풀어서 설명해주세요.\n");
+		prompt.append("작중 파트너나 동료와의 관계성을 오행으로 짧게 해석해주세요.\n\n");
+
+		prompt.append("## 현실 세계에 산다면?\n");
+		prompt.append(
+			"이 캐릭터가 지금 한국에 산다면 어떤 직업(MBTI)과 라이프스타일을 가졌을지 상상해주세요. 만세력 기반으로 설명하되, 쉽고 재미있게 풀어서 설명해주세요.\n");
+		prompt.append("현실에서의 연애 스타일과 이상형도 예측해주세요. 만세력 기반으로 자세하게 설명하되, 쉽고 재미있게 풀어서 설명\n\n");
+
+		appendSajuJsonResponseFormat(prompt, name);
+		return prompt.toString();
+	}
+
+	// 10번 나와 캐릭터의 궁합
+	private String createCharacterCompatibilityPrompt(
+		String userName, ManseryeokCalculationResponse userSaju,
+		String charName, ManseryeokCalculationResponse charSaju,
+		String sourceTitle
+	) {
+		StringBuilder prompt = new StringBuilder();
+
+		// 1. 혜안 궁합 페르소나
+		appendHyeanCompatibilityPersonaHeader(prompt);
+
+		// 2. 상황 설정 (드림/이입)
+		prompt.append("### ⚠️ '나'와 '최애 캐릭터'의 궁합 분석 ###\n");
+		prompt.append(
+			String.format("사용자('%s')가 작품 **'%s'**의 캐릭터 **'%s'**와의 궁합을 의뢰했습니다.\n", userName,
+				sourceTitle, charName));
+		prompt.append("사용자가 작품 속으로 들어가거나, 캐릭터가 현실로 나와 연애하는 듯한 **설렘과 몰입감**을 주세요.\n");
+		prompt.append("성공한 덕후(성덕)가 된 기분을 느끼게 해주는 따뜻하고 재치 있는 말투를 사용하세요.\n\n");
+
+		// 3. 사주 정보
+		prompt.append("\n### 3. 사주 정보 ###\n");
+		prompt.append("--- 사용자 (나): ").append(userName).append(" ---\n");
+		appendPersonDetailInfo(prompt, userName, userSaju); // 상세 정보 사용
+		prompt.append(String.format("\n--- 캐릭터 (최애): %s (%s) ---\n", charName, sourceTitle));
+		appendPersonDetailInfo(prompt, charName, charSaju); // 상세 정보 사용
+
+		// 4. 분석 요청
+		prompt.append("\n### 4. [최애와의 꿈같은 궁합] 심층 분석 요청 ###\n\n");
+
+		prompt.append("--- [분석 시작] ---\n");
+		prompt.append(
+			String.format("\"%s님과 '%s'의 만남! 두 분의 사주가 겹쳐지는 순간, [설레는 분위기 묘사]가 느껴지네요.\"로 시작\n\n",
+				userName, charName));
+
+		prompt.append("## 1. 운명적 끌림: 우리가 만난다면?\n");
+		prompt.append(
+			String.format(
+				"- %s님(사용자)의 어떤 매력이 %s(캐릭터)의 취향을 저격할까요? 만세력 기반으로 설명하되, 쉽고 재미있게 풀어서 설명해주세요.\n",
+				userName, charName));
+		prompt.append("- 두 사람이 처음 만난다면 어떤 장면(작품 속 상황 or 현실 데이트)일지 상상해서 묘사해주세요.\n\n");
+
+		prompt.append("## 2. 연애 서사: 우리의 케미\n");
+		prompt.append("- 사귄다면 누가 리드하고 누가 챙겨줄까요? (십성/오행 분석)\n");
+		prompt.append("- 서로의 사주에서 가장 잘 맞는 부분은 무엇인가요?\n\n");
+
+		prompt.append("## 3. 공략법: 내 최애 꼬시기\n");
+		prompt.append(
+			String.format("- %s(캐릭터)의 사주상 까다로운 점이나 공략 난이도는? 만세력 기반으로 설명하되, 쉽고 재미있게 풀어서 설명해주세요.\n",
+				charName));
+		prompt.append(String.format("- %s님(사용자)이 이 캐릭터의 마음을 얻기 위한 현실적인 조언(행동 지침).\n\n", userName));
+
+		prompt.append("## 4. 혜안의 총평\n");
+		prompt.append("- 이 만남을 한 줄로 정의한다면? (예: '차원을 넘어선 운명', '티격태격 환상의 콤비')\n");
+		prompt.append("- 덕질이 더욱 행복해질 수 있는 응원의 한마디.\n\n");
+
+		appendCompatibilityJsonResponseFormat(prompt, userName, charName);
+
+		return prompt.toString();
+	}
+
+	// 11번 캐릭터와 캐릭터 궁합.
+	private String createCharacterToCharacterCompatibilityPrompt(
+		String char1Name, ManseryeokCalculationResponse char1Saju, String char1Source,
+		String char2Name, ManseryeokCalculationResponse char2Saju, String char2Source
+	) {
+		StringBuilder prompt = new StringBuilder();
+
+		// 1. 혜안 궁합 페르소나 주입
+		appendHyeanCompatibilityPersonaHeader(prompt);
+
+		// 2. 3인칭 서술 지시 (팬픽/크로스오버 관점)
+		prompt.append("\n### ⚠️ 매우 중요: 3인칭 서술 (캐릭터 크로스오버/커플링 분석) ###\n");
+		prompt.append(
+			String.format("- 이 분석은 작품 **'%s'**의 **'%s'**와 작품 **'%s'**의 **'%s'** 간의 가상 궁합입니다.\n",
+				char1Source, char1Name, char2Source, char2Name));
+		prompt.append("- 절대로 2인칭(당신)을 쓰지 말고, '두 캐릭터는', '이 커플은' 처럼 **3인칭 관찰자 시점**을 유지하세요.\n");
+		prompt.append("- **'2D 덕후'들의 망상(Delusion)을 실현**시켜주는 듯한 재치 있고 몰입감 높은 어조를 사용하세요.\n");
+		prompt.append("- 만약 같은 작품 캐릭터라면 원작의 관계성을 참고하고, 다른 작품이라면 '크로스오버' 상황을 가정하세요.\n");
+
+		// 3. 분석 대상자들 정보 주입
+		prompt.append("\n### 3. 분석 대상 캐릭터 정보 ###\n");
+		prompt.append(String.format("--- 캐릭터 1: %s (%s) ---\n", char1Name, char1Source));
+		appendPersonDetailInfo(prompt, char1Name, char1Saju);
+		prompt.append(String.format("\n--- 캐릭터 2: %s (%s) ---\n", char2Name, char2Source));
+		appendPersonDetailInfo(prompt, char2Name, char2Saju);
+
+		// 4. 분석 구조 설명
+		prompt.append("\n### 4. [분석 구조] ###\n");
+		prompt.append(String.format("1. %s (%s) 캐릭터 분석\n", char1Name, char1Source));
+		prompt.append(String.format("2. %s (%s) 캐릭터 분석\n", char2Name, char2Source));
+		prompt.append("3. 두 캐릭터의 '케미'와 '서사' (궁합)\n\n");
+
+		// ===== 5. 1단계: 캐릭터 1 분석 =====
+		prompt.append(String.format("### 5. [1단계: '%s' 캐릭터성 분석] ###\n", char1Name));
+		prompt.append("먼저 첫 번째 캐릭터의 사주를 통해 원작 속 성격과 연애관을 분석해주세요.\n\n");
+
+		prompt.append("타고난 기질과 원작 싱크로율\n");
+		prompt.append(String.format("- %s의 사주(일간, 십성)가 원작 속 성격이나 행동과 일치하는 부분은?\n", char1Name));
+		prompt.append("- 이 캐릭터의 매력 포인트(도화, 홍염 등)는 무엇인가요?\n\n");
+
+		prompt.append("연애 스타일과 이상형\n");
+		prompt.append("- 사주로 본 연애 스타일: 츤데레? 메가데레? 아니면 집착광공?\n");
+		prompt.append("- 본능적으로 끌리는 이성상은 어떤 타입인가요?\n\n");
+
+		// ===== 6. 2단계: 캐릭터 2 분석 =====
+		prompt.append(String.format("### 6. [2단계: '%s' 캐릭터성 분석] ###\n", char2Name));
+		prompt.append("두 번째 캐릭터의 사주를 통해 원작 속 성격과 연애관을 분석해주세요.\n\n");
+
+		prompt.append("타고난 기질과 원작 싱크로율\n");
+		prompt.append(String.format("- %s의 사주(일간, 십성)가 원작 속 성격이나 행동과 일치하는 부분은?\n", char2Name));
+		prompt.append("- 이 캐릭터의 매력 포인트는 무엇인가요?\n\n");
+
+		prompt.append("연애 스타일과 이상형\n");
+		prompt.append("- 사주로 본 연애 스타일은?\n");
+		prompt.append("- 어떤 스타일의 이성에게 약한가요?\n\n");
+
+		// ===== 7. 3단계: 두 캐릭터의 궁합 분석 =====
+		prompt.append(String.format("\n### 7. [3단계: %s X %s 커플링 분석] ###\n", char1Name, char2Name));
+		prompt.append("이제 두 캐릭터가 만났을 때 펼쳐질 '관계의 서사'를 분석해주세요.\n\n");
+
+		prompt.append("--- [분석 시작] ---\n");
+		prompt.append(String.format(
+			"\"%s(%s)와 %s(%s)의 만남이라니! 두 세계관의 충돌, 혹은 운명적 만남이네요...\"와 같은 느낌으로 시작\n\n",
+			char1Name, char1Source, char2Name, char2Source));
+
+		prompt.append("## 1. 비주얼 합과 첫 만남 (망상)\n");
+		prompt.append("- 두 캐릭터가 처음 마주친다면 어떤 장면이 연출될까요? (스파크? 혹은 혐관?)\n");
+		prompt.append("- 서로의 일간/오행 기운으로 본 첫인상은 어떨까요?\n\n");
+
+		prompt.append("## 2. 관계성: 혐관 vs 구원 서사?\n");
+		prompt.append("- 두 사람의 성격 궁합은? (티격태격 콤비, 상호보완적 구원자, 혹은 파국)\n");
+		prompt.append("- 사귄다면 관계의 주도권(공/수 느낌)은 누가 잡게 될까요? (십성/신살 분석)\n");
+		prompt.append(String.format("- %s의 이상형 조건에 %s가 얼마나 부합하나요?\n\n", char1Name, char2Name));
+
+		prompt.append("## 3. 갈등과 위기:\n");
+		prompt.append("- 두 캐릭터 사이에 발생할 수 있는 결정적인 갈등 요소는? (가치관 충돌, 오해 등)\n");
+		prompt.append("- 이 갈등을 해결하고 해피엔딩으로 가려면 서로 무엇을 조심해야 할까요?\n\n");
+
+		prompt.append("## 4. 혜안의 한 줄 평 (커플링 추천도)\n");
+		prompt.append("- 이 커플의 궁합을 한 문장으로 정의한다면?\n");
+		prompt.append("- (예: '세계관 최강자들의 사랑 싸움', '서로가 서로의 유일한 안식처')\n");
+		prompt.append("- 팬들에게 이 조합을 '먹어볼 만한지(츄라이)' 추천하는 멘트로 마무리.\n\n");
+
+		appendCompatibilityJsonResponseFormat(prompt, char1Name, char2Name);
 
 		return prompt.toString();
 	}

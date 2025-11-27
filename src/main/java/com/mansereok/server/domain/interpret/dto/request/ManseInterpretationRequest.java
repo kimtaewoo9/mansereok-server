@@ -17,5 +17,7 @@ public class ManseInterpretationRequest {
 	private String gender;
 	private Boolean isLunar;
 
+	private String sourceTitle; // 애니명
+
 	private Long paymentId;
 }
