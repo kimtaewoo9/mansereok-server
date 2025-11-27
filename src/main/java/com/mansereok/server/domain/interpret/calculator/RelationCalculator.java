@@ -41,6 +41,23 @@ public class RelationCalculator {
 		entry("巳", "戌"), entry("戌", "巳")
 	);
 
+	private static final Map<String, String> SKY_HAP_MAP = Map.of(
+		"甲", "己", "己", "甲",
+		"乙", "庚", "庚", "乙",
+		"丙", "辛", "辛", "丙",
+		"丁", "壬", "壬", "丁",
+		"戊", "癸", "癸", "戊"
+	);
+
+	// [신규] 5. 천간충(天干沖) 데이터 (칠살)
+	// 갑경충, 을신충, 병임충, 정계충
+	private static final Map<String, String> SKY_CHUNG_MAP = Map.of(
+		"甲", "庚", "庚", "甲",
+		"乙", "辛", "辛", "乙",
+		"丙", "壬", "壬", "丙",
+		"丁", "癸", "癸", "丁"
+	);
+
 	/**
 	 * 두 지지 간의 관계 분석 (단일 관계)
 	 */
@@ -105,5 +122,24 @@ public class RelationCalculator {
 			this.name = name;
 			this.center = center;
 		}
+	}
+
+	public List<String> analyzeSkyRelation(String sky1, String sky2) {
+		List<String> relations = new ArrayList<>();
+		if (sky1 == null || sky2 == null) {
+			return relations;
+		}
+
+		// 천간합 체크
+		if (sky2.equals(SKY_HAP_MAP.get(sky1))) {
+			relations.add("천간합");
+		}
+
+		// 천간충 체크
+		if (sky2.equals(SKY_CHUNG_MAP.get(sky1))) {
+			relations.add("천간충(편관/칠살)");
+		}
+
+		return relations;
 	}
 }

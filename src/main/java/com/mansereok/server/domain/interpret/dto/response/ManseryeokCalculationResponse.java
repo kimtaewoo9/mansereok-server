@@ -1,6 +1,7 @@
 package com.mansereok.server.domain.interpret.dto.response;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.mansereok.server.domain.interpret.calculator.YongsinCalculator.YongsinResult;
 import io.swagger.v3.oas.annotations.media.Schema;
 import java.time.LocalDate;
 import java.time.LocalTime;
@@ -116,6 +117,14 @@ public class ManseryeokCalculationResponse {
 		@JsonProperty("samhap")
 		@Schema(description = "사주 전체에서 형성된 삼합(국) 정보", example = "[\"삼합(수국 완성)\"]")
 		private List<String> samhap;
+
+		// 14. 천간 관계
+		@JsonProperty("sky_relation")
+		private String skyRelation; // 예: "년월간: 천간합, 일시간: 천간충"
+
+		// 15. 용신 정보
+		@JsonProperty("yongsin_info")
+		private YongsinResult yongsinInfo;
 	}
 
 	@Data
