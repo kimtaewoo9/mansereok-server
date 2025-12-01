@@ -74,10 +74,6 @@ public class DiscountCode {
 		// 10원 단위로 가격 내림 .. (1의 자리 제거)
 		discountedAmount = (discountedAmount / 10) * 10;
 
-		if (this.discountType == DiscountType.PERCENTAGE && this.discountValue == 100) {
-			return Math.max(0, discountedAmount); // 0원 결제를 허용
-		}
-
 		return Math.max(1000, discountedAmount); // 천원 미만 방지.
 	}
 
