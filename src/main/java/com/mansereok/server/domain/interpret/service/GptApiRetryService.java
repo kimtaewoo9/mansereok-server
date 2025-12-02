@@ -35,7 +35,7 @@ public class GptApiRetryService {
 	@Retryable(
 		value = {RestClientException.class},
 		maxAttempts = 4,
-		backoff = @Backoff(delay = 2000, multiplier = 2)
+		backoff = @Backoff(delay = 2000, multiplier = 2) // 2초 .. 4초 .. 8초 .. 16초 뒤에 다시 요청 여기서 웬만하면 해결이 됨 .
 	)
 	public String callGptApiWithRetry(String requestBody) {
 		long startTime = System.currentTimeMillis();
@@ -66,7 +66,7 @@ public class GptApiRetryService {
 	public String recover(RestClientException e, String requestBody) {
 		log.error("[Recover] GPT API 4회 재시도 최종 실패. (requestBody 길이: {}) Error: {}",
 			requestBody.length(), e.getMessage(), e);
-		
+
 		throw new GptApiFailedException("GPT API 4회 재시도 최종 실패: " + e.getMessage(), e);
 	}
 }
