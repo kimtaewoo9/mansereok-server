@@ -16,14 +16,6 @@ public class ReviewResponse {
 	private String userName;
 	private LocalDateTime createdAt;
 
-	public ReviewResponse(Review review, String productName) {
-		this.reviewId = review.getId();
-		this.subCategoryId = review.getSubCategoryId();
-		this.content = review.getContent();
-		this.email = review.getUserEmail();
-		this.createdAt = review.getCreatedAt();
-	}
-
 	public static ReviewResponse from(Review review) {
 		ReviewResponse response = new ReviewResponse();
 		response.reviewId = review.getId();
