@@ -519,7 +519,7 @@ public class ManseInterpretationService {
 			case 3 -> createCareerAptitudePrompt(name, response);
 			case 5 -> createIdolAnalysisPrompt(name, response);
 			case 13 -> createActorAnalysisPrompt(name, response);
-			case 17 -> createLoveLuckPrompt(name, response);
+			case 17 -> createLoveLuckPrompt(name, response); // 연애운이 17번임.
 			default -> createComprehensiveAnalysisPrompt(name, response);
 		};
 	}
