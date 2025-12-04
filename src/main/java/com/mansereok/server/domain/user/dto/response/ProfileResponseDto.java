@@ -1,5 +1,7 @@
 package com.mansereok.server.domain.user.dto.response;
 
+import com.mansereok.server.domain.user.entity.RegistrationType;
+import com.mansereok.server.domain.user.entity.SocialType;
 import com.mansereok.server.domain.user.entity.User;
 import java.time.LocalDate;
 import lombok.Getter;
@@ -13,7 +15,9 @@ public class ProfileResponseDto {
 	private final String gender;
 	private final boolean marketingAgreed;
 
-	private final boolean isNewUser; // 추가 정보를 받았는가
+	private final boolean isNewUser; // 추가 정보를 받아야하는가.
+
+	private final RegistrationType registrationType;
 
 	public ProfileResponseDto(User user) {
 		this.name = user.getName();
@@ -21,8 +25,16 @@ public class ProfileResponseDto {
 		this.birthDate = user.getBirthDate();
 		this.gender = user.getGender() != null ? user.getGender().name() : null;
 		this.marketingAgreed = user.isMarketingAgreed();
-
-		// getBirthDate 나 Gender가 없으면 true를 반환
+		
 		this.isNewUser = (user.getBirthDate() == null || user.getGender() == null);
+		this.registrationType = determineRegistrationType(user.getSocialType());
+	}
+
+	private static RegistrationType determineRegistrationType(SocialType socialType) {
+		if (socialType == null) {
+			return RegistrationType.GENERAL; // 일반 회원
+		} else {
+			return RegistrationType.SOCIAL;
+		}
 	}
 }
