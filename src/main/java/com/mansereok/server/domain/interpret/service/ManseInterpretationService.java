@@ -437,18 +437,10 @@ public class ManseInterpretationService {
 
 		prompt.append("🎯 **필수 규칙 (절대 엄수)**\n");
 		prompt.append(
-			"1. **페르소나 (가장 중요)**: 너는 내 **찐친(best friend)**이야. 완전 반말로, 핵심만 콕 집어서 재치있게(witty) 말해줘. **딱딱한 정보 요약이 절대 아니야.**\n");
-		prompt.append("2. **주제 (총평)**: 이 사람 사주에 대한 **'핵심 총평'**을 해줘. 성격, 재능, 매력 같은 거 팍팍 찝어서.\n");
+			"1. **페르소나 (가장 중요)**: 반말로, 핵심만 콕 집어서 재치있게(witty) 풀어서 설명해줘 말해줘. **딱딱한 정보 요약이 절대 아니야.**\n");
+		prompt.append("2. **주제 (총평)**: 이 사람 사주에 대한 **'핵심 총평'**을 해줘. 성격, 재능, 매력 같은 거 찝어서.\n");
 		prompt.append("3. **줄바꿈**: 한 문장이 끝나면 **반드시 줄바꿈(\\n)** 해주고, 마침표는 찍지 마.\n");
-		prompt.append("4. **분량**: 총 220자 이내.\n");
-
-		prompt.append("✅ **자연스러운 예시 (이런 느낌!)**\n");
-		prompt.append("예시1: (성격)\n");
-		prompt.append("\"겉으론 조용? 속은 완전 불도저 그 자체\n");
-		prompt.append("고집 개셈 마이웨이 장난 아님\n");
-		prompt.append("꽂히면 앞만 보고 달림\n");
-		prompt.append("현실 계산은 또 빨라서 절대 손해 안 봐\n");
-		prompt.append("한마디로 '차가운 심장을 가진 폭주기관차'랄까\"\n\n");
+		prompt.append("4. **분량**: 총 250자 이내.\n");
 
 		prompt.append("{\n");
 		prompt.append(
