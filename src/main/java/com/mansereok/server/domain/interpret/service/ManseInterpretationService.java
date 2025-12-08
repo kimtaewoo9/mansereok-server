@@ -446,7 +446,7 @@ public class ManseInterpretationService {
 		prompt.append(
 			"  \"fullAnalysis\": \"<여기에 상세 분석 전체 내용을 작성. 상세 분석 전체 내용 작성할때 보기 편하게 문단을 잘 나눠야함>\",\n");
 		prompt.append(
-			"  \"summary\": \"<여기에 '올바른 예시'처럼 '~임' 말투를 사용하고, 문장 끝마다 '\\n'으로 줄바꿈된 200자 이내 요약본 작성>\"\n");
+			"  \"summary\": \"<문장 끝마다 '\\n'으로 줄바꿈된 250자 이내 요약본 작성>\"\n");
 		prompt.append("}\n");
 	}
 
