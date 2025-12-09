@@ -11,7 +11,9 @@ import com.mansereok.server.domain.user.entity.User;
 import com.mansereok.server.domain.user.service.UserService;
 import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletResponse;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
@@ -99,7 +101,7 @@ public class ProfileController {
 	}
 
 	@DeleteMapping("/api/v1/users/me")
-	public ResponseEntity<Void> deleteUser(
+	public ResponseEntity<Map<String, Object>> deleteUser(
 		@AuthenticationPrincipal String username,
 		HttpServletResponse response
 	) {
@@ -119,6 +121,10 @@ public class ProfileController {
 		jsessionCookie.setPath("/");
 		response.addCookie(jsessionCookie);
 
-		return ResponseEntity.noContent().build();
+		Map<String, Object> result = new HashMap<>();
+		result.put("success", true);
+		result.put("message", "회원 탈퇴가 완료되었습니다.");
+
+		return ResponseEntity.ok(result);
 	}
 }
