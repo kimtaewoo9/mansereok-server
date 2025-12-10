@@ -65,7 +65,7 @@ public class ReviewController {
 	public ResponseEntity<Page<ReviewResponse>> readAll(
 		@RequestParam(required = false) Long subCategoryId,
 		@RequestParam(defaultValue = "1") int page,
-		@RequestParam(defaultValue = "10") int size
+		@RequestParam(defaultValue = "5") int size
 	) {
 		Page<ReviewResponse> result;
 
