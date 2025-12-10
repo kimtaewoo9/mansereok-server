@@ -19,6 +19,10 @@ import java.util.List;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -198,5 +202,44 @@ public class ReviewService {
 		if (reviewRepository.existsByOrderId(order.getId())) {
 			throw new PaymentException("해당 주문에 대해 이미 리뷰를 작성했습니다.");
 		}
+	}
+
+	public Page<ReviewResponse> getReviewsBySubCategory(Long subCategoryId, int page, int size) {
+		// Offset 계산
+		long offset = (long) (page - 1) * size;
+
+		// 1. 리스트 조회 (커버링 인덱스 쿼리)
+		List<Review> reviews = reviewRepository.findReviewsBySubCategoryWithPagination(
+			subCategoryId, offset, size
+		);
+
+		// 2. 전체 개수 조회
+		long totalCount = reviewRepository.countBySubCategory(subCategoryId);
+
+		// 3. 응답 변환
+		List<ReviewResponse> content = reviews.stream()
+			.map(ReviewResponse::from)
+			.collect(Collectors.toList());
+
+		// Spring Data의 Page 인터페이스로 감싸서 반환 (프론트엔드 처리가 용이함)
+		Pageable pageable = PageRequest.of(page - 1, size);
+		return new PageImpl<>(content, pageable, totalCount);
+	}
+
+	public Page<ReviewResponse> getAllReviewsSortedByLatest(int page, int size) {
+		long offset = (long) (page - 1) * size;
+
+		// 1. 커버링 인덱스 쿼리로 데이터 조회
+		List<Review> reviews = reviewRepository.findAllReviewsWithPagination(offset, size);
+
+		// 2. 전체 개수 조회
+		long totalCount = reviewRepository.countAllReviews();
+
+		// 3. DTO 변환
+		List<ReviewResponse> content = reviews.stream()
+			.map(ReviewResponse::from)
+			.collect(Collectors.toList());
+
+		return new PageImpl<>(content, PageRequest.of(page - 1, size), totalCount);
 	}
 }

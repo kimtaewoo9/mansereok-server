@@ -67,7 +67,13 @@ public interface ReviewRepository extends JpaRepository<Review, Long> {
 		@Param("limit") int limit
 	);
 
-	// [NEW] 전체 개수 카운트 (전체 조회용)
+	@Query(
+		value = "SELECT count(*) FROM reviews " +
+			"WHERE sub_category_id = :subCategoryId AND is_deleted = false",
+		nativeQuery = true
+	)
+	long countBySubCategory(@Param("subCategoryId") Long subCategoryId);
+	
 	@Query(
 		value = "SELECT count(*) FROM reviews WHERE is_deleted = false",
 		nativeQuery = true

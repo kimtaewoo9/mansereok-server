@@ -9,6 +9,7 @@ import java.util.List;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.Page;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -78,5 +79,26 @@ public class ReviewController {
 	) {
 		reviewService.deleteReview(reviewId, username);
 		return ResponseEntity.ok(Map.of("message", "리뷰가 성공적으로 삭제되었습니다."));
+	}
+
+	@GetMapping("/api/v1/reviews")
+	public ResponseEntity<Page<ReviewResponse>> getReviews(
+		@RequestParam(required = false) Long subCategoryId,
+		@RequestParam(defaultValue = "1") int page,
+		@RequestParam(defaultValue = "10") int size
+	) {
+		Page<ReviewResponse> result;
+
+		if (subCategoryId != null) {
+			// 1. 특정 상품 리뷰 조회
+			result = reviewService.getReviewsBySubCategory(subCategoryId, page, size);
+			log.info("상품 {} 리뷰 조회: {}페이지 ({}개)", subCategoryId, page, result.getContent().size());
+		} else {
+			// 2. 전체 리뷰 조회 (여기도 페이징 적용!)
+			result = reviewService.getAllReviewsSortedByLatest(page, size);
+			log.info("전체 리뷰 조회: {}페이지 ({}개)", page, result.getContent().size());
+		}
+
+		return ResponseEntity.ok(result);
 	}
 }
