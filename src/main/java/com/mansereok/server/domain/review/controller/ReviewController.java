@@ -5,6 +5,7 @@ import com.mansereok.server.domain.review.dto.response.ReviewEligibilityResponse
 import com.mansereok.server.domain.review.dto.response.ReviewResponse;
 import com.mansereok.server.domain.review.service.ReviewService;
 import jakarta.validation.Valid;
+import java.util.List;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -62,10 +63,29 @@ public class ReviewController {
 	}
 
 	@GetMapping("/api/v1/reviews")
+	public ResponseEntity<List<ReviewResponse>> getReviewsByProduct(
+		@RequestParam(required = false) Long subCategoryId
+	) {
+		List<ReviewResponse> reviews;
+
+		if (subCategoryId != null) {
+			// 1. 특정 상품 리뷰 조회 (기존 로직)
+			reviews = reviewService.getReviewsBySubCategory(subCategoryId);
+			log.info("상품 ID {}에 대한 리뷰 조회 ({}개)", subCategoryId, reviews.size());
+		} else {
+			// 2. 모든 리뷰 조회 (새로 추가된 로직)
+			reviews = reviewService.getAllReviewsSortedByLatest();
+			log.info("전체 리뷰 최신순 조회 ({}개)", reviews.size());
+		}
+
+		return ResponseEntity.ok(reviews);
+	}
+
+	@GetMapping("/api/v1/reviews/pagination")
 	public ResponseEntity<Page<ReviewResponse>> readAll(
 		@RequestParam(required = false) Long subCategoryId,
 		@RequestParam(defaultValue = "1") int page,
-		@RequestParam(defaultValue = "10") int size
+		@RequestParam(defaultValue = "5") int size
 	) {
 		Page<ReviewResponse> result;
 
