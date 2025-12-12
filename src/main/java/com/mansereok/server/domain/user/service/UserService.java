@@ -132,7 +132,7 @@ public class UserService {
 
 		User savedUser = userRepository.save(
 			User.createByOauth(
-				name, //
+				username, //
 				name,
 				email,
 				sub, // socialId
