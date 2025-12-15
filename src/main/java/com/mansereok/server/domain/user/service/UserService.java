@@ -132,8 +132,8 @@ public class UserService {
 
 		User savedUser = userRepository.save(
 			User.createByOauth(
-				username, //
-				name,
+				sub, // id 로 social id 를 사용함 .
+				name, // 사용자 이름
 				email,
 				sub, // socialId
 				socialType
