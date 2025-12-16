@@ -411,7 +411,7 @@ public class ManseInterpretationService {
 			Gpt5Request gpt5Request = new Gpt5Request(
 				"gpt-5-mini", // 👈 무료 전용 모델 고정
 				input,
-				4096, // 토큰 제한 축소
+				8192, // 토큰 제한 축소
 				"medium",
 				"medium"
 			);
@@ -2017,11 +2017,14 @@ public class ManseInterpretationService {
 		prompt.append("\n### 6. [2026년 운명 키워드] 요청 ###\n");
 		prompt.append("2026년 상반기, " + name + "님을 관통하는 **단 하나의 핵심 운명 키워드**를 뽑고 그 이유를 서술해주세요.\n\n");
 
+		prompt.append("### ⚠️ [필수 작성 지침] (매우 중요) ###\n");
+		prompt.append("1. **절대로 '올해', '이번 해', '금년'이라는 단어를 사용하지 마세요.**\n");
+		prompt.append("2. 연도를 지칭할 때는 반드시 **'2026년'** 또는 **'병오년'**이라고 명확하게 써주세요.\n");
+
 		prompt.append("--- [분석 시작] ---\n");
 		prompt.append("## 2026년 상반기 운명 키워드: [키워드 명]\n");
 		prompt.append("- 이 키워드가 당신의 운명 키워드인 이유 (대운과 세운의 조화, 병오년의 화 기운 영향 등)\n");
 		prompt.append("- 이 키워드를 긍정적으로 활용하기 위해 어떤 마음가짐을 가져야 하는지 조언\n");
-		prompt.append("- 짧고 강렬한 한 줄 명언으로 마무리\n\n");
 
 		appendSajuJsonResponseFormat(prompt, name);
 		return prompt.toString();
@@ -2038,13 +2041,19 @@ public class ManseInterpretationService {
 		prompt.append(name
 			+ "님의 사주에서 가장 강력한 **매력 포인트(도화, 홍염, 식상 등)** 하나를 찾아내어, 이성을 사로잡는 구체적인 행동 지침(플러팅)을 알려주세요.\n\n");
 
+		prompt.append("### [필수 작성 지침] (매우 중요) ###\n");
+		prompt.append("1. 위에서 제공된 '분석 대상자 정보'와 '절대 기준(Fact)'는 오직 매력 분석을 위한 **참고 자료**일 뿐입니다.\n");
+		prompt.append("2. **절대로** 직업, 재물, 건강, 대인관계, 성격 분석 등 **질문과 관련 없는 전체 사주 풀이를 나열하지 마세요.**\n");
+		prompt.append("3. 오직 아래 목차에 해당하는 **'매력 포인트'**와 **'플러팅 비법'** 내용만 출력하세요.\n\n");
+
 		prompt.append("--- [분석 시작] ---\n");
 		prompt.append("## 당신의 치명적인 매력 포인트\n");
-		prompt.append("- 사주에서 발견한 " + name + "님만의 가장 강력한 무기 (예: 은근한 눈빛, 다정한 말투, 반전 매력 등)\n\n");
+		prompt.append("- 사주에서 발견한 " + name
+			+ "님만의 가장 강력한 무기 (예: 도화살, 홍염살)에 대해서 설명, 나의 어떤점이 이성에게 매력으로 어필되는지\n\n");
 
-		prompt.append("## 상대를 내 걸로 만드는 '필살 플러팅'\n");
-		prompt.append("- 썸남/썸녀 혹은 짝사랑 상대에게 바로 써먹을 수 있는 구체적인 행동 가이드\n");
-		prompt.append("- (예시: \"말을 많이 하기보다 들어주며 눈을 맞추세요\", \"가벼운 스킨십을 농담처럼 던지세요\" 등)\n");
+		prompt.append(
+			"## 이 사람의 가장 큰 매력 포인트 \"상대를 내걸로 만드는 나만의 플러팅 비법은?\" 이라는 주제로 줄글 작성해줘\n");
+		prompt.append("- \n");
 		prompt.append("- 절대 하지 말아야 할 행동 (매력을 반감시키는 요소)\n\n");
 
 		appendSajuJsonResponseFormat(prompt, name);
