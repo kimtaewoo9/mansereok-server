@@ -57,4 +57,25 @@ public class AsyncConfig {
 		executor.initialize();
 		return executor;
 	}
+
+	// 무료 사주 전용 대용량 스레드 풀
+	@Bean(name = "gptFreeTaskExecutor")
+	public Executor gptFreeTaskExecutor() {
+		ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
+		executor.setCorePoolSize(50);
+		executor.setMaxPoolSize(200);
+		executor.setQueueCapacity(1000);
+		executor.setThreadNamePrefix("GptFree-");
+
+		executor.setRejectedExecutionHandler(new RejectedExecutionHandler() {
+			@Override
+			public void rejectedExecution(Runnable r, ThreadPoolExecutor executor) {
+				log.error("무료 사주 요청 거부됨 active={}, queue={}",
+					executor.getActiveCount(), executor.getQueue().size());
+			}
+		});
+
+		executor.initialize();
+		return executor;
+	}
 }

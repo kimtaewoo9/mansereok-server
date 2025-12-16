@@ -11,6 +11,9 @@ import com.mansereok.server.domain.interpret.repository.CompatibilityResultRepos
 import com.mansereok.server.domain.interpret.repository.ResultRepository;
 import com.mansereok.server.domain.interpret.service.ManseCalculationService;
 import com.mansereok.server.domain.interpret.service.ManseInterpretationService;
+import com.mansereok.server.domain.interpret.service.ResultService;
+import com.mansereok.server.domain.payment.entity.Payment;
+import com.mansereok.server.domain.payment.service.PaymentService;
 import jakarta.persistence.EntityNotFoundException;
 import jakarta.validation.Valid;
 import java.util.Map;
@@ -35,6 +38,9 @@ public class ManseryeokController {
 	private final ResultRepository resultRepository; // 직접 주입
 	private final CompatibilityResultRepository compatibilityResultRepository; // 직접 주입
 
+	private final PaymentService paymentService;
+	private final ResultService resultService;
+
 	@PostMapping("/api/v1/manseryeok/calculate")
 	public ResponseEntity<ManseryeokCalculationResponse> calculate(
 		@Valid @RequestBody ManseryeokCalculationRequest request
@@ -54,7 +60,7 @@ public class ManseryeokController {
 		@AuthenticationPrincipal String username
 	) {
 		log.info("만세력 해석 요청 username: " + username);
-		updateResultStatusToProcessing(request.getPaymentId());
+		resultService.updateStatusToProcessing(request.getPaymentId());
 
 		ManseryeokCalculationResponse manse = manseCalculationService.calculate(
 			new ManseryeokCalculationRequest(
@@ -92,7 +98,7 @@ public class ManseryeokController {
 		ManseCompatibilityAnalysisRequest.PersonInfo person1 = request.getPerson1();
 		ManseCompatibilityAnalysisRequest.PersonInfo person2 = request.getPerson2();
 
-		updateCompatibilityResultStatusToProcessing(request.getPaymentId());
+		resultService.updateCompatibilityStatusToProcessing(request.getPaymentId());
 
 		ManseryeokCalculationResponse person1Response = manseCalculationService.calculate(
 			new ManseryeokCalculationRequest(
@@ -130,6 +136,46 @@ public class ManseryeokController {
 				"message", "궁합 분석 요청이 접수되었습니다. 잠시 후 결과를 확인해주세요.",
 				"paymentId", request.getPaymentId()
 			));
+	}
+
+	@PostMapping("/api/v1/manseryeok/interpret/free/{subcategoryId}")
+	public ResponseEntity<?> interpretFree(
+		@PathVariable Long subcategoryId,
+		@Valid @RequestBody ManseInterpretationRequest request,
+		@AuthenticationPrincipal String username
+	) {
+		log.info("🆓 무료 해석 요청 진입: user={}, category={}", username, subcategoryId);
+
+		// 1. [동기] 0원 주문/결제 생성 (PaymentService.createFreeOrder 사용)
+		Payment payment = paymentService.createFreeOrder(username, subcategoryId);
+
+		// 2. 만세력 계산
+		ManseryeokCalculationResponse manse = manseCalculationService.calculate(
+			new ManseryeokCalculationRequest(
+				request.getName(),
+				request.getSolarDate(),
+				request.getSolarTime(),
+				request.getGender(),
+				request.getIsLunar()
+			)
+		);
+
+		// 3. 상태 변경 INPUT_REQUIRED -> PROCESSING
+		resultService.updateStatusToProcessing(payment.getId());
+
+		// 4. [비동기] 무료 전용 해석 메서드 호출 (별도 스레드 풀)
+		manseInterpretationService.interpretFree(
+			request.getName(),
+			manse,
+			username,
+			subcategoryId,
+			payment.getId()
+		);
+
+		return ResponseEntity.accepted().body(Map.of(
+			"message", "분석이 시작되었습니다. 잠시 후 결과를 확인해 주세요.",
+			"paymentId", payment.getId()
+		));
 	}
 
 	@Transactional
