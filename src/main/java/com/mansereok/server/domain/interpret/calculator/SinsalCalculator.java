@@ -116,6 +116,21 @@ public class SinsalCalculator {
 		YANGIN_MAP.put("壬", "子");
 	}
 
+	private static final Map<String, String> HONGYEOM_MAP = new HashMap<>();
+
+	static {
+		HONGYEOM_MAP.put("甲", "午"); // 갑오
+		HONGYEOM_MAP.put("乙", "午"); // 을오
+		HONGYEOM_MAP.put("丙", "寅"); // 병인
+		HONGYEOM_MAP.put("丁", "未"); // 정미
+		HONGYEOM_MAP.put("戊", "辰"); // 무진
+		HONGYEOM_MAP.put("己", "辰"); // 기진
+		HONGYEOM_MAP.put("庚", "戌"); // 경술
+		HONGYEOM_MAP.put("辛", "酉"); // 신유
+		HONGYEOM_MAP.put("壬", "子"); // 임자 (★ 사용자님 해당)
+		HONGYEOM_MAP.put("癸", "申"); // 계신
+	}
+
 	// 공망 계산용 60갑자 순서
 	private static final List<String> SIXTY_GAPJA = Arrays.asList(
 		"甲子", "乙丑", "丙寅", "丁卯", "戊辰", "己巳", "庚午", "辛未", "壬申", "癸酉", // 갑자순
@@ -205,6 +220,11 @@ public class SinsalCalculator {
 		String yangin = YANGIN_MAP.get(ilgan);
 		if (targetJiji.equals(yangin)) {
 			sinsalList.add("양인살");
+		}
+
+		String hongyeom = HONGYEOM_MAP.get(ilgan);
+		if (targetJiji.equals(hongyeom)) {
+			sinsalList.add("홍염살");
 		}
 
 		return sinsalList;
@@ -310,6 +330,7 @@ public class SinsalCalculator {
 			case "괴강살" -> "강한 성격, 독립성, 돌파력";
 			case "백호대살" -> "강한 기운, 재난 주의 (조심 필요)";
 			case "공망" -> "허무, 공허, 현실화 어려움";
+			case "홍염살" -> "붉은 매력, 이성에게 어필하는 치명적인 매력";
 			default -> "";
 		};
 	}
