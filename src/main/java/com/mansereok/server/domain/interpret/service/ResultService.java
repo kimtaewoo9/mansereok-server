@@ -2,6 +2,7 @@ package com.mansereok.server.domain.interpret.service;
 
 import com.mansereok.server.domain.interpret.entity.CompatibilityResult;
 import com.mansereok.server.domain.interpret.entity.Result;
+import com.mansereok.server.domain.interpret.entity.ResultStatus;
 import com.mansereok.server.domain.interpret.repository.CompatibilityResultRepository;
 import com.mansereok.server.domain.interpret.repository.ResultRepository;
 import com.mansereok.server.domain.order.entity.Order;
@@ -9,6 +10,7 @@ import com.mansereok.server.domain.payment.entity.Payment;
 import com.mansereok.server.domain.product.entity.SubCategory;
 import com.mansereok.server.domain.product.repository.SubCategoryRepository;
 import com.mansereok.server.global.exception.PaymentException;
+import jakarta.persistence.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -66,6 +68,28 @@ public class ResultService {
 			} else {
 				log.warn("이미 paymentId(PK) {}에 해당하는 Result가 존재하여 생성을 건너 뜁니다.", paymentPkId);
 			}
+		}
+	}
+
+	@Transactional
+	public void updateStatusToProcessing(Long paymentId) {
+		Result result = resultRepository.findByPaymentId(paymentId)
+			.orElseThrow(() -> new EntityNotFoundException("Result not found"));
+
+		if (result.getStatus() == ResultStatus.INPUT_REQUIRED) {
+			result.setStatus(ResultStatus.PROCESSING);
+			resultRepository.save(result);
+		}
+	}
+
+	@Transactional
+	public void updateCompatibilityStatusToProcessing(Long paymentId) {
+		CompatibilityResult result = compatibilityResultRepository.findByPaymentId(paymentId)
+			.orElseThrow(() -> new EntityNotFoundException("CompatibilityResult not found"));
+
+		if (result.getStatus() == ResultStatus.INPUT_REQUIRED) {
+			result.setStatus(ResultStatus.PROCESSING);
+			compatibilityResultRepository.save(result);
 		}
 	}
 }

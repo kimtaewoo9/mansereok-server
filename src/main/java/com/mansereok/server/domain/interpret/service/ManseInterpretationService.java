@@ -360,6 +360,87 @@ public class ManseInterpretationService {
 		}
 	}
 
+	@Async("gptFreeTaskExecutor") // 👈 여기가 핵심! 무료 전용 스레드 풀 사용
+	@Transactional
+	public void interpretFree(
+		String name,
+		ManseryeokCalculationResponse response,
+		String username,
+		Long subcategoryId,
+		Long paymentId
+	) {
+		log.info("🆓 무료 사주 해석 시작 (스레드 격리): name={}, category={}", name, subcategoryId);
+
+		// 1. Result 상태 조회 (기존 로직 재사용)
+		Result result = resultRepository.findByPaymentId(paymentId)
+			.orElseThrow(EntityNotFoundException::new);
+
+		// 정보 업데이트
+		String ilgan = extractIlgan(response); // 기존 헬퍼 메서드 사용
+		result.updateInformation(
+			name,
+			response.getInput().getSolarDate(),
+			response.getInput().getSolarTime(),
+			response.getInput().getGender(),
+			response.getInput().getIsLunar(),
+			ilgan
+		);
+		resultRepository.save(result);
+
+		try {
+			User user = userService.findByUsername(username);
+			String birthdate = response.getInput().getSolarDate().toString();
+
+			discordNotificationService.sendInterpretationRequestNotification(
+				name,
+				user.getEmail(),
+				birthdate,
+				subcategoryId
+			);
+			log.info("🔔 Discord 무료 사주 요청 알림 전송 완료");
+		} catch (Exception e) {
+			log.error("⚠️ Discord 무료 사주 요청 알림 전송 실패", e);
+		}
+
+		try {
+			// 2. 프롬프트 생성 (무료 전용)
+			String userPrompt = createFreePromptBySubcategory(subcategoryId, name, response);
+			String input = GPT5_SYSTEM_INSTRUCTION + userPrompt;
+
+			// 3. GPT-5-mini 요청 생성
+			Gpt5Request gpt5Request = new Gpt5Request(
+				"gpt-5-mini", // 👈 무료 전용 모델 고정
+				input,
+				4096, // 토큰 제한 축소
+				"medium",
+				"medium"
+			);
+
+			String requestBody = objectMapper.writeValueAsString(gpt5Request);
+
+			// 4. API 호출
+			log.info("🚀 GPT-5-mini 호출 (무료): user={}", username);
+			String gptResponse = gptApiRetryService.callGptApiWithRetry(requestBody);
+
+			// 5. 결과 파싱 및 저장
+			String content = extractContentFromResponseGpt5(gptResponse);
+			GptSajuResponse gptData = objectMapper.readValue(content, GptSajuResponse.class);
+
+			result.completeInterpretation(gptData.getFullAnalysis(), gptData.getSummary());
+			resultRepository.save(result);
+
+			log.info("✅ 무료 사주 해석 완료: resultId={}", result.getId());
+
+		} catch (Exception e) {
+			log.error("❌ 무료 사주 처리 중 오류: {}", e.getMessage(), e);
+			// 에러 처리 로직 (상태 롤백 등)
+			if (result.getStatus() == ResultStatus.PROCESSING) {
+				result.setStatus(ResultStatus.INPUT_REQUIRED); // 혹은 FAILED
+				resultRepository.save(result);
+			}
+		}
+	}
+
 	private void appendHyeanPersonaHeader(StringBuilder prompt) {
 		prompt.append("### 0. 시스템 역할 정의 (Role Definition) ###\n");
 		prompt.append("당신은 30년 경력의 사주명리학 대가이자, '인생 서사 상담가' 혜안(慧眼)입니다.\n");
@@ -566,6 +647,16 @@ public class ManseInterpretationService {
 					person2Response);
 			default -> createCompatibilityPrompt(person1Name, person1Response, person2Name,
 				person2Response);
+		};
+	}
+
+	private String createFreePromptBySubcategory(Long subcategoryId, String name,
+		ManseryeokCalculationResponse response) {
+		return switch (subcategoryId.intValue()) {
+			case 101 -> create2026ChangesPrompt(name, response);
+			case 102 -> create2026KeywordPrompt(name, response);
+			case 103 -> createFlirtingPrompt(name, response);
+			default -> throw new IllegalArgumentException("지원하지 않는 무료 카테고리입니다.");
 		};
 	}
 
@@ -1888,6 +1979,75 @@ public class ManseInterpretationService {
 
 		appendCompatibilityJsonResponseFormat(prompt, person1Name, person2Name);
 
+		return prompt.toString();
+	}
+
+	// 101. 2026년 상반기 변화(환경, 인간관계, 연애, 학업, 건강)
+	private String create2026ChangesPrompt(String name, ManseryeokCalculationResponse response) {
+		StringBuilder prompt = new StringBuilder();
+		appendHyeanPersonaHeader(prompt); // 혜안 페르소나 적용
+		prompt.append("### 5. 분석 대상자 정보 ###\n");
+		appendPersonDetailInfo(prompt, name, response);
+		appendKeywords(prompt, response);
+
+		prompt.append("\n### 6. [2026년(병오년) 상반기 변화 분석] 요청 ###\n");
+		prompt.append("혜안 선생님, 2026년 병오년(丙午年)의 기운이 " + name
+			+ "님의 사주와 만났을 때 일어날 상반기 변화를 5가지 측면에서 구체적으로 예측해주세요.\n\n");
+
+		prompt.append("--- [분석 시작] ---\n");
+		prompt.append("\"2026년 병오년, 붉은 말의 해가 밝아오네요. " + name + "님에게는...\" 으로 자연스럽게 시작.\n\n");
+
+		prompt.append("## 1. 환경의 변화\n(이사, 이직, 부서 이동 등 물리적/사회적 환경의 변화 예측)\n\n");
+		prompt.append("## 2. 인간관계의 변화\n(새로운 인연, 멀어질 인연, 귀인의 등장 여부)\n\n");
+		prompt.append("## 3. 연애와 애정운\n(솔로라면 만남운, 커플이라면 관계의 변화, 감정의 기복)\n\n");
+		prompt.append("## 4. 학업 및 성취운\n(공부, 자격증, 승진, 프로젝트 성과 등)\n\n");
+		prompt.append("## 5. 건강 및 컨디션\n(주의해야 할 신체 부위나 멘탈 관리 조언)\n\n");
+
+		appendSajuJsonResponseFormat(prompt, name);
+		return prompt.toString();
+	}
+
+	// 102. 2026년 상반기 나의 운명 키워드
+	private String create2026KeywordPrompt(String name, ManseryeokCalculationResponse response) {
+		StringBuilder prompt = new StringBuilder();
+		appendHyeanPersonaHeader(prompt);
+		appendPersonDetailInfo(prompt, name, response);
+		appendKeywords(prompt, response);
+
+		prompt.append("\n### 6. [2026년 운명 키워드] 요청 ###\n");
+		prompt.append("2026년 상반기, " + name + "님을 관통하는 **단 하나의 핵심 운명 키워드**를 뽑고 그 이유를 서술해주세요.\n\n");
+
+		prompt.append("--- [분석 시작] ---\n");
+		prompt.append("## 2026년 상반기 운명 키워드: [키워드 명]\n");
+		prompt.append("- 이 키워드가 당신의 운명 키워드인 이유 (대운과 세운의 조화, 병오년의 화 기운 영향 등)\n");
+		prompt.append("- 이 키워드를 긍정적으로 활용하기 위해 어떤 마음가짐을 가져야 하는지 조언\n");
+		prompt.append("- 짧고 강렬한 한 줄 명언으로 마무리\n\n");
+
+		appendSajuJsonResponseFormat(prompt, name);
+		return prompt.toString();
+	}
+
+	// 103번 나의 플러팅 기술
+	private String createFlirtingPrompt(String name, ManseryeokCalculationResponse response) {
+		StringBuilder prompt = new StringBuilder();
+		appendHyeanPersonaHeader(prompt);
+		appendPersonDetailInfo(prompt, name, response);
+		appendKeywords(prompt, response);
+
+		prompt.append("\n### 6. [필살 플러팅 비법] 요청 ###\n");
+		prompt.append(name
+			+ "님의 사주에서 가장 강력한 **매력 포인트(도화, 홍염, 식상 등)** 하나를 찾아내어, 이성을 사로잡는 구체적인 행동 지침(플러팅)을 알려주세요.\n\n");
+
+		prompt.append("--- [분석 시작] ---\n");
+		prompt.append("## 당신의 치명적인 매력 포인트\n");
+		prompt.append("- 사주에서 발견한 " + name + "님만의 가장 강력한 무기 (예: 은근한 눈빛, 다정한 말투, 반전 매력 등)\n\n");
+
+		prompt.append("## 상대를 내 걸로 만드는 '필살 플러팅'\n");
+		prompt.append("- 썸남/썸녀 혹은 짝사랑 상대에게 바로 써먹을 수 있는 구체적인 행동 가이드\n");
+		prompt.append("- (예시: \"말을 많이 하기보다 들어주며 눈을 맞추세요\", \"가벼운 스킨십을 농담처럼 던지세요\" 등)\n");
+		prompt.append("- 절대 하지 말아야 할 행동 (매력을 반감시키는 요소)\n\n");
+
+		appendSajuJsonResponseFormat(prompt, name);
 		return prompt.toString();
 	}
 

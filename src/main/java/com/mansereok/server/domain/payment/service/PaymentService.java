@@ -246,6 +246,60 @@ public class PaymentService {
 		);
 	}
 
+	@Transactional
+	public Payment createFreeOrder(String username, Long subCategoryId) {
+		User user = userRepository.findByUsername(username)
+			.orElseThrow(() -> new PaymentException("사용자를 찾을 수 없습니다."));
+
+		SubCategory subCategory = subCategoryRepository.findById(subCategoryId)
+			.orElseThrow(() -> new PaymentException("존재하지 않는 상품입니다."));
+
+		// 유료 상품 접근 방지 (DB 가격 확인)
+		if (subCategory.getPrice() > 0) {
+			throw new PaymentException("유료 상품은 무료로 이용할 수 없습니다.");
+		}
+
+		String merchantUid =
+			"free_" + System.currentTimeMillis() + "_" + UUID.randomUUID().toString()
+				.substring(0, 8);
+
+		// 1. Order 생성 (PAID 상태)
+		Order order = Order.create(
+			merchantUid,
+			user.getId(),
+			subCategory.getId(),
+			0,  // 원가 0원
+			0,  // 결제 금액 0원
+			"EVENT_FREE", // 무료 이벤트 표기
+			OrderStatus.PAID,
+			user.getName(),
+			user.getEmail()
+		);
+		order.setPaidAt(LocalDateTime.now());
+		Order savedOrder = orderRepository.save(order);
+
+		// 2. Payment 생성 (PAID 상태)
+		String paymentId = "pay_free_" + merchantUid;
+		Payment payment = Payment.create(
+			paymentId,
+			merchantUid,
+			0L,
+			PaymentStatus.PAID,
+			savedOrder.getId(),
+			user.getId(),
+			subCategory.getId()
+		);
+		Payment savedPayment = paymentRepository.save(payment);
+
+		// 3. 관계 연결 및 초기 Result 생성
+		savedOrder.setPaymentPkId(savedPayment.getId());
+		resultService.createInitialResult(savedPayment, savedOrder);
+
+		log.info("무료 사주 주문 생성 완료: orderId={}, paymentId={}", savedOrder.getId(),
+			savedPayment.getId());
+		return savedPayment;
+	}
+
 	public void processWebhook(String body) {
 		String merchantUidFromCustomData = null;
 		try {
