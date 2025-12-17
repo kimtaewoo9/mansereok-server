@@ -2028,7 +2028,6 @@ public class ManseInterpretationService {
 		prompt.append("당신은 핵심만 꿰뚫는 '통찰의 대가'입니다. 사족 없이 단 하나의 키워드와 그 이유만 명확히 제시하세요.\n\n");
 
 		appendPersonDetailInfo(prompt, name, response);
-		appendKeywords(prompt, response);
 
 		prompt.append("\n### [2026년 운명 키워드] 요청 ###\n");
 		prompt.append("2026년 상반기, " + name + "님을 관통하는 **단 하나의 핵심 운명 키워드**를 뽑고 그 이유를 서술해주세요.\n\n");
@@ -2052,34 +2051,44 @@ public class ManseInterpretationService {
 	private String createFlirtingPrompt(String name, ManseryeokCalculationResponse response) {
 		StringBuilder prompt = new StringBuilder();
 
+		// 1. 역할 정의 (세련된 연애 프로파일러)
 		prompt.append("### 0. 시스템 역할 정의 ###\n");
-		prompt.append("당신은 매력 발굴 전문가이자 연애 코치입니다. 사용자의 잠재된 매력을 극대화하여 자신감을 심어주세요.\n\n");
+		prompt.append("당신은 세련되고 감각적인 '연애 프로파일러'입니다.\n");
+		prompt.append(
+			"사주 명식을 통해 그 사람 고유의 **'분위기(Vibe)'와 '치명적인 매력'**을 분석하고, 이를 극대화할 수 있는 실전 연애 팁을 제안합니다.\n");
+		prompt.append("말투는 **정중하지만 위트 있는 '해요체'**를 사용하세요. (예: \"~한 매력이 있네요.\")\n");
+		prompt.append("**반말이나 지나치게 가벼운 말투는 사용하지 마세요.**\n\n");
 
+		// 2. 데이터 주입 (색깔/숫자 정보가 든 appendKeywords는 제외)
+		prompt.append("### 1. 분석 대상자 정보 ###\n");
 		appendPersonDetailInfo(prompt, name, response);
-		appendKeywords(prompt, response);
 
-		prompt.append("\n### [필살 플러팅 비법] 요청 ###\n");
-		prompt.append(name
-			+ "님의 사주에서 가장 강력한 **매력 포인트(도화, 홍염, 식상 등)** 하나를 찾아내어, 이성을 사로잡는 구체적인 행동 지침(플러팅)을 알려주세요.\n\n");
-
-		prompt.append("### [필수 작성 지침] (매우 중요) ###\n");
-		prompt.append("1. 위에서 제공된 '분석 대상자 정보'와 '절대 기준(Fact)'는 오직 매력 분석을 위한 **참고 자료**일 뿐입니다.\n");
-		prompt.append("2. **절대로** 직업, 재물, 건강, 대인관계, 성격 분석 등 **질문과 관련 없는 전체 사주 풀이를 나열하지 마세요.**\n");
-		prompt.append("3. 오직 아래 목차에 해당하는 **'매력 포인트'**와 **'플러팅 비법'** 내용만 출력하세요.\n\n");
+		prompt.append("\n### 2. [명령] 매력 분석 및 플러팅 가이드 ###\n");
 		prompt.append(
-			"4. 사주 용어(오행, 기운 등)는 **분석 근거**로만 짧게 언급하고, 실전 팁은 **연애 고수 친구가 해주는 현실 조언**처럼 작성하세요.\n\n");
+			name + "님의 사주(글자들의 기운)를 보고, 이 사람이 가진 **치명적인 매력**과 **이성을 사로잡는 구체적인 스킬**을 알려주세요.\n\n");
 
-		prompt.append("--- [분석 시작] ---\n");
-		prompt.append("## 당신의 매력 포인트\n");
-		prompt.append("- **(중요)** 이 부분은 분량을 **길고 풍부하게(최소 6~7문장 이상)** 작성해주세요.\n");
+		// 3. 제약 조건
+		prompt.append("### ⚠️ [작성 톤앤매너 - 절대 엄수] ###\n");
 		prompt.append(
-			"- 사주에서 발견한 " + name + "님만의 가장 강력한 무기(도화, 홍염, 식상 등)를 찾아내어 아주 구체적이고 흥미진진하게 묘사하세요.\n");
-		prompt.append("- 본인도 몰랐던 자신의 매력을 발견하고 자신감을 얻을 수 있도록 **' 글을 작성해주세요\n\n");
+			"1. **[사주 용어 허용]**: '홍염살', '도화살', '역마', '상관' 등 사주 용어를 적절히 섞어서 설명해도 좋습니다. 단, 너무 어렵게 풀지 말고 **\"홍염살이 있어 가만히 있어도 시선을 끄네요\"** 처럼 매력과 연결해 자연스럽게 서술하세요.\n");
+		prompt.append(
+			"2. **[개운법 절대 금지]**: **색깔(파란색, 빨간색 등), 숫자(3, 7 등), 방향(동쪽, 남쪽), 행운의 아이템** 추천은 **절대 금지**입니다. 오직 **태도, 표정, 대화법, 분위기 연출**로 승부하는 팁만 주세요.\n");
 
+		prompt.append("--- [작성할 내용] ---\n");
+
+		prompt.append("## 1. 당신의 매력 포인트\n");
+		prompt.append("- (지침: **분량을 길고 풍부하게(최소 6~7문장 이상)** 작성하세요.)\n");
+		prompt.append("- 사주에 나타난 도화, 홍염, 살(殺) 등의 기운을 언급하며, 이 사람만의 고유한 분위기를 칭찬해주세요.\n");
+		prompt.append("- 예: \"임수 일간 특유의 깊은 분위기에 홍염살이 더해져, 신비로운 매력을 풍기시네요.\"\n");
+		prompt.append("- 본인이 미처 몰랐던 매력까지 끄집어내어 **자존감을 높여주는 '기분 좋은 칭찬'** 위주로 작성하세요.\n\n");
+
+		prompt.append("## 2. 나만의 플러팅 비법은 ?\n");
+		prompt.append("- 구체적 상황(카페, 술자리, 메시지 등)에서 어떻게 행동해야 매력이 극대화되는지 설명하세요.\n");
 		prompt.append(
-			"## 이 사람의 가장 큰 매력 포인트 \"상대를 내걸로 만드는 나만의 플러팅 비법은?\" 이라는 주제로 줄글 작성해줘\n");
-		prompt.append("- \n");
-		prompt.append("- 절대 하지 말아야 할 행동 (매력을 반감시키는 요소)\n\n");
+			"- 예: \"말을 많이 하기보다 지그시 눈을 맞추는 게 효과적입니다.\", \"무심한 듯 챙겨주는 츤데레 전략이 잘 먹힙니다.\"\n\n");
+
+		prompt.append("## 3. 이것만은 주의하세요\n");
+		prompt.append("- 이 사람의 매력을 반감시킬 수 있는 사주적 단점(고집, 급한 성격 등)을 짧고 굵게 조언하세요.\n\n");
 
 		appendSajuJsonResponseFormat(prompt, name);
 		return prompt.toString();
