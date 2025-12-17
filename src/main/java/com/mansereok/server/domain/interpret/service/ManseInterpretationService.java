@@ -1985,12 +1985,17 @@ public class ManseInterpretationService {
 	// 101. 2026년 상반기 변화(환경, 인간관계, 연애, 학업, 건강)
 	private String create2026ChangesPrompt(String name, ManseryeokCalculationResponse response) {
 		StringBuilder prompt = new StringBuilder();
-		appendHyeanPersonaHeader(prompt); // 혜안 페르소나 적용
+
+		prompt.append("### 0. 시스템 역할 정의 ###\n");
+		prompt.append("당신은 군더더기 없이 **미래(2026년)**의 핵심 변화만 콕 집어 예측하는 '족집게 예언가'입니다.\n");
+		prompt.append("서론, 본론, 배경설명, 인생 총평 같은 **문학적인 글쓰기를 절대 하지 마세요.**\n");
+		prompt.append("오직 사용자가 물어본 '2026년 상반기의 변화' 5가지만 명확하게 전달하세요.\n\n");
+
 		prompt.append("### 5. 분석 대상자 정보 ###\n");
 		appendPersonDetailInfo(prompt, name, response);
 		appendKeywords(prompt, response);
 
-		prompt.append("\n### 6. [2026년(병오년) 상반기 변화 분석] 요청 ###\n");
+		prompt.append("\n### [2026년(병오년) 상반기 변화 분석] 요청 ###\n");
 		prompt.append("혜안 선생님, 2026년 병오년(丙午年)의 기운이 " + name
 			+ "님의 사주와 만났을 때 일어날 상반기 변화를 5가지 측면에서 구체적으로 예측해주세요.\n\n");
 
@@ -2018,20 +2023,21 @@ public class ManseInterpretationService {
 	// 102. 2026년 상반기 나의 운명 키워드
 	private String create2026KeywordPrompt(String name, ManseryeokCalculationResponse response) {
 		StringBuilder prompt = new StringBuilder();
-		appendHyeanPersonaHeader(prompt);
+
+		prompt.append("### 0. 시스템 역할 정의 ###\n");
+		prompt.append("당신은 핵심만 꿰뚫는 '통찰의 대가'입니다. 사족 없이 단 하나의 키워드와 그 이유만 명확히 제시하세요.\n\n");
+
 		appendPersonDetailInfo(prompt, name, response);
 		appendKeywords(prompt, response);
 
-		prompt.append("\n### 6. [2026년 운명 키워드] 요청 ###\n");
+		prompt.append("\n### [2026년 운명 키워드] 요청 ###\n");
 		prompt.append("2026년 상반기, " + name + "님을 관통하는 **단 하나의 핵심 운명 키워드**를 뽑고 그 이유를 서술해주세요.\n\n");
 
 		prompt.append("### ⚠️ [필수 작성 지침] (어기면 안됨) ###\n");
 		prompt.append(
-			"1. **[잡소리 금지]** 위에서 제공된 사주 정보(성격, 재물운, 직업 적성 등)는 오직 키워드 도출을 위한 **'계산 근거'**일 뿐입니다. **절대로 결과물에 '타고난 기질', '전체 총평' 같은 일반적인 사주 풀이를 나열하지 마세요.**\n");
+			"1. **[연도 고정]** 지금은 2025년이 아닙니다. 분석 시점은 무조건 **'2026년 상반기'**입니다. '올해'라고 지칭하지 말고 반드시 **'2026년', '병오년'**이라고 명확하게 써주세요.\n");
 		prompt.append(
-			"2. **[연도 고정]** 지금은 2025년이 아닙니다. 분석 시점은 무조건 **'2026년 상반기'**입니다. '올해'라고 지칭하지 말고 반드시 **'2026년', '병오년'**이라고 명확하게 써주세요.\n");
-		prompt.append(
-			"3. **[목차 강제]** 결과물은 오직 아래 제시된 **목차**로만 구성되어야 합니다. 서론(첫인사)이나 결론을 길게 쓰지 마세요.\n\n");
+			"2. **[목차 강제]** 결과물은 오직 아래 제시된 **목차**로만 구성되어야 합니다. 서론(첫인사)이나 결론을 길게 쓰지 마세요.\n\n");
 
 		prompt.append("--- [분석 시작] ---\n");
 		prompt.append("## 2026년 상반기 운명 키워드: [키워드 명]\n");
@@ -2045,11 +2051,14 @@ public class ManseInterpretationService {
 	// 103번 나의 플러팅 기술
 	private String createFlirtingPrompt(String name, ManseryeokCalculationResponse response) {
 		StringBuilder prompt = new StringBuilder();
-		appendHyeanPersonaHeader(prompt);
+
+		prompt.append("### 0. 시스템 역할 정의 ###\n");
+		prompt.append("당신은 매력 발굴 전문가이자 연애 코치입니다. 사용자의 잠재된 매력을 극대화하여 자신감을 심어주세요.\n\n");
+
 		appendPersonDetailInfo(prompt, name, response);
 		appendKeywords(prompt, response);
 
-		prompt.append("\n### 6. [필살 플러팅 비법] 요청 ###\n");
+		prompt.append("\n### [필살 플러팅 비법] 요청 ###\n");
 		prompt.append(name
 			+ "님의 사주에서 가장 강력한 **매력 포인트(도화, 홍염, 식상 등)** 하나를 찾아내어, 이성을 사로잡는 구체적인 행동 지침(플러팅)을 알려주세요.\n\n");
 
