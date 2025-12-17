@@ -1997,6 +1997,8 @@ public class ManseInterpretationService {
 		prompt.append("--- [분석 시작] ---\n");
 		prompt.append("\"2026년 병오년, 붉은 말의 해가 밝아오네요. " + name + "님에게는...\" 으로 자연스럽게 시작.\n\n");
 
+		prompt.append("--- [작성할 목차] ---\n");
+
 		prompt.append("## 1. 환경의 변화\n(이사, 이직, 부서 이동 등 물리적/사회적 환경의 변화 예측)\n\n");
 		prompt.append("## 2. 인간관계의 변화\n(새로운 인연, 멀어질 인연, 귀인의 등장 여부)\n\n");
 		prompt.append("## 3. 연애와 애정운\n(솔로라면 만남운, 커플이라면 관계의 변화, 감정의 기복)\n\n");
@@ -3000,7 +3002,7 @@ public class ManseInterpretationService {
 	}
 
 	/**
-	 * [완전판] AI 환각 방지 및 고품질 해석을 위한 절대 기준(Fact) 주입
+	 * AI 환각 방지 및 고품질 해석을 위한 절대 기준(Fact) 주입
 	 */
 	private void appendKeywords(StringBuilder prompt, ManseryeokCalculationResponse response) {
 		if (response == null || response.getSaju() == null) {
