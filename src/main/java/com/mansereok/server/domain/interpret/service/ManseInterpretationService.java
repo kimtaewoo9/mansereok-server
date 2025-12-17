@@ -1994,7 +1994,6 @@ public class ManseInterpretationService {
 
 		prompt.append("### 5. 분석 대상자 정보 ###\n");
 		appendPersonDetailInfo(prompt, name, response);
-		appendKeywords(prompt, response);
 
 		prompt.append("\n### [2026년(병오년) 상반기 변화 분석] 요청 ###\n");
 		prompt.append("혜안 선생님, 2026년 병오년(丙午年)의 기운이 " + name
@@ -2970,16 +2969,13 @@ public class ManseInterpretationService {
 			(yearSkyMinusPlus.equals("+") ? "역행" : "순행");
 
 		int startAge = saju.getBigFortuneNumber();
-		String monthGapja = saju.getMonthSky().getKorean() + saju.getMonthGround().getKorean();
+		String monthGapja = saju.getMonthSky().getChinese() + saju.getMonthGround().getChinese();
 		int currentGapjaIndex = GAPJA_CYCLE.indexOf(monthGapja);
 
 		if (currentGapjaIndex == -1) {
 			prompt.append("대운 정보 없음\n\n");
 			return;
 		}
-
-		// [수정 완료] 기존의 parseInt("갑자") 로직 삭제됨.
-		// int birthYear = Integer.parseInt(saju.getYearSky().getKorean() + saju.getYearGround().getKorean()); // ❌ 삭제된 버그 라인
 
 		// 현재 나이 계산
 		int currentYear = java.time.LocalDate.now().getYear();
