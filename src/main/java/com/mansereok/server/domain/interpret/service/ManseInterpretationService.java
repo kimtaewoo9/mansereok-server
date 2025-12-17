@@ -656,6 +656,7 @@ public class ManseInterpretationService {
 			case 101 -> create2026ChangesPrompt(name, response);
 			case 102 -> create2026KeywordPrompt(name, response);
 			case 103 -> createFlirtingPrompt(name, response);
+			case 104 -> createChemistryMatchPrompt(name, response);
 			default -> throw new IllegalArgumentException("지원하지 않는 무료 카테고리입니다.");
 		};
 	}
@@ -2089,6 +2090,48 @@ public class ManseInterpretationService {
 
 		prompt.append("## 3. 이것만은 주의하세요\n");
 		prompt.append("- 이 사람의 매력을 반감시킬 수 있는 사주적 단점(고집, 급한 성격 등)을 짧고 굵게 조언하세요.\n\n");
+
+		appendSajuJsonResponseFormat(prompt, name);
+		return prompt.toString();
+	}
+
+	private String createChemistryMatchPrompt(String name, ManseryeokCalculationResponse response) {
+		StringBuilder prompt = new StringBuilder();
+
+		// 1. 역할 정의 (덕질 큐레이터)
+		prompt.append("### 0. 시스템 역할 정의 ###\n");
+		prompt.append("당신은 사주명리학에 정통한 '최애 매칭 큐레이터'입니다.\n");
+		prompt.append(
+			"사용자의 사주(오행, 기질)를 분석하여, 서로의 부족함을 채워주거나 폭발적인 시너지가 나는 '찰떡궁합(Soulmate)' 대상을 추천합니다.\n");
+		prompt.append("말투는 **팬 커뮤니티(트위터/더쿠)처럼 '재미있고 주접 떠는' 분위기**를 살리되, 내용은 사주적 근거에 기반해야 합니다.\n\n");
+
+		// 2. 데이터 주입 (색깔/방향 정보는 필요 없으므로 appendKeywords는 제외)
+		prompt.append("### 1. 분석 대상자 정보 ###\n");
+		appendPersonDetailInfo(prompt, name, response);
+
+		prompt.append("\n### 2. [명령] 사떡궁합 매칭 리포트 작성 ###\n");
+		prompt.append(name + "님의 사주 구성을 보고, 가장 잘 맞는 **유명인(아이돌, 배우) 및 가상 캐릭터** 3명을 추천해주세요.\n");
+		prompt.append("추천 기준: 사용자의 '용신(필요한 기운)'을 가진 인물이나, 성격적으로 상호 보완이 되는 캐릭터.\n\n");
+
+		// 3. 제약 조건 (출력 형식 강제)
+		prompt.append("### ⚠️ [필수 작성 지침] (절대 엄수) ###\n");
+		prompt.append(
+			"1. **[대상 선정]**: 추천 대상 3명은 반드시 **'K-POP 아이돌(남/여)', '유명 배우', '애니/웹툰 캐릭터'** 중 골고루 섞어서 선정하세요.\n");
+		prompt.append("2. **[실명 사용]**: 실제 존재하는 유명인이나 캐릭터의 이름을 정확히 명시하세요. (예: 카리나, 차은우, 루피 등)\n");
+		prompt.append("3. **[구조 강제]** 결과물은 오직 아래 제시된 **목차와 형식**으로만 구성되어야 합니다. 서론/인사말/결론 잡담 금지.\n");
+		prompt.append(
+			"4. **[말투]**: \"~입니다\" 대신, \"~하는 꿀조합\", \"~라 완전 찰떡\" 처럼 덕질 용어를 자연스럽게 섞으세요.\n\n");
+
+		prompt.append("--- [작성할 내용] ---\n");
+
+		prompt.append("## " + name + "님과 찰떡궁합 TOP 3\n");
+		prompt.append("1. [이름] (그룹명/작품명) — [한 줄 설명: 예) 당신의 예민함을 잠재워줄 인간 수면제]\n");
+		prompt.append("2. [이름] (그룹명/작품명) — [한 줄 설명: 예) 말 안 해도 통하는 영혼의 단짝]\n");
+		prompt.append("3. [이름] (그룹명/작품명) — [한 줄 설명: 예) 혐관으로 시작해서 맛집이 될 텐션 궁합]\n\n");
+
+		prompt.append("## 이 중 가장 치명적인 궁합은? : [TOP 3 중 1명 선택]\n");
+		prompt.append(
+			"- **이유**: (사주적 근거를 들어 설명. 예: 불과 물의 상극이 강한 끌림을 만들어내고, 서로에게 없는 성향을 자극함. 당신의 차가운 금(金) 기운을 이 사람의 뜨거운 화(火) 기운이 녹여줌.)\n");
 
 		appendSajuJsonResponseFormat(prompt, name);
 		return prompt.toString();
