@@ -433,7 +433,14 @@ public class ManseInterpretationService {
 			GptSajuResponse gptData = objectMapper.readValue(content, GptSajuResponse.class);
 
 			result.completeInterpretation(gptData.getFullAnalysis(), gptData.getSummary());
-			resultRepository.save(result);
+			Result savedResult = resultRepository.save(result);
+
+			try {
+				ogImageGenerationService.generateAndUploadOgImage(savedResult);
+				log.info("✅ 무료 사주 OG 이미지 생성 완료: resultId={}", savedResult.getId());
+			} catch (Exception e) {
+				log.error("⚠️ OG 이미지 생성 실패 (해석은 저장됨): resultId={}", savedResult.getId(), e);
+			}
 
 			log.info("✅ 무료 사주 해석 완료: resultId={}", result.getId());
 
