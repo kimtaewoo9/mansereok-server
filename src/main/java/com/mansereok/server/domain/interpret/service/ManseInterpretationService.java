@@ -597,7 +597,7 @@ public class ManseInterpretationService {
 		prompt.append("}\n");
 	}
 
-	// ==================== 프롬프트 라우팅 메서드 (기존 유지) ====================
+	// ==================== 프롬프트 라우팅 메서드 ====================
 	private String createPromptBySubcategory(Long subcategoryId, String name,
 		ManseryeokCalculationResponse response, String sourceTitle) {
 
@@ -612,7 +612,7 @@ public class ManseInterpretationService {
 			case 5 -> createIdolAnalysisPrompt(name, response);
 			case 13 -> createActorAnalysisPrompt(name, response);
 			case 17 -> createLoveLuckPrompt(name, response); // 연애운이 17번임.
-			default -> createComprehensiveAnalysisPrompt(name, response);
+			default -> throw new IllegalArgumentException("지원하지 않는 카테고리입니다: " + subcategoryId);
 		};
 	}
 
@@ -648,8 +648,7 @@ public class ManseInterpretationService {
 			case 15 ->
 				createActorCompatibilityPrompt(person1Name, person1Response, person2Name,  // ← 추가
 					person2Response);
-			default -> createCompatibilityPrompt(person1Name, person1Response, person2Name,
-				person2Response);
+			default -> throw new IllegalArgumentException("지원하지 않는 카테고리입니다: " + subcategoryId);
 		};
 	}
 
@@ -660,7 +659,7 @@ public class ManseInterpretationService {
 			case 102 -> create2026KeywordPrompt(name, response);
 			case 103 -> createFlirtingPrompt(name, response);
 			case 104 -> createChemistryMatchPrompt(name, response);
-			default -> throw new IllegalArgumentException("지원하지 않는 무료 카테고리입니다.");
+			default -> throw new IllegalArgumentException("지원하지 않는 카테고리입니다.");
 		};
 	}
 
