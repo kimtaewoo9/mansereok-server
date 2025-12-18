@@ -53,6 +53,12 @@ public class ManseInterpretationService {
 		"己", "庚", "辛", "壬", "癸");
 	private static final List<String> EARTHLY_BRANCHES = Arrays.asList("子", "丑", "寅", "卯", "辰",
 		"巳", "午", "未", "申", "酉", "戌", "亥");
+
+	private static final List<String> HEAVENLY_STEMS_KOR = Arrays.asList("갑", "을", "병", "정", "무",
+		"기", "경", "신", "임", "계");
+	private static final List<String> EARTHLY_BRANCHES_KOR = Arrays.asList("자", "축", "인", "묘", "진",
+		"사", "오", "미", "신", "유", "술", "해");
+
 	private static final List<String> GAPJA_CYCLE = new ArrayList<>();
 
 	static {
@@ -465,12 +471,9 @@ public class ManseInterpretationService {
 
 		prompt.append("\n### 4. [매우 중요] 용어 사용 절대 규칙 (No Jargon) ###\n");
 		prompt.append(
-			"1. **전문 용어 사용 금지**: '편인', '비견', '설기', '충', '공망', '신강/신약' 같은 한자어 사주 용어를 **절대 사용하지 마세요.**\n");
-		prompt.append("2. **일상어로 완벽 치환**: 위 용어들이 나오면 아래와 같이 **'쉬운 말'로 바꿔서 자연스럽게 서술하세요.\n");
+			"1. **전문 용어 사용 금지**: '편인', '비견', '설기', '충', '공망', '신강/신약' 같은 한자어 사주 용어를 **가급적 사용하지 마세요.**\n");
 		prompt.append("   - 신강 -> 주관이 뚜렷한, 멘탈이 강한, 에너지가 넘치는\n");
 		prompt.append("   - 신약 -> 섬세한, 환경에 잘 적응하는, 유연한\n");
-		prompt.append("   - 역마 -> 이동수, 활동성, 새로운 도전, 여행\n");
-		prompt.append("   - 도화 -> 사람을 끄는 매력, 인기, 스타성\n");
 		prompt.append("   - 충(沖) -> 변화, 조정, 새로운 국면, 부딪힘을 통한 성장\n");
 		prompt.append("   - 합(合) -> 조화, 협력, 묶이는 기운\n");
 		prompt.append(
@@ -594,7 +597,7 @@ public class ManseInterpretationService {
 		prompt.append("}\n");
 	}
 
-	// ==================== 프롬프트 라우팅 메서드 (기존 유지) ====================
+	// ==================== 프롬프트 라우팅 메서드 ====================
 	private String createPromptBySubcategory(Long subcategoryId, String name,
 		ManseryeokCalculationResponse response, String sourceTitle) {
 
@@ -609,7 +612,7 @@ public class ManseInterpretationService {
 			case 5 -> createIdolAnalysisPrompt(name, response);
 			case 13 -> createActorAnalysisPrompt(name, response);
 			case 17 -> createLoveLuckPrompt(name, response); // 연애운이 17번임.
-			default -> createComprehensiveAnalysisPrompt(name, response);
+			default -> throw new IllegalArgumentException("지원하지 않는 카테고리입니다: " + subcategoryId);
 		};
 	}
 
@@ -645,8 +648,7 @@ public class ManseInterpretationService {
 			case 15 ->
 				createActorCompatibilityPrompt(person1Name, person1Response, person2Name,  // ← 추가
 					person2Response);
-			default -> createCompatibilityPrompt(person1Name, person1Response, person2Name,
-				person2Response);
+			default -> throw new IllegalArgumentException("지원하지 않는 카테고리입니다: " + subcategoryId);
 		};
 	}
 
@@ -656,7 +658,8 @@ public class ManseInterpretationService {
 			case 101 -> create2026ChangesPrompt(name, response);
 			case 102 -> create2026KeywordPrompt(name, response);
 			case 103 -> createFlirtingPrompt(name, response);
-			default -> throw new IllegalArgumentException("지원하지 않는 무료 카테고리입니다.");
+			case 104 -> createChemistryMatchPrompt(name, response);
+			default -> throw new IllegalArgumentException("지원하지 않는 카테고리입니다.");
 		};
 	}
 
@@ -760,8 +763,6 @@ public class ManseInterpretationService {
 		prompt.append("## 대운과 세운 - 인생의 큰 파도\n");
 		prompt.append(
 			"**[현재 대운 집중 분석]** 지금 겪고 있는 현재 대운(10년)은 %s님 인생에서 어떤 '챕터'이며, 이 시기의 주요 과제와 기회는 무엇인지 집중 분석해주세요. 그리고 어떻게 행동해야하는지까지 분석 해주세요. 만세력 기반으로 설명하되, 쉽고 재미있게 풀어서 설명해주세요.\n");
-		prompt.append(
-			"2025년 을사년 세운이 %s님에게 미치는 영향을 직업, 재물, 연애, 건강 측면에서 구체적으로 분석해주세요.\n\n");
 		prompt.append(
 			"2026년 병오년 세운이 %s님에게 미치는 영향을 직업, 재물, 연애, 건강 측면에서 구체적으로 분석해주세요.\n\n");
 
@@ -1985,12 +1986,16 @@ public class ManseInterpretationService {
 	// 101. 2026년 상반기 변화(환경, 인간관계, 연애, 학업, 건강)
 	private String create2026ChangesPrompt(String name, ManseryeokCalculationResponse response) {
 		StringBuilder prompt = new StringBuilder();
-		appendHyeanPersonaHeader(prompt); // 혜안 페르소나 적용
+
+		prompt.append("### 0. 시스템 역할 정의 ###\n");
+		prompt.append("당신은 군더더기 없이 **미래(2026년)**의 핵심 변화만 콕 집어 예측하는 '족집게 예언가'입니다.\n");
+		prompt.append("서론, 본론, 배경설명, 인생 총평 같은 **문학적인 글쓰기를 절대 하지 마세요.**\n");
+		prompt.append("오직 사용자가 물어본 '2026년 상반기의 변화' 5가지만 명확하게 전달하세요.\n\n");
+
 		prompt.append("### 5. 분석 대상자 정보 ###\n");
 		appendPersonDetailInfo(prompt, name, response);
-		appendKeywords(prompt, response);
 
-		prompt.append("\n### 6. [2026년(병오년) 상반기 변화 분석] 요청 ###\n");
+		prompt.append("\n### [2026년(병오년) 상반기 변화 분석] 요청 ###\n");
 		prompt.append("혜안 선생님, 2026년 병오년(丙午年)의 기운이 " + name
 			+ "님의 사주와 만났을 때 일어날 상반기 변화를 5가지 측면에서 구체적으로 예측해주세요.\n\n");
 
@@ -2018,20 +2023,20 @@ public class ManseInterpretationService {
 	// 102. 2026년 상반기 나의 운명 키워드
 	private String create2026KeywordPrompt(String name, ManseryeokCalculationResponse response) {
 		StringBuilder prompt = new StringBuilder();
-		appendHyeanPersonaHeader(prompt);
-		appendPersonDetailInfo(prompt, name, response);
-		appendKeywords(prompt, response);
 
-		prompt.append("\n### 6. [2026년 운명 키워드] 요청 ###\n");
+		prompt.append("### 0. 시스템 역할 정의 ###\n");
+		prompt.append("당신은 핵심만 꿰뚫는 '통찰의 대가'입니다. 사족 없이 단 하나의 키워드와 그 이유만 명확히 제시하세요.\n\n");
+
+		appendPersonDetailInfo(prompt, name, response);
+
+		prompt.append("\n### [2026년 운명 키워드] 요청 ###\n");
 		prompt.append("2026년 상반기, " + name + "님을 관통하는 **단 하나의 핵심 운명 키워드**를 뽑고 그 이유를 서술해주세요.\n\n");
 
 		prompt.append("### ⚠️ [필수 작성 지침] (어기면 안됨) ###\n");
 		prompt.append(
-			"1. **[잡소리 금지]** 위에서 제공된 사주 정보(성격, 재물운, 직업 적성 등)는 오직 키워드 도출을 위한 **'계산 근거'**일 뿐입니다. **절대로 결과물에 '타고난 기질', '전체 총평' 같은 일반적인 사주 풀이를 나열하지 마세요.**\n");
+			"1. **[연도 고정]** 지금은 2025년이 아닙니다. 분석 시점은 무조건 **'2026년 상반기'**입니다. '올해'라고 지칭하지 말고 반드시 **'2026년', '병오년'**이라고 명확하게 써주세요.\n");
 		prompt.append(
-			"2. **[연도 고정]** 지금은 2025년이 아닙니다. 분석 시점은 무조건 **'2026년 상반기'**입니다. '올해'라고 지칭하지 말고 반드시 **'2026년', '병오년'**이라고 명확하게 써주세요.\n");
-		prompt.append(
-			"3. **[목차 강제]** 결과물은 오직 아래 제시된 **목차**로만 구성되어야 합니다. 서론(첫인사)이나 결론을 길게 쓰지 마세요.\n\n");
+			"2. **[목차 강제]** 결과물은 오직 아래 제시된 **목차**로만 구성되어야 합니다. 서론(첫인사)이나 결론을 길게 쓰지 마세요.\n\n");
 
 		prompt.append("--- [분석 시작] ---\n");
 		prompt.append("## 2026년 상반기 운명 키워드: [키워드 명]\n");
@@ -2045,32 +2050,87 @@ public class ManseInterpretationService {
 	// 103번 나의 플러팅 기술
 	private String createFlirtingPrompt(String name, ManseryeokCalculationResponse response) {
 		StringBuilder prompt = new StringBuilder();
-		appendHyeanPersonaHeader(prompt);
+
+		// 1. 역할 정의 (세련된 연애 프로파일러)
+		prompt.append("### 0. 시스템 역할 정의 ###\n");
+		prompt.append("당신은 세련되고 감각적인 '연애 프로파일러'입니다.\n");
+		prompt.append(
+			"사주 명식을 통해 그 사람 고유의 **'분위기(Vibe)'와 '치명적인 매력'**을 분석하고, 이를 극대화할 수 있는 실전 연애 팁을 제안합니다.\n");
+		prompt.append("말투는 **정중하지만 위트 있는 '해요체'**를 사용하세요. (예: \"~한 매력이 있네요.\")\n");
+		prompt.append("**반말이나 지나치게 가벼운 말투는 사용하지 마세요.**\n\n");
+
+		// 2. 데이터 주입 (색깔/숫자 정보가 든 appendKeywords는 제외)
+		prompt.append("### 1. 분석 대상자 정보 ###\n");
 		appendPersonDetailInfo(prompt, name, response);
-		appendKeywords(prompt, response);
 
-		prompt.append("\n### 6. [필살 플러팅 비법] 요청 ###\n");
-		prompt.append(name
-			+ "님의 사주에서 가장 강력한 **매력 포인트(도화, 홍염, 식상 등)** 하나를 찾아내어, 이성을 사로잡는 구체적인 행동 지침(플러팅)을 알려주세요.\n\n");
-
-		prompt.append("### [필수 작성 지침] (매우 중요) ###\n");
-		prompt.append("1. 위에서 제공된 '분석 대상자 정보'와 '절대 기준(Fact)'는 오직 매력 분석을 위한 **참고 자료**일 뿐입니다.\n");
-		prompt.append("2. **절대로** 직업, 재물, 건강, 대인관계, 성격 분석 등 **질문과 관련 없는 전체 사주 풀이를 나열하지 마세요.**\n");
-		prompt.append("3. 오직 아래 목차에 해당하는 **'매력 포인트'**와 **'플러팅 비법'** 내용만 출력하세요.\n\n");
+		prompt.append("\n### 2. [명령] 매력 분석 및 플러팅 가이드 ###\n");
 		prompt.append(
-			"4. 사주 용어(오행, 기운 등)는 **분석 근거**로만 짧게 언급하고, 실전 팁은 **연애 고수 친구가 해주는 현실 조언**처럼 작성하세요.\n\n");
+			name + "님의 사주(글자들의 기운)를 보고, 이 사람이 가진 **치명적인 매력**과 **이성을 사로잡는 구체적인 스킬**을 알려주세요.\n\n");
 
-		prompt.append("--- [분석 시작] ---\n");
-		prompt.append("## 당신의 매력 포인트\n");
-		prompt.append("- **(중요)** 이 부분은 분량을 **길고 풍부하게(최소 6~7문장 이상)** 작성해주세요.\n");
+		// 3. 제약 조건
+		prompt.append("### ⚠️ [작성 톤앤매너 - 절대 엄수] ###\n");
 		prompt.append(
-			"- 사주에서 발견한 " + name + "님만의 가장 강력한 무기(도화, 홍염, 식상 등)를 찾아내어 아주 구체적이고 흥미진진하게 묘사하세요.\n");
-		prompt.append("- 본인도 몰랐던 자신의 매력을 발견하고 자신감을 얻을 수 있도록 **' 글을 작성해주세요\n\n");
+			"1. **[사주 용어 허용]**: '홍염살', '도화살', '역마', '상관' 등 사주 용어를 적절히 섞어서 설명해도 좋습니다. 단, 너무 어렵게 풀지 말고 **\"홍염살이 있어 가만히 있어도 시선을 끄네요\"** 처럼 매력과 연결해 자연스럽게 서술하세요.\n");
+		prompt.append(
+			"2. **[개운법 절대 금지]**: **색깔(파란색, 빨간색 등), 숫자(3, 7 등), 방향(동쪽, 남쪽), 행운의 아이템** 추천은 **절대 금지**입니다. 오직 **태도, 표정, 대화법, 분위기 연출**로 승부하는 팁만 주세요.\n");
 
+		prompt.append("--- [작성할 내용] ---\n");
+
+		prompt.append("## 1. 당신의 매력 포인트\n");
+		prompt.append("- (지침: **분량을 길고 풍부하게(최소 6~7문장 이상)** 작성하세요.)\n");
+		prompt.append("- 사주에 나타난 도화, 홍염, 살(殺) 등의 기운을 언급하며, 이 사람만의 고유한 분위기를 칭찬해주세요.\n");
+		prompt.append("- 예: \"임수 일간 특유의 깊은 분위기에 홍염살이 더해져, 신비로운 매력을 풍기시네요.\"\n");
+		prompt.append("- 본인이 미처 몰랐던 매력까지 끄집어내어 **자존감을 높여주는 '기분 좋은 칭찬'** 위주로 작성하세요.\n\n");
+
+		prompt.append("## 2. 나만의 플러팅 비법은 ?\n");
+		prompt.append("- 구체적 상황(카페, 술자리, 메시지 등)에서 어떻게 행동해야 매력이 극대화되는지 설명하세요.\n");
 		prompt.append(
-			"## 이 사람의 가장 큰 매력 포인트 \"상대를 내걸로 만드는 나만의 플러팅 비법은?\" 이라는 주제로 줄글 작성해줘\n");
-		prompt.append("- \n");
-		prompt.append("- 절대 하지 말아야 할 행동 (매력을 반감시키는 요소)\n\n");
+			"- 예: \"말을 많이 하기보다 지그시 눈을 맞추는 게 효과적입니다.\", \"무심한 듯 챙겨주는 츤데레 전략이 잘 먹힙니다.\"\n\n");
+
+		prompt.append("## 3. 이것만은 주의하세요\n");
+		prompt.append("- 이 사람의 매력을 반감시킬 수 있는 사주적 단점(고집, 급한 성격 등)을 짧고 굵게 조언하세요.\n\n");
+
+		appendSajuJsonResponseFormat(prompt, name);
+		return prompt.toString();
+	}
+
+	private String createChemistryMatchPrompt(String name, ManseryeokCalculationResponse response) {
+		StringBuilder prompt = new StringBuilder();
+
+		// 1. 역할 정의 (덕질 큐레이터)
+		prompt.append("### 0. 시스템 역할 정의 ###\n");
+		prompt.append("당신은 사주명리학에 정통한 '최애 매칭 큐레이터'입니다.\n");
+		prompt.append(
+			"사용자의 사주(오행, 기질)를 분석하여, 서로의 부족함을 채워주거나 폭발적인 시너지가 나는 '찰떡궁합(Soulmate)' 대상을 추천합니다.\n");
+		prompt.append("말투는 **팬 커뮤니티(트위터/더쿠)처럼 '재미있고 주접 떠는' 분위기**를 살리되, 내용은 사주적 근거에 기반해야 합니다.\n\n");
+
+		// 2. 데이터 주입 (색깔/방향 정보는 필요 없으므로 appendKeywords는 제외)
+		prompt.append("### 1. 분석 대상자 정보 ###\n");
+		appendPersonDetailInfo(prompt, name, response);
+
+		prompt.append("\n### 2. [명령] 사떡궁합 매칭 리포트 작성 ###\n");
+		prompt.append(name + "님의 사주 구성을 보고, 가장 잘 맞는 **유명인(아이돌, 배우) 및 가상 캐릭터** 3명을 추천해주세요.\n");
+		prompt.append("추천 기준: 사용자의 '용신(필요한 기운)'을 가진 인물이나, 성격적으로 상호 보완이 되는 캐릭터.\n\n");
+
+		// 3. 제약 조건 (출력 형식 강제)
+		prompt.append("### ⚠️ [필수 작성 지침] (절대 엄수) ###\n");
+		prompt.append(
+			"1. **[대상 선정]**: 추천 대상 3명은 반드시 **'K-POP 아이돌(남/여)', '유명 배우', '애니/웹툰 캐릭터'** 중 골고루 섞어서 선정하세요.\n");
+		prompt.append("2. **[실명 사용]**: 실제 존재하는 유명인이나 캐릭터의 이름을 정확히 명시하세요. (예: 카리나, 차은우, 루피 등)\n");
+		prompt.append("3. **[구조 강제]** 결과물은 오직 아래 제시된 **목차와 형식**으로만 구성되어야 합니다. 서론/인사말/결론 잡담 금지.\n");
+		prompt.append(
+			"4. **[말투]**: \"~입니다\" 대신, \"~하는 꿀조합\", \"~라 완전 찰떡\" 처럼 덕질 용어를 자연스럽게 섞으세요.\n\n");
+
+		prompt.append("--- [작성할 내용] ---\n");
+
+		prompt.append("## " + name + "님과 찰떡궁합 TOP 3\n");
+		prompt.append("1. [이름] (그룹명/작품명) — [한 줄 설명: 예) 당신의 예민함을 잠재워줄 인간 수면제]\n");
+		prompt.append("2. [이름] (그룹명/작품명) — [한 줄 설명: 예) 말 안 해도 통하는 영혼의 단짝]\n");
+		prompt.append("3. [이름] (그룹명/작품명) — [한 줄 설명: 예) 혐관으로 시작해서 맛집이 될 텐션 궁합]\n\n");
+
+		prompt.append("## 이 중 가장 치명적인 궁합은? : [TOP 3 중 1명 선택]\n");
+		prompt.append(
+			"- **이유**: (사주적 근거를 들어 설명. 예: 불과 물의 상극이 강한 끌림을 만들어내고, 서로에게 없는 성향을 자극함. 당신의 차가운 금(金) 기운을 이 사람의 뜨거운 화(火) 기운이 녹여줌.)\n");
 
 		appendSajuJsonResponseFormat(prompt, name);
 		return prompt.toString();
@@ -2894,42 +2954,36 @@ public class ManseInterpretationService {
 		int birthYear) {
 		if (saju.getYearSky() == null || saju.getMonthSky() == null
 			|| saju.getMonthGround() == null || saju.getBigFortuneNumber() == null) {
-			prompt.append("대운 정보 없음\n\n");
+			prompt.append("대운 정보 없음 (필수 데이터 누락)\n\n");
 			return;
 		}
-
 		String yearSkyMinusPlus = saju.getYearSky().getMinusPlus();
 		if (yearSkyMinusPlus == null) {
-			prompt.append("대운 정보 없음\n\n");
+			prompt.append("대운 정보 없음 (음양 정보 누락)\n\n");
 			return;
 		}
-
 		String flowDirection = "MALE".equalsIgnoreCase(gender) ?
 			(yearSkyMinusPlus.equals("+") ? "순행" : "역행") :
 			(yearSkyMinusPlus.equals("+") ? "역행" : "순행");
-
 		int startAge = saju.getBigFortuneNumber();
-		String monthGapja = saju.getMonthSky().getKorean() + saju.getMonthGround().getKorean();
+
+		// 1. 인덱스 찾기 (한자로 찾아야 함!)
+		String monthGapja = saju.getMonthSky().getChinese() + saju.getMonthGround().getChinese();
 		int currentGapjaIndex = GAPJA_CYCLE.indexOf(monthGapja);
 
 		if (currentGapjaIndex == -1) {
-			prompt.append("대운 정보 없음\n\n");
+			prompt.append("대운 흐름 계산 오류\n\n");
 			return;
 		}
 
-		// [수정 완료] 기존의 parseInt("갑자") 로직 삭제됨.
-		// int birthYear = Integer.parseInt(saju.getYearSky().getKorean() + saju.getYearGround().getKorean()); // ❌ 삭제된 버그 라인
-
-		// 현재 나이 계산
+		// 2. 현재 대운 계산
 		int currentYear = java.time.LocalDate.now().getYear();
-		int currentAge = currentYear - birthYear + 1; // 한국 나이
-
-		// 현재 대운 찾기
+		int currentAge = currentYear - birthYear + 1;
 		int currentDaewoonIndex = Math.max(0, (currentAge - startAge) / 10);
 
-		prompt.append(String.format("시작:%d세 | 방향:%s\n", startAge, flowDirection));
+		prompt.append(String.format("대운 시작: %d세 | 흐름: %s\n", startAge, flowDirection));
 
-		// 현재 + 미래 2개만 표시 (총 3개)
+		// 3. 루프 돌면서 한글명 생성
 		for (int i = currentDaewoonIndex; i < currentDaewoonIndex + 3 && i < 9; i++) {
 			int age = startAge + (i * 10);
 			if (age > 120) {
@@ -2942,12 +2996,21 @@ public class ManseInterpretationService {
 			} else {
 				nextIndex = (currentGapjaIndex - (i + 1) % 60 + 60) % 60;
 			}
-			String daewoonGapja = GAPJA_CYCLE.get(nextIndex);
+
+			// 🔥 [핵심 수정] 한글 이름 생성 (예: 정 + 사 = 정사)
+			String stemKor = HEAVENLY_STEMS_KOR.get(nextIndex % 10);
+			String branchKor = EARTHLY_BRANCHES_KOR.get(nextIndex % 12);
+			String daewoonKor = stemKor + branchKor; // "정사"
+
+			// 한자도 괄호 안에 같이 넣어줌 (GPT의 정확한 해석을 위해) -> "정사(丁巳)"
+			String daewoonChi = GAPJA_CYCLE.get(nextIndex);
+			String daewoonStr = String.format("%s(%s)", daewoonKor, daewoonChi);
 
 			if (i == currentDaewoonIndex) {
-				prompt.append(String.format("▶ %d~%d세: %s (현재)\n", age, age + 9, daewoonGapja));
+				prompt.append(
+					String.format("▶ %d~%d세: %s 대운 (현재 진행 중)\n", age, age + 9, daewoonStr));
 			} else {
-				prompt.append(String.format("  %d~%d세: %s\n", age, age + 9, daewoonGapja));
+				prompt.append(String.format("  %d~%d세: %s 대운\n", age, age + 9, daewoonStr));
 			}
 		}
 		prompt.append("\n");
