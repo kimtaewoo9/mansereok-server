@@ -53,6 +53,12 @@ public class ManseInterpretationService {
 		"己", "庚", "辛", "壬", "癸");
 	private static final List<String> EARTHLY_BRANCHES = Arrays.asList("子", "丑", "寅", "卯", "辰",
 		"巳", "午", "未", "申", "酉", "戌", "亥");
+
+	private static final List<String> HEAVENLY_STEMS_KOR = Arrays.asList("갑", "을", "병", "정", "무",
+		"기", "경", "신", "임", "계");
+	private static final List<String> EARTHLY_BRANCHES_KOR = Arrays.asList("자", "축", "인", "묘", "진",
+		"사", "오", "미", "신", "유", "술", "해");
+
 	private static final List<String> GAPJA_CYCLE = new ArrayList<>();
 
 	static {
@@ -2954,39 +2960,36 @@ public class ManseInterpretationService {
 		int birthYear) {
 		if (saju.getYearSky() == null || saju.getMonthSky() == null
 			|| saju.getMonthGround() == null || saju.getBigFortuneNumber() == null) {
-			prompt.append("대운 정보 없음\n\n");
+			prompt.append("대운 정보 없음 (필수 데이터 누락)\n\n");
 			return;
 		}
-
 		String yearSkyMinusPlus = saju.getYearSky().getMinusPlus();
 		if (yearSkyMinusPlus == null) {
-			prompt.append("대운 정보 없음\n\n");
+			prompt.append("대운 정보 없음 (음양 정보 누락)\n\n");
 			return;
 		}
-
 		String flowDirection = "MALE".equalsIgnoreCase(gender) ?
 			(yearSkyMinusPlus.equals("+") ? "순행" : "역행") :
 			(yearSkyMinusPlus.equals("+") ? "역행" : "순행");
-
 		int startAge = saju.getBigFortuneNumber();
+
+		// 1. 인덱스 찾기 (한자로 찾아야 함!)
 		String monthGapja = saju.getMonthSky().getChinese() + saju.getMonthGround().getChinese();
 		int currentGapjaIndex = GAPJA_CYCLE.indexOf(monthGapja);
 
 		if (currentGapjaIndex == -1) {
-			prompt.append("대운 정보 없음\n\n");
+			prompt.append("대운 흐름 계산 오류\n\n");
 			return;
 		}
 
-		// 현재 나이 계산
+		// 2. 현재 대운 계산
 		int currentYear = java.time.LocalDate.now().getYear();
-		int currentAge = currentYear - birthYear + 1; // 한국 나이
-
-		// 현재 대운 찾기
+		int currentAge = currentYear - birthYear + 1;
 		int currentDaewoonIndex = Math.max(0, (currentAge - startAge) / 10);
 
-		prompt.append(String.format("시작:%d세 | 방향:%s\n", startAge, flowDirection));
+		prompt.append(String.format("대운 시작: %d세 | 흐름: %s\n", startAge, flowDirection));
 
-		// 현재 + 미래 2개만 표시 (총 3개)
+		// 3. 루프 돌면서 한글명 생성
 		for (int i = currentDaewoonIndex; i < currentDaewoonIndex + 3 && i < 9; i++) {
 			int age = startAge + (i * 10);
 			if (age > 120) {
@@ -2999,12 +3002,21 @@ public class ManseInterpretationService {
 			} else {
 				nextIndex = (currentGapjaIndex - (i + 1) % 60 + 60) % 60;
 			}
-			String daewoonGapja = GAPJA_CYCLE.get(nextIndex);
+
+			// 🔥 [핵심 수정] 한글 이름 생성 (예: 정 + 사 = 정사)
+			String stemKor = HEAVENLY_STEMS_KOR.get(nextIndex % 10);
+			String branchKor = EARTHLY_BRANCHES_KOR.get(nextIndex % 12);
+			String daewoonKor = stemKor + branchKor; // "정사"
+
+			// 한자도 괄호 안에 같이 넣어줌 (GPT의 정확한 해석을 위해) -> "정사(丁巳)"
+			String daewoonChi = GAPJA_CYCLE.get(nextIndex);
+			String daewoonStr = String.format("%s(%s)", daewoonKor, daewoonChi);
 
 			if (i == currentDaewoonIndex) {
-				prompt.append(String.format("▶ %d~%d세: %s (현재)\n", age, age + 9, daewoonGapja));
+				prompt.append(
+					String.format("▶ %d~%d세: %s 대운 (현재 진행 중)\n", age, age + 9, daewoonStr));
 			} else {
-				prompt.append(String.format("  %d~%d세: %s\n", age, age + 9, daewoonGapja));
+				prompt.append(String.format("  %d~%d세: %s 대운\n", age, age + 9, daewoonStr));
 			}
 		}
 		prompt.append("\n");
