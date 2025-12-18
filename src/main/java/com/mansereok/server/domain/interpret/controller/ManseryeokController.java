@@ -60,8 +60,11 @@ public class ManseryeokController {
 		@AuthenticationPrincipal String username
 	) {
 		log.info("만세력 해석 요청 username: " + username);
+
+		// 1. 상태 변경 (공통)
 		resultService.updateStatusToProcessing(request.getPaymentId());
 
+		// 2. 만세력 계산 (공통)
 		ManseryeokCalculationResponse manse = manseCalculationService.calculate(
 			new ManseryeokCalculationRequest(
 				request.getName(),
@@ -72,14 +75,25 @@ public class ManseryeokController {
 			)
 		);
 
-		manseInterpretationService.interpret(
-			request.getName(),
-			manse,
-			username,
-			subcategoryId,
-			request.getPaymentId(),
-			request.getSourceTitle()
-		);
+		// 🔥 [핵심 수정] 100번 이상이면 무조건 무료 로직(interpretFree)으로 보냄
+		if (subcategoryId >= 100) {
+			manseInterpretationService.interpretFree(
+				request.getName(),
+				manse,
+				username,
+				subcategoryId,
+				request.getPaymentId()
+			);
+		} else {
+			manseInterpretationService.interpret(
+				request.getName(),
+				manse,
+				username,
+				subcategoryId,
+				request.getPaymentId(),
+				request.getSourceTitle()
+			);
+		}
 
 		log.info("만세력 해석 요청 접수 완료 (비동기 처리 시작): paymentId={}", request.getPaymentId());
 		return ResponseEntity.accepted()
