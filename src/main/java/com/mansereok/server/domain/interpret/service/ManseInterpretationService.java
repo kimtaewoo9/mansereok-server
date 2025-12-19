@@ -433,7 +433,14 @@ public class ManseInterpretationService {
 			GptSajuResponse gptData = objectMapper.readValue(content, GptSajuResponse.class);
 
 			result.completeInterpretation(gptData.getFullAnalysis(), gptData.getSummary());
-			resultRepository.save(result);
+			Result savedResult = resultRepository.save(result);
+
+			try {
+				ogImageGenerationService.generateAndUploadOgImage(savedResult);
+				log.info("✅ 무료 사주 OG 이미지 생성 완료: resultId={}", savedResult.getId());
+			} catch (Exception e) {
+				log.error("⚠️ OG 이미지 생성 실패 (해석은 저장됨): resultId={}", savedResult.getId(), e);
+			}
 
 			log.info("✅ 무료 사주 해석 완료: resultId={}", result.getId());
 
@@ -539,12 +546,12 @@ public class ManseInterpretationService {
 		prompt.append(
 			"6. **(카드 UI용)** 가독성을 위해, 본문 내용 4~5 문장마다 **줄바꿈을 두 번(\\n\\n)** 하여 다음 카드로 넘어가는 것처럼 문단을 나눠주세요.\n");
 
-		prompt.append("--- [summary 말투 규칙 - 매우 중요!!!] ---\n");
+		prompt.append("--- [summary 말투 규칙 - 매우 중요] ---\n");
 		prompt.append("**summary는 '혜안' 페르소나를 완전히 무시하고, 아래 규칙만 100% 따라야 합니다.**\n\n");
 
 		prompt.append("🎯 **필수 규칙 (절대 엄수)**\n");
 		prompt.append(
-			"1. **페르소나 (가장 중요)**: 반말로, 핵심만 콕 집어서 재치있게(witty) 풀어서 설명해줘 말해줘. **딱딱한 정보 요약이 절대 아니야.**\n");
+			"1. **페르소나**: 당신은 다정하고 통찰력 있는 조언자입니다. **무조건 '해요체'(~해요, ~하네요)를 사용하여 정중하게** 요약해주세요. 반말은 절대 금지입니다.\n");
 		prompt.append("2. **주제 (총평)**: 이 사람 사주에 대한 **'핵심 총평'**을 해줘. 성격, 재능, 매력 같은 거 찝어서.\n");
 		prompt.append("3. **줄바꿈**: 한 문장이 끝나면 **반드시 줄바꿈(\\n)** 해주고, 마침표는 찍지 마.\n");
 		prompt.append("4. **분량**: 총 250자 이내.\n");
@@ -2083,7 +2090,7 @@ public class ManseInterpretationService {
 		prompt.append("- 본인이 미처 몰랐던 매력까지 끄집어내어 **자존감을 높여주는 '기분 좋은 칭찬'** 위주로 작성하세요.\n\n");
 
 		prompt.append("## 2. 나만의 플러팅 비법은 ?\n");
-		prompt.append("- 구체적 상황(카페, 술자리, 메시지 등)에서 어떻게 행동해야 매력이 극대화되는지 설명하세요.\n");
+		prompt.append("- 사주로 봤을때, 어떻게 행동해야 매력이 극대화되는지 설명하세요.\n");
 		prompt.append(
 			"- 예: \"말을 많이 하기보다 지그시 눈을 맞추는 게 효과적입니다.\", \"무심한 듯 챙겨주는 츤데레 전략이 잘 먹힙니다.\"\n\n");
 
