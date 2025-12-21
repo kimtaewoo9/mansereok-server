@@ -13,6 +13,7 @@ import com.mansereok.server.domain.notification.service.DiscordNotificationServi
 import com.mansereok.server.domain.notification.service.SlackNotificationService;
 import com.mansereok.server.domain.order.repository.OrderRepository;
 import com.mansereok.server.domain.payment.repository.PaymentRepository;
+import com.mansereok.server.domain.review.repository.ReviewRepository;
 import com.mansereok.server.domain.user.dto.request.ProfileUpdateRequestDto;
 import com.mansereok.server.domain.user.entity.Gender;
 import com.mansereok.server.domain.user.entity.SocialType;
@@ -20,6 +21,7 @@ import com.mansereok.server.domain.user.entity.User;
 import com.mansereok.server.domain.user.repository.RefreshTokenRepository;
 import com.mansereok.server.domain.user.repository.UserRepository;
 import com.mansereok.server.global.exception.DuplicateEmailException;
+import jakarta.persistence.EntityNotFoundException;
 import java.time.LocalDate;
 import java.util.Comparator;
 import java.util.List;
@@ -51,6 +53,7 @@ public class UserService {
 	private final SlackNotificationService slackNotificationService;
 
 	private final EmailService emailService;
+	private final ReviewRepository reviewRepository;
 
 	/**
 	 * 새로운 사용자를 등록한다.
@@ -109,13 +112,13 @@ public class UserService {
 
 	public User findByEmail(String email) {
 		return userRepository.findByEmail(email)
-			.orElse(null);
+			.orElseThrow(() -> new EntityNotFoundException("사용자를 찾을 수 없습니다: " + email));
 	}
 
 	public User findByUsername(String username) {
-		log.info("사용자 이메일: " + username);
+		log.info("사용자 ID: " + username);
 		return userRepository.findByUsername(username)
-			.orElseThrow(() -> new RuntimeException("사용자를 찾을 수 없습니다: " + username));
+			.orElseThrow(() -> new EntityNotFoundException("사용자를 찾을 수 없습니다: " + username));
 	}
 
 	public User getUserBySocialId(String socialId) {
@@ -328,6 +331,8 @@ public class UserService {
 		refreshTokenRepository.deleteByUser(user);       // 리프레시 토큰 삭제
 		resultRepository.deleteAllByUserId(userId);      // 사주 결과 삭제
 		compatibilityResultRepository.deleteAllByUserId(userId); // 궁합 결과 삭제
+
+		reviewRepository.deleteAllByUserId(userId);
 
 		// 3. 유저 삭제 (Hard Delete)
 		userRepository.delete(user);

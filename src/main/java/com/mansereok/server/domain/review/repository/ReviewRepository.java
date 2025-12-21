@@ -3,6 +3,7 @@ package com.mansereok.server.domain.review.repository;
 import com.mansereok.server.domain.review.entity.Review;
 import java.util.List;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
@@ -73,10 +74,19 @@ public interface ReviewRepository extends JpaRepository<Review, Long> {
 		nativeQuery = true
 	)
 	long countBySubCategory(@Param("subCategoryId") Long subCategoryId);
-	
+
 	@Query(
 		value = "SELECT count(*) FROM reviews WHERE is_deleted = false",
 		nativeQuery = true
 	)
 	long countAllReviews();
+
+	@Modifying
+	@Query(
+		value = "DELETE "
+			+ "FROM reviews "
+			+ "WHERE user_id = :userId",
+		nativeQuery = true
+	)
+	void deleteAllByUserId(@Param("userId") Long userId);
 }
