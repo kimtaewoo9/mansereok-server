@@ -578,4 +578,65 @@ public class EmailService {
 			</html>
 			""".formatted(amount, amount, discountCode);
 	}
+
+	@Async
+	public void sendPasswordResetEmail(String toEmail, String token) {
+		try {
+			// 프론트엔드의 비밀번호 변경 페이지 URL
+			String resetLink = "https://www.namedsaju.com/auth/reset-password?token=" + token;
+
+			String subject = "[NAMED] 비밀번호 재설정 안내";
+			String htmlBody = createPasswordResetEmailHtml(resetLink);
+
+			// 발신자 설정
+			String fromAddress = fromName + " <" + fromEmail + ">";
+
+			// 이메일 요청 객체 생성
+			SendEmailRequest request = SendEmailRequest.builder()
+				.destination(Destination.builder()
+					.toAddresses(toEmail)
+					.build())
+				.message(Message.builder()
+					.subject(Content.builder()
+						.charset("UTF-8")
+						.data(subject)
+						.build())
+					.body(Body.builder()
+						.html(Content.builder()
+							.charset("UTF-8")
+							.data(htmlBody)
+							.build())
+						.build())
+					.build())
+				.source(fromAddress)
+				.build();
+
+			// 전송
+			sesClient.sendEmail(request);
+			log.info("✅ Password-reset-email 전송 완료: {}", toEmail);
+
+		} catch (SesException e) {
+			log.error("❌ Password-reset-email 전송 실패: {}", e.awsErrorDetails().errorMessage(), e);
+		} catch (Exception e) {
+			log.error("❌ Password-reset-email 전송 중 알 수 없는 오류: {}", e.getMessage(), e);
+		}
+	}
+
+	private String createPasswordResetEmailHtml(String resetLink) {
+		return """
+			    <!DOCTYPE html>
+			    <html lang="ko">
+			    <body style="...">
+			        <p>[비밀번호 재설정]</p>
+			        <p>아래 버튼을 클릭하여 새로운 비밀번호를 설정해주세요.</p>
+			        <p>(링크는 15분간 유효합니다.)</p>
+			
+			        <a href="%s" style="padding: 12px 20px; background-color: #000; color: #fff; text-decoration: none; border-radius: 5px;">
+			            비밀번호 재설정하기
+			        </a>
+			
+			        </body>
+			    </html>
+			""".formatted(resetLink);
+	}
 }
