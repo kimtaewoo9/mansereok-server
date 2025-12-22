@@ -624,19 +624,65 @@ public class EmailService {
 
 	private String createPasswordResetEmailHtml(String resetLink) {
 		return """
-			    <!DOCTYPE html>
-			    <html lang="ko">
-			    <body style="...">
-			        <p>[비밀번호 재설정]</p>
-			        <p>아래 버튼을 클릭하여 새로운 비밀번호를 설정해주세요.</p>
-			        <p>(링크는 15분간 유효합니다.)</p>
+			<!DOCTYPE html>
+			<html lang="ko">
+			<head>
+			    <meta charset="UTF-8">
+			    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+			    <title>NAMED 비밀번호 재설정</title>
+			    <style type="text/css">
+			        :root { color-scheme: light only; supported-color-schemes: light; }
+			        * { color-scheme: light only !important; }
+			        body, table, td { background-color: #ffffff !important; }
+			        .email-container { background-color: #ffffff !important; }
+			    </style>
+			</head>
+			<body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Malgun Gothic', 'Apple SD Gothic Neo', sans-serif; background-color: #ffffff !important;">
 			
-			        <a href="%s" style="padding: 12px 20px; background-color: #000; color: #fff; text-decoration: none; border-radius: 5px;">
-			            비밀번호 재설정하기
-			        </a>
+			    <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%%" style="background-color: #ffffff !important;" class="email-container">
+			        <tr>
+			            <td align="center" style="padding: 40px 20px;">
 			
-			        </body>
-			    </html>
+			                <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="600" style="max-width: 600px; background-color: #ffffff !important;">
+			                    <tr>
+			                        <td style="padding: 40px 0; text-align: center;">
+			
+			                            <h1 style="margin: 0 0 30px 0; font-size: 28px; font-weight: 700; color: #000000 !important; letter-spacing: -0.5px;">
+			                                비밀번호 재설정
+			                            </h1>
+			
+			                            <p style="margin: 0 0 10px 0; font-size: 16px; line-height: 1.6; color: #333333 !important;">
+			                                안녕하세요. NAMED입니다.
+			                            </p>
+			                            <p style="margin: 0 0 40px 0; font-size: 16px; line-height: 1.6; color: #555555 !important;">
+			                                비밀번호 재설정 요청을 확인했습니다.<br>
+			                                아래 버튼을 클릭하여 새로운 비밀번호를 설정해주세요.
+			                            </p>
+			
+			                            <a href="%s" target="_blank" style="display: inline-block; padding: 16px 40px; background-color: #000000; color: #ffffff !important; text-decoration: none; border-radius: 6px; font-size: 16px; font-weight: 700; letter-spacing: -0.5px;">
+			                                비밀번호 변경하기
+			                            </a>
+			
+			                            <p style="margin: 40px 0 0 0; font-size: 13px; color: #888888 !important;">
+			                                * 이 링크는 15분 동안만 유효합니다.<br>
+			                                * 본인이 요청하지 않았다면 이 메일을 무시하셔도 됩니다.
+			                            </p>
+			
+			                            <div style="margin: 40px 0; border-top: 1px solid #E5E5E5;"></div>
+			
+			                            <p style="margin: 0 0 8px 0; font-size: 13px; line-height: 1.5; color: #999999 !important;">네임드사주 NAMED</p>
+			                            <p style="margin: 0; font-size: 13px; line-height: 1.5; color: #999999 !important;">문의: help@namedsaju.com</p>
+			
+			                        </td>
+			                    </tr>
+			                </table>
+			
+			            </td>
+			        </tr>
+			    </table>
+			
+			</body>
+			</html>
 			""".formatted(resetLink);
 	}
 }
