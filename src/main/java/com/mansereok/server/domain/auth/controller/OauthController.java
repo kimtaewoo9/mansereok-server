@@ -16,12 +16,14 @@ import com.mansereok.server.domain.auth.util.JwtUtil;
 import com.mansereok.server.domain.user.entity.RefreshToken;
 import com.mansereok.server.domain.user.entity.SocialType;
 import com.mansereok.server.domain.user.entity.User;
+import com.mansereok.server.domain.user.repository.UserRepository;
 import com.mansereok.server.domain.user.service.RefreshTokenService;
 import com.mansereok.server.domain.user.service.UserService;
 import com.mansereok.server.global.exception.DuplicateEmailException;
 import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletResponse;
 import java.util.Map;
+import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
@@ -40,6 +42,8 @@ public class OauthController {
 	private final KakaoService kakaoService;
 	private final NaverService naverService;
 	private final XService xService;
+
+	private final UserRepository userRepository;
 
 	// Access Token, Refresh Token
 	private final JwtUtil jwtUtil;
@@ -63,7 +67,8 @@ public class OauthController {
 
 		if (user == null) {
 			// 2. 구글로 가입 안 되어 있으면 → 이메일로 일반 가입 여부 확인
-			User existingUser = userService.findByEmail(googleProfileDto.getEmail());
+			User existingUser = userRepository.findByEmail(googleProfileDto.getEmail())
+				.orElse(null);
 
 			if (existingUser != null) {
 				// 이미 일반 회원가입으로 가입된 이메일
@@ -84,41 +89,7 @@ public class OauthController {
 			isNewUser = true;
 		}
 
-		// 회원가입이 되어있는 회원이라면, JWT 토큰 발급 + refresh token 발급
-		Map<String, Object> claims = Map.of(
-			"role", user.getRole().getAuthority(),
-			"email", user.getEmail(),
-			"userId", user.getId()
-		);
-
-		// username 에 socialId 가 들어있기 때문에 ..username 넘겨도 되고 socialId 넘겨도 됨 둘이 똑같음 .
-		String accessToken = jwtUtil.generateAccessToken(user.getSocialId(), claims);
-
-		RefreshToken refreshToken = refreshTokenService.generateRefreshToken(user);
-
-		// refresh 토큰을 쿠키에 저장
-		Cookie refreshCookie = new Cookie("REFRESH_TOKEN", refreshToken.getToken());
-		refreshCookie.setHttpOnly(true);
-		refreshCookie.setSecure(false);
-		refreshCookie.setPath("/");
-		refreshCookie.setMaxAge(7 * 24 * 60 * 60); // 7일
-		response.addCookie(refreshCookie); // response 에 담아서 전송 .
-
-		// 최종 응답 생성 .
-		Map<String, Object> responseBody = Map.of(
-			"accessToken", accessToken,
-			"type", "Bearer",
-			"isNewUser", isNewUser,
-			"user", Map.of(
-				"username", user.getUsername(),
-				"email", user.getEmail(),
-				"role", user.getRole().name()
-			)
-		);
-
-		// access token 이랑 refresh token 반환 .
-		// 프론트엔드에서는 이제 token을 꺼내서 localStorage에 저장하면 됨 .
-		return ResponseEntity.ok(responseBody);
+		return createTokenResponse(response, user, isNewUser);
 	}
 
 	@PostMapping("/member/kakao/doLogin")
@@ -146,8 +117,8 @@ public class OauthController {
 
 		if (user == null) {
 			// 2. 카카오로 가입 안 되어 있으면 → 이메일로 일반 가입 여부 확인
-			User existingUser = userService.findByEmail(
-				kakaoProfileDto.getKakao_account().getEmail());
+			User existingUser = userRepository
+				.findByEmail(kakaoProfileDto.getKakao_account().getEmail()).orElse(null);
 
 			if (existingUser != null) {
 				// 이미 일반 회원가입으로 가입된 이메일
@@ -169,38 +140,7 @@ public class OauthController {
 			isNewUser = true; // 신규 가입시 isNewUser 표시해주기.
 		}
 
-		// 회원가입 되어 있으면 access token + refresh token 발급 .
-		// access token
-		Map<String, Object> claims = Map.of(
-			"role", user.getRole().getAuthority(),
-			"email", user.getEmail(),
-			"userId", user.getId()
-		);
-		String accessToken = jwtUtil.generateAccessToken(user.getSocialId(), claims);
-
-		// refresh token
-		RefreshToken refreshToken = refreshTokenService.generateRefreshToken(user);
-		Cookie refreshCookie = new Cookie("REFRESH_TOKEN", refreshToken.getToken());
-		refreshCookie.setHttpOnly(true);
-		refreshCookie.setSecure(false);
-		refreshCookie.setPath("/");
-		refreshCookie.setMaxAge(7 * 24 * 60 * 60); // 7일
-		response.addCookie(refreshCookie); // response 에 담아서 전송 .
-
-		Map<String, Object> responseBody = Map.of(
-			"accessToken", accessToken,
-			"type", "Bearer",
-			"isNewUser", isNewUser,
-			"user", Map.of(
-				"username", user.getUsername(),
-				"email", user.getEmail(),
-				"role", user.getRole().name()
-			)
-		);
-
-		// access token 이랑 refresh token 반환 .
-		// 프론트엔드에서는 이제 token을 꺼내서 localStorage에 저장하면 됨 .
-		return ResponseEntity.ok(responseBody);
+		return createTokenResponse(response, user, isNewUser);
 	}
 
 	// 네이버 로그인은 .. 인가코드 뿐만 아니라 state 값도 보내야함 .
@@ -224,8 +164,8 @@ public class OauthController {
 
 		if (user == null) {
 			// 2. 네이버로 가입 안 되어 있으면 → 이메일로 일반 가입 여부 확인
-			User existingUser = userService.findByEmail(
-				naverProfileDto.getResponse().getEmail());
+			User existingUser = userRepository.findByEmail(naverProfileDto.getResponse().getEmail())
+				.orElse(null);
 
 			if (existingUser != null) {
 				// 이미 일반 회원가입으로 가입된 이메일
@@ -235,9 +175,11 @@ public class OauthController {
 				);
 			}
 
+			String randomUsername = UUID.randomUUID().toString().substring(0, 10).toUpperCase();
+
 			// 3. 신규 네이버 회원가입
 			user = userService.registerWithOauth(
-				naverProfileDto.getResponse().getId(),
+				randomUsername,
 				naverProfileDto.getResponse().getEmail(),
 				naverProfileDto.getResponse().getName(),
 				naverProfileDto.getResponse().getId(),
@@ -246,34 +188,8 @@ public class OauthController {
 
 			isNewUser = true;
 		}
-		// 회원가입 되어있으면, access token 이랑 refresh token 전달 .
-		Map<String, Object> claims = Map.of(
-			"role", user.getRole().getAuthority(),
-			"email", user.getEmail(),
-			"userId", user.getId()
-		);
-		String accessToken = jwtUtil.generateAccessToken(user.getSocialId(), claims);
 
-		RefreshToken refreshToken = refreshTokenService.generateRefreshToken(user);
-		Cookie refreshCookie = new Cookie("REFRESH_TOKEN", refreshToken.getToken());
-		refreshCookie.setHttpOnly(true);
-		refreshCookie.setSecure(false);
-		refreshCookie.setPath("/");
-		refreshCookie.setMaxAge(7 * 24 * 60 * 60); // 7일
-		response.addCookie(refreshCookie);
-
-		Map<String, Object> responseBody = Map.of(
-			"accessToken", accessToken,
-			"type", "Bearer",
-			"isNewUser", isNewUser,
-			"user", Map.of(
-				"username", user.getUsername(),
-				"email", user.getEmail(),
-				"role", user.getRole().name()
-			)
-		);
-
-		return ResponseEntity.ok(responseBody);
+		return createTokenResponse(response, user, isNewUser);
 	}
 
 	@PostMapping("/member/X/doLogin")
@@ -299,7 +215,8 @@ public class OauthController {
 			// ⭐ 추가: 이메일 중복 검사 로직
 			// X는 이메일이 없을 수도 있으므로, 이메일이 있는 경우에만 체크
 			if (email != null && !email.isBlank()) {
-				User existingUser = userService.findByEmail(email);
+				User existingUser = userRepository.findByEmail(email).orElse(null);
+
 				if (existingUser != null) {
 					throw new DuplicateEmailException(
 						"해당 이메일은 이미 일반 회원가입으로 등록되어 있습니다. " +
@@ -321,22 +238,31 @@ public class OauthController {
 			isNewUser = true;
 		}
 
-		// access token + refresh 토큰 전달.
+		return createTokenResponse(response, user, isNewUser);
+	}
+
+	private ResponseEntity<?> createTokenResponse(HttpServletResponse response, User user,
+		boolean isNewUser) {
 		Map<String, Object> claims = Map.of(
 			"role", user.getRole().getAuthority(),
 			"email", user.getEmail() != null ? user.getEmail() : "",
 			"userId", user.getId()
 		);
-		String accessToken = jwtUtil.generateAccessToken(user.getSocialId(), claims);
+
+		// ⭐ user.getUsername()을 사용하여 토큰 생성 (네이버의 경우 랜덤 생성된 ID가 사용됨)
+		String accessToken = jwtUtil.generateAccessToken(user.getUsername(), claims);
 
 		RefreshToken refreshToken = refreshTokenService.generateRefreshToken(user);
+
+		// refresh 토큰을 쿠키에 저장
 		Cookie refreshCookie = new Cookie("REFRESH_TOKEN", refreshToken.getToken());
 		refreshCookie.setHttpOnly(true);
 		refreshCookie.setSecure(false);
 		refreshCookie.setPath("/");
 		refreshCookie.setMaxAge(7 * 24 * 60 * 60); // 7일
-		response.addCookie(refreshCookie);
+		response.addCookie(refreshCookie); // response 에 담아서 전송 .
 
+		// 최종 응답 생성 .
 		Map<String, Object> responseBody = Map.of(
 			"accessToken", accessToken,
 			"type", "Bearer",
