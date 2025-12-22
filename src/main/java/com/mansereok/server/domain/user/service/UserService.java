@@ -116,7 +116,7 @@ public class UserService {
 
 	public User findByEmail(String email) {
 		return userRepository.findByEmail(email)
-			.orElseThrow(() -> new EntityNotFoundException("사용자를 찾을 수 없습니다: " + email));
+			.orElse(null);
 	}
 
 	public User findByUsername(String username) {

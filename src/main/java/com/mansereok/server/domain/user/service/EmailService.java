@@ -21,7 +21,7 @@ public class EmailService {
 
 	private final SesClient sesClient;
 
-	@Value("${aws.ses.from-email:welcome@namedsaju.com}")
+	@Value("${aws.ses.from-email:help@namedsaju.com}")
 	private String fromEmail;
 
 	@Value("${aws.ses.from-name:네임드사주}")
@@ -57,7 +57,7 @@ public class EmailService {
 			String htmlBody = createWelcomeEmailHtml();
 
 			// 발신자 이름 + 이메일 형식으로 변경
-			String fromAddress = fromName + " <" + fromEmail + ">";
+			String fromAddress = "네임드사주 <help@namedsaju.com>";
 
 			SendEmailRequest request = SendEmailRequest.builder()
 				.destination(Destination.builder()
