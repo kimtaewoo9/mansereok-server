@@ -1,5 +1,7 @@
 package com.mansereok.server.domain.user.service;
 
+import com.mansereok.server.domain.auth.PasswordResetTokenRepository;
+import com.mansereok.server.domain.auth.entity.PasswordResetToken;
 import com.mansereok.server.domain.interpret.dto.response.CompatibilityPageResponse;
 import com.mansereok.server.domain.interpret.dto.response.InterpretationPageResponse;
 import com.mansereok.server.domain.interpret.dto.response.InterpretationResultResponse;
@@ -46,6 +48,8 @@ public class UserService {
 
 	private final OrderRepository orderRepository;
 	private final PaymentRepository paymentRepository;
+
+	private final PasswordResetTokenRepository passwordResetTokenRepository;
 
 	private final PasswordEncoder passwordEncoder;
 
@@ -346,5 +350,42 @@ public class UserService {
 		} catch (Exception e) {
 			log.warn("탈퇴 알림 전송 실패", e);
 		}
+	}
+
+	@Transactional
+	public void requestPasswordReset(String email) {
+		User user = userRepository.findByEmail(email)
+			.orElseThrow(() -> new EntityNotFoundException("가입되지 않은 이메일입니다."));
+
+		if (user.getSocialType() != null) {
+			throw new IllegalArgumentException("소셜 로그인 사용자는 비밀번호를 재설정할 수 없습니다.");
+		}
+
+		// 기존에 발급된 토큰이 있다면 삭제 (한 사람이 여러 번 요청했을 때 처리)
+		passwordResetTokenRepository.deleteByUserId(user.getId());
+
+		// 새 토큰 생성 및 저장
+		PasswordResetToken token = new PasswordResetToken(user);
+		passwordResetTokenRepository.save(token);
+
+		// 이메일 발송
+		emailService.sendPasswordResetEmail(user.getEmail(), token.getToken());
+	}
+
+	@Transactional
+	public void resetPassword(String token, String newPassword) {
+		PasswordResetToken resetToken = passwordResetTokenRepository.findByToken(token)
+			.orElseThrow(() -> new IllegalArgumentException("유효하지 않은 토큰입니다."));
+
+		if (resetToken.isExpired()) {
+			passwordResetTokenRepository.delete(resetToken); // 만료된 토큰 삭제
+			throw new IllegalArgumentException("만료된 토큰입니다. 다시 요청해주세요.");
+		}
+
+		User user = resetToken.getUser();
+		user.setPassword(passwordEncoder.encode(newPassword)); // 비밀번호 암호화 후 저장
+
+		// 사용된 토큰 삭제
+		passwordResetTokenRepository.delete(resetToken);
 	}
 }

@@ -1,6 +1,8 @@
 package com.mansereok.server.domain.auth.controller;
 
 import com.mansereok.server.domain.auth.dto.request.LoginRequest;
+import com.mansereok.server.domain.auth.dto.request.PasswordResetConfirmDto;
+import com.mansereok.server.domain.auth.dto.request.PasswordResetRequestDto;
 import com.mansereok.server.domain.auth.dto.request.RegisterRequest;
 import com.mansereok.server.domain.auth.dto.response.TokenRefreshResponse;
 import com.mansereok.server.domain.auth.dto.response.TokenRefreshResponse.UserDto;
@@ -237,5 +239,17 @@ public class AuthController {
 		}
 		log.error("[AuthController.getCsrfToken] csrf token is null");
 		return ResponseEntity.status(401).build();
+	}
+
+	@PostMapping("/api/auth/password-reset/request")
+	public ResponseEntity<?> requestPasswordReset(@RequestBody PasswordResetRequestDto requestDto) {
+		userService.requestPasswordReset(requestDto.email());
+		return ResponseEntity.ok(Map.of("message", "비밀번호 재설정 메일이 전송되었습니다."));
+	}
+
+	@PostMapping("/api/auth/password-reset/confirm")
+	public ResponseEntity<?> confirmPasswordReset(@RequestBody PasswordResetConfirmDto confirmDto) {
+		userService.resetPassword(confirmDto.token(), confirmDto.newPassword());
+		return ResponseEntity.ok(Map.of("message", "비밀번호가 성공적으로 변경되었습니다."));
 	}
 }

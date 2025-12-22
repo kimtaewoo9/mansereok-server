@@ -578,4 +578,111 @@ public class EmailService {
 			</html>
 			""".formatted(amount, amount, discountCode);
 	}
+
+	@Async
+	public void sendPasswordResetEmail(String toEmail, String token) {
+		try {
+			// 프론트엔드의 비밀번호 변경 페이지 URL
+			String resetLink = "https://www.namedsaju.com/auth/reset-password?token=" + token;
+
+			String subject = "[NAMED] 비밀번호 재설정 안내";
+			String htmlBody = createPasswordResetEmailHtml(resetLink);
+
+			// 발신자 설정
+			String fromAddress = fromName + " <" + fromEmail + ">";
+
+			// 이메일 요청 객체 생성
+			SendEmailRequest request = SendEmailRequest.builder()
+				.destination(Destination.builder()
+					.toAddresses(toEmail)
+					.build())
+				.message(Message.builder()
+					.subject(Content.builder()
+						.charset("UTF-8")
+						.data(subject)
+						.build())
+					.body(Body.builder()
+						.html(Content.builder()
+							.charset("UTF-8")
+							.data(htmlBody)
+							.build())
+						.build())
+					.build())
+				.source(fromAddress)
+				.build();
+
+			// 전송
+			sesClient.sendEmail(request);
+			log.info("✅ Password-reset-email 전송 완료: {}", toEmail);
+
+		} catch (SesException e) {
+			log.error("❌ Password-reset-email 전송 실패: {}", e.awsErrorDetails().errorMessage(), e);
+		} catch (Exception e) {
+			log.error("❌ Password-reset-email 전송 중 알 수 없는 오류: {}", e.getMessage(), e);
+		}
+	}
+
+	private String createPasswordResetEmailHtml(String resetLink) {
+		return """
+			<!DOCTYPE html>
+			<html lang="ko">
+			<head>
+			    <meta charset="UTF-8">
+			    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+			    <title>NAMED 비밀번호 재설정</title>
+			    <style type="text/css">
+			        :root { color-scheme: light only; supported-color-schemes: light; }
+			        * { color-scheme: light only !important; }
+			        body, table, td { background-color: #ffffff !important; }
+			        .email-container { background-color: #ffffff !important; }
+			    </style>
+			</head>
+			<body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Malgun Gothic', 'Apple SD Gothic Neo', sans-serif; background-color: #ffffff !important;">
+			
+			    <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%%" style="background-color: #ffffff !important;" class="email-container">
+			        <tr>
+			            <td align="center" style="padding: 40px 20px;">
+			
+			                <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="600" style="max-width: 600px; background-color: #ffffff !important;">
+			                    <tr>
+			                        <td style="padding: 40px 0; text-align: center;">
+			
+			                            <h1 style="margin: 0 0 30px 0; font-size: 28px; font-weight: 700; color: #000000 !important; letter-spacing: -0.5px;">
+			                                비밀번호 재설정
+			                            </h1>
+			
+			                            <p style="margin: 0 0 10px 0; font-size: 16px; line-height: 1.6; color: #333333 !important;">
+			                                안녕하세요. NAMED입니다.
+			                            </p>
+			                            <p style="margin: 0 0 40px 0; font-size: 16px; line-height: 1.6; color: #555555 !important;">
+			                                비밀번호 재설정 요청을 확인했습니다.<br>
+			                                아래 버튼을 클릭하여 새로운 비밀번호를 설정해주세요.
+			                            </p>
+			
+			                            <a href="%s" target="_blank" style="display: inline-block; padding: 16px 40px; background-color: #000000; color: #ffffff !important; text-decoration: none; border-radius: 6px; font-size: 16px; font-weight: 700; letter-spacing: -0.5px;">
+			                                비밀번호 변경하기
+			                            </a>
+			
+			                            <p style="margin: 40px 0 0 0; font-size: 13px; color: #888888 !important;">
+			                                * 이 링크는 15분 동안만 유효합니다.<br>
+			                                * 본인이 요청하지 않았다면 이 메일을 무시하셔도 됩니다.
+			                            </p>
+			
+			                            <div style="margin: 40px 0; border-top: 1px solid #E5E5E5;"></div>
+			
+			                            <p style="margin: 0 0 8px 0; font-size: 13px; line-height: 1.5; color: #999999 !important;">네임드사주 NAMED</p>
+			                            <p style="margin: 0; font-size: 13px; line-height: 1.5; color: #999999 !important;">문의: help@namedsaju.com</p>
+			
+			                        </td>
+			                    </tr>
+			                </table>
+			
+			            </td>
+			        </tr>
+			    </table>
+			
+			</body>
+			</html>
+			""".formatted(resetLink);
+	}
 }
