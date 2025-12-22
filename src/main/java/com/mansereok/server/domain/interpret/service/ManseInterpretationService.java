@@ -2207,9 +2207,6 @@ public class ManseInterpretationService {
 		prompt.append("- 재물 운용 시 주의사항\n");
 		prompt.append("- 투자나 소비 관련 구체적 조언\n");
 		prompt.append("- 금전 관련 기회 또는 위험 요소\n\n");
-		prompt.append("**[예시]**: \"자신의 입지가 강화되는 날이니 금전의 수익도 있고 나로 인하여 주변 사람까지 덕을 보는 날입니다. ");
-		prompt.append("좋은 하루이군요. 크게 욕심만 내지 않는다면 재물의 운용에 있어서 손실로 이어지기 힘든 하루입니다. ");
-		prompt.append("공연한 욕심으로 팔자에 없는 재물을 탐하고 이로 인해서 좋은 운을 허비하는 일이 없도록 하시기 바랍니다.\"\n\n");
 
 		prompt.append("## 3. 애정/인간관계운 (150~200자)\n");
 		prompt.append("**[작성 방식]**: 아래 예시처럼 자연스러운 문장으로 이어서 작성하세요.\n");
@@ -2217,9 +2214,6 @@ public class ManseInterpretationService {
 		prompt.append("- 커플이라면: 오늘의 관계 분위기, 데이트 추천 여부\n");
 		prompt.append("- 인간관계 전반: 주변 사람들과의 교류, 갈등 가능성\n");
 		prompt.append("- 구체적인 행동 지침 (적극적으로 나가라 vs 차분히 기다려라)\n\n");
-		prompt.append("**[예시]**: \"만남을 갖기 위해 노력하세요. 인연이 좋은 날이므로 원하는 이성을 만날 수 있습니다. ");
-		prompt.append("연인이 있는 분들은 연인과 만남을 가지세요. 선물을 받거나 해야 하는 날이 될 것입니다. ");
-		prompt.append("새롭게 이성을 찾는 분들도 오늘을 활용하면 마음에 드는 상대를 만날 수 있는 하루입니다.\"\n\n");
 
 		prompt.append("## 4. 일/학업/성취운 (150~200자)\n");
 		prompt.append("**[작성 방식]**: 아래 예시처럼 자연스러운 문장으로 이어서 작성하세요.\n");
@@ -2227,9 +2221,6 @@ public class ManseInterpretationService {
 		prompt.append("- 중요한 결정이나 발표가 있다면 결과 전망\n");
 		prompt.append("- 상사/동료/선생님과의 관계\n");
 		prompt.append("- 새로운 프로젝트 시작 또는 마무리 적기 여부\n\n");
-		prompt.append("**[예시]**: \"좋은 소식을 연이어 접하게 되는 날입니다. 내가 진행한 일이 있다면 좋은 결과가 생길 것이며 ");
-		prompt.append("새롭게 제안을 해도 좋은 반응이 있을 것입니다. 새로운 만남이 있다면 좋은 인연이 될 것이니 ");
-		prompt.append("활동을 많이 하는 사람은 외부와 접촉 기회를 많이 갖는 것이 좋습니다.\"\n\n");
 
 		prompt.append("## 5. 건강/컨디션 (100~150자)\n");
 		prompt.append("- 오늘의 전반적인 컨디션\n");
