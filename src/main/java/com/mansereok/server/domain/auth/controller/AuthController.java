@@ -53,8 +53,6 @@ public class AuthController {
 		@Valid @RequestBody LoginRequest loginRequest,
 		HttpServletResponse response) {
 
-		// 👈 try-catch 블록 완전 제거!
-
 		// 1. 인증 시도 (실패 시 BadCredentialsException 또는 AuthenticationException 발생)
 		Authentication authentication = authenticationManager.authenticate(
 			new UsernamePasswordAuthenticationToken(
