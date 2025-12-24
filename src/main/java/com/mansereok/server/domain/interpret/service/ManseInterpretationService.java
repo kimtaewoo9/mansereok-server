@@ -2186,9 +2186,12 @@ public class ManseInterpretationService {
 		// ===== 7. 필수 작성 지침 (강력한 제약 조건) =====
 		prompt.append("### ⚠️ [필수 작성 지침 - 절대 엄수] ###\n");
 
-		prompt.append("**[1] 한자(漢字) 및 전문 용어 절대 금지**\n");
+		prompt.append("**[1] 한자(漢字) 및 전문 용어 및 미신적 개운법 절대 금지**\n");
 		prompt.append("- **결과물에 한자(甲, 乙, 寅, 卯, 沖, 合 등)가 단 한 글자라도 포함되면 안 됩니다.**\n");
 		prompt.append("- '충(沖)하여' → '변화의 바람이 불어와서'\n\n");
+		prompt.append(
+			"- **색깔/방향/숫자 추천 금지**: '행운의 색은 파랑', '동쪽으로 가라', '숫자 7' 같은 **유치한 미신적 조언을 절대 하지 마세요.**\n");
+		prompt.append("- 대신 **'마음가짐', '대화 태도', '업무 방식'** 등 실질적인 행동 팁을 주세요.\n\n");
 
 		prompt.append("**[2] 술술 읽히는 '스토리텔링' 문체**\n");
 		prompt.append("- '~입니다.', '~합니다.' 로 끝나는 딱딱한 보고서 말투를 피하세요.\n");
@@ -2196,8 +2199,8 @@ public class ManseInterpretationService {
 		prompt.append("- 문장이 뚝뚝 끊기지 않고 물 흐르듯 이어지게 작성하세요. (접속사 활용)\n\n");
 
 		prompt.append("**[3] 분량 및 가독성**\n");
-		prompt.append("- 총운: **250~300자** (충분한 길이로 서사 부여)\n");
-		prompt.append("- 각 분야별 운세: **150~200자**\n");
+		prompt.append("- 총운: **300자** (충분한 길이로 서사 부여)\n");
+		prompt.append("- 각 분야별 운세: **200자~250자**\n");
 		prompt.append("- **목록 기호(-, *, 1.) 사용 금지**: 줄글로 자연스럽게 이어쓰세요.\n");
 		prompt.append("- 문단은 6~7줄 넘지 않게 적절히 끊어주세요.\n\n");
 
