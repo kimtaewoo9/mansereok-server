@@ -2139,7 +2139,7 @@ public class ManseInterpretationService {
 
 		prompt.append("## 이 중 가장 치명적인 궁합은? : [TOP 3 중 1명 선택]\n");
 		prompt.append(
-			"- **이유**: (사주적 근거를 들어 설명. 예: 불과 물의 상극이 강한 끌림을 만들어내고, 서로에게 없는 성향을 자극해요. 당신의 차가운 금(金) 기운을 이 사람의 뜨거운 화(火) 기운이 녹여주는 그림입니다.)\n");
+			"- **이유**: (사주적 근거를 들어 설명하되, 쉽고 재미있게 풀어서 설명)\n");
 
 		appendSajuJsonResponseFormat(prompt, name);
 		return prompt.toString();
@@ -2170,7 +2170,6 @@ public class ManseInterpretationService {
 		// ===== 4. 사용자 정보 주입 =====
 		prompt.append("### 1. 분석 대상자 정보 ###\n");
 		appendPersonDetailInfo(prompt, name, response);
-		appendKeywords(prompt, response);
 
 		// ===== 5. 오늘 날짜 및 일진 정보 =====
 		prompt.append("\n### 2. 오늘의 천시(天時) 정보 ###\n");
@@ -2210,16 +2209,16 @@ public class ManseInterpretationService {
 		prompt.append("- 오늘 사용자에게 가장 필요한 마음가짐이나 태도를 따뜻하게 조언해주세요.\n");
 		prompt.append("- 기분 좋은 예감이나 주의할 점을 자연스럽게 녹여내세요.\n\n");
 
-		prompt.append("## 2. 금전/재물운 (150~200자)\n");
+		prompt.append("## 2. 금전운 (150~200자)\n");
 		prompt.append(
 			"- **[작성 가이드]**: 지갑이 두둑해질지, 아니면 지출을 조심해야 할지 구체적인 상황(쇼핑, 투자, 용돈 등)을 예로 들어 설명하세요.\n");
 		prompt.append("- 딱딱한 조언보다는 \"오늘은 커피 한 잔 값이라도 아끼는 게 좋겠어요\" 같은 가벼운 조언이 좋습니다.\n\n");
 
-		prompt.append("## 3. 애정/인간관계운 (150~200자)\n");
+		prompt.append("## 3. 애정운 (150~200자)\n");
 		prompt.append("- **[작성 가이드]**: 오늘 나의 매력 지수는 어떤지, 사람들과의 대화 분위기는 어떨지 설명하세요.\n");
 		prompt.append("- 솔로라면 설레는 만남의 가능성을, 커플이라면 데이트 팁을, 아니라면 친구/동료와의 케미를 이야기해주세요.\n\n");
 
-		prompt.append("## 4. 일/학업/성취운 (150~200자)\n");
+		prompt.append("## 4. 성취운 (150~200자)\n");
 		prompt.append("- **[작성 가이드]**: 집중력이 좋은 날인지, 아니면 잠시 쉬어가야 할 날인지 알려주세요.\n");
 		prompt.append("- 중요한 발표나 결정을 앞두고 있다면 어떻게 대처해야 할지 실질적인 팁을 주세요.\n\n");
 
