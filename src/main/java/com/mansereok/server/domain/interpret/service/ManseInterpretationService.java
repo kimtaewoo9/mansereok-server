@@ -2102,7 +2102,7 @@ public class ManseInterpretationService {
 		return prompt.toString();
 	}
 
-	// 104
+	// 104. 사떡 궁합
 	private String createChemistryMatchPrompt(String name, ManseryeokCalculationResponse response) {
 		StringBuilder prompt = new StringBuilder();
 
@@ -2139,7 +2139,7 @@ public class ManseInterpretationService {
 
 		prompt.append("## 이 중 가장 치명적인 궁합은? : [TOP 3 중 1명 선택]\n");
 		prompt.append(
-			"- **이유**: (사주적 근거를 들어 설명하되, 쉽고 재밌게 풀어서 설명해주세요.)\n");
+			"- **이유**: (사주적 근거를 들어 설명하되, 쉽고 재미있게 풀어서 설명)\n");
 
 		appendSajuJsonResponseFormat(prompt, name);
 		return prompt.toString();
@@ -2158,101 +2158,71 @@ public class ManseInterpretationService {
 		String todayInfo = String.format("%s %s", formattedDate, dayOfWeek);
 
 		// ===== 2. 오늘의 일진(日辰) 계산 =====
-		String todayDayPillar = calculateTodayDayPillar(today); // 예: "갑인(甲寅)"
+		String todayDayPillar = calculateTodayDayPillar(today);
 
-		// ===== 3. 역할 정의 =====
+		// ===== 3. 역할 정의 (스토리텔러로 강화) =====
 		prompt.append("### 0. 시스템 역할 정의 ###\n");
-		prompt.append("당신은 하루의 기운을 예측하는 '일일 운세 전문가' 혜안(慧眼)입니다.\n");
-		prompt.append("사용자의 사주 원국과 오늘의 일진을 비교 분석하여, 실질적이고 구체적인 하루 운세를 제공하세요.\n");
-		prompt.append("말투는 다정하고 명쾌한 '해요체'를 사용하세요.\n\n");
+		prompt.append("당신은 하루의 흐름을 읽어주는 따뜻한 '인생 날씨 예보관' 혜안(慧眼)입니다.\n");
+		prompt.append("단순한 운세 분석을 넘어, 사용자가 오늘 하루를 기분 좋게 시작할 수 있도록 **몰입감 있는 에세이 스타일**로 글을 작성하세요.\n");
+		prompt.append(
+			"말투는 다정하고 명쾌한 '해요체'를 사용하며, **한자나 어려운 사주 용어는 가급적 사용하지 않습니다. 꼭 필요한 경우 사용 가능**\n\n");
 
 		// ===== 4. 사용자 정보 주입 =====
 		prompt.append("### 1. 분석 대상자 정보 ###\n");
 		appendPersonDetailInfo(prompt, name, response);
-		appendKeywords(prompt, response);
 
 		// ===== 5. 오늘 날짜 및 일진 정보 =====
 		prompt.append("\n### 2. 오늘의 천시(天時) 정보 ###\n");
 		prompt.append(String.format("**날짜**: %s\n", todayInfo));
-		prompt.append(String.format("**오늘의 일진**: %s\n", todayDayPillar));
-		prompt.append("※ 이 일진이 사용자의 사주와 만났을 때의 화학작용을 분석하세요.\n\n");
+		prompt.append(String.format("**오늘의 일진(Input)**: %s\n", todayDayPillar));
+		prompt.append(
+			"※ 주의: 위 '오늘의 일진'에 포함된 한자(甲, 寅 등)는 분석에만 참고하고, **결과물에는 절대로 한자를 적지 마세요.**\n\n");
 
 		// ===== 6. 분석 요청 =====
-		prompt.append("### 3. [오늘의 운세 분석] 요청 ###\n");
-		prompt.append(String.format("오늘(%s)의 일진 '%s'가 %s님의 사주와 만났을 때 일어나는 일을 아래 항목별로 분석해주세요.\n\n",
-			todayInfo, todayDayPillar, name));
+		prompt.append("### 3. [오늘의 운세 스토리텔링] 요청 ###\n");
+		prompt.append(String.format("오늘(%s)의 기운이 %s님의 하루에 미칠 영향을, 마치 옆에서 조언해주듯 자연스럽게 풀어내주세요.\n\n",
+			todayInfo, name));
 
-		// ===== 7. 필수 작성 지침 =====
-		prompt.append("### ⚠️ [필수 작성 지침] ###\n");
+		// ===== 7. 필수 작성 지침 (강력한 제약 조건) =====
+		prompt.append("### ⚠️ [필수 작성 지침 - 절대 엄수] ###\n");
 
-		prompt.append("**[1] 전문 용어 사용 절대 금지**\n");
-		prompt.append(
-			"- 금지 용어: 일간, 천간, 지지, 십성, 육친, 상생, 상극, 충, 형, 합, 공망, 역마살, 신강, 신약, 대운, 세운, 용신 등\n");
-		prompt.append("  * '일간 임수' → 그냥 생략하거나 '당신의 타고난 기질'\n");
-		prompt.append("  * '상생 관계' → '서로 도와주는 기운', '궁합이 좋은 흐름'\n");
-		prompt.append("  * '충' → '부딪히는 에너지', '긴장감'\n");
-		prompt.append("  * '역마살' → '이동과 변화의 기운'\n");
-		prompt.append("  * '신강' → '주관이 뚜렷한 성향'\n");
-		prompt.append("  * '대운' → '인생의 10년 주기 흐름'\n");
-		prompt.append("  * '용신' → '당신에게 필요한 에너지'\n\n");
+		prompt.append("**[1] 한자(漢字) 및 전문 용어 절대 금지**\n");
+		prompt.append("- **결과물에 한자(甲, 乙, 寅, 卯, 沖, 合 등)가 단 한 글자라도 포함되면 안 됩니다.**\n");
+		prompt.append("- '충(沖)하여' → '변화의 바람이 불어와서'\n\n");
 
-		prompt.append("**[2] 일상 언어로 자연스럽게**\n");
-		prompt.append("- 사주 분석 근거는 내부적으로만 활용하고, 결과만 쉬운 말로 전달\n");
-		prompt.append("- 예: '오늘은 창의력이 발휘되는 날입니다' (○)\n");
-		prompt.append("- 예: '일진이 일간과 상생하여 식상이 활성화됩니다' (✗)\n\n");
+		prompt.append("**[2] 술술 읽히는 '스토리텔링' 문체**\n");
+		prompt.append("- '~입니다.', '~합니다.' 로 끝나는 딱딱한 보고서 말투를 피하세요.\n");
+		prompt.append("- '~하겠네요.', '~할 수도 있어요.', '~한 날이에요.' 등 부드러운 구어체를 섞어 쓰세요.\n");
+		prompt.append("- 문장이 뚝뚝 끊기지 않고 물 흐르듯 이어지게 작성하세요. (접속사 활용)\n\n");
 
-		prompt.append("**[3] 구체적이고 실용적인 조언**\n");
-		prompt.append("- 추상적 표현 금지: '좋은 하루', '행운의 날' 같은 뻔한 말 대신 구체적 상황 묘사\n");
-		prompt.append("- 실천 가능한 조언: '~하면 좋아요', '~는 피하세요' 형태로 명확하게\n\n");
+		prompt.append("**[3] 분량 및 가독성**\n");
+		prompt.append("- 총운: **250~300자** (충분한 길이로 서사 부여)\n");
+		prompt.append("- 각 분야별 운세: **150~200자**\n");
+		prompt.append("- **목록 기호(-, *, 1.) 사용 금지**: 줄글로 자연스럽게 이어쓰세요.\n");
+		prompt.append("- 문단은 6~7줄 넘지 않게 적절히 끊어주세요.\n\n");
 
-		prompt.append("**[4] 분량 및 문체**\n");
-		prompt.append("- 총운: **250~300자** 분량\n");
-		prompt.append("- 각 분야별 운세: **150~200자** 분량\n");
-		prompt.append("- 자연스럽게 이어지는 문장 (목록 기호 금지)\n");
-		prompt.append("- 문단은 6~7줄 넘지 않게 적절히 끊기\n\n");
-
-		// ===== 8. 작성 목차 =====
+		// ===== 8. 작성 목차 (기존 구조 유지하되 가이드 강화) =====
 		prompt.append("--- [작성할 내용] ---\n\n");
 
 		prompt.append("## 1. 오늘의 총운 (점수: O/100)\n");
-		prompt.append("- **점수 산정 기준**: 오늘 일진과 사용자 사주의 오행 조화도, 합충 여부, 용신 부합도 등을 종합 평가.\n");
-		prompt.append("- **총운 설명** (250~300자):\n");
-		prompt.append("  * 오늘의 일진이 사용자에게 미치는 전반적 영향\n");
-		prompt.append("  * 하루를 잘 보내기 위한 핵심 마음가짐과 행동 지침\n");
-		prompt.append("  * 오늘 특별히 주의할 점 또는 활용할 기회\n");
-		prompt.append("  * 예시처럼 구체적이고 따뜻한 조언 형태로 작성\n\n");
+		prompt.append("- **[작성 가이드]**: 오늘 하루의 전반적인 '분위기'와 '날씨'를 묘사하듯 시작하세요.\n");
+		prompt.append("- 오늘 사용자에게 가장 필요한 마음가짐이나 태도를 따뜻하게 조언해주세요.\n");
+		prompt.append("- 기분 좋은 예감이나 주의할 점을 자연스럽게 녹여내세요.\n\n");
 
-		prompt.append("## 2. 금전/재물운 (150~200자)\n");
-		prompt.append("**[작성 방식]**: 아래 예시처럼 자연스러운 문장으로 이어서 작성하세요. 점수는 표기하지 마세요.\n");
-		prompt.append("- 오늘의 금전 흐름 (수입/지출 가능성)\n");
-		prompt.append("- 재물 운용 시 주의사항\n");
-		prompt.append("- 투자나 소비 관련 구체적 조언\n");
-		prompt.append("- 금전 관련 기회 또는 위험 요소\n\n");
-		prompt.append("**[예시]**: \"자신의 입지가 강화되는 날이니 금전의 수익도 있고 나로 인하여 주변 사람까지 덕을 보는 날입니다. ");
-		prompt.append("좋은 하루이군요. 크게 욕심만 내지 않는다면 재물의 운용에 있어서 손실로 이어지기 힘든 하루입니다. ");
-		prompt.append("공연한 욕심으로 팔자에 없는 재물을 탐하고 이로 인해서 좋은 운을 허비하는 일이 없도록 하시기 바랍니다.\"\n\n");
+		prompt.append("## 2. 금전운 (150~200자)\n");
+		prompt.append(
+			"- **[작성 가이드]**: 지갑이 두둑해질지, 아니면 지출을 조심해야 할지 구체적인 상황(쇼핑, 투자, 용돈 등)을 예로 들어 설명하세요.\n");
+		prompt.append("- 딱딱한 조언보다는 \"오늘은 커피 한 잔 값이라도 아끼는 게 좋겠어요\" 같은 가벼운 조언이 좋습니다.\n\n");
 
-		prompt.append("## 3. 애정/인간관계운 (150~200자)\n");
-		prompt.append("**[작성 방식]**: 아래 예시처럼 자연스러운 문장으로 이어서 작성하세요. 점수는 표기하지 마세요.\n");
-		prompt.append("- 솔로라면: 새로운 만남 가능성, 어떤 상황에서 인연이 올지\n");
-		prompt.append("- 커플이라면: 오늘의 관계 분위기, 데이트 추천 여부\n");
-		prompt.append("- 인간관계 전반: 주변 사람들과의 교류, 갈등 가능성\n");
-		prompt.append("- 구체적인 행동 지침 (적극적으로 나가라 vs 차분히 기다려라)\n\n");
-		prompt.append("**[예시]**: \"만남을 갖기 위해 노력하세요. 인연이 좋은 날이므로 원하는 이성을 만날 수 있습니다. ");
-		prompt.append("연인이 있는 분들은 연인과 만남을 가지세요. 선물을 받거나 해야 하는 날이 될 것입니다. ");
-		prompt.append("새롭게 이성을 찾는 분들도 오늘을 활용하면 마음에 드는 상대를 만날 수 있는 하루입니다.\"\n\n");
+		prompt.append("## 3. 애정운 (150~200자)\n");
+		prompt.append("- **[작성 가이드]**: 오늘 나의 매력 지수는 어떤지, 사람들과의 대화 분위기는 어떨지 설명하세요.\n");
+		prompt.append("- 솔로라면 설레는 만남의 가능성을, 커플이라면 데이트 팁을, 아니라면 친구/동료와의 케미를 이야기해주세요.\n\n");
 
-		prompt.append("## 4. 일/학업/성취운 (150~200자)\n");
-		prompt.append("**[작성 방식]**: 아래 예시처럼 자연스러운 문장으로 이어서 작성하세요. 점수는 표기하지 마세요.\n");
-		prompt.append("- 업무/학업 집중력 및 성과 예측\n");
-		prompt.append("- 중요한 결정이나 발표가 있다면 결과 전망\n");
-		prompt.append("- 상사/동료/선생님과의 관계\n");
-		prompt.append("- 새로운 프로젝트 시작 또는 마무리 적기 여부\n\n");
-		prompt.append("**[예시]**: \"좋은 소식을 연이어 접하게 되는 날입니다. 내가 진행한 일이 있다면 좋은 결과가 생길 것이며 ");
-		prompt.append("새롭게 제안을 해도 좋은 반응이 있을 것입니다. 새로운 만남이 있다면 좋은 인연이 될 것이니 ");
-		prompt.append("활동을 많이 하는 사람은 외부와 접촉 기회를 많이 갖는 것이 좋습니다.\"\n\n");
+		prompt.append("## 4. 성취운 (150~200자)\n");
+		prompt.append("- **[작성 가이드]**: 집중력이 좋은 날인지, 아니면 잠시 쉬어가야 할 날인지 알려주세요.\n");
+		prompt.append("- 중요한 발표나 결정을 앞두고 있다면 어떻게 대처해야 할지 실질적인 팁을 주세요.\n\n");
 
-		// ===== 9. JSON 포맷 =====
+		// ===== 9. JSON 포맷 (기존 유지) =====
 		prompt.append("\n\n### 9. [최종 출력 형식] (JSON) ###\n");
 		prompt.append("위에서 요청된 모든 분석을 완료한 후, **반드시 markdown 감싸기 없이 순수한 JSON 형식으로만** 응답해주세요.\n");
 		prompt.append(
@@ -2263,11 +2233,10 @@ public class ManseInterpretationService {
 		prompt.append("2. 대신, 그 주제(제목) 텍스트를 **대괄호(`[]`)**로 감싸고, 그 뒤에 **줄바꿈(\\n)**을 한 번만 추가해주세요.\n");
 		prompt.append("   (예시: `## 1. 오늘의 총운` -> [오늘의 총운 (75/100)]\\n)\n");
 		prompt.append(
-			"3. **(매우 중요)** 프롬프트에 `**`로 감싸진 단어(강조)는, `**` 기호 없이 **그냥 텍스트**로만 출력해주세요. (굵게 표시 금지)\n");
-		prompt.append("4. 한 문단이 6~7줄을 넘으면 안됨. 적절히 문단을 나눠주세요.\n");
-		prompt.append("5. 목록 기호(-, *, 1.) 사용 금지, 자연스러운 문장으로 연결\n");
+			"3. **(매우 중요)** `**` 강조 기호 사용 금지. 그냥 텍스트로만 출력.\n");
+		prompt.append("4. **(가장 중요) 한자(甲, 寅 등) 절대 포함 금지.**\n");
 		prompt.append(
-			"6. **(카드 UI용)** 가독성을 위해, 각 분야(총운, 금전운, 애정운 등)가 끝날 때마다 **줄바꿈을 두 번(\\n\\n)** 하여 섹션을 명확히 구분해주세요.\n\n");
+			"5. **(카드 UI용)** 가독성을 위해, 각 분야(총운, 금전운, 애정운 등)가 끝날 때마다 **줄바꿈을 두 번(\\n\\n)** 하여 섹션을 명확히 구분해주세요.\n\n");
 
 		prompt.append("--- [summary 말투 규칙 - 매우 중요] ---\n");
 		prompt.append("**summary는 '혜안' 페르소나를 완전히 무시하고, 아래 규칙만 100% 따라야 합니다.**\n\n");
