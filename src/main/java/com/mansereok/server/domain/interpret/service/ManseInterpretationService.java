@@ -2113,12 +2113,12 @@ public class ManseInterpretationService {
 			"사용자의 사주(오행, 기질)를 분석하여, 서로의 부족함을 채워주거나 폭발적인 시너지가 나는 '찰떡궁합(Soulmate)' 대상을 추천합니다.\n");
 		prompt.append("말투는 **팬 커뮤니티(트위터/더쿠)처럼 '재미있고 주접 떠는' 분위기**를 살리되, 내용은 사주적 근거에 기반해야 합니다.\n\n");
 
-		// 2. 데이터 주입 (색깔/방향 정보는 필요 없으므로 appendKeywords는 제외)
+		// 2. 데이터 주입
 		prompt.append("### 1. 분석 대상자 정보 ###\n");
 		appendPersonDetailInfo(prompt, name, response);
 
 		prompt.append("\n### 2. [명령] 사떡궁합 매칭 리포트 작성 ###\n");
-		prompt.append(name + "님의 사주 구성을 보고, 가장 잘 맞는 **유명인(아이돌, 배우) 및 가상 캐릭터** 3명을 추천해주세요.\n");
+		prompt.append(name + "님의 사주 구성을 보고, 가장 잘 맞는 **유명인(아이돌, 배우) 및 애니메이션 캐릭터** 3명을 추천해주세요.\n");
 		prompt.append("추천 기준: 사용자의 '용신(필요한 기운)'을 가진 인물이나, 성격적으로 상호 보완이 되는 캐릭터.\n\n");
 
 		// 3. 제약 조건 (출력 형식 강제)
@@ -2139,7 +2139,7 @@ public class ManseInterpretationService {
 
 		prompt.append("## 이 중 가장 치명적인 궁합은? : [TOP 3 중 1명 선택]\n");
 		prompt.append(
-			"- **이유**: (사주적 근거를 들어 설명. 예: 불과 물의 상극이 강한 끌림을 만들어내고, 서로에게 없는 성향을 자극함. 당신의 차가운 금(金) 기운을 이 사람의 뜨거운 화(火) 기운이 녹여줌.)\n");
+			"- **이유**: (사주적 근거를 들어 설명하되, 쉽고 재밌게 풀어서 설명해주세요.)\n");
 
 		appendSajuJsonResponseFormat(prompt, name);
 		return prompt.toString();
