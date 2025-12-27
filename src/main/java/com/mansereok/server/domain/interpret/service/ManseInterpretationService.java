@@ -1166,8 +1166,7 @@ public class ManseInterpretationService {
 		appendKeywords(prompt, response);
 
 		// ===== [3단계] 골드 스탠다드 제시 =====
-		prompt.append("\n### 🏆 [레퍼런스] 20,260원 급 신년운세의 기준 ###\n");
-		prompt.append("아래는 실제 고객이 극찬한 '2026년 신년운세' 샘플입니다.\n");
+		prompt.append("\n### 🏆 [레퍼런스] 신년운세의 기준 ###\n");
 		prompt.append("**이 수준의 디테일, 감성, 구체성을 반드시 재현하되 절대 표절하지 마세요.**\n\n");
 
 		prompt.append("--- [참고용 샘플: 도윤님 사례] ---\n");
@@ -1181,6 +1180,29 @@ public class ManseInterpretationService {
 		prompt.append("3. 사주 용어(편인, 정인)를 언급했지만 **설명 없이 흐름 속에 자연스럽게** 배치\n");
 		prompt.append("4. '예요'체를 써서 **차분하지만 단호한** 톤 유지\n\n");
 
+		prompt.append("### ⚠️ [절대 금지] 자기계발서 스타일 실용 팁 ###\n");
+		prompt.append("**아래 스타일은 사주 운세의 품격을 떨어뜨립니다. 절대 사용하지 마세요.**\n\n");
+
+		prompt.append("❌ **금지 예시 (절대 쓰지 말 것)**\n");
+		prompt.append("- \"밤 12시 이전 취침, 카페인은 오후 2시 이전\"\n");
+		prompt.append("- \"수분은 오전에 1리터, 오후에 1리터를 나눠 마시세요\"\n");
+		prompt.append("- \"여행 예산은 월 소득의 10% 이내, 관계 지출은 8% 이내\"\n");
+		prompt.append("- \"우량 ETF와 현금성 자산 비중을 늘려야 합니다\"\n");
+		prompt.append("- \"90분 집중 블록을 하루 두 번, 주 5일 운영\"\n");
+		prompt.append("- \"근거 세 가지를 문서로 남기고, 하루 숙성 뒤 확정하는 24시간 룰\"\n");
+		prompt.append("→ 이런 식의 **구체적 숫자, 시간, 퍼센트, 루틴 제시는 금지**입니다.\n\n");
+
+		prompt.append("✅ **대신 이렇게 작성하세요**\n");
+		prompt.append("- \"수면과 식사 시간을 단단히 고정시키는 게 건강운을 살리는 방법입니다\"\n");
+		prompt.append("- \"욕심을 줄이는 게 아니라 순서를 정하는 게 중요해요\"\n");
+		prompt.append("- \"과로를 오래 끌면 한 번에 무너지는 패턴을 조심해야 합니다\"\n");
+		prompt.append("- \"지출 구조를 정리하는 해예요. 돈이 새는 구멍을 막는 게 먼저입니다\"\n");
+		prompt.append("- \"결과를 빨리 보여주지 않아도 괜찮습니다. 그 느림이 방향을 정확하게 만드는 속도입니다\"\n\n");
+
+		prompt.append("**[핵심 원칙]**\n");
+		prompt.append("조언은 **'방향과 원칙'을 제시**하되, 구체적 실행 방법은 독자의 몫으로 남겨두세요.\n");
+		prompt.append("사주는 **'어떻게'가 아니라 '왜'와 '무엇'을 말하는 영역**입니다.\n\n");
+
 		// ===== [4단계] 메인 분석 요청 =====
 		prompt.append("\n### 6. [2026년 병오년(丙午年) 신년운세 심층 분석] 창작 지침 ###\n");
 		prompt.append(String.format(
@@ -1190,8 +1212,8 @@ public class ManseInterpretationService {
 
 		prompt.append("=== [창작 시작] ===\n\n");
 
-		// --- [1단계] 총론 ---
-		prompt.append("## 1. 2026년 총론: [핵심 키워드를 한 단어로]\n\n");
+		// --- [1단계] 총운 ---
+		prompt.append("## 2026년(병오) 총운\n\n");
 
 		prompt.append("**📌 작성 지침**\n");
 		prompt.append(String.format(
