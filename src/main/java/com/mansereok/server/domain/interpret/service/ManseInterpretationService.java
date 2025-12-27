@@ -153,7 +153,7 @@ public class ManseInterpretationService {
 			String input = GPT5_SYSTEM_INSTRUCTION + userPrompt;
 
 			Gpt5Request gpt5Request = new Gpt5Request(
-				"gpt-5",
+				"gpt-5.2",
 				input,
 				16384,
 				"high",
