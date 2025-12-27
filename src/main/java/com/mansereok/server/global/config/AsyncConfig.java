@@ -19,8 +19,8 @@ public class AsyncConfig {
 	@Bean(name = "gptTaskExecutor")
 	public Executor gptTaskExecutor() {
 		ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
-		executor.setCorePoolSize(3);
-		executor.setMaxPoolSize(5); // 알바 스레드 만들어서 최대 5개 스레드까지 만듦 ..
+		executor.setCorePoolSize(5);
+		executor.setMaxPoolSize(5); // 최대 5개만 (429 Too Many Request)
 		executor.setQueueCapacity(20);
 		executor.setThreadNamePrefix("GptAsync-");
 
