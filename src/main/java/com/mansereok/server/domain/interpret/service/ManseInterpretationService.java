@@ -531,6 +531,17 @@ public class ManseInterpretationService {
 
 	private void appendSajuJsonResponseFormat(StringBuilder prompt, String name) {
 		prompt.append("\n\n### 9. [최종 출력 형식] (JSON) ###\n");
+
+		prompt.append("⚠️ **[JSON 출력 필수 규칙]**\n");
+		prompt.append("1. 반드시 **순수 JSON만** 출력하세요. Markdown 코드 블록(```json) 절대 금지.\n");
+		prompt.append("2. JSON 문자열 내부의 **모든 줄바꿈**은 반드시 `\\n`으로 이스케이프하세요.\n");
+		prompt.append("3. JSON 문자열 내부의 **쌍따옴표**는 반드시 `\\\"`로 이스케이프하세요.\n");
+		prompt.append("4. 출력 예시:\n");
+		prompt.append("{\n");
+		prompt.append("  \"fullAnalysis\": \"첫 번째 문단입니다.\\n\\n두 번째 문단입니다.\",\n");
+		prompt.append("  \"summary\": \"요약입니다\\n줄바꿈도 \\\\n으로 표시\"\n");
+		prompt.append("}\n\n");
+
 		prompt.append("위에서 요청된 모든 분석을 완료한 후, **반드시 markdown 감싸기 없이 순수한 JSON 형식으로만** 응답해주세요.\n");
 		prompt.append(
 			"**fullAnalysis** 값에는 위에서 요청한 모든 상세 분석 내용을 **목록 기호 없이 물 흐르듯 자연스럽게 이어진 하나의 긴 텍스트**로 담아야 합니다.\n");
@@ -541,6 +552,9 @@ public class ManseInterpretationService {
 		prompt.append("   (예시: `## 1. 핵심 성격` -> [핵심 성격]\\n)\n");
 		prompt.append(
 			"3. **(매우 중요)** 프롬프트에 `**`로 감싸진 단어(강조)는, `**` 기호 없이 **그냥 텍스트**로만 출력해주세요. (굵게 표시 금지)\n");
+		prompt.append(
+			"**[JSON 문법 절대 엄수]** JSON 값(value) 안에서 줄바꿈을 할 때는 반드시 이스케이프 문자(`\\n`)를 사용해야 합니다.\n");
+		prompt.append("절대로 키보드 엔터키(Line Break)를 사용하여 실제 줄바꿈을 넣지 마세요. 시스템 에러가 발생합니다.\n");
 		prompt.append("4. 한 문단이 6~7줄을 넘으면 안됨.\n");
 		prompt.append("5. 목록 기호(-, *, 1.) 사용 금지, 자연스러운 문장으로 연결\n");
 		prompt.append(
@@ -618,7 +632,8 @@ public class ManseInterpretationService {
 			case 3 -> createCareerAptitudePrompt(name, response);
 			case 5 -> createIdolAnalysisPrompt(name, response);
 			case 13 -> createActorAnalysisPrompt(name, response);
-			case 17 -> createLoveLuckPrompt(name, response); // 연애운이 17번임.
+			case 17 -> createLoveLuckPrompt(name, response); // 연애운
+			case 18 -> createNewYear2026Prompt(name, response); // 신년 운세
 			default -> throw new IllegalArgumentException("지원하지 않는 카테고리입니다: " + subcategoryId);
 		};
 	}
@@ -1144,6 +1159,228 @@ public class ManseInterpretationService {
 		prompt.append("마지막으로 사랑 때문에 고민하는 %s님을 위한 따뜻한 응원의 한마디.\n\n");
 
 		// JSON 포맷 추가
+		appendSajuJsonResponseFormat(prompt, name);
+
+		return prompt.toString();
+	}
+
+	// 18. 신년 운세
+	private String createNewYear2026Prompt(String name, ManseryeokCalculationResponse response) {
+		StringBuilder prompt = new StringBuilder();
+		ManseryeokCalculationResponse.SajuInfo saju = response.getSaju();
+
+		// ===== [0단계] 페르소나 주입 =====
+		appendHyeanPersonaHeader(prompt);
+
+		// ===== [1단계] 분석 대상자 정보 =====
+		prompt.append("\n### 5. 분석 대상자 상세 정보 ###\n");
+		appendPersonDetailInfo(prompt, name, response);
+
+		// ===== [2단계] 절대 기준(Fact) 주입 =====
+		appendKeywords(prompt, response);
+
+		// ===== [3단계] 골드 스탠다드 제시 =====
+		prompt.append("\n### 🏆 [레퍼런스] 신년운세의 기준 ###\n");
+		prompt.append("**이 수준의 디테일, 감성, 구체성을 반드시 재현하되 절대 표절하지 마세요.**\n\n");
+
+		prompt.append("--- [참고용 샘플: 도윤님 사례] ---\n");
+		prompt.append("\"2026년은 병오년으로 도윤님에게는 편인 + 정인 기운이 동시에 작용하는 해입니다. ");
+		prompt.append("밖으로 크게 확장하거나 공격적으로 성과를 내기보다는 내부 정비, 방향 재설정, 실력 축적이 핵심인 해예요. ");
+		prompt.append("이 해의 키워드는 속도가 아니라 밀도입니다.\"\n\n");
+
+		prompt.append("**[샘플에서 배워야 할 점]**\n");
+		prompt.append("1. 추상적 표현이 아닌 '내부 정비', '실력 축적' 같은 **구체적 행동 키워드**\n");
+		prompt.append("2. '속도 vs 밀도'처럼 **대조되는 개념**으로 핵심 메시지 강조\n");
+		prompt.append("3. 사주 용어(편인, 정인)를 언급했지만 **설명 없이 흐름 속에 자연스럽게** 배치\n");
+		prompt.append("4. '예요'체를 써서 **차분하지만 단호한** 톤 유지\n\n");
+
+		prompt.append("### ⚠️ [절대 금지] 자기계발서 스타일 실용 팁 ###\n");
+		prompt.append("**아래 스타일은 사주 운세의 품격을 떨어뜨립니다. 절대 사용하지 마세요.**\n\n");
+
+		prompt.append("❌ **금지 예시 (절대 쓰지 말 것)**\n");
+		prompt.append("- \"밤 12시 이전 취침, 카페인은 오후 2시 이전\"\n");
+		prompt.append("- \"수분은 오전에 1리터, 오후에 1리터를 나눠 마시세요\"\n");
+		prompt.append("- \"여행 예산은 월 소득의 10% 이내, 관계 지출은 8% 이내\"\n");
+		prompt.append("- \"우량 ETF와 현금성 자산 비중을 늘려야 합니다\"\n");
+		prompt.append("- \"90분 집중 블록을 하루 두 번, 주 5일 운영\"\n");
+		prompt.append("- \"근거 세 가지를 문서로 남기고, 하루 숙성 뒤 확정하는 24시간 룰\"\n");
+		prompt.append("→ 이런 식의 **구체적 숫자, 시간, 퍼센트, 루틴 제시는 금지**입니다.\n\n");
+
+		prompt.append("✅ **대신 이렇게 작성하세요**\n");
+		prompt.append("- \"수면과 식사 시간을 단단히 고정시키는 게 건강운을 살리는 방법입니다\"\n");
+		prompt.append("- \"욕심을 줄이는 게 아니라 순서를 정하는 게 중요해요\"\n");
+		prompt.append("- \"과로를 오래 끌면 한 번에 무너지는 패턴을 조심해야 합니다\"\n");
+		prompt.append("- \"지출 구조를 정리하는 해예요. 돈이 새는 구멍을 막는 게 먼저입니다\"\n");
+		prompt.append("- \"결과를 빨리 보여주지 않아도 괜찮습니다. 그 느림이 방향을 정확하게 만드는 속도입니다\"\n\n");
+
+		prompt.append("**[핵심 원칙]**\n");
+		prompt.append("조언은 **'방향과 원칙'을 제시**하되, 구체적 실행 방법은 독자의 몫으로 남겨두세요.\n");
+		prompt.append("사주는 **'어떻게'가 아니라 '왜'와 '무엇'을 말하는 영역**입니다.\n\n");
+
+		// ===== [4단계] 메인 분석 요청 =====
+		prompt.append("\n### 6. [2026년 병오년(丙午年) 신년운세 심층 분석] 창작 지침 ###\n");
+		prompt.append(String.format(
+			"혜안 선생님, 위 '절대 기준' 데이터와 '레퍼런스 샘플'을 바탕으로 %s님만의 고유한 2026년 운세를 **아래 4단계 구조**로 창작해주세요.\n",
+			name));
+		prompt.append("**[중요] 지금은 2025년 말이거나 2026년 초입니다. 년도를 지칭할 때 반드시 '2026년'이라고 명시하세요.**\n\n");
+
+		prompt.append("=== [창작 시작] ===\n\n");
+
+		// --- [1단계] 총운 ---
+		prompt.append("## 2026년(병오) 총운\n\n");
+
+		prompt.append("**📌 작성 지침**\n");
+		prompt.append(String.format(
+			"- **오프닝 문장(필수)**: \"2026년 병오년, 붉은 말의 해가 %s님에게 찾아왔습니다.\" 로 시작하세요.\n",
+			name));
+		prompt.append("- **핵심 테마 선정**: 위 '절대 기준'에서 도출된 사주 강약, 십성 분포, 용신을 종합하여 ");
+		prompt.append("2026년의 **가장 중요한 키워드 1개**를 선택하세요.\n");
+		prompt.append("  (예시: '확장', '내실', '변화', '정리', '도약', '숙성', '재정비' 등)\n");
+		prompt.append("- **심리 변화 묘사**: 사용자의 타고난 기질(일간 성향)과 2026년 기운이 만났을 때 ");
+		prompt.append("**어떤 내적 갈등이나 각성**이 일어날지 구체적으로 서술하세요.\n");
+		prompt.append("- **주의점 제시**: '절대 기준'에서 발견된 약점(예: 무식상, 충 등)을 바탕으로 ");
+		prompt.append("**구체적인 주의 사항**을 2~3가지 명확히 짚어주세요.\n\n");
+
+		prompt.append("**✅ 체크리스트 (모두 충족했는지 확인)**\n");
+		prompt.append("□ 2026년 병오년 에너지와 사용자 사주의 **화학반응**을 설명했는가?\n");
+		prompt.append("□ 추상적 표현 대신 **구체적 행동 키워드**를 3개 이상 사용했는가?\n");
+		prompt.append("□ '절대 기준'의 용신, 신강/신약 정보를 **반드시** 반영했는가?\n");
+		prompt.append("□ 분량이 **최소 8문장 이상**인가? (짧으면 돈값 못함)\n\n");
+
+		// --- [2단계] 분야별 운세 ---
+		prompt.append("## 2. 분야별 흐름 분석\n\n");
+		prompt.append("**※ 절대 금지: 딱딱한 개조식(1., 2.) 사용 금지. 물 흐르듯 이어지는 줄글로 작성하세요.**\n\n");
+
+		// 재물운
+		prompt.append("### [재물운]\n");
+		prompt.append("**📌 작성 지침**\n");
+		prompt.append("- **수입 vs 지출 구조**: 2026년 재성(財星) 분포를 보고 ");
+		prompt.append("'수입이 안정적으로 쌓이는 해' vs '큰 한 방을 노리는 해'인지 명확히 판단하세요.\n");
+		prompt.append("- **투자 방향성**: '절대 기준'의 사주 강약을 보고 ");
+		prompt.append("공격적 투자가 가능한지, 보수적 관리가 필요한지 **근거와 함께** 조언하세요.\n");
+		prompt.append("- **구체적 주의사항**: '돈이 새는 구멍'이 어디인지(인간관계, 충동 소비, 과도한 투자 등) ");
+		prompt.append("**사주 데이터 기반**으로 2~3가지 콕 집어주세요.\n");
+		prompt.append("- **금액 감각**: '급등', '안정', '변동' 같은 단어로 **감각적**으로 표현하세요.\n\n");
+
+		prompt.append("**✅ 체크리스트**\n");
+		prompt.append("□ 재성(정재/편재) 개수를 반영했는가?\n");
+		prompt.append("□ '~하면 좋아요' 말고 '~해야 합니다' 수준의 **강한 조언**이 있는가?\n");
+		prompt.append("□ 분량 **최소 6문장** 이상인가?\n\n");
+
+		// 직장/사업운
+		prompt.append("### [직장/사업운]\n");
+		prompt.append("**📌 작성 지침**\n");
+		prompt.append("- **커리어 변화 가능성**: 관성(官星) 유무와 대운 흐름을 보고 ");
+		prompt.append("승진, 이직, 창업의 **실제 가능성**을 명확히 제시하세요.\n");
+		prompt.append("- **업무 스타일 조언**: 사주 강약과 십성 분포를 보고 ");
+		prompt.append("'혼자 책임지고 끌고 가는 스타일' vs '협업으로 시너지 내는 스타일' 중 **어느 쪽**인지 ");
+		prompt.append("명확히 판단하고 그에 맞는 **전략**을 제시하세요.\n");
+		prompt.append("- **타이밍**: '상반기 집중' vs '하반기 결실'처럼 **시기적 전략**을 짚어주세요.\n\n");
+
+		prompt.append("**✅ 체크리스트**\n");
+		prompt.append("□ 관성(정관/편관), 식상(식신/상관) 분포를 반영했는가?\n");
+		prompt.append("□ '역할이 늘어난다', '기회가 온다' 같은 **구체적 상황**을 묘사했는가?\n");
+		prompt.append("□ 분량 **최소 6문장** 이상인가?\n\n");
+
+		// 가정/건강운
+		prompt.append("### [가정/건강운]\n");
+		prompt.append("**📌 작성 지침**\n");
+		prompt.append("- **신체 부위 특정**: 오행 편중이나 충 관계를 보고 ");
+		prompt.append("**구체적인 신체 부위**(소화기, 수면, 근육, 피부 등)를 2~3개 짚어주세요.\n");
+		prompt.append("- **생활 리듬 조언**: '수면 시간 고정', '카페인 조절' 같은 ");
+		prompt.append("**즉시 실천 가능한 행동**을 3가지 이상 제시하세요.\n");
+		prompt.append("- **가족 관계**: 육친(부모, 형제, 배우자) 관련 변화가 있을지 예측하고 ");
+		prompt.append("**도윤님 샘플처럼** '중심을 잡아주는 역할' 같은 구체적 표현을 쓰세요.\n\n");
+
+		prompt.append("**✅ 체크리스트**\n");
+		prompt.append("□ 오행 과다/부족에 따른 **신체 취약점**을 명시했는가?\n");
+		prompt.append("□ '스트레스 관리'처럼 추상적 말 대신 **구체적 행동**을 제시했는가?\n");
+		prompt.append("□ 분량 **최소 5문장** 이상인가?\n\n");
+
+		// 이성/대인관계
+		prompt.append("### [이성/대인관계]\n");
+		prompt.append("**📌 작성 지침**\n");
+		prompt.append("- **연애운 흐름**: 식상, 재성, 관성의 조합을 보고 ");
+		prompt.append("'새로운 인연' vs '기존 관계 심화' vs '정리의 시기' 중 **어느 쪽**인지 판단하세요.\n");
+		prompt.append("- **이상형 힌트**: 용신 오행을 활용해 ");
+		prompt.append("'차분하고 책임감 있는 사람', '활발하고 즉흥적인 사람' 같은 **구체적 특징**을 제시하세요.\n");
+		prompt.append("- **대인 전략**: 사주 강약을 보고 ");
+		prompt.append("'선택과 집중' vs '네트워킹 확장' 중 **어느 전략**이 유리한지 조언하세요.\n\n");
+
+		prompt.append("**✅ 체크리스트**\n");
+		prompt.append("□ 도화살, 역마살 등 신살 정보를 반영했는가?\n");
+		prompt.append("□ '인연이 온다'는 말만 하지 않고 **어떤 타입**의 인연인지 구체적으로 묘사했는가?\n");
+		prompt.append("□ 분량 **최소 5문장** 이상인가?\n\n");
+
+		// 학업/성취운
+		prompt.append("### [학업/성취운]\n");
+		prompt.append("**📌 작성 지침**\n");
+		prompt.append("- **학습 스타일**: 인성(정인/편인) 유무와 강도를 보고 ");
+		prompt.append("'단기 집중' vs '장기 루틴'형인지 판단하고 **구체적 공부법**을 제시하세요.\n");
+		prompt.append("- **시험/자격증 타이밍**: 월별 세운을 참고해 ");
+		prompt.append("'상반기 집중' vs '하반기 결실' 같은 **시기 전략**을 조언하세요.\n");
+		prompt.append("- **성과 예측**: 식상과 관성의 조합을 보고 ");
+		prompt.append("'결과가 천천히 쌓이는 해' vs '단기 성과가 가능한 해'인지 명확히 하세요.\n\n");
+
+		prompt.append("**✅ 체크리스트**\n");
+		prompt.append("□ 인성(정인/편인) 분포를 반영했는가?\n");
+		prompt.append("□ '루틴으로 이기는 해' 같은 **핵심 전략 키워드**가 있는가?\n");
+		prompt.append("□ 분량 **최소 4문장** 이상인가?\n\n");
+
+		// --- [3단계] 월별 세운 ---
+		prompt.append("## 3. 월별 흐름 (1월 ~ 12월)\n\n");
+
+		prompt.append("**📌 작성 지침 (매우 중요)**\n");
+		prompt.append("- **천편일률 금지**: 매달 '바쁜 달', '조심하는 달' 같은 패턴 반복 절대 금지.\n");
+		prompt.append("- **사주 맞춤 분석**: 사용자의 대운, 세운, 월운을 **실제로 계산**하여 ");
+		prompt.append("각 달의 천간지지가 사주와 어떻게 상호작용하는지 분석하세요.\n");
+		prompt.append("- **분기별 리듬**: 1~3월(시작), 4~6월(활동), 7~9월(성과), 10~12월(정리)의 ");
+		prompt.append("**큰 흐름**을 먼저 잡고 세부 월별로 디테일을 채우세요.\n");
+		prompt.append("- **구체적 행동 지침**: '정리하는 달'이라면 **무엇을** 정리할지(서류, 관계, 지출 등) ");
+		prompt.append("명확히 제시하세요.\n\n");
+
+		prompt.append("**✅ 각 월별 체크리스트**\n");
+		prompt.append("□ 해당 월의 천간지지와 사용자 사주의 **충/합/형** 관계를 확인했는가?\n");
+		prompt.append("□ '조심하세요'만 말하지 않고 **구체적 이유와 대응책**을 제시했는가?\n");
+		prompt.append("□ 각 월마다 **최소 3문장** 이상 서술했는가?\n\n");
+
+		prompt.append("**[분기별 가이드]**\n");
+		prompt.append("- **1~3월 (1분기)**: 연초 에너지 진단. '시작' vs '관망'의 분기점을 명확히.\n");
+		prompt.append("- **4~6월 (2분기)**: 활동성 피크. 변화와 선택의 시기. 구체적 타이밍 제시.\n");
+		prompt.append("- **7~9월 (3분기)**: 결실과 평가. '수확' vs '재정비'의 갈림길.\n");
+		prompt.append("- **10~12월 (4분기)**: 마무리와 준비. 2027년 방향성 힌트 포함.\n\n");
+
+		// --- [4단계] 조언 및 마무리 ---
+		prompt.append("## 4. 혜안의 따뜻한 조언\n\n");
+
+		prompt.append("**📌 작성 지침**\n");
+		prompt.append("- **공감과 위로**: 사용자의 사주에서 발견된 **고충이나 갈등 포인트**를 ");
+		prompt.append("먼저 공감해주고, 그것이 결함이 아니라 **고유한 리듬**임을 인정하세요.\n");
+		prompt.append("- **비교 금지 메시지**: '남들의 속도와 비교하지 말라'는 메시지를 ");
+		prompt.append("**도윤님 샘플처럼** 감성적으로 풀어서 전달하세요.\n");
+		prompt.append("- **실천 가능한 조언**: 추상적 격려가 아니라 ");
+		prompt.append("'루틴 3개월만 지켜라', '핵심 과제 하나만 잡아라' 같은 **구체적 행동**을 제시하세요.\n");
+		prompt.append("- **미래 희망**: 2026년에 쌓은 것이 2027년 이후 어떻게 빛날지 **구체적으로** 전망하세요.\n\n");
+
+		prompt.append("**✅ 체크리스트**\n");
+		prompt.append("□ 사용자의 **고유한 강점**을 1~2개 명확히 언급했는가?\n");
+		prompt.append("□ '조급해하지 말라'는 메시지를 **사주 근거**와 함께 전달했는가?\n");
+		prompt.append("□ 분량이 **최소 5문장** 이상인가?\n");
+		prompt.append("□ **[필수]** 마지막 문장: \"새해 복 많이 받으시고 항상 행복하세요. 네임드사주가 응원하겠습니다.\"\n\n");
+
+		// ===== [5단계] 최종 품질 검증 =====
+		prompt.append("\n### 🔍 [최종 검증] 제출 전 필수 체크 ###\n");
+		prompt.append("**아래 항목을 모두 충족했는지 확인한 후 JSON으로 출력하세요.**\n\n");
+
+		prompt.append("□ **사주 용어 최소화**: '편인', '비견', '충', '합' 같은 한자어를 **5개 이하**로 제한했는가?\n");
+		prompt.append("□ **데이터 반영**: '절대 기준'의 용신, 신강/신약, 십성 분포를 **실제로** 반영했는가?\n");
+		prompt.append("□ **구체성**: '좋아요', '조심하세요' 같은 추상적 표현을 **구체적 행동**으로 바꿨는가?\n");
+		prompt.append("□ **감성**: 도윤님 샘플 수준의 **몰입감과 공감**이 있는가?\n");
+		prompt.append("□ **분량**: 총론~조언까지 합쳐서 **최소 3000자 이상**인가? (짧으면 돈값 못함)\n");
+		prompt.append("□ **AI티 제거**: '~것 같습니다', '~생각됩니다' 같은 애매한 표현을 **단호한 조언**으로 바꿨는가?\n");
+		prompt.append("□ **이름 표기**: 사용자 이름을 **절대 줄이거나 변경하지 않고** 전체 이름으로 표기했는가?\n\n");
+
+		// ===== [6단계] JSON 포맷 =====
 		appendSajuJsonResponseFormat(prompt, name);
 
 		return prompt.toString();
@@ -2106,12 +2343,11 @@ public class ManseInterpretationService {
 	private String createChemistryMatchPrompt(String name, ManseryeokCalculationResponse response) {
 		StringBuilder prompt = new StringBuilder();
 
-		// 1. 역할 정의 (덕질 큐레이터)
+		// 1. 역할 정의
 		prompt.append("### 0. 시스템 역할 정의 ###\n");
 		prompt.append("당신은 사주명리학에 정통한 '최애 매칭 큐레이터'입니다.\n");
 		prompt.append(
-			"사용자의 사주(오행, 기질)를 분석하여, 서로의 부족함을 채워주거나 폭발적인 시너지가 나는 '찰떡궁합(Soulmate)' 대상을 추천합니다.\n");
-		prompt.append("말투는 **팬 커뮤니티(트위터/더쿠)처럼 '재미있고 주접 떠는' 분위기**를 살리되, 내용은 사주적 근거에 기반해야 합니다.\n\n");
+			"사용자의 사주를 분석하여, '찰떡궁합(Soulmate)' 대상을 추천합니다. 말투는 **팬 커뮤니티처럼 '재미있고 주접 떠는' 분위기**를 살려주세요.\n\n");
 
 		// 2. 데이터 주입
 		prompt.append("### 1. 분석 대상자 정보 ###\n");
@@ -2119,30 +2355,37 @@ public class ManseInterpretationService {
 
 		prompt.append("\n### 2. [명령] 사떡궁합 매칭 리포트 작성 ###\n");
 		prompt.append(name + "님의 사주 구성을 보고, 가장 잘 맞는 **유명인(아이돌, 배우) 및 애니메이션 캐릭터** 3명을 추천해주세요.\n");
-		prompt.append("추천 기준: 사용자의 '용신(필요한 기운)'을 가진 인물이나, 성격적으로 상호 보완이 되는 캐릭터.\n\n");
 
-		// 3. 제약 조건 (출력 형식 강제)
+		// 3. 제약 조건
 		prompt.append("### ⚠️ [필수 작성 지침] (절대 엄수) ###\n");
 		prompt.append(
-			"1. **[대상 선정]**: 추천 대상은 반드시 **'K-POP 아이돌(남/여)', '유명 배우', '애니/웹툰 캐릭터'** 중 골고루 섞어서 Top 3를 선정하세요.\n");
+			"1. **[대상 선정]**: 'K-POP 아이돌', '유명 배우', '애니/웹툰 캐릭터' 중 골고루 섞어서 Top 3 선정.\n");
 		prompt.append(
-			"2. **[실명 사용]**: 실제 존재하는 유명인이나 캐릭터의 이름을 한글로 정확히 명시하세요. (예: 카리나, 차은우, 루피 등)\n");
-		prompt.append("3. **[구조 강제]** 결과물은 오직 아래 제시된 **목차와 형식**으로만 구성되어야 합니다. 서론/인사말/결론 잡담 금지.\n");
+			"2. **[언어 절대 고정]**: 모든 이름과 작품명은 **무조건 '한국어'**로만 표기. (영어 병기 금지)\n");
 		prompt.append(
-			"4. **[언어 절대 고정]**: 인물 이름, 그룹명, 작품명 등 모든 고유명사는 **무조건 '한국어(한글)'**로만 표기하세요. (영어 병기 금지)\n");
+			"3. **[카드 분리]**: **Top 3 랭킹 발표가 끝나면 반드시 줄바꿈을 두 번(\\n\\n) 하여, 상세 설명이 다음 장(카드)에 나오도록 하세요.**\n"); // 👈 핵심 수정
 		prompt.append(
-			"5. **[말투]**: \"~입니다\" 대신, \"~하는 꿀조합\", \"~라 완전 찰떡\" 처럼 덕질 용어를 자연스럽게 섞으세요.\n\n");
+			"4. **[말투]**: \"~입니다\" 지양, \"~하는 꿀조합\", \"~라 완전 찰떡\" 등 덕질 용어 사용.\n\n");
 
-		prompt.append("--- [작성할 내용] ---\n");
+		prompt.append("--- [작성할 내용 및 구조] ---\n");
 
-		prompt.append("## " + name + "님과 찰떡궁합 TOP 3\n");
-		prompt.append("Top 1. [이름] (그룹명/작품명) — [한 줄 설명: 예) 당신의 예민함을 잠재워줄 인간 수면제]\n");
-		prompt.append("Top 2. [이름] (그룹명/작품명) — [한 줄 설명: 예) 말 안 해도 통하는 영혼의 단짝]\n");
-		prompt.append("Top 3. [이름] (그룹명/작품명) — [한 줄 설명: 예) 혐관으로 시작해서 맛집이 될 텐션 궁합]\n\n");
+		// [1페이지: 랭킹 보드]
+		prompt.append("## [" + name + "님을 위한 명예의 전당] \n"); // 제목 변경
+		prompt.append("🥇 1위: [이름] ([그룹/작품명])\n");
+		prompt.append("- [선정 한 줄 평: 예) 당신의 예민함을 잠재워줄 인간 수면제]\n\n"); // 가독성을 위해 한 줄 띄움
+		prompt.append("🥈 2위: [이름] ([그룹/작품명])\n");
+		prompt.append("- [선정 한 줄 평]\n\n");
+		prompt.append("🥉 3위: [이름] ([그룹/작품명])\n");
+		prompt.append("- [선정 한 줄 평]\n\n");
 
-		prompt.append("## 이 중 가장 치명적인 궁합은? : [TOP 3 중 1명 선택]\n");
-		prompt.append(
-			"- **이유**: (사주적 근거를 들어 설명하되, 쉽고 재미있게 풀어서 설명)\n");
+		// 여기서 강제로 줄바꿈을 유도하는 지침 추가
+		prompt.append("(여기서 반드시 줄바꿈을 두 번(\\n\\n) 하여 랭킹과 상세 분석을 시각적으로 분리하세요.)\n\n");
+
+		// [2페이지: 상세 분석]
+		prompt.append("## 💘 이 중 내 '원픽(One Pick)'은? : [1위 이름]\n");
+		prompt.append("### 선정 이유 (사주적 근거)\n");
+		prompt.append("- 사용자(" + name + ")의 사주 특징 요약 (신강/신약, 부족한 오행 등)\n");
+		prompt.append("- 왜 [1위 이름]이 최고의 궁합인지 오행/성격적 관점에서 상세하게 풀어서 설명 (주접 멘트 섞어서)\n");
 
 		appendSajuJsonResponseFormat(prompt, name);
 		return prompt.toString();
