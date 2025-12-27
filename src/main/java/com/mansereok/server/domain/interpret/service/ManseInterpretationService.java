@@ -1231,7 +1231,7 @@ public class ManseInterpretationService {
 
 		prompt.append("**📌 작성 지침**\n");
 		prompt.append(String.format(
-			"- **오프닝 문장(필수)**: \"2026년 병오년, 붉은 말의 해가 %s님에게 찾아왔습니다.\" 로 시작하세요.\n",
+			"- **오프닝 문장(필수)**: \"2026년 병오년, 붉은 말의 해 입니다.\" 로 시작하세요.\n",
 			name));
 		prompt.append("- **핵심 테마 선정**: 위 '절대 기준'에서 도출된 사주 강약, 십성 분포, 용신을 종합하여 ");
 		prompt.append("2026년의 **가장 중요한 키워드 1개**를 선택하세요.\n");
@@ -1351,7 +1351,7 @@ public class ManseInterpretationService {
 		prompt.append("- **10~12월 (4분기)**: 마무리와 준비. 2027년 방향성 힌트 포함.\n\n");
 
 		// --- [4단계] 조언 및 마무리 ---
-		prompt.append("## 4. 혜안의 조언\n\n");
+		prompt.append("## 4. 조언 및 주의 사항\n\n");
 
 		prompt.append("**📌 작성 지침**\n");
 		prompt.append("- **공감과 위로**: 사용자의 사주에서 발견된 **고충이나 갈등 포인트**를 ");
