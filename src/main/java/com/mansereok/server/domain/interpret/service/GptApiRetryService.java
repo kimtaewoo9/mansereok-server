@@ -3,7 +3,9 @@ package com.mansereok.server.domain.interpret.service;
 import com.mansereok.server.global.exception.GptApiFailedException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.retry.annotation.Backoff;
 import org.springframework.retry.annotation.Recover;
@@ -42,17 +44,31 @@ public class GptApiRetryService {
 		log.info("[Retryable] GPT API 호출 시도...");
 
 		try {
-			String response = restClient.post()
-				.uri("/responses")
+			ResponseEntity<String> responseEntity = restClient.post()
+				.uri(
+					"/responses")
 				.body(requestBody)
 				.retrieve()
-				.body(String.class);
+				.toEntity(String.class);
+
+			// 헤더에서 토큰 얼마나 사용했는지 확인
+			HttpHeaders headers = responseEntity.getHeaders();
+
+			String limit = headers.getFirst("x-ratelimit-limit-tokens");
+			String remaining = headers.getFirst("x-ratelimit-remaining-tokens");
+			String reset = headers.getFirst("x-ratelimit-reset-tokens");
+
+			log.info("📊 [OpenAI 성적표] --------------------------------");
+			log.info("   👉 총 한도 (Limit)    : {}", limit);
+			log.info("   👉 남은 거 (Remaining): {}", remaining);
+			log.info("   👉 리셋 시간 (Reset)  : {}", reset);
+			log.info("---------------------------------------------------");
 
 			// 2. 성공 시 소요 시간 로그 출력
 			long duration = System.currentTimeMillis() - startTime;
 			log.info("✅ GPT API 응답 수신 완료 (소요시간: {}ms)", duration);
 
-			return response;
+			return responseEntity.getBody();
 
 		} catch (Exception e) {
 			// 3. 실패 시에도 소요 시간 로그 출력 (타임아웃 확인용)
