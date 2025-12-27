@@ -541,6 +541,9 @@ public class ManseInterpretationService {
 		prompt.append("   (예시: `## 1. 핵심 성격` -> [핵심 성격]\\n)\n");
 		prompt.append(
 			"3. **(매우 중요)** 프롬프트에 `**`로 감싸진 단어(강조)는, `**` 기호 없이 **그냥 텍스트**로만 출력해주세요. (굵게 표시 금지)\n");
+		prompt.append(
+			"**[JSON 문법 절대 엄수]** JSON 값(value) 안에서 줄바꿈을 할 때는 반드시 이스케이프 문자(`\\n`)를 사용해야 합니다.\n");
+		prompt.append("절대로 키보드 엔터키(Line Break)를 사용하여 실제 줄바꿈을 넣지 마세요. 그러면 시스템 에러가 발생합니다.\n");
 		prompt.append("4. 한 문단이 6~7줄을 넘으면 안됨.\n");
 		prompt.append("5. 목록 기호(-, *, 1.) 사용 금지, 자연스러운 문장으로 연결\n");
 		prompt.append(
