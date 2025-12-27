@@ -531,6 +531,17 @@ public class ManseInterpretationService {
 
 	private void appendSajuJsonResponseFormat(StringBuilder prompt, String name) {
 		prompt.append("\n\n### 9. [최종 출력 형식] (JSON) ###\n");
+
+		prompt.append("⚠️ **[JSON 출력 필수 규칙]**\n");
+		prompt.append("1. 반드시 **순수 JSON만** 출력하세요. Markdown 코드 블록(```json) 절대 금지.\n");
+		prompt.append("2. JSON 문자열 내부의 **모든 줄바꿈**은 반드시 `\\n`으로 이스케이프하세요.\n");
+		prompt.append("3. JSON 문자열 내부의 **쌍따옴표**는 반드시 `\\\"`로 이스케이프하세요.\n");
+		prompt.append("4. 출력 예시:\n");
+		prompt.append("{\n");
+		prompt.append("  \"fullAnalysis\": \"첫 번째 문단입니다.\\n\\n두 번째 문단입니다.\",\n");
+		prompt.append("  \"summary\": \"요약입니다\\n줄바꿈도 \\\\n으로 표시\"\n");
+		prompt.append("}\n\n");
+
 		prompt.append("위에서 요청된 모든 분석을 완료한 후, **반드시 markdown 감싸기 없이 순수한 JSON 형식으로만** 응답해주세요.\n");
 		prompt.append(
 			"**fullAnalysis** 값에는 위에서 요청한 모든 상세 분석 내용을 **목록 기호 없이 물 흐르듯 자연스럽게 이어진 하나의 긴 텍스트**로 담아야 합니다.\n");
