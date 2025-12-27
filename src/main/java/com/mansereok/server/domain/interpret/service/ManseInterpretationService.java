@@ -1351,7 +1351,7 @@ public class ManseInterpretationService {
 		prompt.append("- **10~12월 (4분기)**: 마무리와 준비. 2027년 방향성 힌트 포함.\n\n");
 
 		// --- [4단계] 조언 및 마무리 ---
-		prompt.append("## 4. 혜안의 따뜻한 조언\n\n");
+		prompt.append("## 4. 혜안의 조언\n\n");
 
 		prompt.append("**📌 작성 지침**\n");
 		prompt.append("- **공감과 위로**: 사용자의 사주에서 발견된 **고충이나 갈등 포인트**를 ");
