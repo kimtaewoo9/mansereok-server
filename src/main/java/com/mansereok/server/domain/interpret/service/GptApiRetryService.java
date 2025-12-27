@@ -58,10 +58,10 @@ public class GptApiRetryService {
 			String remaining = headers.getFirst("x-ratelimit-remaining-tokens");
 			String reset = headers.getFirst("x-ratelimit-reset-tokens");
 
-			log.info("📊 [OpenAI 성적표] --------------------------------");
-			log.info("   👉 총 한도 (Limit)    : {}", limit);
-			log.info("   👉 남은 거 (Remaining): {}", remaining);
-			log.info("   👉 리셋 시간 (Reset)  : {}", reset);
+			log.info(" [OpenAI 헤더] --------------------------------");
+			log.info("   총 한도 (Limit)    : {}", limit);
+			log.info("   남은 한도 (Remaining): {}", remaining);
+			log.info("   리셋 시간 (Reset)  : {}", reset);
 			log.info("---------------------------------------------------");
 
 			// 2. 성공 시 소요 시간 로그 출력
