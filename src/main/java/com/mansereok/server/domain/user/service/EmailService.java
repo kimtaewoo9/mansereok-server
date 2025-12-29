@@ -27,6 +27,9 @@ public class EmailService {
 	@Value("${aws.ses.from-name:네임드사주}")
 	private String fromName;
 
+	@Value("${app.frontend-url}")
+	private String frontendUrl;
+
 	public EmailService(
 		@Value("${aws.ses.access-key:#{null}}") String accessKey,
 		@Value("${aws.ses.secret-key:#{null}}") String secretKey,
@@ -583,7 +586,8 @@ public class EmailService {
 	public void sendPasswordResetEmail(String toEmail, String token) {
 		try {
 			// 프론트엔드의 비밀번호 변경 페이지 URL
-			String resetLink = "https://www.namedsaju.com/auth/reset-password?token=" + token;
+//			String resetLink = "https://www.namedsaju.com/auth/reset-password?token=" + token;
+			String resetLink = frontendUrl + "/auth/reset-password?token=" + token;
 
 			String subject = "[NAMED] 비밀번호 재설정 안내";
 			String htmlBody = createPasswordResetEmailHtml(resetLink);

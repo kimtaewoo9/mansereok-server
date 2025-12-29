@@ -120,6 +120,7 @@ app:
     access-token-expiration: 1800000      # 30분 (밀리초)
     refresh-token-expiration: 2592000000  # 30일 (밀리초)
     issuer: ${JWT_ISSUER:www.namedsaju.com}
+  frontend-url: https://dev-front.namedsaju.com
 
 # Server 설정
 server:
