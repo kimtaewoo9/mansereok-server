@@ -95,7 +95,7 @@ public class EmailService {
 		try {
 			String subject = "NAMED 사주 리포트 완성! 지금 이야기를 확인해 보세요.";
 
-			String mypageUrl = "https://www.namedsaju.com/mypage/fortunes";
+			String mypageUrl = frontendUrl + "/mypage/fortunes";
 			String htmlBody = createResultReadyEmailHtml(mypageUrl);
 
 			String fromAddress = fromName + " <" + fromEmail + ">";
