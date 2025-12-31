@@ -19,9 +19,9 @@ public class AsyncConfig {
 	@Bean(name = "gptTaskExecutor")
 	public Executor gptTaskExecutor() {
 		ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
-		executor.setCorePoolSize(5);
-		executor.setMaxPoolSize(5); // 최대 5개만 (429 Too Many Request)
-		executor.setQueueCapacity(20);
+		executor.setCorePoolSize(20);
+		executor.setMaxPoolSize(20); // 최대 20개만 (429 Too Many Request)
+		executor.setQueueCapacity(100);
 		executor.setThreadNamePrefix("GptAsync-");
 
 		executor.setRejectedExecutionHandler(new RejectedExecutionHandler() {
