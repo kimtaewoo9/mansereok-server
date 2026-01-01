@@ -26,6 +26,7 @@ import java.util.Map;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.ResponseCookie;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -255,12 +256,15 @@ public class OauthController {
 		RefreshToken refreshToken = refreshTokenService.generateRefreshToken(user);
 
 		// refresh 토큰을 쿠키에 저장
-		Cookie refreshCookie = new Cookie("REFRESH_TOKEN", refreshToken.getToken());
-		refreshCookie.setHttpOnly(true);
-		refreshCookie.setSecure(false);
-		refreshCookie.setPath("/");
-		refreshCookie.setMaxAge(7 * 24 * 60 * 60); // 7일
-		response.addCookie(refreshCookie); // response 에 담아서 전송 .
+		ResponseCookie refreshCookie = ResponseCookie.from("REFRESH_TOKEN", refreshToken.getToken())
+			.path("/")
+			.sameSite("None")
+			.httpOnly(true)
+			.secure(true)
+			.maxAge(7 * 24 * 60 * 60)
+			.build();
+
+		response.addHeader("Set-Cookie", refreshCookie.toString());
 
 		// 최종 응답 생성 .
 		Map<String, Object> responseBody = Map.of(
