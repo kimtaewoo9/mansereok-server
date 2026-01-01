@@ -10,8 +10,8 @@ spring:
 
     # HikariCP 설정 (운영 환경 최적화)
     hikari:
-      maximum-pool-size: 20
-      minimum-idle: 10
+      maximum-pool-size: 200
+      minimum-idle: 50
       connection-timeout: 30000
       idle-timeout: 600000
       max-lifetime: 1800000
@@ -127,8 +127,8 @@ server:
   port: 8080
   tomcat:
     threads:
-      max: 200
-      min-spare: 20
+      max: 300
+      min-spare: 50
     connection-timeout: 20000
     max-connections: 8192
     accept-count: 100
