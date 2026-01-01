@@ -140,19 +140,23 @@ public class PaymentService {
 	}
 
 	// 2단계. 결제 상태 조회 ..
-	@Transactional(readOnly = true)
+	@Transactional  // readOnly 제거!
 	public Order completePayment(PaymentCompleteRequest request) {
-		log.info("결제 상태 조회: paymentId={}, merchantUid={}", request.getPaymentId(),
-			request.getMerchantUid());
+		log.info("결제 완료 요청 및 검증: paymentId={}, merchantUid={}",
+			request.getPaymentId(), request.getMerchantUid());
 
 		Order order = orderRepository.findByMerchantUid(request.getMerchantUid())
 			.orElseThrow(() -> new PaymentException("주문을 찾을 수 없습니다."));
 
-		log.info("[PaymentService.completePayment] order: " + order);
+		// 멱등성 보장: 이미 처리된 주문이면 바로 반환
+		if (order.getStatus() == OrderStatus.PAID) {
+			log.info("이미 처리된 주문입니다. orderId={}", order.getId());
+			return order;
+		}
 
-		// 포트원 API 조회 (검증용)
-		PortOnePaymentResponse paymentResponse =
-			fetchPaymentDataFromPortOne(request.getPaymentId());
+		// 포트원 API 조회 (검증)
+		PortOnePaymentResponse paymentResponse = fetchPaymentDataFromPortOne(
+			request.getPaymentId());
 
 		// 금액 검증
 		if (!Objects.equals(paymentResponse.getAmount().getTotal(),
@@ -160,8 +164,67 @@ public class PaymentService {
 			throw new PaymentException("결제 금액이 일치하지 않습니다.");
 		}
 
-		// 상태만 반환 (DB 업데이트 안함!)
-		return order;
+		// ✅ [핵심 수정] 포트원 상태가 PAID라면 즉시 DB 업데이트
+		PaymentStatus paymentStatus = PaymentStatus.fromPortOneStatus(paymentResponse.getStatus());
+
+		if (paymentStatus == PaymentStatus.PAID) {
+			log.info("검증 완료. 주문 상태를 PAID로 변경합니다.");
+
+			// 1. 주문 상태 업데이트
+			order.setStatus(OrderStatus.PAID);
+			order.setPaymentId(request.getPaymentId());
+			order.setPaidAt(LocalDateTime.now());
+			Order savedOrder = orderRepository.save(order);
+
+			// 2. Payment 엔티티 생성 및 저장
+			Payment payment = Payment.create(
+				request.getPaymentId(),
+				request.getMerchantUid(),
+				paymentResponse.getAmount().getTotal(),
+				paymentStatus,
+				savedOrder.getId(),
+				savedOrder.getUserId(),
+				savedOrder.getSubCategoryId()
+			);
+			Payment savedPayment = paymentRepository.save(payment);
+
+			// 3. 연관관계 설정
+			savedOrder.setPaymentPkId(savedPayment.getId());
+			orderRepository.save(savedOrder);
+
+			// 4. 결과지 생성
+			resultService.createInitialResult(savedPayment, savedOrder);
+
+			// 5. Discord 알림 (선택사항)
+			try {
+				User user = userRepository.findById(savedOrder.getUserId()).orElse(null);
+				SubCategory subCategory = subCategoryRepository.findById(
+					savedOrder.getSubCategoryId()).orElse(null);
+
+				if (user != null && subCategory != null) {
+					discordNotificationService.sendPaymentCompletedNotification(
+						user.getName(),
+						user.getEmail(),
+						savedPayment.getAmount(),
+						subCategory.getTitle(),
+						savedOrder.getPaidAt(),
+						savedOrder.getAppliedDiscountCode(),
+						savedOrder.getOriginalAmount()
+					);
+				}
+			} catch (Exception e) {
+				log.error("Discord 알림 전송 중 오류 (무시됨)", e);
+			}
+
+			log.info("completePayment에서 결제 처리 완료: orderId={}, paymentId={}",
+				savedOrder.getId(), request.getPaymentId());
+
+			return savedOrder;  // 이제 PAID 상태로 반환!
+		}
+
+		// PAID가 아닌 경우
+		log.warn("결제가 아직 완료되지 않았습니다: status={}", paymentStatus);
+		return order;  // PENDING 상태 유지
 	}
 
 	@Transactional
