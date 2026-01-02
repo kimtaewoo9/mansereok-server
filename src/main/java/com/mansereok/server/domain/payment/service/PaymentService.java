@@ -145,13 +145,19 @@ public class PaymentService {
 		log.info("결제 완료 요청 및 검증: paymentId={}, merchantUid={}",
 			request.getPaymentId(), request.getMerchantUid());
 
-		Order order = orderRepository.findByMerchantUid(request.getMerchantUid())
+		// 비관적 락으로 주문 조회
+		Order order = orderRepository.findByMerchantUidWithLock(request.getMerchantUid())
 			.orElseThrow(() -> new PaymentException("주문을 찾을 수 없습니다."));
 
 		// 멱등성 보장: 이미 처리된 주문이면 바로 반환
 		if (order.getStatus() == OrderStatus.PAID) {
 			log.info("이미 처리된 주문입니다. orderId={}", order.getId());
 			return order;
+		}
+
+		if (paymentRepository.findByImpUid(request.getPaymentId()).isPresent()) {
+			log.warn("이미 존재하는 결제입니다: paymentId={}", request.getPaymentId());
+			throw new PaymentException("이미 처리된 결제입니다.");
 		}
 
 		// 포트원 API 조회 (검증)
@@ -439,13 +445,20 @@ public class PaymentService {
 				throw new PaymentException("결제 API 응답의 customData 파싱 중 오류 발생");
 			}
 
+			// ✅ 비관적 락으로 주문 조회
 			log.info("추출한 merchantUid '{}'로 주문을 조회합니다...", merchantUidFromCustomData);
-			Order order = orderRepository.findByMerchantUid(merchantUidFromCustomData)
+			Order order = orderRepository.findByMerchantUidWithLock(merchantUidFromCustomData)
 				.orElseThrow(EntityNotFoundException::new);
 			log.info("주문 조회 성공: orderId={}, currentStatus={}", order.getId(), order.getStatus());
 
+			// ✅ 멱등성 체크
 			if (order.getStatus() == OrderStatus.PAID) {
 				log.info("이미 처리된 주문: merchantUid={}", merchantUid);
+				return;
+			}
+
+			if (paymentRepository.findByImpUid(paymentId).isPresent()) {
+				log.warn("이미 존재하는 결제입니다: paymentId={}", paymentId);
 				return;
 			}
 
