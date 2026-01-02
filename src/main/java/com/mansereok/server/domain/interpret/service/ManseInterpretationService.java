@@ -48,6 +48,8 @@ public class ManseInterpretationService {
 	private final ResultRepository resultRepository;
 	private final CompatibilityResultRepository compatibilityResultRepository;
 
+	private static final List<String> GAPJA_CYCLE_KOR = new ArrayList<>();
+
 	// 60갑자 순서 정의 (대운 계산용)
 	private static final List<String> HEAVENLY_STEMS = Arrays.asList("甲", "乙", "丙", "丁", "戊",
 		"己", "庚", "辛", "壬", "癸");
@@ -63,7 +65,11 @@ public class ManseInterpretationService {
 
 	static {
 		for (int i = 0; i < 60; i++) {
+			// 1. 한자 60갑자 (甲子, 乙丑...)
 			GAPJA_CYCLE.add(HEAVENLY_STEMS.get(i % 10) + EARTHLY_BRANCHES.get(i % 12));
+
+			// 2. 한글 60갑자 (갑자, 을축...)
+			GAPJA_CYCLE_KOR.add(HEAVENLY_STEMS_KOR.get(i % 10) + EARTHLY_BRANCHES_KOR.get(i % 12));
 		}
 	}
 
@@ -2674,8 +2680,19 @@ public class ManseInterpretationService {
 
 		// 8. 대운
 		prompt.append("### 대운 ###\n");
-		int birthYear = input.getSolarDate().getYear();
-		appendDaewoonCompact(prompt, saju, input.getGender(), birthYear);
+		if (saju.getBigFortuneNumber() != null) {
+			prompt.append(String.format("시작:%d세 | 방향:%s\n",
+				saju.getBigFortuneNumber(),
+				getDaewoonDirection(saju, input.getGender())));
+
+			// [수정] birthYear 전달!
+			int birthYear = input.getSolarDate().getYear();
+			appendDaewoonSimple(prompt, saju, input.getGender(), birthYear);
+
+		} else {
+			prompt.append("대운 정보 없음\n");
+		}
+		prompt.append("\n");
 
 		// 9. 관계성 분석 (업그레이드 버전)
 		prompt.append("### 지지 관계성 (합/충/원진) ###\n");
@@ -2958,7 +2975,11 @@ public class ManseInterpretationService {
 			prompt.append(String.format("시작:%d세 | 방향:%s\n",
 				saju.getBigFortuneNumber(),
 				getDaewoonDirection(saju, input.getGender())));
-			appendDaewoonSimple(prompt, saju, input.getGender());
+
+			// [수정] birthYear 전달!
+			int birthYear = input.getSolarDate().getYear();
+			appendDaewoonSimple(prompt, saju, input.getGender(), birthYear);
+
 		} else {
 			prompt.append("대운 정보 없음\n");
 		}
@@ -3093,31 +3114,76 @@ public class ManseInterpretationService {
 			(yearSkyMinusPlus.equals("+") ? "역행" : "순행");
 	}
 
-	private void appendDaewoonSimple(StringBuilder prompt, SajuInfo saju, String gender) {
-		if (saju.getMonthSky() == null || saju.getMonthGround() == null
-			|| saju.getBigFortuneNumber() == null) {
-			prompt.append("대운 흐름 계산 불가\n");
+	private void appendDaewoonSimple(StringBuilder prompt, SajuInfo saju, String gender,
+		int birthYear) {
+		// 1. 필수 데이터 검증
+		if (saju.getYearSky() == null || saju.getMonthSky() == null
+			|| saju.getMonthGround() == null || saju.getBigFortuneNumber() == null) {
+			prompt.append("대운 정보 없음 (필수 데이터 누락)\n");
 			return;
 		}
 
-		String monthGapja = saju.getMonthSky().getKorean() + saju.getMonthGround().getKorean();
-		int currentGapjaIndex = GAPJA_CYCLE.indexOf(monthGapja);
-
-		if (currentGapjaIndex == -1) {
-			prompt.append("대운 흐름 계산 불가\n");
+		String yearSkyMinusPlus = saju.getYearSky().getMinusPlus();
+		if (yearSkyMinusPlus == null) {
+			prompt.append("대운 정보 없음 (음양 정보 누락)\n");
 			return;
 		}
 
-		String flowDirection = getDaewoonDirection(saju, gender);
+		// 2. 대운 방향 결정
+		String flowDirection = "MALE".equalsIgnoreCase(gender) ?
+			(yearSkyMinusPlus.equals("+") ? "순행" : "역행") :
+			(yearSkyMinusPlus.equals("+") ? "역행" : "순행");
+
 		int startAge = saju.getBigFortuneNumber();
 
-		// 현재 나이 계산
+		// =================================================================
+		// 3. [안전한 인덱스 검색] 한자 -> 한글 순서로 찾되, 무조건 오행 글자 제거
+		// =================================================================
+		String skyChi = saju.getMonthSky().getChinese();
+		String groundChi = saju.getMonthGround().getChinese();
+
+		// 한자에서도 혹시 모를 오행 제거 (안전장치)
+		if (skyChi != null) {
+			skyChi = skyChi.replaceAll("[木火土金水]", "");
+		}
+		if (groundChi != null) {
+			groundChi = groundChi.replaceAll("[木火土金水]", "");
+		}
+
+		String monthGapjaChi =
+			(skyChi != null ? skyChi : "") + (groundChi != null ? groundChi : "");
+		int currentGapjaIndex = GAPJA_CYCLE.indexOf(monthGapjaChi);
+
+		// 한자로 못 찾으면 한글로 시도 (Fallback)
+		if (currentGapjaIndex == -1) {
+			String skyKor = saju.getMonthSky().getKorean();
+			String groundKor = saju.getMonthGround().getKorean();
+
+			// 한글 오행 제거 ("갑목" -> "갑")
+			if (skyKor != null) {
+				skyKor = skyKor.replaceAll("[목화토금수]", "");
+			}
+			if (groundKor != null) {
+				groundKor = groundKor.replaceAll("[목화토금수]", "");
+			}
+
+			String monthGapjaKor =
+				(skyKor != null ? skyKor : "") + (groundKor != null ? groundKor : "");
+			currentGapjaIndex = GAPJA_CYCLE_KOR.indexOf(monthGapjaKor);
+
+			if (currentGapjaIndex == -1) {
+				prompt.append("대운 정보 없음 (간지 매칭 실패)\n");
+				log.error("대운 계산 실패: 한자={}, 한글={}", monthGapjaChi, monthGapjaKor);
+				return;
+			}
+		}
+
+		// 4. [버그 수정] 현재 나이 계산 (하드코딩 30 삭제)
 		int currentYear = java.time.LocalDate.now().getYear();
-		// 간단히 년주로 추정 (정확한 생년은 별도 처리 필요)
-		int currentAge = 30; // 기본값 (실제로는 input에서 계산)
+		int currentAge = currentYear - birthYear + 1; // 세는 나이
 		int currentDaewoonIndex = Math.max(0, (currentAge - startAge) / 10);
 
-		// 현재 + 미래 2개 (총 3개)
+		// 5. 대운 루프
 		for (int i = currentDaewoonIndex; i < currentDaewoonIndex + 3 && i < 9; i++) {
 			int age = startAge + (i * 10);
 			if (age > 120) {
@@ -3126,16 +3192,21 @@ public class ManseInterpretationService {
 
 			int nextIndex;
 			if (flowDirection.equals("순행")) {
+				// 순행: (현재 + i + 1)
 				nextIndex = (currentGapjaIndex + i + 1) % 60;
 			} else {
-				nextIndex = (currentGapjaIndex - (i + 1) % 60 + 60) % 60;
+				// 역행: (현재 - (i + 1)). 음수 방지를 위해 +60
+				nextIndex = (currentGapjaIndex - (i + 1) + 60) % 60;
 			}
-			String daewoonGapja = GAPJA_CYCLE.get(nextIndex);
+
+			String daewoonKor = GAPJA_CYCLE_KOR.get(nextIndex);
+			String daewoonChi = GAPJA_CYCLE.get(nextIndex);
+			String daewoonStr = String.format("%s(%s)", daewoonKor, daewoonChi);
 
 			if (i == currentDaewoonIndex) {
-				prompt.append(String.format("▶ %d~%d세: %s (현재)\n", age, age + 9, daewoonGapja));
+				prompt.append(String.format("▶ %d~%d세: %s (현재)\n", age, age + 9, daewoonStr));
 			} else {
-				prompt.append(String.format("  %d~%d세: %s\n", age, age + 9, daewoonGapja));
+				prompt.append(String.format("  %d~%d세: %s\n", age, age + 9, daewoonStr));
 			}
 		}
 	}
@@ -3344,38 +3415,72 @@ public class ManseInterpretationService {
 
 	private void appendDaewoonCompact(StringBuilder prompt, SajuInfo saju, String gender,
 		int birthYear) {
+
+		// 1. 필수 데이터 검증
 		if (saju.getYearSky() == null || saju.getMonthSky() == null
 			|| saju.getMonthGround() == null || saju.getBigFortuneNumber() == null) {
 			prompt.append("대운 정보 없음 (필수 데이터 누락)\n\n");
 			return;
 		}
+
 		String yearSkyMinusPlus = saju.getYearSky().getMinusPlus();
 		if (yearSkyMinusPlus == null) {
 			prompt.append("대운 정보 없음 (음양 정보 누락)\n\n");
 			return;
 		}
+
+		// 2. 대운 방향 결정
 		String flowDirection = "MALE".equalsIgnoreCase(gender) ?
 			(yearSkyMinusPlus.equals("+") ? "순행" : "역행") :
 			(yearSkyMinusPlus.equals("+") ? "역행" : "순행");
+
 		int startAge = saju.getBigFortuneNumber();
 
-		// 1. 인덱스 찾기 (한자로 찾아야 함!)
-		String monthGapja = saju.getMonthSky().getChinese() + saju.getMonthGround().getChinese();
-		int currentGapjaIndex = GAPJA_CYCLE.indexOf(monthGapja);
+		// 3. 월주 간지 인덱스 찾기 (개선)
+		String monthSkyChi = saju.getMonthSky().getChinese();
+		String monthGroundChi = saju.getMonthGround().getChinese();
 
-		if (currentGapjaIndex == -1) {
-			prompt.append("대운 흐름 계산 오류\n\n");
-			return;
+		// 🔥 오행 제거 (만약 "甲木" 형태로 들어온다면)
+		if (monthSkyChi != null) {
+			monthSkyChi = monthSkyChi.substring(0, 1); // 첫 글자만
+		}
+		if (monthGroundChi != null) {
+			monthGroundChi = monthGroundChi.substring(0, 1);
 		}
 
-		// 2. 현재 대운 계산
+		String monthGapjaChi = monthSkyChi + monthGroundChi;
+		int currentGapjaIndex = GAPJA_CYCLE.indexOf(monthGapjaChi);
+
+		// Fallback: 한글로 재시도
+		if (currentGapjaIndex == -1) {
+			String skyKor = saju.getMonthSky().getKorean();
+			String groundKor = saju.getMonthGround().getKorean();
+
+			if (skyKor != null) {
+				skyKor = skyKor.replaceAll("[목화토금수]", "");
+			}
+			if (groundKor != null) {
+				groundKor = groundKor.replaceAll("[목화토금수]", "");
+			}
+
+			String monthGapjaKor = skyKor + groundKor;
+			currentGapjaIndex = GAPJA_CYCLE_KOR.indexOf(monthGapjaKor);
+
+			if (currentGapjaIndex == -1) {
+				prompt.append("대운 흐름 계산 오류 (월주 매칭 실패)\n\n");
+				log.error("대운 계산 실패: 한자={}, 한글={}", monthGapjaChi, monthGapjaKor);
+				return;
+			}
+		}
+
+		// 4. 현재 대운 계산
 		int currentYear = java.time.LocalDate.now().getYear();
-		int currentAge = currentYear - birthYear + 1;
+		int currentAge = currentYear - birthYear + 1; // 세는 나이
 		int currentDaewoonIndex = Math.max(0, (currentAge - startAge) / 10);
 
 		prompt.append(String.format("대운 시작: %d세 | 흐름: %s\n", startAge, flowDirection));
 
-		// 3. 루프 돌면서 한글명 생성
+		// 5. 대운 루프 (🔥 역행 계산 수정)
 		for (int i = currentDaewoonIndex; i < currentDaewoonIndex + 3 && i < 9; i++) {
 			int age = startAge + (i * 10);
 			if (age > 120) {
@@ -3384,25 +3489,21 @@ public class ManseInterpretationService {
 
 			int nextIndex;
 			if (flowDirection.equals("순행")) {
-				nextIndex = (currentGapjaIndex + i + 1) % 60;
+				nextIndex = (currentGapjaIndex + (i + 1)) % 60;
 			} else {
-				nextIndex = (currentGapjaIndex - (i + 1) % 60 + 60) % 60;
+				// 🔥 수정: 역행 계산 괄호 수정
+				nextIndex = ((currentGapjaIndex - (i + 1)) % 60 + 60) % 60;
 			}
 
-			// 🔥 [핵심 수정] 한글 이름 생성 (예: 정 + 사 = 정사)
-			String stemKor = HEAVENLY_STEMS_KOR.get(nextIndex % 10);
-			String branchKor = EARTHLY_BRANCHES_KOR.get(nextIndex % 12);
-			String daewoonKor = stemKor + branchKor; // "정사"
-
-			// 한자도 괄호 안에 같이 넣어줌 (GPT의 정확한 해석을 위해) -> "정사(丁巳)"
+			String daewoonKor = GAPJA_CYCLE_KOR.get(nextIndex);
 			String daewoonChi = GAPJA_CYCLE.get(nextIndex);
-			String daewoonStr = String.format("%s(%s)", daewoonKor, daewoonChi);
 
 			if (i == currentDaewoonIndex) {
-				prompt.append(
-					String.format("▶ %d~%d세: %s 대운 (현재 진행 중)\n", age, age + 9, daewoonStr));
+				prompt.append(String.format("▶ %d~%d세: %s(%s) (현재)\n",
+					age, age + 9, daewoonKor, daewoonChi));
 			} else {
-				prompt.append(String.format("  %d~%d세: %s 대운\n", age, age + 9, daewoonStr));
+				prompt.append(String.format("  %d~%d세: %s(%s)\n",
+					age, age + 9, daewoonKor, daewoonChi));
 			}
 		}
 		prompt.append("\n");
