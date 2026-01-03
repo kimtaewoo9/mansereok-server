@@ -3352,42 +3352,6 @@ public class ManseInterpretationService {
 		}
 	}
 
-	/**
-	 * 프롬프트에 신살 정보를 요약하여 추가하는 헬퍼 메서드
-	 */
-	private void appendSinsalAnalysis(StringBuilder prompt, SajuInfo saju) {
-		if (saju == null) {
-			return;
-		}
-
-		List<String> allSinsal = new ArrayList<>();
-
-		if (saju.getSinsalInfo() != null) {
-			saju.getSinsalInfo().forEach((pillarName, sinsals) -> {
-				if (sinsals != null && !sinsals.isEmpty()) {
-					sinsals.stream()
-						.filter(s -> s != null && !s.isEmpty())
-						.forEach(s -> allSinsal.add(pillarName + ":" + s));
-				}
-			});
-		}
-
-		// 특수 신살 추가
-		if (Boolean.TRUE.equals(saju.getHasGoegang())) {
-			allSinsal.add("일주:괴강살");
-		}
-		if (Boolean.TRUE.equals(saju.getHasBaekho())) {
-			allSinsal.add("일주:백호대살");
-		}
-
-		if (!allSinsal.isEmpty()) {
-			prompt.append(String.format("- 신살: %s\n",
-				String.join(", ", allSinsal)));
-		} else {
-			prompt.append("- 신살: 해당 없음\n");
-		}
-	}
-
 	private void appendSinsalFull(StringBuilder prompt, SajuInfo saju) {
 		Map<String, List<String>> sinsalByPillar = new HashMap<>();
 		sinsalByPillar.put("년주", new ArrayList<>());
@@ -3432,7 +3396,7 @@ public class ManseInterpretationService {
 		}
 		prompt.append("\n");
 	}
-	
+
 	/**
 	 * AI 환각 방지 및 고품질 해석을 위한 절대 기준(Fact) 주입
 	 */
