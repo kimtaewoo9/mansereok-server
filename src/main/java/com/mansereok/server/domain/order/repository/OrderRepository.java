@@ -1,8 +1,10 @@
 package com.mansereok.server.domain.order.repository;
 
 import com.mansereok.server.domain.order.entity.Order;
+import jakarta.persistence.LockModeType;
 import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -27,4 +29,8 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
 		nativeQuery = true
 	)
 	void detachUser(@Param("userId") Long userId);
+
+	@Lock(LockModeType.PESSIMISTIC_WRITE)
+	@Query("SELECT o FROM Order o WHERE o.merchantUid = :merchantUid")
+	Optional<Order> findByMerchantUidWithLock(@Param("merchantUid") String merchantUid);
 }
