@@ -3114,6 +3114,9 @@ public class ManseInterpretationService {
 			(yearSkyMinusPlus.equals("+") ? "역행" : "순행");
 	}
 
+	/**
+	 * 대운 계산 (선형 탐색을 통한 100% 정확한 인덱스 매칭)
+	 */
 	private void appendDaewoonSimple(StringBuilder prompt, SajuInfo saju, String gender,
 		int birthYear) {
 		// 1. 필수 데이터 검증
@@ -3130,73 +3133,65 @@ public class ManseInterpretationService {
 		}
 
 		// 2. 대운 방향 결정
-		String flowDirection = "MALE".equalsIgnoreCase(gender) ?
-			(yearSkyMinusPlus.equals("+") ? "순행" : "역행") :
-			(yearSkyMinusPlus.equals("+") ? "역행" : "순행");
+		boolean isForward = "MALE".equalsIgnoreCase(gender)
+			? "+".equals(yearSkyMinusPlus)
+			: "-".equals(yearSkyMinusPlus);
 
+		String flowDirection = isForward ? "순행" : "역행";
 		int startAge = saju.getBigFortuneNumber();
 
-		// =================================================================
-		// 3. [안전한 인덱스 검색] 한자 -> 한글 순서로 찾되, 무조건 오행 글자 제거
-		// =================================================================
-		String skyChi = saju.getMonthSky().getChinese();
-		String groundChi = saju.getMonthGround().getChinese();
+		// 3. 월주 인덱스 추출
+		String skyChar = extractFirstChar(saju.getMonthSky().getChinese());
+		String groundChar = extractFirstChar(saju.getMonthGround().getChinese());
 
-		// 한자에서도 혹시 모를 오행 제거 (안전장치)
-		if (skyChi != null) {
-			skyChi = skyChi.replaceAll("[木火土金水]", "");
-		}
-		if (groundChi != null) {
-			groundChi = groundChi.replaceAll("[木火土金水]", "");
-		}
+		int skyIndex = HEAVENLY_STEMS.indexOf(skyChar);
+		int groundIndex = EARTHLY_BRANCHES.indexOf(groundChar);
 
-		String monthGapjaChi =
-			(skyChi != null ? skyChi : "") + (groundChi != null ? groundChi : "");
-		int currentGapjaIndex = GAPJA_CYCLE.indexOf(monthGapjaChi);
-
-		// 한자로 못 찾으면 한글로 시도 (Fallback)
-		if (currentGapjaIndex == -1) {
-			String skyKor = saju.getMonthSky().getKorean();
-			String groundKor = saju.getMonthGround().getKorean();
-
-			// 한글 오행 제거 ("갑목" -> "갑")
-			if (skyKor != null) {
-				skyKor = skyKor.replaceAll("[목화토금수]", "");
-			}
-			if (groundKor != null) {
-				groundKor = groundKor.replaceAll("[목화토금수]", "");
-			}
-
-			String monthGapjaKor =
-				(skyKor != null ? skyKor : "") + (groundKor != null ? groundKor : "");
-			currentGapjaIndex = GAPJA_CYCLE_KOR.indexOf(monthGapjaKor);
-
-			if (currentGapjaIndex == -1) {
-				prompt.append("대운 정보 없음 (간지 매칭 실패)\n");
-				log.error("대운 계산 실패: 한자={}, 한글={}", monthGapjaChi, monthGapjaKor);
-				return;
-			}
+		// Fallback: 한글로 재시도
+		if (skyIndex == -1 || groundIndex == -1) {
+			skyChar = extractFirstChar(saju.getMonthSky().getKorean());
+			groundChar = extractFirstChar(saju.getMonthGround().getKorean());
+			skyIndex = HEAVENLY_STEMS_KOR.indexOf(skyChar);
+			groundIndex = EARTHLY_BRANCHES_KOR.indexOf(groundChar);
 		}
 
-		// 4. [버그 수정] 현재 나이 계산 (하드코딩 30 삭제)
+		if (skyIndex == -1 || groundIndex == -1) {
+			log.error("대운 계산 실패: 천간={}, 지지={}", skyChar, groundChar);
+			prompt.append("대운 정보 없음 (월주 매칭 실패)\n");
+			return;
+		}
+
+		// 4. ✅ [핵심 수정] 선형 탐색으로 정확한 60갑자 인덱스 찾기
+		int monthGapjaIndex;
+		try {
+			monthGapjaIndex = findGapjaIndex(skyIndex, groundIndex);
+		} catch (IllegalArgumentException e) {
+			log.error("존재할 수 없는 간지 조합: 천간인덱스={}, 지지인덱스={}", skyIndex, groundIndex);
+			prompt.append("대운 정보 오류 (잘못된 간지 조합)\n");
+			return;
+		}
+
+		// 5. 현재 나이 및 대운 위치
 		int currentYear = java.time.LocalDate.now().getYear();
 		int currentAge = currentYear - birthYear + 1; // 세는 나이
 		int currentDaewoonIndex = Math.max(0, (currentAge - startAge) / 10);
 
-		// 5. 대운 루프
+		prompt.append(String.format("대운 시작: %d세 | 흐름: %s\n", startAge, flowDirection));
+
+		// 6. 대운 출력 루프
 		for (int i = currentDaewoonIndex; i < currentDaewoonIndex + 3 && i < 9; i++) {
 			int age = startAge + (i * 10);
 			if (age > 120) {
 				break;
 			}
 
+			// 월주 다음부터 1대운 시작 (i + 1)
 			int nextIndex;
-			if (flowDirection.equals("순행")) {
-				// 순행: (현재 + i + 1)
-				nextIndex = (currentGapjaIndex + i + 1) % 60;
+			if (isForward) {
+				nextIndex = (monthGapjaIndex + (i + 1)) % 60;
 			} else {
-				// 역행: (현재 - (i + 1)). 음수 방지를 위해 +60
-				nextIndex = (currentGapjaIndex - (i + 1) + 60) % 60;
+				// 자바 음수 나머지 연산 안전 처리
+				nextIndex = ((monthGapjaIndex - (i + 1)) % 60 + 60) % 60;
 			}
 
 			String daewoonKor = GAPJA_CYCLE_KOR.get(nextIndex);
@@ -3209,6 +3204,31 @@ public class ManseInterpretationService {
 				prompt.append(String.format("  %d~%d세: %s\n", age, age + 9, daewoonStr));
 			}
 		}
+	}
+
+	/**
+	 * ✅ [완벽한 방법] 0~59를 순회하며 천간/지지가 일치하는 인덱스를 찾음 수학 공식 오류 가능성을 원천 차단함.
+	 */
+	private int findGapjaIndex(int skyIndex, int groundIndex) {
+		for (int i = 0; i < 60; i++) {
+			// i번째 간지의 천간 인덱스는 i % 10
+			// i번째 간지의 지지 인덱스는 i % 12
+			if ((i % 10) == skyIndex && (i % 12) == groundIndex) {
+				return i;
+			}
+		}
+		// 60번을 다 돌았는데도 없으면, 사주적으로 불가능한 조합(예: 갑축)이 들어온 것임
+		throw new IllegalArgumentException("유효하지 않은 간지 조합입니다.");
+	}
+
+	/**
+	 * 문자열 첫 글자 추출 (안전)
+	 */
+	private String extractFirstChar(String str) {
+		if (str == null || str.isEmpty()) {
+			return "";
+		}
+		return str.substring(0, 1);
 	}
 
 	private String extractContentFromResponseGpt5(String jsonResponse)
@@ -3541,7 +3561,7 @@ public class ManseInterpretationService {
 			return;
 		}
 
-		int currentGapjaIndex = GAPJA_CYCLE.indexOf(monthSkyStem + monthGroundBranch);
+		int currentGapjaIndex = GAPJA_CYCLE_KOR.indexOf(monthSkyStem + monthGroundBranch);
 		if (currentGapjaIndex == -1) {
 			prompt.append(String.format("- 대운 흐름: (월주 '%s%s' 60갑자 인덱스 오류)\n", monthSkyStem,
 				monthGroundBranch));
