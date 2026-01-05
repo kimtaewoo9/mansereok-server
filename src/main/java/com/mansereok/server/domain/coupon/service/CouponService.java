@@ -7,7 +7,9 @@ import com.mansereok.server.domain.coupon.repository.CouponRepository;
 import com.mansereok.server.domain.coupon.repository.CouponTemplateRepository;
 import com.mansereok.server.domain.discount.service.DiscountCodeService.DiscountValidationResult;
 import com.mansereok.server.global.exception.PaymentException;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
@@ -87,25 +89,42 @@ public class CouponService {
 
 	@Transactional(readOnly = true)
 	public List<CouponEventDto> getCouponEvents(Long userId) {
-		// 1. 쿼리 실행 (결과는 [CouponTemplate객체, Boolean] 형태의 리스트)
 		List<Object[]> results = couponTemplateRepository.findAllWithIssueStatus(userId);
 
-		// 2. DTO로 변환 (엔티티의 메서드를 그대로 활용 가능)
+		// 날짜 포맷터 (예: 2024.12.31)
+		DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy.MM.dd");
+
 		return results.stream()
 			.map(row -> {
-				CouponTemplate t = (CouponTemplate) row[0]; // 첫 번째 값: 엔티티
-				boolean isIssued = (boolean) row[1];        // 두 번째 값: 발급 여부
-
-				// 엔티티 안에 있는 메서드로 '매진 여부' 판별
+				CouponTemplate t = (CouponTemplate) row[0];
+				boolean isIssued = (boolean) row[1];
 				boolean isSoldOut = t.getMaxIssueCount() != null &&
 					t.getCurrentIssueCount() >= t.getMaxIssueCount();
+
+				// [수정됨] 유효 기간 텍스트 계산 로직
+				String validPeriod;
+
+				if (t.getValidUntil() != null) {
+					// 1. 고정 날짜 방식 (예: 2026.12.31 까지)
+					validPeriod = t.getValidUntil().format(formatter) + " 까지";
+
+				} else if (t.getValidDaysAfterIssue() != null) {
+					// 2. '발급 후 30일' 방식 -> 오늘 받으면 언제까지인지 날짜로 계산해서 보여줌
+					// 예: 오늘(1/5) + 30일 = "2024.02.04 까지"
+					LocalDate expiredDate = LocalDate.now().plusDays(t.getValidDaysAfterIssue());
+					validPeriod = expiredDate.format(formatter) + " 까지";
+
+				} else {
+					validPeriod = "기간 제한 없음";
+				}
 
 				return new CouponEventDto(
 					t.getId(),
 					t.getName(),
 					t.getDiscountValue(),
-					isIssued,  // 쿼리에서 가져온 값
-					isSoldOut  // 엔티티 값으로 계산
+					validPeriod, // 계산된 날짜 문자열 전달
+					isIssued,
+					isSoldOut
 				);
 			})
 			.collect(Collectors.toList());
