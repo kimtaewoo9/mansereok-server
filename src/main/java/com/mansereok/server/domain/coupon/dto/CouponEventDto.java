@@ -11,6 +11,8 @@ public class CouponEventDto {
 	private String name;
 	private int discountValue;
 
+	private String validPeriod;
+
 	private boolean isIssued;
 	private boolean isSoldOut;
 }
