@@ -48,11 +48,11 @@ public class CouponTemplate {
 
 	// 생성자 및 비즈니스 로직 (재고 증가 등)
 	public void incrementIssueCount() {
-		if (maxIssueCount != null && currentIssueCount >= maxIssueCount) {
-			throw new IllegalStateException("선착순 마감되었습니다.");
-		}
 		if (currentIssueCount == null) {
 			currentIssueCount = 0;
+		}
+		if (maxIssueCount != null && currentIssueCount >= maxIssueCount) {
+			throw new IllegalStateException("선착순 마감되었습니다.");
 		}
 		this.currentIssueCount++;
 	}
