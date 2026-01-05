@@ -23,8 +23,7 @@ public class CouponService {
 
 	@Transactional
 	public void downloadCoupon(Long userId, Long templateId) {
-		// 1. 템플릿 조회 (선착순 동시성 이슈가 있다면 findByIdWithLock 사용 권장)
-		// 일단 기본 조회로 구현하되, 필요시 Repository에 락 메서드 추가하세요.
+		// 1. 템플릿 조회
 		CouponTemplate template = couponTemplateRepository.findByIdWithLock(templateId)
 			.orElseThrow(() -> new PaymentException("존재하지 않는 쿠폰 이벤트입니다."));
 
