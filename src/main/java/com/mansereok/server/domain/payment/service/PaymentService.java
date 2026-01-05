@@ -4,6 +4,7 @@ package com.mansereok.server.domain.payment.service;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.mansereok.server.domain.coupon.service.CouponService;
 import com.mansereok.server.domain.discount.entity.DiscountCode;
 import com.mansereok.server.domain.discount.service.DiscountCodeService;
 import com.mansereok.server.domain.discount.service.DiscountCodeService.DiscountValidationResult;
@@ -64,6 +65,8 @@ public class PaymentService {
 
 	private final ResultService resultService;
 
+	private final CouponService couponService;
+
 	private final RestClient restClient = RestClient.create();
 
 	@Value("${portone.api.secret}")
@@ -71,7 +74,6 @@ public class PaymentService {
 
 	// 1단계: 주문 생성 (결제 전)
 	public OrderCreateResponse createOrder(String username, OrderCreateRequest request) {
-		log.info("주문 생성 요청: subCategoryId={}", request.getSubCategoryId());
 		User user = userRepository.findByUsername(username)
 			.orElseThrow(() -> new PaymentException("사용자를 찾을 수 없습니다."));
 
@@ -81,16 +83,37 @@ public class PaymentService {
 		Integer originalAmount = subCategory.getPrice(); // 1. 원본 금액 .
 
 		try {
-			// 2. [핵심] 락 걸고, 검증하고, 엔티티까지 받아옴
-			DiscountValidationResult validationResult = discountCodeService.validateAndCalculateDiscountForPayment(
-				request.getDiscountCode(),
-				originalAmount,
-				request.getSubCategoryId()
-			);
+			DiscountValidationResult validationResult;
+			Long usedCouponId = null; // 나중에 사용 처리를 위해 저장
+
+			// A. 쿠폰을 선택한 경우 (우선순위 높음)
+			if (request.getCouponId() != null) {
+				// 새 CouponService 호출
+				validationResult = couponService.validateAndCalculateCoupon(
+					request.getCouponId(),
+					user.getId(),
+					originalAmount
+				);
+				usedCouponId = request.getCouponId();
+			}
+			// B. 할인 코드를 직접 입력한 경우 (기존 로직)
+			else if (request.getDiscountCode() != null && !request.getDiscountCode().isBlank()) {
+				validationResult = discountCodeService.validateAndCalculateDiscountForPayment(
+					request.getDiscountCode(),
+					originalAmount,
+					request.getSubCategoryId()
+				);
+			}
+			// C. 아무것도 안 쓴 경우
+			else {
+				validationResult = new DiscountValidationResult(originalAmount, null, null);
+			}
 
 			Integer finalAmount = validationResult.getFinalAmount();
-			String appliedCode = validationResult.getAppliedCode();
-			DiscountCode discountCodeEntity = validationResult.getDiscountCodeEntity(); // 락 걸린 엔티티
+			String appliedCode = validationResult.getAppliedCode(); // 쿠폰명 or 할인코드
+
+			// 할인 코드를 쓴 경우에만 값이 있고, 쿠폰을 쓴 경우엔 null임
+			DiscountCode discountCodeEntity = validationResult.getDiscountCodeEntity();
 
 			String merchantUid =
 				"order_" + System.currentTimeMillis() + "_" + UUID.randomUUID().toString()
@@ -104,7 +127,7 @@ public class PaymentService {
 					subCategory.getId(),
 					originalAmount, // 원본 금액
 					finalAmount,    // 최종 결제 금액
-					appliedCode,    // 적용된 코드
+					appliedCode,    // 적용된 코드(또는 쿠폰명)
 					OrderStatus.PENDING,
 					user.getName(),
 					user.getEmail()
@@ -112,7 +135,13 @@ public class PaymentService {
 			);
 
 			// 4. 사용 횟수 증가 (주문 생성 트랜잭션 내에서 즉시 처리)
-			if (discountCodeEntity != null) {
+			// [중요] 쿠폰 사용 처리
+			if (usedCouponId != null) {
+				couponService.useCoupon(usedCouponId);
+				log.info("쿠폰 사용 처리 완료: couponId={}", usedCouponId);
+			}
+			// 기존 할인 코드 사용 처리
+			else if (discountCodeEntity != null) {
 				discountCodeService.incrementUsage(discountCodeEntity);
 				log.info("할인 코드 사용 횟수 증가 완료: {}", appliedCode);
 			}
@@ -130,7 +159,7 @@ public class PaymentService {
 
 		} catch (PaymentException e) {
 			// 할인 코드 검증 실패 (만료, 횟수 초과 등)
-			log.warn("할인 코드 처리 실패: {}", e.getMessage());
+			log.warn("할인/쿠폰 처리 실패: {}", e.getMessage());
 			throw e; // 400 Bad Request로 프론트에 전달
 		} catch (Exception e) {
 			// 기타 DB 오류 등
