@@ -88,7 +88,7 @@ public class AuthController {
 
 		Cookie refreshCookie = new Cookie("REFRESH_TOKEN", refreshToken.getToken());
 		refreshCookie.setHttpOnly(true);
-		refreshCookie.setSecure(false);
+		refreshCookie.setSecure(true);
 		refreshCookie.setPath("/");
 		refreshCookie.setMaxAge(7 * 24 * 60 * 60); // 7일
 		response.addCookie(refreshCookie);
