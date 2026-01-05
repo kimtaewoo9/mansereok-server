@@ -9,6 +9,8 @@ public class CouponEventDto {
 
 	private Long templateId;
 	private String name;
+
+	private String discountType;
 	private int discountValue;
 
 	private String validPeriod;
