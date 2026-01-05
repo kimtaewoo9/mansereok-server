@@ -121,6 +121,7 @@ public class CouponService {
 				return new CouponEventDto(
 					t.getId(),
 					t.getName(),
+					t.getDiscountType().toString(),
 					t.getDiscountValue(),
 					validPeriod, // 계산된 날짜 문자열 전달
 					isIssued,
