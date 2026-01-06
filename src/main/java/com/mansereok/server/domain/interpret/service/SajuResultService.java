@@ -72,7 +72,7 @@ public class SajuResultService {
 			.orElseThrow(EntityNotFoundException::new);
 
 		result.updatePersonsInformation(p1Name, p1Ilgan, p2Name, p2Ilgan);
-		return compatibilityResultRepository.saveAndFlush(result);
+		return compatibilityResultRepository.save(result);
 	}
 
 	@Transactional
