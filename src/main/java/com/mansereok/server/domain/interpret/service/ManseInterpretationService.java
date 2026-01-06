@@ -13,14 +13,12 @@ import com.mansereok.server.domain.interpret.dto.response.ManseryeokCalculationR
 import com.mansereok.server.domain.interpret.dto.response.ManseryeokCalculationResponse.SajuInfo;
 import com.mansereok.server.domain.interpret.entity.CompatibilityResult;
 import com.mansereok.server.domain.interpret.entity.Result;
-import com.mansereok.server.domain.interpret.entity.ResultStatus;
 import com.mansereok.server.domain.interpret.repository.CompatibilityResultRepository;
 import com.mansereok.server.domain.interpret.repository.ResultRepository;
 import com.mansereok.server.domain.notification.service.DiscordNotificationService;
 import com.mansereok.server.domain.user.entity.User;
 import com.mansereok.server.domain.user.service.EmailService;
 import com.mansereok.server.domain.user.service.UserService;
-import jakarta.persistence.EntityNotFoundException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -30,7 +28,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 @Service
 @Slf4j
@@ -47,6 +44,8 @@ public class ManseInterpretationService {
 
 	private final ResultRepository resultRepository;
 	private final CompatibilityResultRepository compatibilityResultRepository;
+
+	private final SajuResultService sajuResultService;
 
 	private static final List<String> GAPJA_CYCLE_KOR = new ArrayList<>();
 
@@ -92,7 +91,7 @@ public class ManseInterpretationService {
 		CompatibilityResultRepository compatibilityResultRepository,
 		OgImageGenerationService ogImageGenerationService,
 		DiscordNotificationService discordNotificationService,
-		EmailService emailService
+		EmailService emailService, SajuResultService sajuResultService
 	) {
 		this.gptApiRetryService = gptApiRetryService;
 		this.resultRepository = resultRepository;
@@ -101,10 +100,10 @@ public class ManseInterpretationService {
 		this.ogImageGenerationService = ogImageGenerationService;
 		this.discordNotificationService = discordNotificationService;
 		this.emailService = emailService;
+		this.sajuResultService = sajuResultService;
 	}
 
 	@Async("gptTaskExecutor")
-	@Transactional
 	public void interpret(
 		String name,
 		ManseryeokCalculationResponse response,
@@ -115,348 +114,186 @@ public class ManseInterpretationService {
 	) {
 		log.info("✅ 사주 해석 요청 시작 - name: {}, subcategoryId: {}", name, subcategoryId);
 
-		Result result = resultRepository.findByPaymentId(paymentId)
-			.orElseThrow(EntityNotFoundException::new);
-
-		String ilgan = "정보 없음";
-		if (response != null && response.getSaju() != null
-			&& response.getSaju().getDaySky() != null) {
-			PillarElement daySky = response.getSaju().getDaySky();
-			ilgan = daySky.getKorean() + daySky.getFiveCircle();
-		}
-
-		result.updateInformation(
-			name,
-			response.getInput().getSolarDate(),
-			response.getInput().getSolarTime(),
-			response.getInput().getGender(),
-			response.getInput().getIsLunar(),
-			ilgan
-		);
-
-		resultRepository.save(result);
-		log.info("[Async] Result 정보 업데이트 및 상태 저장 완료: resultId={}", result.getId());
+		Long resultId = null; // 롤백용 ID 저장
 
 		try {
-			User user = userService.findByUsername(username);
-			String birthdate = response.getInput().getSolarDate().toString();
+			// 1. [DB] 초기 정보 저장 (DB 커넥션 사용 O -> 즉시 반납)
+			String ilgan = "정보 없음";
+			if (response != null && response.getSaju() != null
+				&& response.getSaju().getDaySky() != null) {
+				ilgan = response.getSaju().getDaySky().getKorean() + response.getSaju().getDaySky()
+					.getFiveCircle();
+			}
 
-			discordNotificationService.sendInterpretationRequestNotification(
-				name,
-				user.getEmail(),
-				birthdate,
-				subcategoryId
-			);
-		} catch (Exception e) {
-			log.error("Discord 사주 요청 알림 전송 실패", e);
-			// 알림 실패해도 작업은 계속 진행
-		}
+			Result result = sajuResultService.updateInitialStatus(paymentId, name, response, ilgan);
+			resultId = result.getId();
+			log.info("[Async] 정보 업데이트 완료: resultId={}", resultId);
 
-		try {
+			// 2. [Non-DB] 알림 전송
+			try {
+				User user = userService.findByUsername(username);
+				discordNotificationService.sendInterpretationRequestNotification(name,
+					user.getEmail(), response.getInput().getSolarDate().toString(), subcategoryId);
+			} catch (Exception e) {
+				log.error("알림 전송 실패", e);
+			}
+
+			// 3. GPT 호출 (DB 커넥션 사용 X)
 			String userPrompt = createPromptBySubcategory(subcategoryId, name, response,
 				sourceTitle);
-
 			String input = GPT5_SYSTEM_INSTRUCTION + userPrompt;
 
-			Gpt5Request gpt5Request = new Gpt5Request(
-				"gpt-5.2",
-				input,
-				16384,
-				"high",
-				"high"
-			);
+			String requestBody = objectMapper.writeValueAsString(
+				new Gpt5Request("gpt-5.2", input, 16384, "high", "high"));
 
-			String requestBody = objectMapper.writeValueAsString(gpt5Request);
-
-			log.info("GPT-5 요청 데이터 생성 완료. API 호출 시작...");
+			log.info("GPT API 호출 시작...");
 			String gptResponse = gptApiRetryService.callGptApiWithRetry(requestBody);
 
-			String content = extractContentFromResponseGpt5(gptResponse);
-			log.info("✅ content 추출 완료 - 길이: {}", content.length());
+			GptSajuResponse gptData = objectMapper.readValue(
+				extractContentFromResponseGpt5(gptResponse), GptSajuResponse.class);
 
-			GptSajuResponse gptData = objectMapper.readValue(content, GptSajuResponse.class);
-			log.info("✅ gptData 파싱 완료");
-			log.info("✅ fullAnalysis 길이: {}", gptData.getFullAnalysis().length());
-			log.info("✅ summary 길이: {}", gptData.getSummary().length());
+			// 4. [DB] 결과 저장 (DB 커넥션 사용 O -> 즉시 반납)
+			User user = userService.findByUsername(
+				username); // 단순 조회라 @Transactional 없어도 됨 (OSIV 켜져있다면)
+			Result savedResult = sajuResultService.saveFinalResult(resultId,
+				gptData.getFullAnalysis(), gptData.getSummary());
+			log.info("해석 결과 저장 완료: resultId={}", savedResult.getId());
 
-			log.info("✅ gptData.getFullAnalysis(): " + gptData.getFullAnalysis());
-			log.info("✅ gptData.getSummary(): " + gptData.getSummary());
-
-			User user = userService.findByUsername(username);
-			log.info("사용자 id: " + user.getId());
-
-			result.completeInterpretation(
-				gptData.getFullAnalysis(),
-				gptData.getSummary()
-			); // complete로 상태 변경 추가 .
-
-			Result savedResult = resultRepository.save(result);
-
-			// OG 이미지 생성 별도 처리 ..
+			// 5. [Non-DB] 후처리
 			try {
 				ogImageGenerationService.generateAndUploadOgImage(savedResult);
 			} catch (Exception e) {
-				log.error("OG 이미지 생성 실패 (Result 저장은 유지): resultId={}",
-					savedResult.getId(), e);
+				log.error("OG 실패", e);
 			}
 
 			try {
 				if (user.getEmail() != null) {
 					emailService.sendResultReadyEmail(user.getEmail(), user.getName());
-				} else {
-					log.warn("[Async] 결과 완료 이메일 전송 실패: 사용자 이메일이 없습니다. username={}", username);
 				}
 			} catch (Exception e) {
-				log.error("[Async] GPT API 요청 또는 처리 중 오류 발생: paymentId={}, Error: {}", paymentId,
-					e.getMessage(), e);
+				log.error("이메일 실패", e);
 			}
-			log.info("Result 해석 결과 저장 및 상태 COMPLETED 변경 완료: resultId={}", savedResult.getId());
-		} catch (Throwable t) {
-			log.error("[Async] 비동기 트랜잭션 최종 실패 (롤백 원인 확인 필요): paymentId={}, Error: {}",
-				paymentId, t.getMessage(), t);
 
-			// 오류 발생 시 상태 롤백 처리
-			if (paymentId != null) {
-				try {
-					Result errorResult = resultRepository.findById(
-						result != null ? result.getId() : -1L).orElse(null);
-
-					if (errorResult != null && errorResult.getStatus() == ResultStatus.PROCESSING) {
-						errorResult.setStatus(ResultStatus.INPUT_REQUIRED); // 또는 FAILED 상태
-						resultRepository.save(errorResult);
-						log.info("[Async] 오류 발생으로 Result 상태 INPUT_REQUIRED로 롤백 시도: paymentId={}",
-							paymentId);
-					} else {
-						log.warn(
-							"[Async] 오류 롤백 처리 중 Result를 찾지 못했거나 상태가 PROCESSING이 아님: paymentId={}",
-							paymentId);
-					}
-				} catch (Exception ex) {
-					log.error("[Async] 오류 처리(상태 롤백) 중 추가 오류 발생: paymentId={}, Error: {}", paymentId,
-						ex.getMessage(), ex);
-				}
-			}
+		} catch (Exception e) {
+			log.error("해석 중 오류 발생: {}", e.getMessage(), e);
+			// 6. [DB] 에러 롤백
+			sajuResultService.rollbackStatus(resultId);
 		}
 	}
 
 	@Async("gptTaskExecutor")
-	@Transactional
 	public void analyzeCompatibilityWithSubcategory(
-		String person1Name,
-		ManseryeokCalculationResponse person1Response,
-		String person2Name,
-		ManseryeokCalculationResponse person2Response,
-		Long subcategoryId,
-		Long paymentId,
-		String username,
-		String person1SourceTitle,
-		String person2SourceTitle
+		String person1Name, ManseryeokCalculationResponse person1Response,
+		String person2Name, ManseryeokCalculationResponse person2Response,
+		Long subcategoryId, Long paymentId, String username,
+		String person1SourceTitle, String person2SourceTitle
 	) {
-		log.info("✅ 궁합 분석 요청 시작 - subcategoryId: {}, {} & {}", subcategoryId, person1Name,
-			person2Name);
+		log.info("✅ 궁합 분석 요청 시작: {} & {}", person1Name, person2Name);
 
-		CompatibilityResult result = null;
+		Long resultId = null;
+
 		try {
-			result = compatibilityResultRepository.findByPaymentId(paymentId)
-				.orElseThrow(EntityNotFoundException::new);
+			// 1. [DB] 초기 정보 저장
+			String p1Ilgan = extractIlgan(person1Response);
+			String p2Ilgan = extractIlgan(person2Response);
 
-			// 두사람의 일간 정보 추출 ..
-			String person1Ilgan = extractIlgan(person1Response);
-			String person2Ilgan = extractIlgan(person2Response);
+			CompatibilityResult result = sajuResultService.updateCompatibilityInitialStatus(
+				paymentId, person1Name, p1Ilgan, person2Name, p2Ilgan
+			);
+			resultId = result.getId();
 
-			result.updatePersonsInformation(person1Name, person1Ilgan, person2Name, person2Ilgan);
-
-			compatibilityResultRepository.saveAndFlush(result);
-			log.info("CompatibilityResult 상태 PROCESSING 변경 및 정보 업데이트: resultId={}", result.getId());
-
+			// 2. GPT 호출 (DB 커넥션 사용 X)
 			try {
-				String person1Birthdate = person1Response.getInput().getSolarDate().toString();
-				String person2Birthdate = person2Response.getInput().getSolarDate().toString();
-
-				discordNotificationService.sendCompatibilityRequestNotification(
-					person1Name,
-					person1Birthdate,
-					person2Name,
-					person2Birthdate
-				);
+				discordNotificationService.sendCompatibilityRequestNotification(person1Name,
+					person1Response.getInput().getSolarDate().toString(), person2Name,
+					person2Response.getInput().getSolarDate().toString());
 			} catch (Exception e) {
-				log.error("Discord 궁합 요청 알림 전송 실패", e);
-				// 알림 실패해도 작업은 계속 진행
 			}
 
-			// ChatGPT 해석 로직 .
 			String userPrompt = createCompatibilityPromptBySubcategory(
-				subcategoryId,
-				person1Name, person1Response,
-				person2Name, person2Response,
-				person1SourceTitle,
-				person2SourceTitle
+				subcategoryId, person1Name, person1Response, person2Name, person2Response,
+				person1SourceTitle, person2SourceTitle
 			);
+			String requestBody = objectMapper.writeValueAsString(
+				new Gpt5Request("gpt-5", GPT5_SYSTEM_INSTRUCTION + userPrompt, 16384, "high",
+					"high"));
 
-			String input = GPT5_SYSTEM_INSTRUCTION + userPrompt;
-
-			Gpt5Request gpt5Request = new Gpt5Request(
-				"gpt-5",
-				input,
-				16384,
-				"high",
-				"high"
-			);
-			String requestBody = objectMapper.writeValueAsString(gpt5Request);
-
-			log.info("GPT-5 궁합 분석 요청 데이터 생성 완료. API 호출 시작...");
+			log.info("GPT 궁합 API 호출 시작...");
 			String gptResponse = gptApiRetryService.callGptApiWithRetry(requestBody);
 
-			String content = extractContentFromResponseGpt5(gptResponse);
-			log.info("✅ content 추출 완료 - 길이: {}", content.length());
+			GptCompatibilityResponse gptData = objectMapper.readValue(
+				extractContentFromResponseGpt5(gptResponse), GptCompatibilityResponse.class);
 
-			GptCompatibilityResponse gptData = objectMapper.readValue(content,
-				GptCompatibilityResponse.class);
-			log.info("✅ gptData 파싱 완료");
-			log.info("✅ interpretation 길이: {}", gptData.getInterpretation().length());
-			log.info("✅ score: {}", gptData.getScore());
-			log.info("✅ summary 길이: {}", gptData.getSummary().length());
-
-			log.info("GPT 응답. gptData.getSummary(): " + gptData.getSummary());
-
-			result.completeInterpretation(
-				gptData.getInterpretation(),
-				gptData.getScore(),
-				gptData.getSummary()
+			// 3. [DB] 결과 저장
+			CompatibilityResult savedResult = sajuResultService.saveCompatibilityFinalResult(
+				resultId, gptData.getInterpretation(), gptData.getScore(), gptData.getSummary()
 			);
 
-			CompatibilityResult savedResult = compatibilityResultRepository.save(result);
-			log.info("CompatibilityResult 분석 결과 저장 및 상태 COMPLETED 변경 완료: resultId={}",
-				savedResult.getId());
-
+			// 4. 후처리
 			ogImageGenerationService.generateAndUploadOgImage(savedResult);
-
 			try {
-				User user = userService.findByUsername(username); // [2] 추가한 username으로 User 조회
-				if (user.getEmail() != null) {
+				User user = userService.findByUsername(username);
+				if (user != null && user.getEmail() != null) {
 					emailService.sendResultReadyEmail(user.getEmail(), user.getName());
-				} else {
-					log.warn("[Async] 궁합 결과 완료 이메일 전송 실패: 사용자 이메일이 없습니다. username={}", username);
 				}
 			} catch (Exception e) {
-				log.error("[Async] 궁합 결과 완료 이메일 전송 중 오류 발생: {}", e.getMessage(), e);
 			}
 
-		} catch (EntityNotFoundException enfe) {
-			log.error("[Async] EntityNotFoundException (궁합 초기 조회 실패): {}", enfe.getMessage());
 		} catch (Exception e) {
-			log.error("[Async] GPT API 궁합 분석 요청 또는 처리 중 오류 발생: paymentId={}, Error: {}", paymentId,
-				e.getMessage(), e);
-			// 오류 발생 시 상태 롤백 처리
-			if (paymentId != null) {
-				try {
-					CompatibilityResult errorResult = compatibilityResultRepository.findById(
-						result != null ? result.getId() : -1L).orElse(null);
-
-					if (errorResult != null && errorResult.getStatus() == ResultStatus.PROCESSING) {
-						errorResult.setStatus(ResultStatus.INPUT_REQUIRED);
-						compatibilityResultRepository.save(errorResult);
-						log.info(
-							"[Async] 오류 발생으로 CompatibilityResult 상태 INPUT_REQUIRED로 롤백 시도: paymentId={}",
-							paymentId);
-					} else {
-						log.warn(
-							"[Async] 궁합 오류 롤백 처리 중 CompatibilityResult를 찾지 못했거나 상태가 PROCESSING이 아님: paymentId={}",
-							paymentId);
-					}
-				} catch (Exception ex) {
-					log.error("[Async] 궁합 오류 처리(상태 롤백) 중 추가 오류 발생: paymentId={}, Error: {}",
-						paymentId, ex.getMessage(), ex);
-				}
-			}
+			log.error("궁합 분석 오류: {}", e.getMessage(), e);
+			// 5. [DB] 롤백
+			sajuResultService.rollbackCompatibilityStatus(resultId);
 		}
 	}
 
-	@Async("gptFreeTaskExecutor") // 👈 여기가 핵심! 무료 전용 스레드 풀 사용
-	@Transactional
+	@Async("gptFreeTaskExecutor")
 	public void interpretFree(
-		String name,
-		ManseryeokCalculationResponse response,
-		String username,
-		Long subcategoryId,
-		Long paymentId
+		String name, ManseryeokCalculationResponse response,
+		String username, Long subcategoryId, Long paymentId
 	) {
-		log.info("🆓 무료 사주 해석 시작 (스레드 격리): name={}, category={}", name, subcategoryId);
+		log.info("🆓 무료 사주 해석 시작");
 
-		// 1. Result 상태 조회 (기존 로직 재사용)
-		Result result = resultRepository.findByPaymentId(paymentId)
-			.orElseThrow(EntityNotFoundException::new);
-
-		// 정보 업데이트
-		String ilgan = extractIlgan(response); // 기존 헬퍼 메서드 사용
-		result.updateInformation(
-			name,
-			response.getInput().getSolarDate(),
-			response.getInput().getSolarTime(),
-			response.getInput().getGender(),
-			response.getInput().getIsLunar(),
-			ilgan
-		);
-		resultRepository.save(result);
+		Long resultId = null;
 
 		try {
-			User user = userService.findByUsername(username);
-			String birthdate = response.getInput().getSolarDate().toString();
+			// 1. [DB] 초기 정보 저장
+			String ilgan = extractIlgan(response);
+			Result result = sajuResultService.updateInitialStatus(paymentId, name, response, ilgan);
+			resultId = result.getId();
 
-			discordNotificationService.sendInterpretationRequestNotification(
-				name,
-				user.getEmail(),
-				birthdate,
-				subcategoryId
-			);
-			log.info("🔔 Discord 무료 사주 요청 알림 전송 완료");
-		} catch (Exception e) {
-			log.error("⚠️ Discord 무료 사주 요청 알림 전송 실패", e);
-		}
+			// 2. GPT 호출
+			try {
+				User user = userService.findByUsername(username);
+				discordNotificationService.sendInterpretationRequestNotification(name,
+					user.getEmail(), response.getInput().getSolarDate().toString(), subcategoryId);
+			} catch (Exception e) {
+			}
 
-		try {
-			// 2. 프롬프트 생성 (무료 전용)
 			String userPrompt = createFreePromptBySubcategory(subcategoryId, name, response);
-			String input = GPT5_SYSTEM_INSTRUCTION + userPrompt;
+			String requestBody = objectMapper.writeValueAsString(
+				new Gpt5Request("gpt-5-mini", GPT5_SYSTEM_INSTRUCTION + userPrompt, 8192, "medium",
+					"medium"));
 
-			// 3. GPT-5-mini 요청 생성
-			Gpt5Request gpt5Request = new Gpt5Request(
-				"gpt-5-mini", // 👈 무료 전용 모델 고정
-				input,
-				8192, // 토큰 제한 축소
-				"medium",
-				"medium"
-			);
-
-			String requestBody = objectMapper.writeValueAsString(gpt5Request);
-
-			// 4. API 호출
-			log.info("🚀 GPT-5-mini 호출 (무료): user={}", username);
+			log.info("GPT-5-mini 호출...");
 			String gptResponse = gptApiRetryService.callGptApiWithRetry(requestBody);
+			GptSajuResponse gptData = objectMapper.readValue(
+				extractContentFromResponseGpt5(gptResponse), GptSajuResponse.class);
 
-			// 5. 결과 파싱 및 저장
-			String content = extractContentFromResponseGpt5(gptResponse);
-			GptSajuResponse gptData = objectMapper.readValue(content, GptSajuResponse.class);
+			// 3. [DB] 결과 저장
+			Result savedResult = sajuResultService.saveFinalResult(resultId,
+				gptData.getFullAnalysis(), gptData.getSummary());
 
-			result.completeInterpretation(gptData.getFullAnalysis(), gptData.getSummary());
-			Result savedResult = resultRepository.save(result);
-
+			// 4. 후처리
 			try {
 				ogImageGenerationService.generateAndUploadOgImage(savedResult);
-				log.info("✅ 무료 사주 OG 이미지 생성 완료: resultId={}", savedResult.getId());
 			} catch (Exception e) {
-				log.error("⚠️ OG 이미지 생성 실패 (해석은 저장됨): resultId={}", savedResult.getId(), e);
+				log.error("OG 실패", e);
 			}
-
-			log.info("✅ 무료 사주 해석 완료: resultId={}", result.getId());
 
 		} catch (Exception e) {
-			log.error("❌ 무료 사주 처리 중 오류: {}", e.getMessage(), e);
-			// 에러 처리 로직 (상태 롤백 등)
-			if (result.getStatus() == ResultStatus.PROCESSING) {
-				result.setStatus(ResultStatus.INPUT_REQUIRED); // 혹은 FAILED
-				resultRepository.save(result);
-			}
+			log.error("무료 사주 오류: {}", e.getMessage(), e);
+			// 5. [DB] 롤백
+			sajuResultService.rollbackStatus(resultId);
 		}
 	}
 
