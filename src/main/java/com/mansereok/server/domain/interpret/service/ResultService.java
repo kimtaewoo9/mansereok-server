@@ -47,7 +47,9 @@ public class ResultService {
 			subCategoryId == 10 ||
 			subCategoryId == 11 ||
 			subCategoryId == 14 ||
-			subCategoryId == 15) {
+			subCategoryId == 15 ||
+			subCategoryId == 19
+		) {
 			if (compatibilityResultRepository.findByPaymentId(paymentPkId).isEmpty()) {
 				CompatibilityResult initialCompResult = CompatibilityResult.createInitial(userId,
 					paymentPkId, productName);

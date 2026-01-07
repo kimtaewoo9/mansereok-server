@@ -513,6 +513,9 @@ public class ManseInterpretationService {
 			case 15 ->
 				createActorCompatibilityPrompt(person1Name, person1Response, person2Name,  // ← 추가
 					person2Response);
+			case 19 ->
+				createReunionPrompt(person1Name, person1Response, person2Name,  // 👈 [추가] 재회운
+					person2Response);
 			default -> throw new IllegalArgumentException("지원하지 않는 카테고리입니다: " + subcategoryId);
 		};
 	}
@@ -2069,6 +2072,123 @@ public class ManseInterpretationService {
 		appendCompatibilityJsonResponseFormat(prompt, person1Name, person2Name);
 
 		return prompt.toString();
+	}
+
+	private String createReunionPrompt(
+		String person1Name, ManseryeokCalculationResponse person1,
+		String person2Name, ManseryeokCalculationResponse person2) {
+
+		StringBuilder prompt = new StringBuilder();
+
+		// [시스템 역할 강화: 단순 AI가 아니라 '노련한 도사' 빙의]
+		prompt.append("당신은 30년 경력의 재회 상담 전문 사주명리학자입니다. ");
+		prompt.append("단순한 위로보다는 냉철한 분석과 현실적인 조언, 그리고 사주학적 근거(신살, 합, 충 등)를 명확히 들어서 설명해주세요.\n\n");
+		prompt.append("다음은 헤어진 두 사람의 사주팔자 정보를 바탕으로 한 '재회운' 분석 요청입니다.\n\n");
+
+		// 1. 신청자 정보 (Person 1)
+		prompt.append(String.format("【첫 번째 사람 (신청자): %s】\n", person1Name));
+		appendPersonCalculationInfo(prompt, person1);
+
+		// 2. 상대방 정보 (Person 2)
+		prompt.append(String.format("\n【두 번째 사람 (상대방): %s】\n", person2Name));
+		appendPersonCalculationInfo(prompt, person2);
+
+		// 3. 재회운 분석 요청사항 (기획안 반영 + 디테일 업그레이드)
+		prompt.append("\n### 재회운 심층 분석 요청사항 ###\n");
+		prompt.append(
+			String.format("%s님과 %s님의 만세력을 정밀 분석해서 재회 시나리오를 작성해주세요.\n\n", person1Name, person2Name));
+
+		prompt.append("다음 7가지 항목에 대해 줄글로 아주 구체적으로 알려줘. (불필요한 큰따옴표, 작은 따옴표는 쓰지 말아줘)\n");
+		prompt.append("특히 '성격 차이' 같은 뻔한 말 대신, 사주 원국에 있는 글자(예: 자수와 오화의 충돌 등)를 근거로 들어서 설명해줘.\n\n");
+
+		// [1. 핵심 요약 & 확률] - 고객이 제일 먼저 보고 싶어하는 것
+		prompt.append("0. 재회 종합 점수 및 한줄 평\n");
+		prompt.append("   - 두 사람의 재회 가능성을 0~100% 사이의 확률로 제시하고, 그 이유를 한 문장으로 요약\n\n");
+
+		prompt.append("1. 서로의 성향이나 연애 스타일 (속궁합 포함)\n");
+		prompt.append("   - 일주(Day Pillar)와 십성을 분석하여, 겉으로 보이는 성격과 연애할 때만 나오는 본모습 비교\n");
+		prompt.append("   - 서로에게 끌릴 수밖에 없었던 매력 포인트\n\n");
+
+		prompt.append("2. 둘이 연애를 했을 당시 어떤 커플이었을지 모습\n");
+		prompt.append("   - 지지 삼합/육합 혹은 충/형 관계를 통해 두 사람의 연애 온도(뜨거웠는지, 친구 같았는지 등) 묘사\n\n");
+
+		// [핵심 포인트: 그냥 갈등이 아니라 '사주적 원인']
+		prompt.append("3. 헤어짐의 근본적 원인 (사주적 분석)\n");
+		prompt.append(
+			"   - 표면적인 이유 말고, 사주명리학적으로 서로 부딪힐 수밖에 없었던 근본 원인 (예: 관성이 강해 통제하려 함, 식상이 강해 자유분방함 등)\n");
+		prompt.append("   - 갈등이 폭발했던 시기의 운세 흐름(세운/월운)이 안 좋았는지 분석\n\n");
+
+		// [킬링 포인트: 상대방 속마음]
+		prompt.append("4. 현재 상대방(%s)의 속마음과 상황\n".formatted(person2Name));
+		prompt.append("   - 상대방의 현재 대운/세운 흐름을 볼 때, 연애를 할 여유가 있는지, 아니면 일/스트레스로 벅찬지\n");
+		prompt.append(
+			"   - 신청자(%s)를 그리워하고 있는지, 아니면 잊으려 노력 중인지 운의 흐름으로 유추\n\n".formatted(person1Name));
+
+		prompt.append("5. 가장 빠르게 재회를 할 수 있다면 몇년도 몇월인지\n");
+		prompt.append("   - 막연한 시기가 아니라, 상대방에게 '도화'나 '합'이 들어오는 구체적인 년/월 제시\n");
+		prompt.append("   - 그 시기에 어떤 계기로 연락이 닿을지 시나리오 예측\n\n");
+
+		prompt.append("6. 재회 연락은 누가 먼저, 어떻게 해야 할까?\n");
+		prompt.append("   - 자존심(비겁)이 쎈 사람이 누구인지 파악하여, 누가 먼저 굽혀야 하는지 조언\n");
+		prompt.append("   - 연락하기 가장 좋은 시간대나 방법(문자 vs 전화)\n\n");
+
+		prompt.append("7. 다시 만난다면 이것만은 꼭 지켜라 (현실적 솔루션)\n");
+		prompt.append("   - 재회 후 똑같은 이유로 헤어지지 않기 위한 구체적인 행동 지침 (개운법)\n\n");
+
+		appendCompatibilityJsonResponseFormat(prompt, person1Name, person2Name);
+
+		return prompt.toString();
+	}
+
+	/**
+	 * ManseryeokCalculationResponse 정보를 프롬프트 포맷으로 변환
+	 */
+	private void appendPersonCalculationInfo(StringBuilder prompt,
+		ManseryeokCalculationResponse response) {
+		ManseryeokCalculationResponse.InputInfo input = response.getInput();
+		ManseryeokCalculationResponse.SajuInfo saju = response.getSaju();
+
+		prompt.append(String.format("- 생년월일: %s %s (양력/음력 구분: %s)\n",
+			input.getSolarDate(), input.getSolarTime(), input.getIsLunar() ? "음력" : "양력"));
+		prompt.append(String.format("- 성별: %s\n", input.getGender()));
+
+		// 사주팔자 (천간/지지/십성/오행)
+		prompt.append("- 사주팔자:\n");
+		appendPillarLine(prompt, "년주", saju.getYearSky(), saju.getYearGround());
+		appendPillarLine(prompt, "월주", saju.getMonthSky(), saju.getMonthGround());
+		appendPillarLine(prompt, "일주", saju.getDaySky(), saju.getDayGround());
+		appendPillarLine(prompt, "시주", saju.getTimeSky(), saju.getTimeGround());
+
+		// 관계 정보 (합, 충, 원진 등) - 재회운에서 중요
+		if (saju.getGroundRelations() != null && !saju.getGroundRelations().isEmpty()) {
+			prompt.append("- 지지 관계(합/충/형): ").append(String.join(", ", saju.getGroundRelations()))
+				.append("\n");
+		}
+		if (saju.getSkyRelations() != null && !saju.getSkyRelations().isEmpty()) {
+			prompt.append("- 천간 관계(합/충): ").append(String.join(", ", saju.getSkyRelations()))
+				.append("\n");
+		}
+
+		// 신살 정보
+		if (saju.getSinsalInfo() != null) {
+			prompt.append("- 주요 신살: ");
+			saju.getSinsalInfo().values().forEach(list ->
+				prompt.append(String.join(", ", list)).append(" ")
+			);
+			prompt.append("\n");
+		}
+	}
+
+	private void appendPillarLine(StringBuilder prompt, String label,
+		ManseryeokCalculationResponse.PillarElement sky,
+		ManseryeokCalculationResponse.PillarElement ground) {
+
+		prompt.append(String.format("  %s: %s%s (천간:%s/오행:%s, 지지:%s/오행:%s)\n",
+			label,
+			sky.getChinese(), ground.getChinese(),
+			sky.getTenStar(), sky.getFiveCircle(),
+			ground.getTenStar(), ground.getFiveCircle()
+		));
 	}
 
 	// 101. 2026년 상반기 변화(환경, 인간관계, 연애, 학업, 건강)
