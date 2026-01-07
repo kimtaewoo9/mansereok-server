@@ -297,6 +297,69 @@ public class ManseInterpretationService {
 		}
 	}
 
+	// [추가] 무료 궁합/재회운 분석 서비스
+	@Async("gptTaskExecutor") // 👈 고퀄리티를 원하면 gptTaskExecutor, 절약하려면 gptFreeTaskExecutor
+	public void analyzeCompatibilityFree(
+		String person1Name, ManseryeokCalculationResponse person1Response,
+		String person2Name, ManseryeokCalculationResponse person2Response,
+		Long subcategoryId, Long paymentId, String username
+	) {
+		log.info("🆓 무료 궁합/재회운 서비스 시작: {} & {}", person1Name, person2Name);
+
+		Long resultId = null;
+
+		try {
+			// 1. [DB] 초기 정보 저장 (CompatibilityResult 생성)
+			String p1Ilgan = extractIlgan(person1Response);
+			String p2Ilgan = extractIlgan(person2Response);
+
+			CompatibilityResult result = sajuResultService.updateCompatibilityInitialStatus(
+				paymentId, person1Name, p1Ilgan, person2Name, p2Ilgan
+			);
+			resultId = result.getId();
+
+			// 2. 알림 (선택사항)
+			try {
+				discordNotificationService.sendCompatibilityRequestNotification(person1Name,
+					person1Response.getInput().getSolarDate().toString(), person2Name,
+					person2Response.getInput().getSolarDate().toString());
+			} catch (Exception e) {
+			}
+
+			// 3. 프롬프트 생성 (재회운 등 카테고리별 로직 자동 적용)
+			String userPrompt = createCompatibilityPromptBySubcategory(
+				subcategoryId, person1Name, person1Response, person2Name, person2Response,
+				null, null // sourceTitle은 무료에선 보통 null
+			);
+
+			// 4. GPT 호출
+			String requestBody = objectMapper.writeValueAsString(
+				new Gpt5Request("gpt-5.2", GPT5_SYSTEM_INSTRUCTION + userPrompt, 16384, "high",
+					"high")
+			);
+
+			log.info("GPT 궁합(무료) API 호출 중...");
+			String gptResponse = gptApiRetryService.callGptApiWithRetry(requestBody);
+
+			GptCompatibilityResponse gptData = objectMapper.readValue(
+				extractContentFromResponseGpt5(gptResponse), GptCompatibilityResponse.class);
+
+			// 5. [DB] 결과 저장
+			CompatibilityResult savedResult = sajuResultService.saveCompatibilityFinalResult(
+				resultId, gptData.getInterpretation(), gptData.getScore(), gptData.getSummary()
+			);
+
+			// 6. 후처리 (OG이미지 등)
+			ogImageGenerationService.generateAndUploadOgImage(savedResult);
+
+		} catch (Exception e) {
+			log.error("무료 궁합 분석 오류: {}", e.getMessage(), e);
+			if (resultId != null) {
+				sajuResultService.rollbackCompatibilityStatus(resultId);
+			}
+		}
+	}
+
 	private void appendHyeanPersonaHeader(StringBuilder prompt) {
 		prompt.append("### 0. 시스템 역할 정의 (Role Definition) ###\n");
 		prompt.append("당신은 30년 경력의 사주명리학 대가이자, '인생 서사 상담가' 혜안(慧眼)입니다.\n");
