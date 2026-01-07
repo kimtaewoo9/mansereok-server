@@ -207,8 +207,10 @@ public class ManseryeokController {
 			ManseryeokCalculationRequest.from(request.getPerson2())
 		);
 
-		// 3. 상태 변경 INPUT_REQUIRED -> PROCESSING
-		resultService.updateStatusToProcessing(payment.getId());
+		// 3. 상태 변경 (수정 제안: 궁합 전용 메서드 사용)
+		// resultService.updateStatusToProcessing(payment.getId()); // 기존 (1인용일 수도 있음)
+		resultService.updateCompatibilityStatusToProcessing(
+			payment.getId()); // 👈 [수정 권장] 2인용 궁합 테이블 상태 변경
 
 		// 4. [비동기] 무료 궁합 해석 서비스 호출
 		manseInterpretationService.analyzeCompatibilityFree(
