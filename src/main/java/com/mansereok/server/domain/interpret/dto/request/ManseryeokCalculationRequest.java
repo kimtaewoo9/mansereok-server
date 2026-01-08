@@ -25,13 +25,19 @@ public class ManseryeokCalculationRequest {
 		// 1. 날짜 포맷 처리 (YYYY/MM/DD -> YYYY-MM-DD)
 		String cleanDate = request.getBirthday().replace("/", "-");
 
-		// 2. 음력 여부 변환 ("L"이면 true, "S"면 false)
+		// 2. 음력 여부 변환
 		boolean isLunar = "L".equalsIgnoreCase(request.getCalendar());
+
+		// 3. 시간 파싱 및 [자정 보정 로직 추가]
+		String safeTime = request.getBirthtime();
+		if ("00:00".equals(safeTime)) {
+			safeTime = "00:01";
+		}
 
 		return new ManseryeokCalculationRequest(
 			request.getName(),
-			LocalDate.parse(cleanDate), // 필요시 DateTimeFormatter 지정 가능
-			LocalTime.parse(request.getBirthtime()),
+			LocalDate.parse(cleanDate),
+			LocalTime.parse(safeTime), // 수정된 safeTime 사용
 			request.getGender(),
 			isLunar
 		);
