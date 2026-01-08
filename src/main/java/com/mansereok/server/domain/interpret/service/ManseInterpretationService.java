@@ -2246,11 +2246,19 @@ public class ManseInterpretationService {
 		ManseryeokCalculationResponse.PillarElement sky,
 		ManseryeokCalculationResponse.PillarElement ground) {
 
+		if (sky == null || ground == null) {
+			prompt.append(String.format("  %s: (정보 없음)\n", label));
+			return;
+		}
+
 		prompt.append(String.format("  %s: %s%s (천간:%s/오행:%s, 지지:%s/오행:%s)\n",
 			label,
-			sky.getChinese(), ground.getChinese(),
-			sky.getTenStar(), sky.getFiveCircle(),
-			ground.getTenStar(), ground.getFiveCircle()
+			sky.getChinese() != null ? sky.getChinese() : "?",
+			ground.getChinese() != null ? ground.getChinese() : "?",
+			sky.getTenStar() != null ? sky.getTenStar() : "?",
+			sky.getFiveCircle() != null ? sky.getFiveCircle() : "?",
+			ground.getTenStar() != null ? ground.getTenStar() : "?",
+			ground.getFiveCircle() != null ? ground.getFiveCircle() : "?"
 		));
 	}
 
