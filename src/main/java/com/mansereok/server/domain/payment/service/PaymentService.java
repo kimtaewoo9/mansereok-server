@@ -352,11 +352,6 @@ public class PaymentService {
 		SubCategory subCategory = subCategoryRepository.findById(subCategoryId)
 			.orElseThrow(() -> new PaymentException("존재하지 않는 상품입니다."));
 
-		// 유료 상품 접근 방지 (DB 가격 확인)
-		if (subCategory.getPrice() > 0) {
-			throw new PaymentException("유료 상품은 무료로 이용할 수 없습니다.");
-		}
-
 		String merchantUid =
 			"free_" + System.currentTimeMillis() + "_" + UUID.randomUUID().toString()
 				.substring(0, 8);
