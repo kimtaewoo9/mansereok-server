@@ -1,11 +1,15 @@
 package com.mansereok.server.domain.interpret.service;
 
+import java.io.IOException;
 import java.io.InputStream;
 import java.net.URL;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.retry.annotation.Backoff;
+import org.springframework.retry.annotation.Retryable;
 import org.springframework.stereotype.Service;
+import software.amazon.awssdk.core.exception.SdkClientException;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.GetUrlRequest;
@@ -21,6 +25,11 @@ public class S3UploadService {
 	@Value("${aws.s3.bucket-name}")
 	private String bucketName;
 
+	@Retryable(
+		value = {IOException.class, SdkClientException.class}, // 재시도할 예외 종류
+		maxAttempts = 3,  // 최대 3번 시도 (1번 실패 -> 2번 재시도 -> 3번 재시도 -> 끝)
+		backoff = @Backoff(delay = 1000) // 재시도 사이 1초 대기 (너무 바로 하면 또 실패함)
+	)
 	public String uploadFileAndGetPublicUrl(
 		InputStream inputStream,
 		long fileSize,
