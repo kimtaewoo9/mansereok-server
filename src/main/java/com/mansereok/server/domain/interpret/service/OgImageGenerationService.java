@@ -21,7 +21,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 @Slf4j
 @Service
@@ -65,20 +64,17 @@ public class OgImageGenerationService {
 	}
 
 	@Async
-	@Transactional
 	public void generateAndUploadOgImage(Result savedResult) {
 		try {
-			// 이름(name)은 더 이상 필요 없음, summary만 확인
 			String summary = savedResult.getSummary();
 			if (summary == null) {
-				log.warn("Result(id={})에 summary가 없어 OG 생성을 건너뜁니다.", savedResult.getId());
 				return;
 			}
 
-			// (1) 이미지 그리기 (name 인자 제거)
-			byte[] imageBytes = generateSajuOgImage(savedResult.getSummary());
+			// (1) 이미지 그리기
+			byte[] imageBytes = generateSajuOgImage(summary);
 
-			// (2) S3 업로드
+			// (2) S3 업로드 (DB 연결 없이 수행)
 			String objectKey = "og-images/saju-" + savedResult.getId() + ".png";
 			String publicUrl = s3UploadService.uploadFileAndGetPublicUrl(
 				new ByteArrayInputStream(imageBytes),
@@ -87,32 +83,28 @@ public class OgImageGenerationService {
 				"image/png"
 			);
 
-			// (3) DB에 URL 저장
+			// (3) DB 업데이트 (여기서만 짧게 트랜잭션 사용)
 			resultRepository.updateOgImageUrl(savedResult.getId(), publicUrl);
 
 			log.info("Result(id={}) OG 이미지 URL 저장 완료: {}", savedResult.getId(), publicUrl);
 
 		} catch (Exception e) {
-			log.error("Result(id={}) OG 이미지 생성/업로드 실패: {}", savedResult.getId(), e.getMessage(), e);
+			log.error("OG 실패", e);
 		}
 	}
 
 	@Async
-	@Transactional
 	public void generateAndUploadOgImage(CompatibilityResult savedResult) {
 		try {
-			// 이름(name1, name2)은 더 이상 필요 없음, summary만 확인
 			String summary = savedResult.getSummary();
-
 			if (summary == null) {
-				log.warn("CompatResult(id={})에 summary가 없어 OG 생성을 건너뜁니다.",
-					savedResult.getId());
 				return;
 			}
 
-			// (1) 이미지 그리기 (name 인자 제거)
+			// (1) 이미지 생성
 			byte[] imageBytes = generateCompatOgImage(savedResult.getSummary());
-			// (2) S3 업로드
+
+			// (2) S3 업로드 (DB 커넥션 없이 수행)
 			String objectKey = "og-images/compat-" + savedResult.getId() + ".png";
 			String publicUrl = s3UploadService.uploadFileAndGetPublicUrl(
 				new ByteArrayInputStream(imageBytes),
@@ -121,14 +113,13 @@ public class OgImageGenerationService {
 				"image/png"
 			);
 
-			// (3) DB에 URL 저장
+			// (3) DB 업데이트 (짧게 치고 빠지기)
 			compatibilityResultRepository.updateOgImageUrl(savedResult.getId(), publicUrl);
 
 			log.info("CompatResult(id={}) OG 이미지 URL 저장 완료: {}", savedResult.getId(), publicUrl);
 
 		} catch (Exception e) {
-			log.error("CompatResult(id={}) OG 이미지 생성/업로드 실패: {}", savedResult.getId(),
-				e.getMessage(), e);
+			log.error("CompatResult OG 실패", e);
 		}
 	}
 
