@@ -1,6 +1,5 @@
 package com.mansereok.server.domain.interpret.service;
 
-import java.io.IOException;
 import java.io.InputStream;
 import java.net.URL;
 import lombok.RequiredArgsConstructor;
@@ -9,7 +8,6 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.retry.annotation.Backoff;
 import org.springframework.retry.annotation.Retryable;
 import org.springframework.stereotype.Service;
-import software.amazon.awssdk.core.exception.SdkClientException;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.GetUrlRequest;
@@ -26,9 +24,9 @@ public class S3UploadService {
 	private String bucketName;
 
 	@Retryable(
-		value = {IOException.class, SdkClientException.class}, // 재시도할 예외 종류
-		maxAttempts = 3,  // 최대 3번 시도 (1번 실패 -> 2번 재시도 -> 3번 재시도 -> 끝)
-		backoff = @Backoff(delay = 1000) // 재시도 사이 1초 대기 (너무 바로 하면 또 실패함)
+		value = {Exception.class},
+		maxAttempts = 3,
+		backoff = @Backoff(delay = 1000)
 	)
 	public String uploadFileAndGetPublicUrl(
 		InputStream inputStream,
@@ -36,30 +34,24 @@ public class S3UploadService {
 		String objectKey,
 		String contentType
 	) {
-		try {
-			PutObjectRequest putObjectRequest = PutObjectRequest.builder()
-				.bucket(bucketName)
-				.key(objectKey)
-				.contentType(contentType)
-				.build();
+		PutObjectRequest putObjectRequest = PutObjectRequest.builder()
+			.bucket(bucketName)
+			.key(objectKey)
+			.contentType(contentType)
+			.build();
 
-			RequestBody requestBody = RequestBody.fromInputStream(inputStream, fileSize);
+		RequestBody requestBody = RequestBody.fromInputStream(inputStream, fileSize);
 
-			s3Client.putObject(putObjectRequest, requestBody);
+		s3Client.putObject(putObjectRequest, requestBody);
 
-			GetUrlRequest getUrlRequest = GetUrlRequest.builder()
-				.bucket(bucketName)
-				.key(objectKey)
-				.build();
+		GetUrlRequest getUrlRequest = GetUrlRequest.builder()
+			.bucket(bucketName)
+			.key(objectKey)
+			.build();
 
-			URL fileUrl = s3Client.utilities().getUrl(getUrlRequest);
+		URL fileUrl = s3Client.utilities().getUrl(getUrlRequest);
 
-			log.info("S3 Public Upload Success. Key: {}, URL: {}", objectKey, fileUrl.toString());
-			return fileUrl.toString();
-
-		} catch (Exception e) {
-			log.error("S3 Public Upload Failed. Key: {}", objectKey, e);
-			throw new RuntimeException("S3 업로드 및 Public URL 생성에 실패했습니다.", e);
-		}
+		log.info("S3 Public Upload Success. Key: {}", objectKey);
+		return fileUrl.toString();
 	}
 }
