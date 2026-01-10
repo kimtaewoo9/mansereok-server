@@ -143,20 +143,31 @@ public class ManseInterpretationService {
 				sourceTitle);
 			String input = GPT5_SYSTEM_INSTRUCTION + userPrompt;
 
-			String requestBody = objectMapper.writeValueAsString(
-				new Gpt5Request("gpt-5.2", input, 16384, "high", "high"));
+			String requestBody = objectMapper.
+				writeValueAsString(
+					new Gpt5Request(
+						"gpt-5.2",
+						input,
+						16384,
+						"high",
+						"high")
+				);
 
 			log.info("GPT API 호출 시작...");
 			String gptResponse = gptApiRetryService.callGptApiWithRetry(requestBody);
 
 			GptSajuResponse gptData = objectMapper.readValue(
-				extractContentFromResponseGpt5(gptResponse), GptSajuResponse.class);
+				extractContentFromResponseGpt5(gptResponse),
+				GptSajuResponse.class
+			);
 
 			// 4. [DB] 결과 저장 (DB 커넥션 사용 O -> 즉시 반납)
-			User user = userService.findByUsername(
-				username); // 단순 조회라 @Transactional 없어도 됨 (OSIV 켜져있다면)
-			Result savedResult = sajuResultService.saveFinalResult(resultId,
-				gptData.getFullAnalysis(), gptData.getSummary());
+			User user = userService.findByUsername(username);
+			Result savedResult = sajuResultService.saveFinalResult(
+				resultId,
+				gptData.getFullAnalysis(),
+				gptData.getSummary()
+			);
 			log.info("해석 결과 저장 완료: resultId={}", savedResult.getId());
 
 			// 5. [Non-DB] 후처리
