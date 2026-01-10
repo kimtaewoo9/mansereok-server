@@ -8,6 +8,7 @@ import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
+import org.springframework.transaction.annotation.Transactional;
 
 @Repository
 public interface ResultRepository extends JpaRepository<Result, Long> {
@@ -16,6 +17,7 @@ public interface ResultRepository extends JpaRepository<Result, Long> {
 
 	Optional<Result> findByPaymentId(Long paymentId);
 
+	@Transactional
 	@Modifying(clearAutomatically = true)
 	@Query("UPDATE Result r SET r.ogImageUrl = :ogImageUrl WHERE r.id = :id")
 	void updateOgImageUrl(@Param("id") Long id, @Param("ogImageUrl") String ogImageUrl);
