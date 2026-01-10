@@ -8,6 +8,7 @@ import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
+import org.springframework.transaction.annotation.Transactional;
 
 @Repository
 public interface CompatibilityResultRepository extends JpaRepository<CompatibilityResult, Long> {
@@ -17,6 +18,7 @@ public interface CompatibilityResultRepository extends JpaRepository<Compatibili
 
 	Optional<CompatibilityResult> findByPaymentId(Long paymentId);
 
+	@Transactional
 	@Modifying(clearAutomatically = true)
 	@Query("UPDATE CompatibilityResult c SET c.ogImageUrl = :ogImageUrl WHERE c.id = :id")
 	void updateOgImageUrl(@Param("id") Long id, @Param("ogImageUrl") String ogImageUrl);
