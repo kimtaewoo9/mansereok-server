@@ -4,6 +4,7 @@ import com.mansereok.server.domain.order.dto.request.OrderCreateRequest;
 import com.mansereok.server.domain.order.dto.response.OrderCreateResponse;
 import com.mansereok.server.domain.order.entity.Order;
 import com.mansereok.server.domain.order.repository.OrderRepository;
+import com.mansereok.server.domain.payment.dto.request.PaymentCancelRequest;
 import com.mansereok.server.domain.payment.dto.request.PaymentCompleteRequest;
 import com.mansereok.server.domain.payment.dto.response.PaymentResponseDto;
 import com.mansereok.server.domain.payment.service.PaymentService;
@@ -147,5 +148,14 @@ public class PaymentController {
 			throw new AccessDeniedException("본인의 주문만 조회할 수 있습니다.");
 		}
 		return ResponseEntity.ok(order);
+	}
+
+	@PostMapping("/api/payment/cancel")
+	public ResponseEntity<?> cancelPayment(
+		@RequestBody PaymentCancelRequest request,
+		@AuthenticationPrincipal String username
+	) {
+		paymentService.cancelPayment(username, request.getPaymentId(), request.getReason());
+		return ResponseEntity.ok("환불이 정상적으로 처리되었습니다.");
 	}
 }

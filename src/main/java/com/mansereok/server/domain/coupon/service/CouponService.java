@@ -130,4 +130,19 @@ public class CouponService {
 			})
 			.collect(Collectors.toList());
 	}
+
+	@Transactional
+	public void restoreCoupon(Long couponId) {
+		if (couponId == null) {
+			return;
+		}
+
+		Coupon coupon = couponRepository.findById(couponId)
+			.orElseThrow(() -> new PaymentException("쿠폰 정보를 찾을 수 없습니다."));
+
+		// 사용된 상태라면 복구
+		if (coupon.isUsed()) {
+			coupon.restore();
+		}
+	}
 }

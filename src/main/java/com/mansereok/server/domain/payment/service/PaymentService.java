@@ -8,6 +8,8 @@ import com.mansereok.server.domain.coupon.service.CouponService;
 import com.mansereok.server.domain.discount.entity.DiscountCode;
 import com.mansereok.server.domain.discount.service.DiscountCodeService;
 import com.mansereok.server.domain.discount.service.DiscountCodeService.DiscountValidationResult;
+import com.mansereok.server.domain.interpret.entity.Result;
+import com.mansereok.server.domain.interpret.entity.ResultStatus;
 import com.mansereok.server.domain.interpret.repository.CompatibilityResultRepository;
 import com.mansereok.server.domain.interpret.repository.ResultRepository;
 import com.mansereok.server.domain.interpret.service.ResultService;
@@ -32,6 +34,7 @@ import com.mansereok.server.global.exception.PaymentException;
 import jakarta.persistence.EntityNotFoundException;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -125,9 +128,10 @@ public class PaymentService {
 					merchantUid,
 					user.getId(),
 					subCategory.getId(),
-					originalAmount, // 원본 금액
-					finalAmount,    // 최종 결제 금액
-					appliedCode,    // 적용된 코드(또는 쿠폰명)
+					originalAmount,
+					finalAmount,
+					appliedCode,
+					usedCouponId, // ✅ 여기에 위에서 저장해둔 usedCouponId 변수를 넘깁니다!
 					OrderStatus.PENDING,
 					user.getName(),
 					user.getEmail()
@@ -302,6 +306,7 @@ public class PaymentService {
 			originalAmount,
 			0, // finalAmount = 0
 			request.getDiscountCode(),
+			null,
 			OrderStatus.PAID,
 			user.getName(),
 			user.getEmail()
@@ -363,7 +368,8 @@ public class PaymentService {
 			subCategory.getId(),
 			0,  // 원가 0원
 			0,  // 결제 금액 0원
-			"EVENT_FREE", // 무료 이벤트 표기
+			"EVENT_FREE", // 무료 이벤트 표기,
+			null,
 			OrderStatus.PAID,
 			user.getName(),
 			user.getEmail()
@@ -588,10 +594,113 @@ public class PaymentService {
 		User user = userRepository.findByUsername(username)
 			.orElseThrow(() -> new IllegalArgumentException("사용자를 찾을 수 없습니다."));
 
-		return paymentRepository.findAllByUserIdOrderByCreatedAtDesc(user.getId())
-			.stream()
-			.map(PaymentResponseDto::create)
-			.collect(Collectors.toList());
+		List<Payment> payments = paymentRepository.findAllByUserIdOrderByCreatedAtDesc(
+			user.getId());
+
+		// 1. 조회된 결제들의 ID 목록 추출
+		List<Long> paymentIds = payments.stream().map(Payment::getId).toList();
+
+		// 2. ResultRepository에 findByPaymentIdIn(List<Long> ids) 메서드를 만들어 한 번에 조회
+		List<Result> results = resultRepository.findByPaymentIdIn(paymentIds);
+
+		// 3. 매핑 편의를 위해 Map으로 변환 (paymentId -> ResultStatus)
+		Map<Long, ResultStatus> statusMap = results.stream()
+			.collect(Collectors.toMap(Result::getPaymentId, Result::getStatus));
+
+		// 4. 조립
+		return payments.stream().map(payment -> {
+			ResultStatus status = statusMap.get(payment.getId());
+			return PaymentResponseDto.create(payment, status);
+		}).collect(Collectors.toList());
+	}
+
+	// ... 기존 메서드들 ...
+
+	/**
+	 * 사용자 직접 환불 처리 (ResultStatus가 INPUT_REQUIRED 일 때만 가능)
+	 */
+	@Transactional
+	public void cancelPayment(String username, String paymentId, String reason) {
+		// 1. 사용자 조회
+		User user = userRepository.findByUsername(username)
+			.orElseThrow(() -> new PaymentException("사용자를 찾을 수 없습니다."));
+
+		// 2. 결제 정보 조회 (impUid로 조회)
+		Payment payment = paymentRepository.findByImpUid(paymentId)
+			.orElseThrow(() -> new PaymentException("결제 정보를 찾을 수 없습니다."));
+
+		// 3. 권한 확인 (본인의 결제인지)
+		if (!payment.getUserId().equals(user.getId())) {
+			throw new PaymentException("본인의 결제 건만 취소할 수 있습니다.");
+		}
+
+		// ✅ 추가: 무료 결제(0원) 환불 시도 원천 차단
+		if (payment.getAmount() == 0 || payment.getImpUid().startsWith("free_")) {
+			throw new PaymentException("무료 이벤트 결제는 환불/취소 대상이 아닙니다.");
+		}
+
+		// 4. 이미 취소된 건인지 확인
+		if (payment.getStatus() == PaymentStatus.CANCELLED) {
+			throw new PaymentException("이미 취소된 결제입니다.");
+		}
+
+		// 5. Result 상태 검증 (핵심: 사주 정보를 입력하기 전인가?)
+		Result result = resultRepository.findByPaymentId(payment.getId())
+			.orElseThrow(() -> new PaymentException("해당 결제에 대한 결과 정보를 찾을 수 없습니다."));
+
+		if (result.getStatus() != ResultStatus.INPUT_REQUIRED) {
+			throw new PaymentException("이미 사주 해석이 진행되었거나 완료된 건은 환불할 수 없습니다.");
+		}
+
+		// 6. 포트원 API로 결제 취소 요청
+		cancelPortOnePayment(payment.getImpUid(), reason);
+
+		// 7. DB 상태 업데이트
+		// 7-1. Payment 상태 변경
+		// Payment 엔티티에 setStatus가 없다면 추가하거나 updateStatus 메서드 필요
+		payment.updateStatus(PaymentStatus.CANCELLED);
+
+		// 7-2. Order 상태 변경
+		Order order = orderRepository.findById(payment.getOrderId())
+			.orElseThrow(() -> new PaymentException("주문 정보를 찾을 수 없습니다."));
+		order.setStatus(OrderStatus.CANCELLED);
+
+		// 7-3. Result 삭제 (정보 입력 전이므로 삭제)
+		resultRepository.delete(result);
+
+		if (order.getCouponId() != null) {
+			// 쿠폰을 사용했던 주문이라면 쿠폰 복구
+			couponService.restoreCoupon(order.getCouponId());
+			log.info("환불로 인한 쿠폰 복구 완료: couponId={}", order.getCouponId());
+		} else if (order.getAppliedDiscountCode() != null && !order.getAppliedDiscountCode()
+			.isBlank()) {
+			// 할인 코드를 사용했던 주문이라면 사용 횟수 복구
+			discountCodeService.restoreDiscountUsage(order.getAppliedDiscountCode());
+			log.info("환불로 인한 할인 코드 횟수 복구 완료: code={}", order.getAppliedDiscountCode());
+		}
+
+		log.info("사용자 환불 완료: username={}, paymentId={}, reason={}", username, paymentId, reason);
+	}
+
+	// 포트원 결제 취소 API 호출 (V2)
+	private void cancelPortOnePayment(String paymentId, String reason) {
+		try {
+			String url = "https://api.portone.io/payments/" + paymentId + "/cancel";
+
+			String requestBody = objectMapper.writeValueAsString(Map.of("reason", reason));
+
+			restClient.post()
+				.uri(url)
+				.header(HttpHeaders.AUTHORIZATION, "PortOne " + portOneApiSecret)
+				.contentType(MediaType.APPLICATION_JSON)
+				.body(requestBody)
+				.retrieve()
+				.toBodilessEntity();
+
+		} catch (Exception e) {
+			log.error("포트원 결제 취소 API 호출 실패: paymentId={}", paymentId, e);
+			throw new PaymentException("결제 취소 연동 중 오류가 발생했습니다: " + e.getMessage());
+		}
 	}
 
 	private PortOnePaymentResponse fetchPaymentDataFromPortOne(String paymentId) {
@@ -633,6 +742,7 @@ public class PaymentService {
 			throw new PaymentException("결제 정보를 조회하는 중 오류가 발생했습니다.");
 		}
 	}
+
 
 	private void processOrder(Order order) {
 		// TODO: 실제 비즈니스 로직 구현
