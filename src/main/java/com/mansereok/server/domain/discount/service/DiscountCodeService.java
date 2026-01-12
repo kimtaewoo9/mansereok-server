@@ -111,6 +111,23 @@ public class DiscountCodeService {
 		return discountCodeRepository.save(rewardCode);
 	}
 
+	@Transactional
+	public void restoreDiscountUsage(String code) {
+		if (code == null || code.isBlank()) {
+			return;
+		}
+
+		// "EVENT_FREE" 같은 시스템 코드는 DB 조회가 안되므로 제외
+		if ("EVENT_FREE".equals(code)) {
+			return;
+		}
+
+		DiscountCode discountCode = discountCodeRepository.findByCode(code)
+			.orElseThrow(() -> new PaymentException("존재하지 않는 할인 코드입니다."));
+
+		discountCode.decreaseUsage();
+	}
+
 	private void validateSubCategory(DiscountCode discountCode, Long subCategoryId) {
 		if (discountCode.getSubCategoryId() != null &&
 			!discountCode.getSubCategoryId().equals(subCategoryId)) {

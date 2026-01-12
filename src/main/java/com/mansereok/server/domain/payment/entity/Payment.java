@@ -52,4 +52,8 @@ public class Payment {
 		payment.subCategoryId = subCategoryId;
 		return payment;
 	}
+
+	public void updateStatus(PaymentStatus status) {
+		this.status = status;
+	}
 }

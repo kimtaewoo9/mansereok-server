@@ -49,6 +49,8 @@ public class Order {
 	private Integer originalAmount;
 	private String appliedDiscountCode;
 
+	private Long couponId;
+
 	@PrePersist
 	protected void onCreate() {
 		createdAt = LocalDateTime.now();
@@ -56,7 +58,7 @@ public class Order {
 
 	public static Order create(String merchantUid, Long userId, Long subCategoryId,
 		Integer originalAmount, Integer finalAmount, String appliedDiscountCode,
-		OrderStatus status, String buyerName, String buyerEmail) {
+		Long couponId, OrderStatus status, String buyerName, String buyerEmail) {
 		Order order = new Order();
 		order.merchantUid = merchantUid;
 		order.userId = userId;
@@ -64,6 +66,9 @@ public class Order {
 		order.originalAmount = originalAmount;
 		order.amount = finalAmount;
 		order.appliedDiscountCode = appliedDiscountCode;
+
+		order.couponId = couponId;
+
 		order.status = status;
 
 		order.buyerName = buyerName;

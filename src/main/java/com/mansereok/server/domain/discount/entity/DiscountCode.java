@@ -103,4 +103,10 @@ public class DiscountCode {
 		discountCode.subCategoryId = null;
 		return discountCode;
 	}
+
+	public void decreaseUsage() {
+		if (this.currentUses > 0) {
+			this.currentUses--;
+		}
+	}
 }

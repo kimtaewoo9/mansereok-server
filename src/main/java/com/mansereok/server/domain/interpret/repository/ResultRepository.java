@@ -23,4 +23,6 @@ public interface ResultRepository extends JpaRepository<Result, Long> {
 	void updateOgImageUrl(@Param("id") Long id, @Param("ogImageUrl") String ogImageUrl);
 
 	void deleteAllByUserId(Long userId);
+
+	List<Result> findByPaymentIdIn(List<Long> paymentIds);
 }
