@@ -265,18 +265,18 @@ public class ManseCalculationService {
 			LocalDateTime solarDatetime = LocalDateTime.of(birthday, birthtime);
 
 			if (solarDatetime.isBefore(seasonTime)) {
-				log.info("절입시간 이전 출생: 이전 날짜 만세력 사용");
+				log.info("절입시간 이전 출생: 이전 날짜 만세력 사용(월주 변경), 일주는 유지");
 				Manse previousManse = manseRepository.findBySolarDate(birthday.minusDays(1))
 					.orElseThrow(() -> new RuntimeException("이전 날짜의 만세력 데이터를 찾을 수 없습니다"));
 
 				return SamjuResult.builder()
 					.solarDate(samju.getSolarDate())
-					.yearSky(previousManse.getYearSky())
+					.yearSky(previousManse.getYearSky())       // 연주는 절기 기준 (입춘 등 고려하여 이전 값 사용)
 					.yearGround(previousManse.getYearGround())
-					.monthSky(previousManse.getMonthSky())
+					.monthSky(previousManse.getMonthSky())     // 월주는 절기 기준 (이전 달 사용)
 					.monthGround(previousManse.getMonthGround())
-					.daySky(previousManse.getDaySky())
-					.dayGround(previousManse.getDayGround())
+					.daySky(samju.getDaySky())                 // 일간은 당일 데이터 사용 (기토 己)
+					.dayGround(samju.getDayGround())           // 일지는 당일 데이터 사용 (사화 巳)
 					.seasonStartTime(samju.getSeasonStartTime() != null ?
 						samju.getSeasonStartTime().toString() : null)
 					.build();
