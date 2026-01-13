@@ -58,7 +58,7 @@ public class CouponService {
 	@Transactional
 	public DiscountValidationResult validateAndCalculateCoupon(Long couponId, Long userId,
 		int originalAmount) {
-		Coupon coupon = couponRepository.findById(couponId)
+		Coupon coupon = couponRepository.findByIdWithLock(couponId)
 			.orElseThrow(() -> new PaymentException("존재하지 않는 쿠폰입니다."));
 
 		if (!coupon.getUserId().equals(userId)) {
