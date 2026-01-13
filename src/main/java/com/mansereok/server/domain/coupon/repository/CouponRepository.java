@@ -1,8 +1,11 @@
 package com.mansereok.server.domain.coupon.repository;
 
 import com.mansereok.server.domain.coupon.entity.Coupon;
+import jakarta.persistence.LockModeType;
 import java.util.List;
+import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
@@ -21,6 +24,11 @@ public interface CouponRepository extends JpaRepository<Coupon, Long> {
 		value = "SELECT EXISTS(SELECT 1 FROM coupons WHERE user_id = :userId AND template_id = :templateId)",
 		nativeQuery = true
 	)
-	boolean existsByUserIdAndTemplateId(@Param("userId") Long userId,
+	boolean existsByUserIdAndTemplateId(
+		@Param("userId") Long userId,
 		@Param("templateId") Long templateId);
+
+	@Lock(LockModeType.PESSIMISTIC_WRITE)
+	@Query("select c from Coupon c where c.id = :id")
+	Optional<Coupon> findByIdWithLock(@Param("id") Long id);
 }
