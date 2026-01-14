@@ -2185,7 +2185,7 @@ public class ManseInterpretationService {
 
 		prompt.append("1. 서로의 성향이나 연애 스타일\n");
 		prompt.append("   - 겉으로 보이는 성격과 연애할 때만 나오는 본모습 비교\n");
-		prompt.append("   - 서로에게 끌릴 수밖에 없었던 매력 포인트\n\n");
+		prompt.append("   - **서로에게 본능적으로 끌릴 수밖에 없었던 '매력 포인트':**\n");
 		prompt.append("   - 두 사람의 속궁합 (디테일하게):\n");
 		prompt.append("     **'밤에 두 사람이 얼마나 뜨거웠을지'** 상상이 가도록 아주 은밀하고 관능적으로 묘사할 것.\n");
 		prompt.append("     ** 약간 자극적이고 몰입감 있게 길게 풀어쓸 것.**\n\n");
