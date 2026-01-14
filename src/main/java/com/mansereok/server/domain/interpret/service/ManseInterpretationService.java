@@ -308,8 +308,7 @@ public class ManseInterpretationService {
 		}
 	}
 
-	// [추가] 무료 궁합/재회운 분석 서비스
-	@Async("gptTaskExecutor") // 👈 고퀄리티를 원하면 gptTaskExecutor, 절약하려면 gptFreeTaskExecutor
+	@Async("gptTaskExecutor") // 고퀄리티를 원하면 gptTaskExecutor, 절약하려면 gptFreeTaskExecutor
 	public void analyzeCompatibilityFree(
 		String person1Name, ManseryeokCalculationResponse person1Response,
 		String person2Name, ManseryeokCalculationResponse person2Response,
@@ -587,9 +586,8 @@ public class ManseInterpretationService {
 			case 15 ->
 				createActorCompatibilityPrompt(person1Name, person1Response, person2Name,  // ← 추가
 					person2Response);
-			case 19 ->
-				createReunionPrompt(person1Name, person1Response, person2Name,  // 👈 [추가] 재회운
-					person2Response);
+			case 19 -> createReunionPrompt(person1Name, person1Response, person2Name,  //
+				person2Response);
 			default -> throw new IllegalArgumentException("지원하지 않는 카테고리입니다: " + subcategoryId);
 		};
 	}
@@ -2181,13 +2179,16 @@ public class ManseInterpretationService {
 			"특히 '성격 차이' 같은 뻔한 말 대신, 사주 원국에 있는 글자를 근거로 들어서 설명하되, 전문 용어는 최대한 배제하고 쉽게 풀어줘.\n\n");
 
 		// [1. 핵심 요약 & 확률]
-		prompt.append("재회 종합 점수 및 한줄 평\n");
-		prompt.append("   - 두 사람의 재회 가능성을 0~100% 사이의 확률로 제시하고, 그 이유를 한 문장으로 요약\n\n");
+		prompt.append("재회 가능성 한줄 평\n");
+		prompt.append(
+			"   - 두 사람의 재회 가능성을 5단계로(매우 좋음 / 좋음 / 보통 / 나쁨 / 매우 나쁨 등), 그 이유를 요약 정리해서 전달\n\n");
 
 		prompt.append("1. 서로의 성향이나 연애 스타일\n");
 		prompt.append("   - 겉으로 보이는 성격과 연애할 때만 나오는 본모습 비교\n");
-		prompt.append("   - 서로에게 끌릴 수밖에 없었던 매력 포인트\n\n");
-		prompt.append("   - 두사람의 속궁합\n\n");
+		prompt.append("   - **서로에게 본능적으로 끌릴 수밖에 없었던 '매력 포인트':**\n");
+		prompt.append("   - 두 사람의 속궁합 (디테일하게):\n");
+		prompt.append("     **'밤에 두 사람이 얼마나 뜨거웠을지'** 상상이 가도록 아주 은밀하고 관능적으로 묘사할 것.\n");
+		prompt.append("     ** 약간 자극적이고 몰입감 있게 길게 풀어쓸 것.**\n\n");
 
 		prompt.append("2. 둘이 연애를 했을 당시 어떤 커플이었을지 모습\n");
 		prompt.append("   - 두 사람의 에너지 흐름을 통해 연애의 온도(뜨거웠는지, 친구 같았는지 등) 묘사\n\n");
