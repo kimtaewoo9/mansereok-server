@@ -2192,24 +2192,29 @@ public class ManseInterpretationService {
 
 		prompt.append("2. 둘이 연애를 했을 당시 어떤 커플이었을지 모습\n");
 		prompt.append("   - 두 사람의 에너지 흐름을 통해 연애의 온도(뜨거웠는지, 친구 같았는지 등) 묘사\n\n");
+		prompt.append("   - 제3자가 봤을 때 '저 커플은 진짜 ~하다'라고 느꼈을 두 사람만의 분위기(Vibe)를 눈앞에 그려지듯 묘사.\n\n");
 
 		prompt.append("3. 헤어짐의 근본적 원인 (사주적 분석)\n");
 		prompt.append("   - 표면적인 이유 말고, 서로 부딪힐 수밖에 없었던 근본 원인 (예: 한 명은 통제하려 하고 한 명은 자유롭고 싶어함 등)\n");
+		prompt.append("   - '성격 차이' 같은 뻔한 말 금지. 사주 원국에 숨겨진 **'도저히 좁혀지지 않는 평행선'**이 무엇이었는지 분석.\n");
+		prompt.append(
+			"   - **[방아쇠 효과]:** 서로의 어떤 말이나 행동이 상대방의 '발작 버튼(Trigger)'을 눌렀는지, 왜 그때 헤어질 수밖에 없었는지 운세 흐름과 엮어서 드라마틱하게 설명.\n\n");
 		prompt.append("   - 갈등이 폭발했던 시기의 운세 흐름이 안 좋았는지 분석\n\n");
 
 		prompt.append("4. 현재 상대방(%s)의 속마음과 상황\n".formatted(person2Name));
 		prompt.append("   - 상대방의 현재 운 흐름을 볼 때, 연애를 할 여유가 있는지, 아니면 일/스트레스로 벅찬지\n");
 		prompt.append("   - 신청자(%s)를 그리워하고 있는지, 아니면 잊으려 노력 중인지 유추\n\n".formatted(person1Name));
 
-		prompt.append("5. 가장 빠르게 재회를 할 수 있다면 몇년도 몇월인지\n");
-		prompt.append("   - 상대방에게 이성운이 들어오는 구체적인 년/월 제시\n");
-		prompt.append("   - 그 시기에 어떤 계기로 연락이 닿을지 시나리오 예측\n\n");
+		prompt.append("5. 재회 골든타임 (상대적인 시기 제시)\n");
+		prompt.append("   - **절대 '2026년 X월 X일'처럼 특정 날짜를 찍지 마세요.** (틀릴 확률이 높고 기계 같습니다.)\n");
+		prompt.append(
+			"   - 대신 현재(2026년)를 기준으로 **'헤어진 지 약 한 달 정도 지난 시점'**, **'서로의 나쁜 감정이 가라앉는 3주 후'**, 같이 흐름과 기간 위주로 조언해주세요.\n");
 
-		prompt.append("6. 재회 연락은 누가 먼저, 어떻게 해야 할까?\n");
+		prompt.append("6. 재회 연락 가이드(자연스럽게)\n");
+		prompt.append("   - **주의: '밤 9시~11시', '2단 분리 전략' 같은 인터넷에 떠도는 식상하고 작위적인 멘트 절대 금지.**\n");
 		prompt.append("   - 자존심이 더 쎈 사람이 누구인지 파악하여, 누가 먼저 굽혀야 하는지 조언\n");
-		prompt.append("   - 연락하기 가장 좋은 시간대나 방법(문자 vs 전화)\n\n");
 
-		prompt.append("7. 다시 만난다면 이것만은 꼭 지켜라 (현실적 솔루션)\n");
+		prompt.append("7. 다시 만난다면 지켜야할 점 (현실적 솔루션)\n");
 		prompt.append("   - 재회 후 똑같은 이유로 헤어지지 않기 위한 구체적인 행동 지침 (개운법)\n\n");
 
 		appendCompatibilityJsonResponseFormat(prompt, person1Name, person2Name);
