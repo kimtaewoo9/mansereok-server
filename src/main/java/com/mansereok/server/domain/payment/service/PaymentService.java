@@ -193,7 +193,7 @@ public class PaymentService {
 			throw new PaymentException("이미 처리된 결제입니다.");
 		}
 
-		// 포트원 API 조회 (검증)
+		// 포트원 API 조회를 통한 2차 검증 ..
 		PortOnePaymentResponse paymentResponse = fetchPaymentDataFromPortOne(
 			request.getPaymentId());
 
