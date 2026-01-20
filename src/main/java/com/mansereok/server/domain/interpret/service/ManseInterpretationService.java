@@ -19,6 +19,8 @@ import com.mansereok.server.domain.notification.service.DiscordNotificationServi
 import com.mansereok.server.domain.user.entity.User;
 import com.mansereok.server.domain.user.service.EmailService;
 import com.mansereok.server.domain.user.service.UserService;
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -225,9 +227,27 @@ public class ManseInterpretationService {
 				subcategoryId, person1Name, person1Response, person2Name, person2Response,
 				person1SourceTitle, person2SourceTitle
 			);
+
+			String systemInstruction = GPT5_SYSTEM_INSTRUCTION; // 기본값
+
+			// 재회운(subcategoryId == 19)인 경우, 시스템 프롬프트 덮어쓰기
+			if (subcategoryId == 19L) {
+				systemInstruction =
+					"당신은 대한민국 최고의 재회 상담가이자 사주 명리학 대가 '혜안'입니다.\n" +
+						"내담자는 이 상담을 위해 **매우 비싼 비용**을 지불했습니다. 절대 내용을 요약하거나 짧게 끝내지 마십시오.\n" +
+						"모든 분석은 **'논문' 수준의 깊이**와 **'소설' 수준의 서사**를 갖춰야 합니다.\n" +
+						"단순한 사실 전달을 넘어, 내담자의 마음을 어루만지는 **감성적인 문체**로, 최대한 길고 자세하게 서술하세요.\n" +
+						"한 챕터당 최소 **공백 포함 1,000자 이상** 작성해야 합니다.";
+			}
+
 			String requestBody = objectMapper.writeValueAsString(
-				new Gpt5Request("gpt-5", GPT5_SYSTEM_INSTRUCTION + userPrompt, 16384, "high",
-					"high"));
+				new Gpt5Request(
+					"gpt-5.2",
+					systemInstruction + userPrompt,
+					16384,
+					"high",
+					"high")
+			);
 
 			log.info("GPT 궁합 API 호출 시작...");
 			String gptResponse = gptApiRetryService.callGptApiWithRetry(requestBody);
@@ -520,7 +540,7 @@ public class ManseInterpretationService {
 
 		prompt.append("🎯 **필수 규칙 (절대 엄수)**\n");
 		prompt.append(
-			"1. **페르소나 (가장 중요)**: 너는 내 **찐친(best friend)**이야. 완전 반말로, 두 사람 궁합을 재치있게(witty) 풀어서 요약해줘.\n");
+			"1. **페르소나 (가장 중요)**: 당신은 두 사람의 관계를 응원하는 따뜻한 상담가입니다. **무조건 '해요체'(~해요, ~하네요)를 사용하여 정중하고 다정하게** 요약해주세요. **반말은 절대 금지**입니다.\n");
 		prompt.append(
 			"2. **주제 (총평)**: 두 사람의 **'궁합 총평'**을 해줘. 둘의 케미에 대한 내용, 서로 조심해야할 부분, 결혼 한다면, 언제가 좋을지.\n");
 		prompt.append("3. **줄바꿈**: 한 문장이 끝나면 **반드시 줄바꿈(\\n)** 해주고, 마침표는 찍지 마.\n");
@@ -2149,75 +2169,129 @@ public class ManseInterpretationService {
 	private String createReunionPrompt(
 		String person1Name, ManseryeokCalculationResponse person1,
 		String person2Name, ManseryeokCalculationResponse person2) {
-
 		StringBuilder prompt = new StringBuilder();
 
-		// [시스템 역할 강화] - 한자 금지령 포함
-		prompt.append("당신은 30년 경력의 재회 상담 전문 사주명리학자입니다. ");
-		prompt.append("단순한 위로보다는 냉철한 분석과 현실적인 조언을 해주세요.\n");
+		// 1. 날짜 고정 (과거 데이터 방지)
+		String todayDate = LocalDate.now().format(DateTimeFormatter.ofPattern("yyyy년 MM월 dd일"));
+
+		prompt.append("==================================================\n");
+		prompt.append(String.format("⚠️ [매우 중요] 현재 시점(기준일): %s \n", todayDate));
+		prompt.append("1. 모든 예측 시기(재회 운, 연애 운 등)는 **반드시 현재 시점 이후의 미래**여야 합니다.\n");
+		prompt.append("2. 이미 지나간 날짜(예: 2025년, 2026년 1월 15일 이전)는 절대 언급하지 마세요.\n");
+		prompt.append("3. 만약 사주상 좋은 달이 이미 지났다면, **내년(2027년)**의 해당 달을 추천하세요.\n");
+		prompt.append("==================================================\n\n");
+
+		// 2. 페르소나 주입 (혜안)
+		prompt.append("### 0. 시스템 역할 정의 (페르소나: 혜안) ###\n");
+		prompt.append("당신은 30년 경력의 재회 상담 전문 사주명리학자 '혜안'입니다.\n");
+		prompt.append("단순한 위로보다는 냉철한 분석과 현실적인 조언, 그리고 내담자의 속을 꿰뚫어보는 통찰력을 보여주세요.\n");
 		prompt.append(
-			"가장 중요한 규칙: **어려운 한자어(충, 형, 살 등)는 가급적 쓰지 말고, 누구나 이해할 수 있는 쉬운 말로 풀어서 설명하세요.**\n");
-		prompt.append("예시: '자오충(子午冲)이 있어서' -> '서로 자존심이 강하게 부딪혀서'\n\n");
+			"가장 중요한 규칙: **어려운 한자어(충, 형, 살 등)는 가급적 쓰지 말고, 누구나 이해할 수 있는 쉬운 비유와 자연스러운 구어체로 설명하세요.**\n\n");
 
 		prompt.append("다음은 헤어진 두 사람의 사주팔자 정보를 바탕으로 한 '재회운' 분석 요청입니다.\n\n");
 
-		// 1. 신청자 정보 (Person 1)
+		// 3. 데이터 주입
 		prompt.append(String.format("【첫 번째 사람 (신청자): %s】\n", person1Name));
 		appendPersonCalculationInfo(prompt, person1);
+		appendKeywords(prompt, person1);
 
-		// 2. 상대방 정보 (Person 2)
 		prompt.append(String.format("\n【두 번째 사람 (상대방): %s】\n", person2Name));
 		appendPersonCalculationInfo(prompt, person2);
+		appendKeywords(prompt, person2);
 
-		// 3. 재회운 분석 요청사항 (기획안 반영 + 디테일 업그레이드)
-		prompt.append("\n### 재회운 심층 분석 요청사항 ###\n");
+		// 4. 분석 구조 설명
+		prompt.append("\n### 분석 요청 구조 (총 3단계) ###\n");
+		prompt.append(String.format("1. %s님 개인 정밀 분석 (성격/연애스타일/이상형)\n", person1Name));
+		prompt.append(String.format("2. %s님 개인 정밀 분석 (성격/연애스타일/이상형)\n", person2Name));
 		prompt.append(
-			String.format("%s님과 %s님의 만세력을 정밀 분석해서 재회 시나리오를 작성해주세요.\n\n", person1Name, person2Name));
+			String.format("3. %s님과 %s님의 재회 종합 분석 (원인/시기/해결책)\n\n", person1Name, person2Name));
 
-		prompt.append("다음 7가지 항목에 대해 줄글로 아주 구체적으로 알려줘. (불필요한 큰따옴표, 작은 따옴표는 쓰지 말아줘)\n");
+		// ==================================================================================
+		// 5. [1단계] 신청자(Person 1) 개인 정밀 분석 (배우 프롬프트 디테일 적용)
+		// ==================================================================================
+		prompt.append("### 1. [1단계: ").append(person1Name).append("님 개인 정밀 분석] ###\n");
+		prompt.append(String.format(
+			"먼저 신청자 %s님의 사주를 통해 이 분이 어떤 사람인지 완벽하게 파악해주세요.\n\n", person1Name));
+
+		prompt.append("타고난 성격과 가치관\n");
+		prompt.append(String.format(
+			"- %s님의 일간과 월지를 바탕으로, 겉으로 보이는 모습과 내면의 '진짜 성격'의 차이를 분석해주세요.\n", person1Name));
+		prompt.append("- 인생에서 가장 중요하게 생각하는 가치관(사랑/명예/자유/안정 등)은 무엇인가요?\n\n");
+
+		prompt.append("연애 스타일과 특징\n");
+		prompt.append(String.format(
+			"- %s님은 사랑에 빠지면 어떻게 변하는 스타일인가요? (올인형/계산형/방어형 등)\n", person1Name));
+		prompt.append("- 연애할 때 무의식적으로 드러나는 **'결핍'이나 '집착 포인트'**는 무엇인지 날카롭게 짚어주세요.\n\n");
+
+		prompt.append("이상형과 끌리는 타입\n");
+		prompt.append(String.format(
+			"- %s님이 본능적으로 끌리는 이성의 특징(외모, 분위기, 성격)은 무엇인가요?\n", person1Name));
+		prompt.append("- 하지만 실제로는 어떤 사람과 만나야 편안한지, 사주적으로 잘 맞는 '진짜 짝'의 특징을 알려주세요.\n\n");
+
+		// ==================================================================================
+		// 6. [2단계] 상대방(Person 2) 개인 정밀 분석
+		// ==================================================================================
+		prompt.append("### 2. [2단계: ").append(person2Name).append("님 개인 정밀 분석] ###\n");
+		prompt.append(String.format(
+			"다음으로 상대방 %s님의 사주를 통해 이 분의 본성을 낱낱이 파헤쳐주세요.\n\n", person2Name));
+
+		prompt.append("절대 변하지 않는 타고난 성격\n");
+		prompt.append(String.format(
+			"- %s님을 설명하는 핵심 키워드는 무엇인가요? (예: 통제받기 싫어하는 자유 영혼, 실속 챙기는 현실주의자)\n", person2Name));
+		prompt.append("- 겉으로는 착해 보여도 속에는 어떤 칼(고집, 자존심)을 숨기고 있는지 분석해주세요.\n\n");
+
+		prompt.append("연애 스타일과 갈등 대처 방식\n");
+		prompt.append(String.format(
+			"- %s님은 갈등이 생기면 어떻게 행동하나요? (잠수타는 회피형 vs 끝장을 보는 파이터형)\n", person2Name));
+		prompt.append("- 이 사람에게 정이 뚝 떨어지게 만드는 **'결정적 행동(발작 버튼)'**은 무엇인가요?\n\n");
+
+		prompt.append("이상형과 끌리는 타입\n");
+		prompt.append(String.format(
+			"- %s님은 어떤 스타일의 이성에게 약한가요? (챙겨주는 사람 vs 리드하는 사람 vs 쿨한 사람)\n", person2Name));
+		prompt.append("- 반대로 어떤 스타일의 이성을 가장 부담스러워하는지 분석해주세요.\n\n");
+
+		// ==================================================================================
+		// 7. [3단계] 재회 종합 분석 (개인 분석을 바탕으로 재회 연결)
+		// ==================================================================================
+		prompt.append("### 3. [3단계: 재회 시나리오 및 솔루션] ###\n");
+		prompt.append("위의 1, 2단계 개인 분석을 토대로 두 사람의 관계를 정밀 진단합니다.\n\n");
+
+		prompt.append("[1. 재회 가능성 요약]\n");
 		prompt.append(
-			"특히 '성격 차이' 같은 뻔한 말 대신, 사주 원국에 있는 글자를 근거로 들어서 설명하되, 전문 용어는 최대한 배제하고 쉽게 풀어줘.\n\n");
+			"- 두 사람의 재회 가능성을 5단계(매우 높음/높음/보통/낮음/매우 낮음) 중 하나로 평가하고, 이유를 한 문장으로 요약하세요.\n\n");
 
-		// [1. 핵심 요약 & 확률]
-		prompt.append("재회 가능성 한줄 평\n");
-		prompt.append(
-			"   - 두 사람의 재회 가능성을 5단계로(매우 좋음 / 좋음 / 보통 / 나쁨 / 매우 나쁨 등), 그 이유를 요약 정리해서 전달\n\n");
+		prompt.append("[2. 헤어짐의 진짜 원인 (이상형 vs 현실 괴리)]\n");
+		prompt.append(String.format(
+			"- %s님이 바라는 이상형([1단계])과 실제 %s님([2단계])의 모습에서 어떤 괴리감이 있었나요?\n", person1Name,
+			person2Name));
+		prompt.append("- 두 사람의 사주 글자가 부딪혀서 발생할 수밖에 없었던 '필연적인 갈등 원인'을 분석해주세요.\n\n");
 
-		prompt.append("1. 서로의 성향이나 연애 스타일\n");
-		prompt.append("   - 겉으로 보이는 성격과 연애할 때만 나오는 본모습 비교\n");
-		prompt.append("   - **서로에게 본능적으로 끌릴 수밖에 없었던 '매력 포인트':**\n");
-		prompt.append("   - 두 사람의 속궁합 (디테일하게):\n");
-		prompt.append("     **'밤에 두 사람이 얼마나 뜨거웠을지'** 상상이 가도록 아주 은밀하고 관능적으로 묘사할 것.\n");
-		prompt.append("     ** 약간 자극적이고 몰입감 있게 길게 풀어쓸 것.**\n\n");
+		prompt.append("[3. 현재 상대방의 속마음]\n");
+		prompt.append(String.format(
+			"- 현재 %s님의 운 흐름을 볼 때, 연애를 할 여유가 있나요? 아니면 다른 문제(일, 돈)로 벅찬가요?\n", person2Name));
+		prompt.append("-그리워하고 있을까요, 아니면 해방감을 느끼고 있을까요?\n\n");
 
-		prompt.append("2. 둘이 연애를 했을 당시 어떤 커플이었을지 모습\n");
-		prompt.append("   - 두 사람의 에너지 흐름을 통해 연애의 온도(뜨거웠는지, 친구 같았는지 등) 묘사\n\n");
-		prompt.append("   - 제3자가 봤을 때 '저 커플은 진짜 ~하다'라고 느꼈을 두 사람만의 분위기(Vibe)를 눈앞에 그려지듯 묘사.\n\n");
+		prompt.append("[4. 재회 시기 예측 (구체적 날짜)]\n");
+		prompt.append("- **기준일(" + todayDate + ") 이후**로 재회 운이 가장 강력한 년/월을 2개 추천해주세요.\n");
+		prompt.append("- ⚠️ **절대로 과거 날짜를 언급하지 마세요.**\n\n");
 
-		prompt.append("3. 헤어짐의 근본적 원인 (사주적 분석)\n");
-		prompt.append("   - 표면적인 이유 말고, 서로 부딪힐 수밖에 없었던 근본 원인 (예: 한 명은 통제하려 하고 한 명은 자유롭고 싶어함 등)\n");
-		prompt.append("   - '성격 차이' 같은 뻔한 말 금지. 사주 원국에 숨겨진 **'도저히 좁혀지지 않는 평행선'**이 무엇이었는지 분석.\n");
-		prompt.append(
-			"   - **[방아쇠 효과]:** 서로의 어떤 말이나 행동이 상대방의 '발작 버튼(Trigger)'을 눌렀는지, 왜 그때 헤어질 수밖에 없었는지 운세 흐름과 엮어서 드라마틱하게 설명.\n\n");
-		prompt.append("   - 갈등이 폭발했던 시기의 운세 흐름이 안 좋았는지 분석\n\n");
-
-		prompt.append("4. 현재 상대방(%s)의 속마음과 상황\n".formatted(person2Name));
-		prompt.append("   - 상대방의 현재 운 흐름을 볼 때, 연애를 할 여유가 있는지, 아니면 일/스트레스로 벅찬지\n");
-		prompt.append("   - 신청자(%s)를 그리워하고 있는지, 아니면 잊으려 노력 중인지 유추\n\n".formatted(person1Name));
-
-		prompt.append("5. 재회 골든타임 (상대적인 시기 제시)\n");
-		prompt.append("   - **절대 '2026년 X월 X일'처럼 특정 날짜를 찍지 마세요.** (틀릴 확률이 높고 기계 같습니다.)\n");
-		prompt.append(
-			"   - 대신 현재(2026년)를 기준으로 **'헤어진 지 약 한 달 정도 지난 시점'**, **'서로의 나쁜 감정이 가라앉는 3주 후'**, 같이 흐름과 기간 위주로 조언해주세요.\n");
-
-		prompt.append("6. 재회 연락 가이드(자연스럽게)\n");
-		prompt.append("   - **주의: '밤 9시~11시', '2단 분리 전략' 같은 인터넷에 떠도는 식상하고 작위적인 멘트 절대 금지.**\n");
-		prompt.append("   - 자존심이 더 쎈 사람이 누구인지 파악하여, 누가 먼저 굽혀야 하는지 조언\n");
-
-		prompt.append("7. 다시 만난다면 지켜야할 점 (현실적 솔루션)\n");
-		prompt.append("   - 재회 후 똑같은 이유로 헤어지지 않기 위한 구체적인 행동 지침 (개운법)\n\n");
+		prompt.append("[5. 재회 성공을 위한 현실적 행동 지침 (Solution)]\n");
+		prompt.append(String.format(
+			"- %s님의 '이상형 공략법([2단계])'을 참고하여, 어떻게 연락하고 행동해야 마음을 돌릴 수 있을지 구체적인 멘트나 행동을 제안해주세요.\n",
+			person2Name));
+		prompt.append("- 재회 후, 서로의 '연애 스타일 차이'를 극복하기 위한 현실적인 타협안 하나를 제시해주세요.\n\n");
 
 		appendCompatibilityJsonResponseFormat(prompt, person1Name, person2Name);
+
+		prompt.append("\n==================================================\n");
+		prompt.append("⚡ [필수 출력 가이드라인 - 위반 시 재출력] ⚡\n");
+		prompt.append(
+			"1. **분량 엄수 (최우선 순위):** 너무 짧습니다. 위 내용을 바탕으로 살을 붙여서 **지금보다 3배 더 길게** 작성하세요.\n");
+		prompt.append(
+			"2. **서술 방식:** '성격이 급하다'라고 끝내지 말고, '일지에 인신충이 있어 평소엔 차분하지만 결정적인 순간에 급발진하여 상대방을 당황하게 만드는 경향이 있으며...' 처럼 **구체적인 상황 예시**를 드세요.\n");
+		prompt.append("3. **말투:** 딱딱한 분석 보고서체가 아니라, 내담자에게 편지를 쓰듯 **따뜻하고 호흡이 긴 문체**를 사용하세요.\n");
+		prompt.append("4. **금지 사항:** '요약하자면', '결론적으로' 같은 말로 급하게 마무리하지 마세요. 끝까지 디테일을 유지하세요.\n");
+		prompt.append("==================================================\n");
 
 		return prompt.toString();
 	}
@@ -2493,7 +2567,6 @@ public class ManseInterpretationService {
 		prompt.append("- 대신 **'마음가짐', '대화 태도', '업무 방식'** 등 실질적인 행동 팁을 주세요.\n\n");
 
 		prompt.append("**[2] 술술 읽히는 '스토리텔링' 문체**\n");
-		prompt.append("- '~입니다.', '~합니다.' 로 끝나는 딱딱한 보고서 말투를 피하세요.\n");
 		prompt.append("- '~하겠네요.', '~할 수도 있어요.', '~한 날이에요.' 등 부드러운 구어체를 섞어 쓰세요.\n");
 		prompt.append("- 문장이 뚝뚝 끊기지 않고 물 흐르듯 이어지게 작성하세요. (접속사 활용)\n\n");
 
