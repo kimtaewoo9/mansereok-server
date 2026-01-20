@@ -145,51 +145,58 @@ public class OauthController {
 	}
 
 	// 네이버 로그인은 .. 인가코드 뿐만 아니라 state 값도 보내야함 .
+	// OauthController.java 수정 제안
+
 	@PostMapping("/member/naver/doLogin")
 	public ResponseEntity<?> naverLogin(
 		@RequestBody NaverRedirectDto redirectDto,
-		HttpServletResponse response) {
+		HttpServletResponse response
+	) {
 
-		// 인가코드로 access token 받아오기 .
-		AccessTokenDto accessTokenDto = naverService
-			.getAccessTokenDto(redirectDto.getCode(), redirectDto.getState());
+		// 1. 토큰 및 프로필 요청
+		AccessTokenDto accessTokenDto = naverService.getAccessTokenDto(redirectDto.getCode(),
+			redirectDto.getState());
+		NaverProfileDto naverProfileDto = naverService.getNaverProfileDto(
+			accessTokenDto.getAccess_token());
 
-		// access token 으로 naver profile
-		NaverProfileDto naverProfileDto = naverService
-			.getNaverProfileDto(accessTokenDto.getAccess_token());
+		String socialId = naverProfileDto.getResponse().getId();
+		String email = naverProfileDto.getResponse().getEmail();
 
-		User user = userService.getUserBySocialId(naverProfileDto.getResponse().getId());
-		// 회원가입 안되어있으면 회원가입
-
+		// 2. Social ID로 회원 조회
+		User user = userService.getUserBySocialId(socialId);
 		boolean isNewUser = false;
 
+		// 3. ID로 못 찾았을 경우 (현재 질문자님의 상황)
 		if (user == null) {
-			// 2. 네이버로 가입 안 되어 있으면 → 이메일로 일반 가입 여부 확인
-			User existingUser = userRepository.findByEmail(naverProfileDto.getResponse().getEmail())
-				.orElse(null);
+			// 이메일로 다시 찾아봄
+			User existingUser = userRepository.findByEmail(email).orElse(null);
 
 			if (existingUser != null) {
-				// 이미 일반 회원가입으로 가입된 이메일
-				throw new DuplicateEmailException(
-					"해당 이메일은 이미 일반 회원가입으로 등록되어 있습니다. " +
-						"일반 로그인을 이용해주세요."
+				// [중요 수정] 이메일은 있는데, 그게 'NAVER' 회원이면 -> 본인으로 인정!
+				if (existingUser.getSocialType() == SocialType.NAVER) {
+					user = existingUser;
+					// (선택) DB의 SocialID가 바뀌었을 수 있으니 최신값으로 업데이트 로직 추가 권장
+					// userService.updateSocialId(user, socialId);
+				} else {
+					// 다른 소셜(구글, 카카오)이나 일반 가입자면 -> 진짜 중복 에러
+					throw new DuplicateEmailException(
+						"이미 " + existingUser.getSocialType() + "로 가입된 이메일입니다."
+					);
+				}
+			} else {
+				// 이메일도 없으면 -> 진짜 신규 가입
+				user = userService.registerWithOauth(
+					UUID.randomUUID().toString().substring(0, 10).toUpperCase(), // username 랜덤 생성
+					email,
+					naverProfileDto.getResponse().getName(),
+					socialId,
+					SocialType.NAVER
 				);
+				isNewUser = true;
 			}
-
-			String randomUsername = UUID.randomUUID().toString().substring(0, 10).toUpperCase();
-
-			// 3. 신규 네이버 회원가입
-			user = userService.registerWithOauth(
-				randomUsername,
-				naverProfileDto.getResponse().getEmail(),
-				naverProfileDto.getResponse().getName(),
-				naverProfileDto.getResponse().getId(),
-				SocialType.NAVER
-			);
-
-			isNewUser = true;
 		}
 
+		// 4. 토큰 발급 및 응답 (기존 코드 동일)
 		return createTokenResponse(response, user, isNewUser);
 	}
 
