@@ -14,7 +14,6 @@ import com.mansereok.server.domain.interpret.dto.response.ManseryeokCalculationR
 import com.mansereok.server.domain.interpret.entity.CompatibilityResult;
 import com.mansereok.server.domain.interpret.entity.Result;
 import com.mansereok.server.domain.interpret.repository.CompatibilityResultRepository;
-import com.mansereok.server.domain.interpret.repository.ResultRepository;
 import com.mansereok.server.domain.notification.service.DiscordNotificationService;
 import com.mansereok.server.domain.user.entity.User;
 import com.mansereok.server.domain.user.service.EmailService;
@@ -43,10 +42,6 @@ public class ManseInterpretationService {
 	private final OgImageGenerationService ogImageGenerationService;
 	private final DiscordNotificationService discordNotificationService; // 👈 Slack -> Discord
 	private final EmailService emailService;
-
-	private final ResultRepository resultRepository;
-	private final CompatibilityResultRepository compatibilityResultRepository;
-
 	private final SajuResultService sajuResultService;
 
 	private static final List<String> GAPJA_CYCLE_KOR = new ArrayList<>();
@@ -88,7 +83,6 @@ public class ManseInterpretationService {
 	public ManseInterpretationService(@Value("${openai.api.key}") String apiKey,
 		@Value("${openai.api.base-url:https://api.openai.com}") String baseUrl,
 		GptApiRetryService gptApiRetryService,
-		ResultRepository resultRepository,
 		UserService userService,
 		CompatibilityResultRepository compatibilityResultRepository,
 		OgImageGenerationService ogImageGenerationService,
@@ -96,8 +90,6 @@ public class ManseInterpretationService {
 		EmailService emailService, SajuResultService sajuResultService
 	) {
 		this.gptApiRetryService = gptApiRetryService;
-		this.resultRepository = resultRepository;
-		this.compatibilityResultRepository = compatibilityResultRepository;
 		this.userService = userService;
 		this.ogImageGenerationService = ogImageGenerationService;
 		this.discordNotificationService = discordNotificationService;
@@ -359,7 +351,7 @@ public class ManseInterpretationService {
 			// 3. 프롬프트 생성 (재회운 등 카테고리별 로직 자동 적용)
 			String userPrompt = createCompatibilityPromptBySubcategory(
 				subcategoryId, person1Name, person1Response, person2Name, person2Response,
-				null, null // sourceTitle은 무료에선 보통 null
+				null, null
 			);
 
 			// 4. GPT 호출
