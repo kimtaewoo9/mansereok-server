@@ -351,7 +351,7 @@ public class ManseInterpretationService {
 			// 3. 프롬프트 생성 (재회운 등 카테고리별 로직 자동 적용)
 			String userPrompt = createCompatibilityPromptBySubcategory(
 				subcategoryId, person1Name, person1Response, person2Name, person2Response,
-				null, null // sourceTitle은 무료에선 보통 null
+				null, null
 			);
 
 			// 4. GPT 호출
