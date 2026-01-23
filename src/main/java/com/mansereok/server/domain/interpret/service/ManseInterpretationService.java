@@ -43,10 +43,6 @@ public class ManseInterpretationService {
 	private final OgImageGenerationService ogImageGenerationService;
 	private final DiscordNotificationService discordNotificationService; // 👈 Slack -> Discord
 	private final EmailService emailService;
-
-	private final ResultRepository resultRepository;
-	private final CompatibilityResultRepository compatibilityResultRepository;
-
 	private final SajuResultService sajuResultService;
 
 	private static final List<String> GAPJA_CYCLE_KOR = new ArrayList<>();
@@ -96,8 +92,6 @@ public class ManseInterpretationService {
 		EmailService emailService, SajuResultService sajuResultService
 	) {
 		this.gptApiRetryService = gptApiRetryService;
-		this.resultRepository = resultRepository;
-		this.compatibilityResultRepository = compatibilityResultRepository;
 		this.userService = userService;
 		this.ogImageGenerationService = ogImageGenerationService;
 		this.discordNotificationService = discordNotificationService;
