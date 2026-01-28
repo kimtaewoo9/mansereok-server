@@ -2272,23 +2272,27 @@ public class ManseInterpretationService {
 		prompt.append(
 			String.format("\"아, 이 사람은 %s님의 그런 태도를 견딜 수 없는 사주구나\" 라는 결론으로 연결하세요.\n\n", person1Name));
 
-		prompt.append("**[1-3] 두 사람이 싸웠을 때의 전형적인 패턴** (구체적 장면 묘사)\n");
-		prompt.append("사주를 종합해보면, 아마도 두 분의 싸움은 이런 패턴이었을 거예요:\n\n");
+		prompt.append("**[1-3] 두 사람이 싸웠을 때의 전형적인 패턴** (구체적 상황 묘사)\n");
+		prompt.append("사주를 종합해보면, 아마도 두 분의 갈등은 이런 식으로 시작됐을 거예요:\n\n");
 
-		prompt.append("**[장면 1] 일상적인 대화에서 시작**\n");
-		prompt.append(String.format("%s: \"오늘 회식이야? 몇 시에 끝나?\"\n", person1Name));
-		prompt.append(String.format("%s: \"글쎄, 늦을 것 같은데?\"\n", person2Name));
-		prompt.append(String.format("%s: (불안함) \"누구 나와? 2차도 가?\"\n", person1Name));
-		prompt.append(String.format("%s: (답답함) \"왜 자꾸 확인해... 못 믿는 거야?\"\n\n", person2Name));
+		prompt.append(String.format("%s님은 상대방의 작은 행동 하나하나가 불안하게 느껴졌을 겁니다.\n", person1Name));
+		prompt.append("'지금 누구랑 있어?', '왜 연락이 늦어?' 같은 질문이 자꾸 튀어나왔고,\n");
+		prompt.append(String.format("이게 %s님 입장에서는 '애정'이 아니라 '감시'처럼 느껴졌을 거예요.\n\n", person2Name));
 
-		prompt.append("**[장면 2] 감정 폭발**\n");
-		prompt.append(String.format("%s: \"못 믿는 게 아니라 걱정되는 거잖아!\"\n", person1Name));
-		prompt.append(String.format("%s: \"이게 걱정이야 감시야? 숨막혀 죽겠어.\"\n\n", person2Name));
+		prompt.append(String.format("반대로 %s님은 그런 질문들이 답답하고 숨막히게 느껴졌을 겁니다.\n", person2Name));
+		prompt.append("'왜 자꾸 확인해?', '못 믿는 거야?'라는 반응이 나왔고,\n");
+		prompt.append(String.format("이게 %s님에게는 '나를 의심하는구나'라는 상처로 다가왔을 거예요.\n\n", person1Name));
 
-		prompt.append("**[장면 3] 냉전 돌입**\n");
-		prompt.append(
-			String.format("%s님은 사과를 기다리고, %s님은 '또 시작이네' 하며 연락을 끊습니다.\n", person1Name, person2Name));
-		prompt.append("이런 패턴이 3번, 5번, 10번 반복되면서... 결국 '이별'이라는 결론에 도달한 거죠.\n\n");
+		prompt.append("그렇게 서로 감정이 격해지면서 말투가 차갑게 변했을 겁니다.\n");
+		prompt.append(String.format("%s님은 '걱정되는 거잖아'라고 항변했을 테고,\n", person1Name));
+		prompt.append(String.format("%s님은 '또 시작이네'라는 마음으로 벽을 쌓기 시작했겠죠.\n\n", person2Name));
+
+		prompt.append("결국 두 사람 모두 지쳐서 냉전에 돌입합니다.\n");
+		prompt.append(String.format("%s님은 상대방이 먼저 사과하기를 기다렸고,\n", person1Name));
+		prompt.append(String.format("%s님은 '이제 지쳤다'며 연락을 끊어버렸을 겁니다.\n\n", person2Name));
+
+		prompt.append("이런 패턴이 3번, 5번, 10번 반복되면서...\n");
+		prompt.append("두 사람 모두 '이 사람과는 안 되겠다'라는 결론에 도달한 거죠.\n\n");
 
 		prompt.append("**[1-4] 결정타를 날린 시기** (대운/세운 분석)\n");
 		prompt.append(String.format("%s님과 %s님의 대운/세운을 보면...\n", person1Name, person2Name));
