@@ -2490,10 +2490,6 @@ public class ManseInterpretationService {
 
 		prompt.append("드디어 만나게 됐을 때 어떻게 행동해야 하는지 구체적으로 제시하세요.\n\n");
 
-		prompt.append("절대 금지 행동:\n");
-		prompt.append("- 과거 싸움 내용 들먹이기\n");
-		prompt.append("- 재회 압박하기\n");
-		prompt.append("- 외모 품평하기\n");
 		prompt.append(String.format("- %s님 사주상 가장 싫어하는 행동을 구체적으로 지적하세요\n\n", person2Name));
 
 		prompt.append("플러스 포인트 행동:\n");
