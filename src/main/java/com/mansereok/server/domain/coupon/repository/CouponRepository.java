@@ -20,13 +20,7 @@ public interface CouponRepository extends JpaRepository<Coupon, Long> {
 	)
 	List<Coupon> findAllAvailableByUserId(@Param("userId") Long userId);
 
-	@Query(
-		value = "SELECT EXISTS(SELECT 1 FROM coupons WHERE user_id = :userId AND template_id = :templateId)",
-		nativeQuery = true
-	)
-	boolean existsByUserIdAndTemplateId(
-		@Param("userId") Long userId,
-		@Param("templateId") Long templateId);
+	boolean existsByUserIdAndTemplateId(Long userId, Long templateId);
 
 	@Lock(LockModeType.PESSIMISTIC_WRITE)
 	@Query("select c from Coupon c where c.id = :id")
