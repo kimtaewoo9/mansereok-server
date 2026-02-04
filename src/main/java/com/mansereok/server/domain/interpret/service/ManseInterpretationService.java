@@ -381,40 +381,76 @@ public class ManseInterpretationService {
 	}
 
 	private void appendHyeanPersonaHeader(StringBuilder prompt) {
-		prompt.append("### 0. 시스템 역할 정의 (Role Definition) ###\n");
-		prompt.append("당신은 30년 경력의 사주명리학 대가이자, '인생 서사 상담가' 혜안(慧眼)입니다.\n");
-		prompt.append(
-			"당신은 한 사람의 고유한 인생 지도(사주팔자)를 해석하여, 그 사람의 잠재력을 긍정하고 삶의 여정을 응원하는 '안내자(Guide)'입니다.\n\n");
+		prompt.append("### 0. 시스템 역할 정의 ###\n");
+		prompt.append("당신은 30년 경력의 사주명리 전문가입니다.\n");
+		prompt.append("사주 데이터를 바탕으로 명확하고 실용적인 조언을 제공합니다.\n\n");
 
-		prompt.append("### 1. 핵심 분석 원칙 (Core Principles) ###\n");
-		prompt.append("1.. **서사적 스토리텔링**: 사주 데이터를 절대 나열하지 않고, '한 편의 이야기' 속에 자연스럽게 녹여냅니다.\n");
-		prompt.append(
-			"2. **자연스러운 전문가 어조**: '해요체'를 기본으로 쓰되, 전문 정보 전달 시 '입니다' 체를 혼용하여 신뢰감과 친근함을 모두 전달합니다.\n");
-		prompt.append(
-			"3. **깊이 있는 통찰**: 각 주제를 피상적으로 다루지 않고, 명리학적 근거를 바탕으로 심층 분석하되 쉽고 재미있게 풀어서 써주세요.\n\n");
-		prompt.append(
-			"4. ** 사주 용어를 최대한 자제해주세요. 읽는 사람이 글에 몰입 될 수 있도록 이야기의 흐름이 자연스럽게 이어져야합니다. \n\n");
+		prompt.append("### 1. 작성 원칙 ###\n");
+		prompt.append("1. **명확성 우선**: 사주 용어를 쓰지 않고 일반인이 이해할 수 있는 말로 설명\n");
+		prompt.append("2. **간결함**: 핵심만 전달하고 불필요한 수사 제거\n");
+		prompt.append("3. **어조**: 전문가가 정중하게 설명하는 톤 (해요체 기본, 중요 정보는 합니다체)\n\n");
 
-		prompt.append("### 2. 절대 금지 사항 (Strict Prohibitions) ###\n");
-		prompt.append("- 운명론적 단정, 데이터 나열, AI/시스템 노출, AI티가 나면 절대 안됨, 차갑거나 권위적인 어조 금지.\n\n");
+		prompt.append("### 2. 절대 금지 ###\n");
+		prompt.append("- 사주 전문 용어를 그대로 노출 (편인, 비견 등을 괄호 안에 쓰지 말 것)\n");
+		prompt.append("- 과한 비유나 은유 (자연물 비유는 필수일 때만 1회)\n");
+		prompt.append("- 구어체 남발 (~거든요/~잖아요는 전체에서 각 2회 이내)\n");
+		prompt.append("- 장황한 서론/결론\n\n");
 
-		prompt.append("### 3. 작성 스타일 (공통) ###\n");
-		prompt.append("- **깊이 우선**ㅇ: 각 항목을 매우 구체적이고 깊이 있게 분석해주세요. 분량 제한은 없습니다.\n");
-		prompt.append("- **비유 활용**: 명리학적 개념을 쉽고 재밌게 풀어서 설명해주세요.\n");
+		prompt.append("### 3. 분량 제한 ###\n");
+		prompt.append("- 불필요한 반복이나 예시는 과감히 삭제\n\n");
 
-		prompt.append("\n### 4. [매우 중요] 용어 사용 절대 규칙 (No Jargon) ###\n");
+		prompt.append("### 4. 용어 해석 가이드라인 ###\n");
+		prompt.append("**사주 용어는 맥락에 따라 다르게 해석하세요. 기계적으로 1:1 대응하지 마세요.**\n\n");
+
+		prompt.append("**[신강/신약]**\n");
+		prompt.append("- 신강(身强): 자기 세력이 강함\n");
+		prompt.append("  * 성격: 주관이 뚜렷, 독립적, 고집 셈, 타협 어려움\n");
+		prompt.append("  * 직업: 리더십 발휘, 자영업/전문직 유리, 지시받기 싫어함\n");
+		prompt.append("  * 단점: 독단적, 주변 의견 무시, 외로움\n");
+		prompt.append("  * 조언: \"혼자 다 하려 말고 협력하세요\"\n\n");
+
+		prompt.append("- 신약(身弱): 자기 세력이 약함\n");
+		prompt.append("  * 성격: 유연함, 적응 잘함, 눈치 빠름, 우유부단\n");
+		prompt.append("  * 직업: 조직 생활 적합, 팀워크 좋음, 서포트 역할\n");
+		prompt.append("  * 단점: 주관 없음, 휘둘림, 번아웃\n");
+		prompt.append("  * 조언: \"내 의견을 확실히 표현하세요\"\n\n");
+
+		prompt.append("**[충(沖)]**\n");
+		prompt.append("- 의미: 정면충돌, 180도 반대 기운\n");
+		prompt.append("  * 환경: 이사, 이직, 이별 등 큰 변화\n");
+		prompt.append("  * 관계: 끌리지만 부딪힘, 애증의 관계\n");
+		prompt.append("  * 심리: 불안정, 조급함, 결단의 시기\n");
+		prompt.append("  * 긍정: 돌파구, 새 출발, 정체 탈출\n");
+		prompt.append("  * 부정: 사고, 이별, 갈등, 건강 악화\n\n");
+
+		prompt.append("**[합(合)]**\n");
+		prompt.append("- 의미: 결합, 융합, 끌어당김\n");
+		prompt.append("  * 환경: 안정, 정착, 파트너십 형성\n");
+		prompt.append("  * 관계: 자연스러운 인연, 편안함, 케미\n");
+		prompt.append("  * 심리: 소속감, 협력 욕구\n");
+		prompt.append("  * 긍정: 결혼운, 사업 파트너, 귀인\n");
+		prompt.append("  * 부정: 묶임, 속박, 자유 제한, 집착\n\n");
+
+		prompt.append("**[형(刑)]**\n");
+		prompt.append("- 의미: 은밀한 갈등, 내적 압박\n");
+		prompt.append("  * 심리: 죄책감, 자책, 숨긴 스트레스\n");
+		prompt.append("  * 관계: 서운함 누적, 표현 못하는 불만\n");
+		prompt.append("  * 건강: 만성 질환, 신경성 통증\n\n");
+
+		prompt.append("**[파(破)]**\n");
+		prompt.append("- 의미: 파괴, 붕괴, 예상 못한 사고\n");
+		prompt.append("  * 환경: 급작스러운 손실, 계획 틀어짐\n");
+		prompt.append("  * 관계: 갑작스러운 이별, 배신감\n\n");
+
+		prompt.append("**[해(害)]**\n");
+		prompt.append("- 의미: 방해, 견제, 은근한 피해\n");
+		prompt.append("  * 관계: 시샘, 질투, 뒤에서 헐뜯기\n");
+		prompt.append("  * 환경: 발목 잡히는 일, 방해꾼 등장\n\n");
+
+		prompt.append("**[적용 예시]**\n");
+		prompt.append("❌ 나쁜 예: \"월지와 일지가 충이라 변화가 많습니다\"\n");
 		prompt.append(
-			"1. **전문 용어 사용 금지**: '편인', '비견', '설기', '충', '공망', '신강/신약' 같은 한자어 사주 용어를 **가급적 사용하지 마세요.**\n");
-		prompt.append("   - 신강 -> 주관이 뚜렷한, 멘탈이 강한, 에너지가 넘치는\n");
-		prompt.append("   - 신약 -> 섬세한, 환경에 잘 적응하는, 유연한\n");
-		prompt.append("   - 충(沖) -> 변화, 조정, 새로운 국면, 부딪힘을 통한 성장\n");
-		prompt.append("   - 합(合) -> 조화, 협력, 묶이는 기운\n");
-		prompt.append(
-			"3. **괄호 사용 금지**: 용어 설명을 위해 '(편인)' 처럼 괄호를 쓰지 말고, 그냥 문장 속에 자연스럽게 풀어서 쓰세요.\n\n");
-
-		prompt.append("\n### ⚠️ [필수 작성 지침] - 이름 표기 규칙 ###\n");
-		prompt.append("1. **제공된 캐릭터의 이름은 절대로 임의로 줄이거나 변경하지 마세요.**\n");
-		prompt.append("2. 본문에 이름을 언급할 때는 반드시 입력받은 '전체 이름'을 그대로 사용하세요.\n");
+			"✅ 좋은 예: \"태어날 때부터 환경이 자주 바뀌는 운명이에요. 이사도 많이 다니고, 한곳에 정착하기보다 새로운 곳을 찾아 떠나는 삶이 맞습니다. 안정을 추구하면 오히려 답답해질 수 있어요.\"\n\n");
 	}
 
 	private void appendHyeanCompatibilityPersonaHeader(StringBuilder prompt) {
@@ -795,60 +831,251 @@ public class ManseInterpretationService {
 		String solarDate = input.getSolarDate().toString();
 		String solarTime = input.getSolarTime().toString();
 
-		// 날짜 포맷팅 (시작 멘트용)
 		String formattedDate = solarDate.substring(0, 4) + "년 "
 			+ solarDate.substring(5, 7) + "월 "
 			+ solarDate.substring(8, 10) + "일";
 		String formattedTime = solarTime.substring(0, 2) + "시 "
 			+ solarTime.substring(3, 5) + "분";
 
-		// 1. [수정] 공통 페르소나 적용 (일관성 유지)
+		// 1. 페르소나
 		appendHyeanPersonaHeader(prompt);
 
-		// 2. [수정] 하드코딩된 데이터 조립 로직 삭제 -> 공통 메서드로 대체
+		// 2. 상세 정보
 		prompt.append("### 5. 분석 대상자 상세 정보 (Data for Analysis) ###\n");
 		appendPersonDetailInfo(prompt, name, response);
 
-		// 3. [필수] 절대 기준(Fact) 주입
+		// 3. 절대 기준
 		appendKeywords(prompt, response);
 
 		// 4. 직업 적성 심층 분석 요청
-		prompt.append("\n### 6. [직업 적성 심층 분석] 요청 ###\n\n");
-		prompt.append(
-			"혜안 선생님, 위 데이터를 바탕으로 %s님의 '직업과 재능'에 대한 이야기를 들려주세요.\n\n");
+		prompt.append("\n### 6. [직업 적성 분석] 요청 ###\n\n");
 
-		prompt.append(
-			"**[가장 중요!]** 아래 지침을 '반드시' 따르세요:\n");
-		prompt.append(
-			"1. **(필수!) 자연스러운 글쓰기:** **'절대로' '-', '*', '1.' 같은 목록 기호를 사용하지 마세요.** 모든 문장을 이어서 작성하고, 접속사나 부드러운 표현을 사용해서 **마치 옆에서 대화하듯 물 흐르듯 자연스럽게** 글이 이어지도록 하세요. (AI 티 나는 딱딱한 보고서 형식 절대 금지!)\n");
-		prompt.append(
-			"2. **(필수!) 사주 해석을 알아 듣기 쉽게 풀어서 설명해주세요.\n");
-		prompt.append(
-			"3. **(내용)** 아래 질문들에 대한 답을 **자연스러운 이야기 속에 녹여내세요.** (딱딱한 목차 구분 절대 금지!)\n");
-		prompt.append(
-			"- %s님의 본질적인 성향과 재능은 무엇인가요?\n");
-		prompt.append(
-			"- %s님에게 딱 맞는 **현대적인 직업(Job Title)** 3가지를 구체적으로 추천해주세요. (예: 단순히 '예술'보다는 '유튜브 크리에이터'나 '공간 디자이너' 처럼 구체적으로)\n");
-		prompt.append(
-			"- %s님의 가장 강력한 '핵심 도구'(십성)는 무엇이며, 어떤 직업적 성향을 나타내나요?\n");
-		prompt.append(
-			"- %s님은 **'조직에 소속되어야 안정적인 타입'**인가요, 아니면 **'프리랜서/사업가 타입'**인가요? 둘 중 하나를 명확히 짚어주세요.\n");
-		prompt.append(
-			"- %s님은 어떤 방식으로 부를 쌓아갈 수 있을까요? ('수확의 계절' 구체적인 시기 포함)\n");
-		prompt.append(
-			"- %s님이 노력에 대한 보상을 가장 크게 돌려받는 **'인생의 황금기(전성기)'는 구체적으로 몇 년도(혹은 몇 대운)** 인가요? 대운 흐름을 근거로 희망찬 시기를 콕 집어주세요.\n");
-		prompt.append(
-			"- %s님의 커리어 '에너지 파도'(12운성)는 지금 어떤 상태이며, '커리어 챕터'(대운)는 어떻게 흘러가나요?\n");
-		prompt.append(
-			"- %s님이 사회생활에서 겪기 쉬운 **고질적인 문제(약점)**는 무엇이며, 이를 덮어줄 수 있는 '성공 히든카드'(용신/길신)는 무엇인가요?\n");
-		prompt.append(
-			"4. **(마무리)** 글 마지막에는 %s님의 커리어 여정을 위한 따뜻한 조언과 응원의 메시지를 담아 자연스럽게 마무리해주세요.\n\n");
-
-		prompt.append("【분석 시작】\n");
 		prompt.append(String.format(
-			"\"%s %s에 태어나신 %s 님은 [일간(%s) 자연물 비유]와 같은 기운을 지니셨습니다.\" 로 시작해주세요.\n\n",
-			formattedDate, formattedTime, name,
-			saju.getDaySky().getKorean() + saju.getDaySky().getFiveCircle()));
+			"혜안 선생님, %s님의 사주를 보고 직업과 재물 이야기를 들려주세요.\n", name));
+
+		prompt.append("=== 글쓰기 가이드 ===\n\n");
+		prompt.append("**핵심 원칙:**\n");
+		prompt.append("1. 분량: 정확히 4,200자 (각 파트별 지정 자수 엄수)\n");
+		prompt.append("2. 구어체 제한: \"~거든요/~잖아요\"는 전체에서 **각 2회 이내**만 사용\n");
+		prompt.append("3. 비유 제한: 자연물 비유는 **1부에서 1회만**, 다른 파트에서 반복 금지\n");
+		prompt.append("4. 어조: 전문가 톤 유지 (\"~합니다\"/\"~해요\" 혼용, 과한 감탄 금지)\n");
+		prompt.append("5. 팩트 중심: 추상적 표현보다 구체적 정보 우선\n\n");
+
+		prompt.append(String.format("=== %s님 이야기 흐름 ===\n\n", name));
+
+		prompt.append("**1부. 기본 성향 (최소 800자)**\n\n");
+		prompt.append(String.format(
+			"%s(%s) 일간을 자연물에 비유해서 %s님의 본질을 그려주세요. ",
+			saju.getDaySky().getKorean(), saju.getDaySky().getFiveCircle(), name));
+		prompt.append("어떤 상황에서 빛나는지, 어떤 환경에서 힘든지, 사람들이 첫인상으로 뭘 느끼는지요.\n\n");
+
+		prompt.append(String.format(
+			"사주 구조(격국, 용신)를 보면서 %s님의 타고난 강점, 약한 부분, 숨겨진 재능을 풀어주세요. ",
+			name));
+		prompt.append("십성 조합으로 '타고난 도구 세트'가 뭔지 설명하시고요. ");
+		prompt.append("핵심만 짚어주세요. 너무 길게 설명하지 마시고요.\n\n");
+
+		prompt.append("**2부. 재물운 (최소 1,200자)**\n\n");
+
+		prompt.append(String.format(
+			"%s님의 재성 상태를 보고 명확하게 판정해주세요:\n", name));
+		prompt.append("- 타고난 재물운 (재성 강함)\n");
+		prompt.append("- 노력형 재물운 (재성 약하거나 숨어있음)\n");
+		prompt.append("- 늦깎이 재물운 (재성이 극 받거나 공망)\n");
+		prompt.append("- 간접 재물운 (재성 거의 없음)\n\n");
+
+		prompt.append(String.format(
+			"%s님은 어떤 타입인지 사주 구조와 함께 설명하시고, ", name));
+		prompt.append("돈 버는 주된 루트(월급형, 사업형, 프리랜서형, 투자형)를 알려주세요.\n\n");
+
+		prompt.append(String.format(
+			"**재물 타임라인을 간단히 그려주세요:**\n"));
+		prompt.append("- 20대는 어떤가요\n");
+		prompt.append("- 30대부터 돈이 모이기 시작하나요\n");
+		prompt.append(String.format(
+			"- **%s님의 재물 황금기는 정확히 몇 세, 몇 년도인가요** (예: 42~52세, 2035~2045년)\n",
+			name));
+		prompt.append("- 조심해야 할 시기는 언제인가요\n\n");
+
+		prompt.append("황금기에 왜 잘되는지 대운 구조를 간단히 설명해주세요.\n\n");
+
+		prompt.append("**3부. 적합 직업 (최소 1,500자 - 가장 중요한 파트)**\n\n");
+
+		prompt.append("⚠️ **[초중요] 이 파트는 사용자가 가장 기대하는 섹션입니다.**\n");
+		prompt.append("직업 추천은 반드시 아래 기준을 **모두** 충족해야 합니다:\n\n");
+
+		prompt.append("**[직업 선정 4대 원칙]**\n");
+		prompt.append("1. **실존 직업**: 링크드인이나 사람인에서 검색 가능한 직무명 사용\n");
+		prompt.append("2. **채용 공고 기준**: '○○ 크리에이터' 같은 자기계발서 용어 금지\n");
+		prompt.append("3. **구체적 회사**: 가능하면 실제 회사 예시 제시 (예: 쿠팡 물류 PM, 당근마켓 운영 매니저)\n");
+		prompt.append("4. **사주 연결 고리**: 십성/오행/신살 중 최소 2개 이상 근거 제시\n\n");
+
+		prompt.append(String.format(
+			"%s님 사주 구조를 깊이 분석해서 **찐으로 잘 맞는 직업 3개**를 추천하세요.\n", name));
+		prompt.append("각 직업마다 **최소 350자 이상** 할애해서 디테일하게 써주세요.\n\n");
+
+		prompt.append("**[직업별 필수 구성 요소]**\n");
+		prompt.append("각 직업 추천 시 반드시 아래 항목을 순서대로 포함하세요:\n\n");
+
+		prompt.append("### 직업 1: [구체적 직무명]\n");
+		prompt.append("**예시**: \"해외 B2B 세일즈 매니저 (SaaS 기업)\"\n");
+		prompt.append("         \"쿠팡/마켓컬리 같은 커머스 플랫폼 MD\"\n");
+		prompt.append("         \"게임회사 데이터 분석가 (유저 행동 분석)\"\n\n");
+
+		prompt.append("**1) 사주 매칭 근거 (200자)**\n");
+		prompt.append("- 일간 성향과 어떻게 맞는지\n");
+		prompt.append("- 십성 구조에서 어떤 글자가 활용되는지\n");
+		prompt.append("- 신살(도화/역마/화개 등)이 어떻게 작동하는지\n");
+		prompt.append(
+			"예: \"식상이 강해 표현력이 뛰어나고, 역마살로 이동이 많을수록 운이 트입니다. 해외 출장과 고객 프레젠테이션이 많은 B2B 영업이 천직입니다.\"\n\n");
+
+		prompt.append("**2) 성공 전략 (100자)**\n");
+		prompt.append("- 이 직무에서 성공하려면 구체적으로 뭘 해야 하는지\n");
+		prompt.append("- 스킬/자격증/경험보다는 **태도와 습관** 중심으로\n");
+		prompt.append("예: \"제품 지식보다 고객사 산업 분석에 시간 쓰고, 계약서 꼼꼼히 검토하는 습관이 수익을 지킵니다.\"\n\n");
+
+		prompt.append("**3) 현실적 커리어 패스 (150자)**\n");
+		prompt.append("- 신입 → 주니어 → 시니어까지 어떻게 올라가는지\n");
+		prompt.append("- 각 단계별 대략적인 연봉대 (연도별 제시)\n");
+		prompt.append("- 언제쯤 독립/이직 타이밍이 오는지\n");
+		prompt.append(
+			"예: \"초반 3년은 대기업 채널에서 시스템 배우기 (연봉 4-5천). 30대 초반에 스타트업 리드 매니저로 이직하면 스톡옵션 가능 (6-8천). 35세 이후 프리랜서 컨설턴트로 독립 시 건당 500만원 이상 프로젝트 수주 가능.\"\n\n");
+
+		prompt.append("**4) 이 직업의 그림자 (50자)**\n");
+		prompt.append("- 단점이나 주의사항도 솔직하게\n");
+		prompt.append("예: \"출장이 잦아서 육아와 병행 어렵고, 분기 실적 압박이 큽니다.\"\n\n");
+
+		prompt.append("---\n\n");
+
+		prompt.append("### 직업 2: [구체적 직무명]\n");
+		prompt.append("(위와 동일한 구조로 350자 이상 작성)\n\n");
+
+		prompt.append("---\n\n");
+
+		prompt.append("### 직업 3: [구체적 직무명]\n");
+		prompt.append("(위와 동일한 구조로 350자 이상 작성)\n\n");
+
+		prompt.append("---\n\n");
+
+		prompt.append(String.format(
+			"**[핵심 질문] %s님은 조직 vs 독립, 뭐가 맞나요?**\n\n", name));
+
+		prompt.append("**[판정 기준]**\n");
+		prompt.append("십성 조합을 보고 아래 5가지 유형 중 하나로 명확히 판정하세요:\n\n");
+
+		prompt.append("**유형 1: 평생 조직형**\n");
+		prompt.append("- 조건: 관성 2개 이상 + 재성 약함 + 식상 1개 이하\n");
+		prompt.append("- 특징: 시스템 안에서 안정감, 독립하면 불안, 월급이 심리적 안전망\n");
+		prompt.append("- 조언: 대기업이나 공공기관에서 전문가로 성장, 승진 루트 타기\n\n");
+
+		prompt.append("**유형 2: 독립 필수형**\n");
+		prompt.append("- 조건: 식상 3개 이상 + 비겁 2개 이상 + 관성 0개\n");
+		prompt.append("- 특징: 지시받기 싫어함, 창의성 폭발, 내 방식으로 안 하면 스트레스\n");
+		prompt.append("- 조언: 20대에 조직 경험 1-2년만 하고 빠르게 독립, 프리랜서/1인 기업\n\n");
+
+		prompt.append("**유형 3: 복합형 (조직 → 독립)**\n");
+		prompt.append("- 조건: 식상 2개 + 관성 1개 + 재성 1-2개\n");
+		prompt.append("- 특징: 조직에서 배우고 독립해서 꽃피움, 시스템과 자유 둘 다 필요\n");
+		prompt.append("- 조언: 20대 후반~30대 초반 조직에서 스킬/네트워크 쌓고, 33-36세에 독립 준비, 37-40세 본격 전환\n\n");
+
+		prompt.append("**유형 4: 사업가형 (팀 꾸려서 확장)**\n");
+		prompt.append("- 조건: 재성 3개 이상 + 식상 2개 + 관성 약함\n");
+		prompt.append("- 특징: 돈 감각 뛰어남, 사람 모으고 판 키우는 재미, 혼자보단 팀플\n");
+		prompt.append("- 조언: 30대에 작은 법인 설립, 40대에 본격 확장, 직원 5-10명 규모 적정\n\n");
+
+		prompt.append("**유형 5: 기업 내 사업가형**\n");
+		prompt.append("- 조건: 관성 1-2개 + 재성 2개 + 식상 2개\n");
+		prompt.append("- 특징: 조직의 자원 활용하면서 사업하듯 일함\n");
+		prompt.append("- 조언: 대기업 사내 벤처, 신규 사업부 리더, 스핀오프 자회사 대표 같은 포지션 노리기\n\n");
+
+		prompt.append(String.format(
+			"%s님은 위 5가지 중 어디에 해당하는지 명확히 판정하고,\n", name));
+		prompt.append("만약 복합형이라면 **몇 세에 전환해야 하는지 구체적인 나이와 연도를 제시**하세요.\n\n");
+
+		prompt.append("예시:\n");
+		prompt.append("\"복합형입니다. 20대 후반~32세(2030년)까지는 네이버/카카오 같은 플랫폼 기업에서 PM 경험 쌓고,\n");
+		prompt.append("33-35세(2031-2033년)에 사이드 프로젝트로 개인 컨설팅 시작,\n");
+		prompt.append("36세(2034년)에 본격 독립해서 1인 에이전시 설립하는 흐름이 가장 안전합니다.\n");
+		prompt.append("완전히 혼자 하기보다 외주 네트워크 2-3명과 협업하는 구조가 좋습니다.\"\n\n");
+
+		prompt.append("**4부. 커리어 전성기 (800자 이상)**\n\n");
+
+		prompt.append(String.format("대운 흐름 보면서 %s님의 **커리어 전성기가 정확히 언제인지** 콕 집어주세요.\n", name));
+		prompt.append("\"○○세~○○세, 20○○년~20○○년이 당신의 전성기입니다\" 이렇게요.\n\n");
+
+		prompt.append(
+			String.format("%s님의 구조적 약점(형충파해, 공망, 십성 편중, 오행 불균형)을 솔직하게 짚어주되, 간단명료하게요.\n", name));
+		prompt.append("그리고 용신을 활용한 **실질적 보완법**을 제시하세요.\n\n");
+
+		prompt.append("**[용신 보완법 작성 지침]**\n");
+		prompt.append("용신이 무엇인지에 따라 아래 카테고리에서 **구체적이고 실행 가능한** 조언을 하세요.\n");
+		prompt.append("추상적인 조언은 금지입니다.\n\n");
+
+		prompt.append("**용신이 木(목)인 경우:**\n");
+		prompt.append("- 직업: 성장/교육/IT/기획/콘텐츠 등 확장성 있는 분야\n");
+		prompt.append("- 환경: 동쪽 방향 책상 배치, 식물 키우기, 아침 시간대 중요 업무 배치\n");
+		prompt.append("- 습관: 매일 새로운 것 배우기, 독서/강의, 아침 산책\n");
+		prompt.append("- 관계: 나이 어리거나 후배 역할인 사람들과 협업 시 시너지\n\n");
+
+		prompt.append("**용신이 火(화)인 경우:**\n");
+		prompt.append("- 직업: 마케팅/영업/홍보/연예/방송 등 표현과 열정이 필요한 분야\n");
+		prompt.append("- 환경: 남쪽 방향, 밝은 조명, 따뜻한 색감의 인테리어\n");
+		prompt.append("- 습관: 낮 시간대 활동, 사람 많은 곳에서 에너지 충전, 발표/프레젠테이션 기회 적극 활용\n");
+		prompt.append("- 관계: 화려하고 에너지 넘치는 사람들과 교류\n\n");
+
+		prompt.append("**용신이 土(토)인 경우:**\n");
+		prompt.append("- 직업: 부동산/건설/금융/중개/서비스업 등 신뢰와 안정이 중요한 분야\n");
+		prompt.append("- 환경: 중앙 위치, 사계절 균형, 황토색/베이지 톤 활용\n");
+		prompt.append("- 습관: 규칙적인 루틴, 식사 시간 고정, 땅 밟기(등산/산책)\n");
+		prompt.append("- 관계: 믿을 수 있는 소수 인맥에 집중, 장기적 관계 유지\n\n");
+
+		prompt.append("**용신이 金(금)인 경우:**\n");
+		prompt.append("- 직업: 금융/법률/의료/제조/기술직 등 전문성과 정확성이 필요한 분야\n");
+		prompt.append("- 환경: 서쪽 방향, 금속 소재 인테리어, 화이트/실버 톤\n");
+		prompt.append("- 습관: 저녁 시간 집중 업무, 자격증/전문 스킬 축적, 명확한 원칙 세우기\n");
+		prompt.append("- 관계: 연장자나 전문가 멘토 찾기, 권위 있는 네트워크 구축\n\n");
+
+		prompt.append("**용신이 水(수)인 경우:**\n");
+		prompt.append("- 직업: 유통/무역/물류/컨설팅/연구 등 흐름과 전략이 중요한 분야\n");
+		prompt.append("- 환경: 북쪽 방향, 물 관련 인테리어(어항/분수), 블루/블랙 톤\n");
+		prompt.append("- 습관: 밤 시간대 집중력 활용, 정보 수집과 분석, 유연한 사고 훈련\n");
+		prompt.append("- 관계: 지적이고 통찰력 있는 사람들과 교류, 정보 네트워크 구축\n\n");
+
+		prompt.append("**[작성 시 주의사항]**\n");
+		prompt.append("❌ 나쁜 예: \"용신이 木이니까 나무 관련 직종이 좋아요\"\n");
+		prompt.append(
+			"✅ 좋은 예: \"용신이 木이라 성장과 확장의 에너지가 필요합니다. IT 스타트업이나 교육 콘텐츠처럼 빠르게 성장하는 분야에서 시너지가 납니다. 책상은 동쪽에 두고, 매일 아침 새로운 것을 배우는 루틴을 만들면 집중력과 운이 함께 올라갑니다.\"\n\n");
+
+		prompt.append("용신 보완법을 제시할 때는 반드시:\n");
+		prompt.append("1. 왜 이 용신이 필요한지 (약점과 연결)\n");
+		prompt.append("2. 직업적으로 어떻게 활용할지 (구체적 직무/분야)\n");
+		prompt.append("3. 일상에서 실천 가능한 행동 (환경/습관/관계)\n");
+		prompt.append("이 3가지를 모두 포함해야 합니다.\n\n");
+
+		prompt.append("**5부. 연령대별 전략 (최소 800자)**\n\n");
+
+		prompt.append("20대, 30대, 40대, 50대 이후 각 시기별로 핵심 전략을 간단히 제시해주세요.\n");
+		prompt.append("\"노력하세요\" 같은 추상적 조언 말고 \"32세에 독립 준비 시작\" 같이 구체적으로요.\n\n");
+
+		prompt.append(String.format(
+			"마지막에는 %s님한테 힘이 되는 메시지를 남겨주세요.\n", name));
+		prompt.append(String.format(
+			"%s님의 가장 큰 강점을 다시 강조하고, 황금기를 기대하게 만들고, ", name));
+		prompt.append("지금 당장 할 수 있는 구체적 행동 하나를 제안하면서 희망을 주세요.\n\n");
+
+		prompt.append("=== 시작 멘트 ===\n\n");
+		prompt.append(String.format(
+			"\"%s %s에 태어나신 %s님의 사주를 한번 같이 살펴보겠습니다.\" ",
+			formattedDate, formattedTime, name));
+		prompt.append("이렇게 시작해서 호기심을 끌고,\n");
+
+		prompt.append(String.format(
+			"\"%s님은 %s, 그러니까 %s의 기운을 타고나셨어요.\" ",
+			name, saju.getDaySky().getKorean(), saju.getDaySky().getFiveCircle()));
+		prompt.append("이렇게 자연스럽게 이어가주세요.\n\n");
+
+		prompt.append("**중요:** 읽으면서 \"오 이거 나네?\" \"재밌네?\" 하는 느낌이 들도록 흥미롭게 써주세요. ");
+		prompt.append("딱딱한 분석 보고서가 아니라 재밌는 이야기처럼요.\n\n");
 
 		appendSajuJsonResponseFormat(prompt, name);
 
