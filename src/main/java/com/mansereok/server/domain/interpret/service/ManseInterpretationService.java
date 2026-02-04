@@ -909,9 +909,80 @@ public class ManseInterpretationService {
 		prompt.append("2. **채용 공고 기준**: '○○ 크리에이터' 같은 자기계발서 용어 금지\n");
 		prompt.append("3. **사주 연결 고리**: 십성/오행/신살 중 최소 2개 이상 근거 제시\n\n");
 
+		prompt.append("**[직업 추천 시 참고할 인기 직종 카테고리]**\n");
+		prompt.append("사주 분석 결과에 따라 아래에서 선택하세요. 사주 근거 없이 무작정 추천 금지.\n\n");
+
+		prompt.append("### 🏛️ 전문직 (고학력 · 자격증)\n");
+		prompt.append("**[인성 2개 이상 + 끈기]**\n");
+		prompt.append("- 의사 (진단검사의학과/영상의학과/가정의학과 등)\n");
+		prompt.append("- 치과의사 (임플란트/심미치과)\n");
+		prompt.append("- 약사 (병원약사/산업약사)\n");
+		prompt.append("- 변호사 (기업 자문/소송/특허/M&A)\n");
+		prompt.append("- 회계사 (Big4 회계법인)\n");
+		prompt.append("- 판사/검사\n\n");
+
+		prompt.append("### 🏢 공공 · 공기업 (안정)\n");
+		prompt.append("**[관성 2개 이상 + 신약]**\n");
+		prompt.append("- 5급/7급/9급 공무원\n");
+		prompt.append("- 외교관, 경찰/소방 간부\n");
+		prompt.append("- 한전/가스공사/도로공사 등\n\n");
+
+		prompt.append("### 💻 IT · 개발\n");
+		prompt.append("**[식상 + 인성(학습력)]**\n");
+		prompt.append("- 백엔드/프론트엔드/풀스택 개발자\n");
+		prompt.append("- 데이터 엔지니어/사이언티스트\n");
+		prompt.append("- DevOps/보안 엔지니어\n");
+		prompt.append("- 게임 개발자\n\n");
+
+		prompt.append("### ⚙️ 엔지니어 (제조 · 건설)\n");
+		prompt.append("**[금 오행 + 인성]**\n");
+		prompt.append("- 전기/기계/화학 엔지니어\n");
+		prompt.append("- 건축사, 토목 엔지니어\n");
+		prompt.append("- 반도체 공정 엔지니어\n\n");
+
+		prompt.append("### ✈️ 항공 · 운송\n");
+		prompt.append("**[역마살 필수]**\n");
+		prompt.append("- 항공기 조종사\n");
+		prompt.append("- 객실승무원\n");
+		prompt.append("- 선박 기관사/항해사\n\n");
+
+		prompt.append("### 💰 금융 · 투자\n");
+		prompt.append("**[재성 2개 이상]**\n");
+		prompt.append("- IB 애널리스트\n");
+		prompt.append("- 펀드매니저\n");
+		prompt.append("- 증권사 PB\n");
+		prompt.append("- 보험계리사\n\n");
+
+		prompt.append("### 🎬 미디어 · 엔터\n");
+		prompt.append("**[도화살 + 식상 3개]**\n");
+		prompt.append("- 방송 PD, 영화감독\n");
+		prompt.append("- 배우, 아나운서\n");
+		prompt.append("- 유튜버 (10만+ 기준)\n");
+		prompt.append("- 웹툰 작가\n\n");
+
+		prompt.append("### 📊 기획 · 컨설팅\n");
+		prompt.append("**[식상 + 관성]**\n");
+		prompt.append("- 경영 컨설턴트 (맥킨지/BCG)\n");
+		prompt.append("- 전략기획 실무자\n");
+		prompt.append("- 데이터 분석가\n\n");
+
+		prompt.append("### 🏥 의료 기술직\n");
+		prompt.append("**[인성 + 실용성]**\n");
+		prompt.append("- 간호사\n");
+		prompt.append("- 물리치료사\n");
+		prompt.append("- 임상병리사\n\n");
+
+		prompt.append("### 🌍 해외 · 무역\n");
+		prompt.append("**[역마살]**\n");
+		prompt.append("- 무역 실무자\n");
+		prompt.append("- 해외영업 매니저\n");
+		prompt.append("- 외국계 기업 로컬 매니저\n\n");
+
+		prompt.append("---\n\n");
+
 		prompt.append(String.format(
 			"%s님 사주 구조를 깊이 분석해서 **가장 잘 맞는 직업 3개**를 추천하세요.\n", name));
-		prompt.append("각 직업마다 **최소 350자 이상** 할애해서 디테일하게 써주세요.\n\n");
+		prompt.append("각 직업마다 **최소 300자 이상** 할애해서 디테일하게 써주세요.\n\n");
 
 		prompt.append("**[직업별 필수 구성 요소]**\n");
 		prompt.append("각 직업 추천 시 반드시 아래 항목을 순서대로 포함하세요:\n\n");
@@ -927,10 +998,6 @@ public class ManseInterpretationService {
 		prompt.append("- 신살(도화/역마/화개 등)이 어떻게 작동하는지\n");
 		prompt.append(
 			"예: \"식상이 강해 표현력이 뛰어나고, 역마살로 이동이 많을수록 운이 트입니다.\"\n\n");
-
-		prompt.append("**2) 성공 전략 (100자)**\n");
-		prompt.append("- 이 직무에서 성공하려면 구체적으로 뭘 해야 하는지\n");
-		prompt.append("- 스킬/자격증/경험보다는 **태도와 습관** 중심으로\n");
 
 		prompt.append("---\n\n");
 
