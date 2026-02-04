@@ -71,7 +71,6 @@ public class ManseryeokController {
 			)
 		);
 
-		// 🔥 [핵심 수정] 100번 이상이면 무조건 무료 로직(interpretFree)으로 보냄
 		if (subcategoryId >= 100) {
 			manseInterpretationService.interpretFree(
 				request.getName(),
