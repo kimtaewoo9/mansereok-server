@@ -907,18 +907,17 @@ public class ManseInterpretationService {
 		prompt.append("**[직업 선정 4대 원칙]**\n");
 		prompt.append("1. **실존 직업**: 링크드인이나 사람인에서 검색 가능한 직무명 사용\n");
 		prompt.append("2. **채용 공고 기준**: '○○ 크리에이터' 같은 자기계발서 용어 금지\n");
-		prompt.append("3. **구체적 회사**: 가능하면 실제 회사 예시 제시 (예: 쿠팡 물류 PM, 당근마켓 운영 매니저)\n");
-		prompt.append("4. **사주 연결 고리**: 십성/오행/신살 중 최소 2개 이상 근거 제시\n\n");
+		prompt.append("3. **사주 연결 고리**: 십성/오행/신살 중 최소 2개 이상 근거 제시\n\n");
 
 		prompt.append(String.format(
-			"%s님 사주 구조를 깊이 분석해서 **찐으로 잘 맞는 직업 3개**를 추천하세요.\n", name));
+			"%s님 사주 구조를 깊이 분석해서 **가장 잘 맞는 직업 3개**를 추천하세요.\n", name));
 		prompt.append("각 직업마다 **최소 350자 이상** 할애해서 디테일하게 써주세요.\n\n");
 
 		prompt.append("**[직업별 필수 구성 요소]**\n");
 		prompt.append("각 직업 추천 시 반드시 아래 항목을 순서대로 포함하세요:\n\n");
 
 		prompt.append("### 직업 1: [구체적 직무명]\n");
-		prompt.append("**예시**: \"해외 B2B 세일즈 매니저 (SaaS 기업)\"\n");
+		prompt.append("**예시**: \"해외 B2B 세일즈 매니저\"\n");
 		prompt.append("         \"쿠팡/마켓컬리 같은 커머스 플랫폼 MD\"\n");
 		prompt.append("         \"게임회사 데이터 분석가 (유저 행동 분석)\"\n\n");
 
@@ -927,23 +926,11 @@ public class ManseInterpretationService {
 		prompt.append("- 십성 구조에서 어떤 글자가 활용되는지\n");
 		prompt.append("- 신살(도화/역마/화개 등)이 어떻게 작동하는지\n");
 		prompt.append(
-			"예: \"식상이 강해 표현력이 뛰어나고, 역마살로 이동이 많을수록 운이 트입니다. 해외 출장과 고객 프레젠테이션이 많은 B2B 영업이 천직입니다.\"\n\n");
+			"예: \"식상이 강해 표현력이 뛰어나고, 역마살로 이동이 많을수록 운이 트입니다.\"\n\n");
 
 		prompt.append("**2) 성공 전략 (100자)**\n");
 		prompt.append("- 이 직무에서 성공하려면 구체적으로 뭘 해야 하는지\n");
 		prompt.append("- 스킬/자격증/경험보다는 **태도와 습관** 중심으로\n");
-		prompt.append("예: \"제품 지식보다 고객사 산업 분석에 시간 쓰고, 계약서 꼼꼼히 검토하는 습관이 수익을 지킵니다.\"\n\n");
-
-		prompt.append("**3) 현실적 커리어 패스 (150자)**\n");
-		prompt.append("- 신입 → 주니어 → 시니어까지 어떻게 올라가는지\n");
-		prompt.append("- 각 단계별 대략적인 연봉대 (연도별 제시)\n");
-		prompt.append("- 언제쯤 독립/이직 타이밍이 오는지\n");
-		prompt.append(
-			"예: \"초반 3년은 대기업 채널에서 시스템 배우기 (연봉 4-5천). 30대 초반에 스타트업 리드 매니저로 이직하면 스톡옵션 가능 (6-8천). 35세 이후 프리랜서 컨설턴트로 독립 시 건당 500만원 이상 프로젝트 수주 가능.\"\n\n");
-
-		prompt.append("**4) 이 직업의 그림자 (50자)**\n");
-		prompt.append("- 단점이나 주의사항도 솔직하게\n");
-		prompt.append("예: \"출장이 잦아서 육아와 병행 어렵고, 분기 실적 압박이 큽니다.\"\n\n");
 
 		prompt.append("---\n\n");
 
@@ -958,7 +945,7 @@ public class ManseInterpretationService {
 		prompt.append("---\n\n");
 
 		prompt.append(String.format(
-			"**[핵심 질문] %s님은 조직 vs 독립, 뭐가 맞나요?**\n\n", name));
+			"조직에서 일하는 것이 더 맞는지, 독립적으로 일하는 것이 더 맞는지 판정\n\n", name));
 
 		prompt.append("**[판정 기준]**\n");
 		prompt.append("십성 조합을 보고 아래 5가지 유형 중 하나로 명확히 판정하세요:\n\n");
