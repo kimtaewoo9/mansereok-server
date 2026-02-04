@@ -899,7 +899,7 @@ public class ManseInterpretationService {
 
 		prompt.append("황금기에 왜 잘되는지 대운 구조를 간단히 설명해주세요.\n\n");
 
-		prompt.append("**3부. 적합 직업 (최소 1,500자 - 가장 중요한 파트)**\n\n");
+		prompt.append("**3부. 나에게 맞는 직업 (최소 1,500자 - 가장 중요한 파트)**\n\n");
 
 		prompt.append("⚠️ **[초중요] 이 파트는 사용자가 가장 기대하는 섹션입니다.**\n");
 		prompt.append("직업 추천은 반드시 아래 기준을 **모두** 충족해야 합니다:\n\n");
