@@ -61,10 +61,8 @@ public class ManseInterpretationService {
 
 	static {
 		for (int i = 0; i < 60; i++) {
-			// 1. 한자 60갑자 (甲子, 乙丑...)
 			GAPJA_CYCLE.add(HEAVENLY_STEMS.get(i % 10) + EARTHLY_BRANCHES.get(i % 12));
 
-			// 2. 한글 60갑자 (갑자, 을축...)
 			GAPJA_CYCLE_KOR.add(HEAVENLY_STEMS_KOR.get(i % 10) + EARTHLY_BRANCHES_KOR.get(i % 12));
 		}
 	}
