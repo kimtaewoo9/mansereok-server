@@ -959,10 +959,11 @@ public class ManseInterpretationService {
 		prompt.append("- 배우, 아나운서\n");
 		prompt.append("- 유튜버 (10만+ 기준)\n");
 		prompt.append("- 웹툰 작가\n\n");
+		prompt.append("- 작가\n\n");
 
 		prompt.append("### 📊 기획 · 컨설팅\n");
 		prompt.append("**[식상 + 관성]**\n");
-		prompt.append("- 경영 컨설턴트 (맥킨지/BCG)\n");
+		prompt.append("- 경영 컨설턴트\n");
 		prompt.append("- 전략기획 실무자\n");
 		prompt.append("- 데이터 분석가\n\n");
 
