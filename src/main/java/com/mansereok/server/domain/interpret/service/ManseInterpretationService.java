@@ -1021,27 +1021,22 @@ public class ManseInterpretationService {
 		prompt.append("**유형 1: 평생 조직형**\n");
 		prompt.append("- 조건: 관성 2개 이상 + 재성 약함 + 식상 1개 이하\n");
 		prompt.append("- 특징: 시스템 안에서 안정감, 독립하면 불안, 월급이 심리적 안전망\n");
-		prompt.append("- 조언: 대기업이나 공공기관에서 전문가로 성장, 승진 루트 타기\n\n");
 
 		prompt.append("**유형 2: 독립 필수형**\n");
 		prompt.append("- 조건: 식상 3개 이상 + 비겁 2개 이상 + 관성 0개\n");
 		prompt.append("- 특징: 지시받기 싫어함, 창의성 폭발, 내 방식으로 안 하면 스트레스\n");
-		prompt.append("- 조언: 20대에 조직 경험 1-2년만 하고 빠르게 독립, 프리랜서/1인 기업\n\n");
 
 		prompt.append("**유형 3: 복합형 (조직 → 독립)**\n");
 		prompt.append("- 조건: 식상 2개 + 관성 1개 + 재성 1-2개\n");
 		prompt.append("- 특징: 조직에서 배우고 독립해서 꽃피움, 시스템과 자유 둘 다 필요\n");
-		prompt.append("- 조언: 20대 후반~30대 초반 조직에서 스킬/네트워크 쌓고, 33-36세에 독립 준비, 37-40세 본격 전환\n\n");
 
 		prompt.append("**유형 4: 사업가형 (팀 꾸려서 확장)**\n");
 		prompt.append("- 조건: 재성 3개 이상 + 식상 2개 + 관성 약함\n");
 		prompt.append("- 특징: 돈 감각 뛰어남, 사람 모으고 판 키우는 재미, 혼자보단 팀플\n");
-		prompt.append("- 조언: 30대에 작은 법인 설립, 40대에 본격 확장, 직원 5-10명 규모 적정\n\n");
 
 		prompt.append("**유형 5: 기업 내 사업가형**\n");
 		prompt.append("- 조건: 관성 1-2개 + 재성 2개 + 식상 2개\n");
 		prompt.append("- 특징: 조직의 자원 활용하면서 사업하듯 일함\n");
-		prompt.append("- 조언: 대기업 사내 벤처, 신규 사업부 리더, 스핀오프 자회사 대표 같은 포지션 노리기\n\n");
 
 		prompt.append(String.format(
 			"%s님은 위 5가지 중 어디에 해당하는지 명확히 판정하고,\n", name));
