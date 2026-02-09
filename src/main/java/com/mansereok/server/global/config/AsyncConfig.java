@@ -1,6 +1,7 @@
 package com.mansereok.server.global.config;
 
 import java.util.concurrent.Executor;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.RejectedExecutionHandler;
 import java.util.concurrent.ThreadPoolExecutor;
 import lombok.extern.slf4j.Slf4j;
@@ -49,8 +50,10 @@ public class AsyncConfig {
 		executor.setRejectedExecutionHandler(new RejectedExecutionHandler() {
 			@Override
 			public void rejectedExecution(Runnable r, ThreadPoolExecutor executor) {
-				log.warn("⚠️ [기본 스레드 풀 초과] 요청 거부됨! activeCount={}, queueSize={}",
+				log.error("🚨 [GPT 스레드 풀 초과] 요청 거부됨. activeCount={}, queueSize={}",
 					executor.getActiveCount(), executor.getQueue().size());
+				
+				throw new RejectedExecutionException("GPT 서버 혼잡: 잠시 후 다시 시도해주세요.");
 			}
 		});
 
