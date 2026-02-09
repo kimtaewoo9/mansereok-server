@@ -27,7 +27,7 @@ public class AsyncConfig {
 		executor.setRejectedExecutionHandler(new RejectedExecutionHandler() {
 			@Override
 			public void rejectedExecution(Runnable r, ThreadPoolExecutor executor) {
-				log.error("🚨 [GPT 스레드 풀 초과] 요청 거부됨! activeCount={}, queueSize={}",
+				log.error("🚨 [GPT 스레드 풀 초과] 요청 거부됨. activeCount={}, queueSize={}",
 					executor.getActiveCount(), executor.getQueue().size());
 			}
 		});
