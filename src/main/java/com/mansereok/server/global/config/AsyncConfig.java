@@ -21,15 +21,17 @@ public class AsyncConfig {
 	public Executor gptTaskExecutor() {
 		ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
 		executor.setCorePoolSize(20);
-		executor.setMaxPoolSize(20); // 최대 20개만 (429 Too Many Request)
+		executor.setMaxPoolSize(25); // (429 Too Many Request) 이거 설정 25까지 해도 괜찮을 듯 .
 		executor.setQueueCapacity(100);
 		executor.setThreadNamePrefix("GptAsync-");
 
 		executor.setRejectedExecutionHandler(new RejectedExecutionHandler() {
 			@Override
 			public void rejectedExecution(Runnable r, ThreadPoolExecutor executor) {
-				log.error("🚨 [GPT 스레드 풀 초과] 요청 거부됨. activeCount={}, queueSize={}",
+				log.error("🚨 [유료 GPT 스레드 풀 초과] 요청 거부됨. activeCount={}, queueSize={}",
 					executor.getActiveCount(), executor.getQueue().size());
+
+				throw new RejectedExecutionException("현재 접속자가 많아 처리가 지연되고 있습니다. 잠시 후 다시 시도해주세요.");
 			}
 		});
 
@@ -52,7 +54,7 @@ public class AsyncConfig {
 			public void rejectedExecution(Runnable r, ThreadPoolExecutor executor) {
 				log.error("🚨 [GPT 스레드 풀 초과] 요청 거부됨. activeCount={}, queueSize={}",
 					executor.getActiveCount(), executor.getQueue().size());
-				
+
 				throw new RejectedExecutionException("GPT 서버 혼잡: 잠시 후 다시 시도해주세요.");
 			}
 		});
@@ -73,8 +75,10 @@ public class AsyncConfig {
 		executor.setRejectedExecutionHandler(new RejectedExecutionHandler() {
 			@Override
 			public void rejectedExecution(Runnable r, ThreadPoolExecutor executor) {
-				log.error("무료 사주 요청 거부됨 active={}, queue={}",
+				log.error("🚨 [무료 사주 요청 거부됨] active={}, queue={}",
 					executor.getActiveCount(), executor.getQueue().size());
+
+				throw new RejectedExecutionException("무료 사주 요청이 폭주하고 있습니다. 잠시 후 다시 시도해주세요.");
 			}
 		});
 
