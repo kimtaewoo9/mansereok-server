@@ -2,6 +2,9 @@ spring:
   application:
     name: mansereok-server
 
+  lifecycle:
+    timeout-per-shutdown-phase: 150s
+
   datasource:
     url: ${DB_URL}?zeroDateTimeBehavior=convertToNull
     username: ${DB_USERNAME}
@@ -125,6 +128,7 @@ app:
 # Server 설정
 server:
   port: 8080
+  shutdown: graceful
   tomcat:
     threads:
       max: 300
