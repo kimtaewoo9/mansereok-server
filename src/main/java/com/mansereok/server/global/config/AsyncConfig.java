@@ -21,7 +21,7 @@ public class AsyncConfig {
 	public Executor gptTaskExecutor() {
 		ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
 		executor.setCorePoolSize(20);
-		executor.setMaxPoolSize(20); // 최대 20개만 (429 Too Many Request)
+		executor.setMaxPoolSize(25); // (429 Too Many Request) 이거 설정 25까지 해도 괜찮을 듯 .
 		executor.setQueueCapacity(100);
 		executor.setThreadNamePrefix("GptAsync-");
 
@@ -30,7 +30,7 @@ public class AsyncConfig {
 			public void rejectedExecution(Runnable r, ThreadPoolExecutor executor) {
 				log.error("🚨 [유료 GPT 스레드 풀 초과] 요청 거부됨. activeCount={}, queueSize={}",
 					executor.getActiveCount(), executor.getQueue().size());
-				
+
 				throw new RejectedExecutionException("현재 접속자가 많아 처리가 지연되고 있습니다. 잠시 후 다시 시도해주세요.");
 			}
 		});
