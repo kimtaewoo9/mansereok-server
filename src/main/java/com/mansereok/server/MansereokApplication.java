@@ -6,7 +6,7 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.retry.annotation.EnableRetry;
 
-@SpringBootApplication
+@SpringBootApplication // 여기에 ComponentScan 이 들어 있음 .
 @EnableConfigurationProperties(JwtProperties.class)
 @EnableRetry
 public class MansereokApplication {
