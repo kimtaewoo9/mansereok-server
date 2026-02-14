@@ -25,6 +25,7 @@ public class SubCategory {
 	private String subtitle;
 	private String description;
 	private Integer price;
+	// private Integer originalPrice;
 	private String icon;
 
 	@Column(name = "category_id")
