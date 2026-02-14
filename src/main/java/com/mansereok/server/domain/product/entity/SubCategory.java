@@ -25,7 +25,8 @@ public class SubCategory {
 	private String subtitle;
 	private String description;
 	private Integer price;
-	// private Integer originalPrice;
+	@Column(name = "original_price") // 추가된 컬럼 매핑
+	private Integer originalPrice;
 	private String icon;
 
 	@Column(name = "category_id")
