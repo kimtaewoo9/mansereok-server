@@ -1610,6 +1610,11 @@ public class ManseInterpretationService {
 		prompt.append("#### 규칙 3: 대괄호 [ ] 표기 금지 ####\n");
 		prompt.append("[시주 시간 병화(편재)] 같은 대괄호 표기를 절대 사용하지 마세요.\n");
 		prompt.append("사주 근거를 밝힐 때는 자연스러운 문장 속에 녹여서 쓰세요.\n\n");
+
+		prompt.append("#### 규칙 4: 년도와 날짜는 반드시 숫자로 표기 ####\n");
+		prompt.append("'이천이십육년' (X) → '2026년' (O)\n");
+		prompt.append("'삼월' (X) → '3월' (O)\n");
+		prompt.append("모든 년도와 날짜는 아라비아 숫자로만 표기하세요.\n\n");
 		// ──────────────────────────────────────────────────────────
 		// 절대 금지 패턴
 		// ──────────────────────────────────────────────────────────
@@ -1650,9 +1655,13 @@ public class ManseInterpretationService {
 
 		// ── A. 한 줄 결론 ──
 		prompt.append("A. 돈벼락 가능성\n");
-		prompt.append(String.format("- %s님의 돈벼락 가능성을 [낮음 / 중간 / 높음] 중 하나로 단정지어 시작하세요.\n", name));
-		prompt.append("- 왜 그런 결론인지 일반인이 바로 이해할 수 있는 말로 풀어서 설명해주세요. 사주적 근거를 명확하게 제시하세요.\n");
-		prompt.append("- 임팩트 있게 시작해서 독자의 호기심을 잡으세요.\n\n");
+		prompt.append("**[작성 지침]**\n");
+		prompt.append("- 첫 문장: '로또 같은 돈벼락을 맞을 가능성은 [낮음/중간/높음]입니다.'\n");
+		prompt.append("- 두 번째 문장: 그 판단의 **핵심 근거** 1~2가지를 간단히 제시\n");
+		prompt.append("- 세 번째 문장: '하지만 [구체적 방법]을 하면 재물운을 키울 수 있어요.'\n");
+		prompt.append("  예시: '하지만 사업 구조를 탄탄히 잡고 시스템화하면 재물운을 키울 수 있어요.'\n");
+		prompt.append("- 마지막 문장: B섹션으로 자연스럽게 연결되는 전환 문장\n");
+		prompt.append("  예시: '먼저 당신의 돈 그릇부터 살펴볼게요.'\n\n");
 
 		// ── B. 돈 그릇 ──
 		prompt.append("B. 사주의 돈 그릇\n");
