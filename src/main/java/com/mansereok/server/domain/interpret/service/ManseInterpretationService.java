@@ -519,8 +519,6 @@ public class ManseInterpretationService {
 		prompt.append("절대로 키보드 엔터키(Line Break)를 사용하여 실제 줄바꿈을 넣지 마세요. 시스템 에러가 발생합니다.\n");
 		prompt.append("4. 한 문단이 6~7줄을 넘으면 안됨.\n");
 		prompt.append("5. 목록 기호(-, *, 1.) 사용 금지, 자연스러운 문장으로 연결\n");
-		prompt.append(
-			"6. **(카드 UI용)** 가독성을 위해, 본문 내용 4~5 문장마다 **줄바꿈을 두 번(\\n\\n)** 하여 다음 카드로 넘어가는 것처럼 문단을 나눠주세요.\n");
 
 		prompt.append("--- [summary 말투 규칙 - 매우 중요] ---\n");
 		prompt.append("**summary는 '혜안' 페르소나를 완전히 무시하고, 아래 규칙만 100% 따라야 합니다.**\n\n");
@@ -1750,9 +1748,7 @@ public class ManseInterpretationService {
 		prompt.append("### 출력 전 자가 점검 ###\n");
 		prompt.append("작성 후 아래 항목을 점검하고, 하나라도 해당되면 수정하세요:\n");
 		prompt.append("□ 대괄호 [ ] 가 있는가? → 자연스러운 문장으로 대체\n");
-		prompt.append("□ 한 문장에 사주 용어가 3개 이상인가? → 문장 분리\n");
 		prompt.append("□ 현실 의미 없이 용어만 나열된 문장이 있는가? → 현실 의미를 앞에 추가\n");
-		prompt.append("□ 질문형 공감('~하지 않나요?')이 3회 이상인가? → 단정형으로 교체\n");
 		prompt.append("□ G섹션에 심리 문장(사용자가 느낄 감정/생각)이 각 시기마다 있는가? → 없으면 추가\n");
 		prompt.append("□ G섹션이 전체에서 가장 긴 섹션인가? → 아니라면 보강\n");
 		prompt.append("□ H섹션 마지막에 '인생 숙제' 문단이 있는가? → 없으면 추가\n");
