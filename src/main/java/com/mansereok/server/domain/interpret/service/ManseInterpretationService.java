@@ -1661,7 +1661,8 @@ public class ManseInterpretationService {
 			"%s님의 사주가 '돈벼락을 맞을 가능성이 있는 구조인지' 아래 순서대로 분석해주세요.\n", name));
 		prompt.append("사용자가 이 리포트를 다 읽었을 때 '내 돈의 구조가 뭔지', '언제 터질 수 있는지', '뭘 조심해야 하는지'를 명확히 알고,\n");
 		prompt.append("읽는 내내 '이거 진짜 내 얘기다'라는 느낌이 들도록 만드세요.\n\n");
-		prompt.append("프레임마다 꼭 A, B, C, D, E, H 같은 인덱스를 붙여주세요.\n\n");
+		prompt.append(
+			"프레임마다 꼭 A, B, C, D, E, H 같은 인덱스를 붙여주시고, [A. 돈벼락 가능성]과 같이 제목에는 대괄호를 붙여주세요.\n\n");
 
 		// ── A. 한 줄 결론 ──
 		prompt.append("A. 돈벼락 가능성\n");
