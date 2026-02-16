@@ -5,8 +5,6 @@ import com.mansereok.server.domain.interpret.dto.request.ManseCompatibilityAnaly
 import com.mansereok.server.domain.interpret.dto.request.ManseInterpretationRequest;
 import com.mansereok.server.domain.interpret.dto.request.ManseryeokCalculationRequest;
 import com.mansereok.server.domain.interpret.dto.response.ManseryeokCalculationResponse;
-import com.mansereok.server.domain.interpret.repository.CompatibilityResultRepository;
-import com.mansereok.server.domain.interpret.repository.ResultRepository;
 import com.mansereok.server.domain.interpret.service.ManseCalculationService;
 import com.mansereok.server.domain.interpret.service.ManseInterpretationService;
 import com.mansereok.server.domain.interpret.service.ResultService;
@@ -30,9 +28,6 @@ public class ManseryeokController {
 
 	private final ManseCalculationService manseCalculationService;
 	private final ManseInterpretationService manseInterpretationService;
-
-	private final ResultRepository resultRepository; // 직접 주입
-	private final CompatibilityResultRepository compatibilityResultRepository; // 직접 주입
 
 	private final PaymentService paymentService;
 	private final ResultService resultService;
