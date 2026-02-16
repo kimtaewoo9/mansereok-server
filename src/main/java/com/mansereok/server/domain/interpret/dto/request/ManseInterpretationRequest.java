@@ -6,7 +6,7 @@ import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-@Data // 이 어노테이션이 getSolarDate() 등을 자동으로 만들어줍니다.
+@Data
 @NoArgsConstructor
 @AllArgsConstructor
 public class ManseInterpretationRequest {
@@ -15,7 +15,7 @@ public class ManseInterpretationRequest {
 	private LocalDate solarDate;
 	private LocalTime solarTime;
 	private String gender;
-	private Boolean isLunar;
+	private Boolean isLunar; // 양력인지 음력인지 입력 .
 
 	private String sourceTitle; // 애니명
 
