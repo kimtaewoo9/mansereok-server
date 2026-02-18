@@ -3940,8 +3940,8 @@ public class ManseInterpretationService {
 
 		String yearSkyMinusPlus = saju.getYearSky().getMinusPlus();
 		return "MALE".equalsIgnoreCase(gender) ?
-			(yearSkyMinusPlus.equals("+") ? "순행" : "역행") :
-			(yearSkyMinusPlus.equals("+") ? "역행" : "순행");
+			("양".equals(yearSkyMinusPlus) ? "순행" : "역행") :
+			("양".equals(yearSkyMinusPlus) ? "역행" : "순행");
 	}
 
 	/**
@@ -3964,8 +3964,8 @@ public class ManseInterpretationService {
 
 		// 2. 대운 방향 결정
 		boolean isForward = "MALE".equalsIgnoreCase(gender)
-			? "+".equals(yearSkyMinusPlus)
-			: "-".equals(yearSkyMinusPlus);
+			? "양".equals(yearSkyMinusPlus)
+			: "음".equals(yearSkyMinusPlus);
 
 		String flowDirection = isForward ? "순행" : "역행";
 		int startAge = saju.getBigFortuneNumber();
