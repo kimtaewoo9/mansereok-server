@@ -854,11 +854,8 @@ public class ManseInterpretationService {
 
 		prompt.append("=== 글쓰기 가이드 ===\n\n");
 		prompt.append("**핵심 원칙:**\n");
-		prompt.append("1. 분량: 정확히 4,200자 (각 파트별 지정 자수 엄수)\n");
-		prompt.append("2. 구어체 제한: \"~거든요/~잖아요\"는 전체에서 **각 2회 이내**만 사용\n");
-		prompt.append("3. 비유 제한: 자연물 비유는 **1부에서 1회만**, 다른 파트에서 반복 금지\n");
-		prompt.append("4. 어조: 전문가 톤 유지 (\"~합니다\"/\"~해요\" 혼용, 과한 감탄 금지)\n");
-		prompt.append("5. 팩트 중심: 추상적 표현보다 구체적 정보 우선\n\n");
+		prompt.append("1. 분량: 전체 4,000~5,000자 정도로 작성 (각 파트별 최소 자수는 가이드일 뿐, 초과해도 됨)\n");
+		prompt.append("2. 어조: 전문가 톤 유지 (\"~합니다\"/\"~해요\" 혼용, 과한 감탄 금지)\n");
 
 		prompt.append(String.format("=== %s님 이야기 흐름 ===\n\n", name));
 
