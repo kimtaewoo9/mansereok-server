@@ -3438,6 +3438,14 @@ public class ManseInterpretationService {
 		ManseryeokCalculationResponse.SajuInfo saju = response.getSaju();
 		ManseryeokCalculationResponse.InputInfo input = response.getInput();
 
+		prompt.append("### ⚠️ [매우 중요] 일간 확인 ###\n");
+		prompt.append(String.format("**%s님의 일간(日干)은 %s%s입니다.**\n",
+			name,
+			saju.getDaySky().getKorean(),
+			saju.getDaySky().getFiveCircle()));
+		prompt.append("절대로 다른 천간(戊, 丁, 丙 등)과 혼동하지 마세요.\n");
+		prompt.append("모든 분석은 반드시 이 일간을 기준으로 작성해야 합니다.\n\n");
+
 		// 1. 기본 정보
 		prompt.append("### 기본 정보 ###\n");
 		prompt.append(String.format("%s | %s | %s %s | 현재 %d년\n\n",
