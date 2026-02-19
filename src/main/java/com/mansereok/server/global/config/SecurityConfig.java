@@ -36,6 +36,13 @@ public class SecurityConfig {
 
 	@Bean
 	public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
+		CookieCsrfTokenRepository repo = CookieCsrfTokenRepository.withHttpOnlyFalse();
+		repo.setCookieCustomizer(c -> c
+			.path("/")
+			.sameSite("None")
+			.secure(true)
+		);
+
 		http
 //			 CSRF 설정
 
@@ -43,7 +50,7 @@ public class SecurityConfig {
 //			.csrf(csrf -> csrf.disable())
 
 			.csrf(csrf -> csrf
-				.csrfTokenRepository(CookieCsrfTokenRepository.withHttpOnlyFalse())
+				.csrfTokenRepository(repo)
 				.ignoringRequestMatchers("/api/payment/webhook",
 					"/member/**",
 					"/api/auth/**",
@@ -127,8 +134,7 @@ public class SecurityConfig {
 			"https://www.namedsaju.com",
 			"https://dev-front.namedsaju.com",
 			"https://manselab-front.vercel.app",
-			"https://*.vercel.app",
-			"/api/v1/manseryeok/**"
+			"https://*.vercel.app"
 		));
 
 		// 허용할 HTTP 메서드
