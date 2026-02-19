@@ -120,32 +120,24 @@ public class SecurityConfig {
 	public CorsConfigurationSource corsConfigurationSource() {
 		CorsConfiguration configuration = new CorsConfiguration();
 
-		// 허용할 도메인 설정
-		configuration.setAllowedOrigins(
-			Arrays.asList(
-				"http://localhost:3000",
-				"https://namedsaju.com",
-				"https://www.namedsaju.com",
-				"https://findme-jet.vercel.app",
-				"https://dev-front.namedsaju.com"
-			)
-		);
-
-		// 허용할 HTTP 메서드
-		configuration.setAllowedMethods(
-			Arrays.asList("GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"));
-		// 허용할 헤더
-		configuration.setAllowedHeaders(Arrays.asList("*"));
-		// 자격증명 허용 (쿠키, Authorization 헤더 등)
 		configuration.setAllowCredentials(true);
-		// 브라우저에서 접근할 수 있는 응답 헤더
+		configuration.setAllowedOriginPatterns(Arrays.asList(
+			"http://localhost:3000",
+			"https://namedsaju.com",
+			"https://www.namedsaju.com",
+			"https://dev-front.namedsaju.com",
+			"https://manselab-front.vercel.app",
+			"https://*.vercel.app" // 필요 시
+		));
+
+		configuration.setAllowedMethods(
+			Arrays.asList("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
+		configuration.setAllowedHeaders(Arrays.asList("*"));
 		configuration.setExposedHeaders(Arrays.asList("Authorization"));
-		// preflight 요청 캐시 시간 (초)
 		configuration.setMaxAge(3600L);
 
 		UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
 		source.registerCorsConfiguration("/**", configuration);
-
 		return source;
 	}
 
