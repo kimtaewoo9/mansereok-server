@@ -120,16 +120,17 @@ public class SecurityConfig {
 	public CorsConfigurationSource corsConfigurationSource() {
 		CorsConfiguration configuration = new CorsConfiguration();
 
-		// 허용할 도메인 설정
-		configuration.setAllowedOrigins(
-			Arrays.asList(
-				"http://localhost:3000",
-				"https://namedsaju.com",
-				"https://www.namedsaju.com",
-				"https://findme-jet.vercel.app",
-				"https://dev-front.namedsaju.com"
-			)
-		);
+		configuration.setAllowCredentials(true);
+		configuration.setAllowedOriginPatterns(Arrays.asList(
+			"http://localhost:3000",
+			"https://namedsaju.com",
+			"https://www.namedsaju.com",
+			"https://dev-front.namedsaju.com",
+			"https://manselab-front.vercel.app",
+			"https://*.vercel.app",
+			"/api/v1/manseryeok/**"
+
+		));
 
 		// 허용할 HTTP 메서드
 		configuration.setAllowedMethods(
