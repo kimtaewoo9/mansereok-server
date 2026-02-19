@@ -1,6 +1,5 @@
 package com.mansereok.server.domain.review.service;
 
-import com.mansereok.server.domain.discount.service.DiscountCodeService;
 import com.mansereok.server.domain.order.entity.Order;
 import com.mansereok.server.domain.order.repository.OrderRepository;
 import com.mansereok.server.domain.review.dto.request.ReviewCreateRequest;
@@ -9,7 +8,6 @@ import com.mansereok.server.domain.review.dto.response.ReviewResponse;
 import com.mansereok.server.domain.review.entity.Review;
 import com.mansereok.server.domain.review.repository.ReviewRepository;
 import com.mansereok.server.domain.user.entity.User;
-import com.mansereok.server.domain.user.service.EmailService;
 import com.mansereok.server.domain.user.service.UserService;
 import com.mansereok.server.global.exception.PaymentException;
 import jakarta.persistence.EntityNotFoundException;
@@ -36,11 +34,8 @@ public class ReviewService {
 	private final ReviewRepository reviewRepository;
 	private final OrderRepository orderRepository; //
 	private final UserService userService; //
-	private final DiscountCodeService discountCodeService; //
-	private final EmailService emailService; //
 
 	private static final int REVIEW_DEADLINE_DAYS = 30;
-	private static final int REWARD_DISCOUNT_AMOUNT = 500;
 	private static final int MIN_CONTENT_LENGTH = 20; // 최소 20자 ..
 
 
@@ -101,12 +96,6 @@ public class ReviewService {
 
 	@Transactional
 	public void deleteReview(Long reviewId, String adminUsername) {
-		User adminUser = userService.findByUsername(adminUsername); //
-
-		if (!"ADMIN".equals(adminUser.getRole().name())) {
-			throw new AccessDeniedException("관리자만 리뷰를 삭제할 수 있습니다.");
-		}
-
 		Review review = reviewRepository.findById(reviewId)
 			.orElseThrow(() -> new EntityNotFoundException("해당 리뷰를 찾을 수 없습니다: " + reviewId));
 
