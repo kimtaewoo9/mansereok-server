@@ -129,7 +129,6 @@ public class SecurityConfig {
 			"https://manselab-front.vercel.app",
 			"https://*.vercel.app",
 			"/api/v1/manseryeok/**"
-
 		));
 
 		// 허용할 HTTP 메서드
