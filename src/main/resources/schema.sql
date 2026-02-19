@@ -22,6 +22,8 @@ CREATE TABLE `users` (
 
     -- Added profile info
                          `birth_date` DATE NULL, -- Changed based on LocalDate
+                         `birth_time` TIME NULL, -- 태어난 시각
+                         `birth_place` VARCHAR(255) NULL, -- 태어난 장소
                          `gender` ENUM('MALE', 'FEMALE') NULL, -- Changed based on Gender enum and @Enumerated(EnumType.STRING)
 
     -- Added privacy policy agreement

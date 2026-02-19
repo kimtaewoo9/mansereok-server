@@ -185,6 +185,15 @@ public class UserService {
 		if (requestDto.getBirthDate() != null) {
 			user.setBirthDate(requestDto.getBirthDate());
 		}
+		if (requestDto.getBirthTime() != null) {
+			user.setBirthTime(requestDto.getBirthTime());
+		}
+		if (requestDto.getBirthPlace() != null) {
+			if (requestDto.getBirthPlace().isBlank()) {
+				throw new IllegalArgumentException("태어난 장소는 공백일 수 없습니다.");
+			}
+			user.setBirthPlace(requestDto.getBirthPlace().trim());
+		}
 
 		if (requestDto.getGender() != null && !requestDto.getGender().isBlank()) {
 			try {
@@ -204,6 +213,12 @@ public class UserService {
 			}
 			if (user.getBirthDate() == null) {
 				throw new IllegalArgumentException("생년월일을 입력해주세요.");
+			}
+			if (user.getBirthTime() == null) {
+				throw new IllegalArgumentException("태어난 시각을 입력해주세요.");
+			}
+			if (user.getBirthPlace() == null || user.getBirthPlace().isBlank()) {
+				throw new IllegalArgumentException("태어난 장소를 입력해주세요.");
 			}
 
 			if (user.getGender() == null) {
