@@ -1375,7 +1375,7 @@ public class ManseInterpretationService {
 
 		// ===== [1단계] 분석 대상자 정보 =====
 		prompt.append("\n### 5. 분석 대상자 상세 정보 ###\n");
-		appendPersonDetailInfo(prompt, name, response);
+		appendPersonDetailInfo(prompt, name, response, 2026);
 
 		// ===== [2단계] 절대 기준(Fact) 주입 =====
 		appendKeywords(prompt, response);
@@ -3077,7 +3077,7 @@ public class ManseInterpretationService {
 		prompt.append("오직 사용자가 물어본 '2026년 상반기의 변화' 5가지만 명확하게 전달하세요.\n\n");
 
 		prompt.append("### 5. 분석 대상자 정보 ###\n");
-		appendPersonDetailInfo(prompt, name, response);
+		appendPersonDetailInfo(prompt, name, response, 2026);
 
 		prompt.append("\n### [2026년(병오년) 상반기 변화 분석] 요청 ###\n");
 		prompt.append("혜안 선생님, 2026년 병오년(丙午年)의 기운이 " + name
@@ -3089,6 +3089,8 @@ public class ManseInterpretationService {
 			"2. **[연도 고정]** 지금은 2025년이 아닙니다. 분석 시점은 무조건 **'2026년 상반기'**입니다. '올해'라고 이야기를 하지 말고 **'2026년', '병오년'**에 일어날 일만 서술하세요.\n");
 		prompt.append(
 			"3. **[목차 강제]** 결과물은 오직 아래 제시된 **5가지 목차**로만 구성되어야 합니다. 서론이나 결론도 길게 쓰지 마세요.\n\n");
+		prompt.append(
+			"4. **[대운 고정값 준수]** 프롬프트의 `[대운 고정값]`과 다른 대운명(예: 계축 등)을 임의로 쓰면 안 됩니다. 대운은 절대 재계산 금지입니다.\n\n");
 
 		prompt.append("--- [분석 시작] ---\n");
 		prompt.append("\"2026년 병오년, 붉은 말의 해가 밝아오네요. " + name + "님에게는...\" 으로 자연스럽게 시작.\n\n");
@@ -3111,7 +3113,7 @@ public class ManseInterpretationService {
 		prompt.append("### 0. 시스템 역할 정의 ###\n");
 		prompt.append("당신은 핵심만 꿰뚫는 '통찰의 대가'입니다. 사족 없이 단 하나의 키워드와 그 이유만 명확히 제시하세요.\n\n");
 
-		appendPersonDetailInfo(prompt, name, response);
+		appendPersonDetailInfo(prompt, name, response, 2026);
 
 		prompt.append("\n### [2026년 운명 키워드] 요청 ###\n");
 		prompt.append("2026년 상반기, " + name + "님을 관통하는 **단 하나의 핵심 운명 키워드**를 뽑고 그 이유를 서술해주세요.\n\n");
@@ -3121,6 +3123,8 @@ public class ManseInterpretationService {
 			"1. **[연도 고정]** 지금은 2025년이 아닙니다. 분석 시점은 무조건 **'2026년 상반기'**입니다. '올해'라고 지칭하지 말고 반드시 **'2026년', '병오년'**이라고 명확하게 써주세요.\n");
 		prompt.append(
 			"2. **[목차 강제]** 결과물은 오직 아래 제시된 **목차**로만 구성되어야 합니다. 서론(첫인사)이나 결론을 길게 쓰지 마세요.\n\n");
+		prompt.append(
+			"3. **[대운 고정값 준수]** 프롬프트의 `[대운 고정값]`과 다른 대운명(예: 계축 등)을 임의로 쓰면 안 됩니다. 대운은 절대 재계산 금지입니다.\n\n");
 
 		prompt.append("--- [분석 시작] ---\n");
 		prompt.append("## 2026년 상반기 운명 키워드: [키워드 명]\n");
@@ -3445,8 +3449,14 @@ public class ManseInterpretationService {
 	// ==================== 공통 유틸리티 메서드 (기존 유지) ====================
 	private void appendPersonDetailInfo(StringBuilder prompt, String name,
 		ManseryeokCalculationResponse response) {
+		appendPersonDetailInfo(prompt, name, response, null);
+	}
+
+	private void appendPersonDetailInfo(StringBuilder prompt, String name,
+		ManseryeokCalculationResponse response, Integer referenceYear) {
 		ManseryeokCalculationResponse.SajuInfo saju = response.getSaju();
 		ManseryeokCalculationResponse.InputInfo input = response.getInput();
+		int targetYear = referenceYear != null ? referenceYear : java.time.LocalDate.now().getYear();
 
 		prompt.append("### ⚠️ [매우 중요] 일간 확인 ###\n");
 		prompt.append(String.format("**%s님의 일간(日干)은 %s%s입니다.**\n",
@@ -3463,7 +3473,7 @@ public class ManseInterpretationService {
 			"MALE".equalsIgnoreCase(input.getGender()) ? "남성" : "여성",
 			input.getSolarDate(),
 			input.getSolarTime(),
-			java.time.LocalDate.now().getYear()));
+			targetYear));
 
 		// 2. 사주 팔자
 		prompt.append("### 사주팔자 ###\n");
@@ -3527,7 +3537,7 @@ public class ManseInterpretationService {
 
 			// [수정] birthYear 전달!
 			int birthYear = input.getSolarDate().getYear();
-			appendDaewoonSimple(prompt, saju, input.getGender(), birthYear);
+			appendDaewoonSimple(prompt, saju, input.getGender(), birthYear, targetYear);
 
 		} else if (saju.getBigFortuneNumberMin() != null && saju.getBigFortuneNumberMax() != null) {
 			prompt.append(String.format("시작:%d~%d세 | 방향:%s (출생시간 미입력 추정)\n",
@@ -3541,6 +3551,7 @@ public class ManseInterpretationService {
 		if (saju.getUncertaintyNotes() != null && !saju.getUncertaintyNotes().isEmpty()) {
 			saju.getUncertaintyNotes().forEach(note -> prompt.append("- " + note + "\n"));
 		}
+		prompt.append("※ 대운은 위 계산 결과를 절대 재계산/수정하지 말고 그대로 분석에 사용하세요.\n");
 		prompt.append("\n");
 
 		// 9. 관계성 분석 (업그레이드 버전)
@@ -3737,6 +3748,7 @@ public class ManseInterpretationService {
 
 		ManseryeokCalculationResponse.SajuInfo saju = manseResponse.getSaju();
 		ManseryeokCalculationResponse.InputInfo input = manseResponse.getInput();
+		int referenceYear = java.time.LocalDate.now().getYear();
 
 		// ===== 1. 기본 정보 =====
 		prompt.append("### 기본 정보 ###\n");
@@ -3745,7 +3757,7 @@ public class ManseInterpretationService {
 			"MALE".equalsIgnoreCase(input.getGender()) ? "남성" : "여성",
 			input.getSolarDate(),
 			input.getSolarTime(),
-			java.time.LocalDate.now().getYear()));
+			referenceYear));
 
 		// ===== 2. 사주팔자 =====
 		prompt.append("### 사주팔자 ###\n");
@@ -3830,7 +3842,7 @@ public class ManseInterpretationService {
 
 			// [수정] birthYear 전달!
 			int birthYear = input.getSolarDate().getYear();
-			appendDaewoonSimple(prompt, saju, input.getGender(), birthYear);
+			appendDaewoonSimple(prompt, saju, input.getGender(), birthYear, referenceYear);
 
 		} else if (saju.getBigFortuneNumberMin() != null && saju.getBigFortuneNumberMax() != null) {
 			prompt.append(String.format("시작:%d~%d세 | 방향:%s (출생시간 미입력 추정)\n",
@@ -3844,6 +3856,7 @@ public class ManseInterpretationService {
 		if (saju.getUncertaintyNotes() != null && !saju.getUncertaintyNotes().isEmpty()) {
 			saju.getUncertaintyNotes().forEach(note -> prompt.append("- " + note + "\n"));
 		}
+		prompt.append("※ 대운은 위 계산 결과를 절대 재계산/수정하지 말고 그대로 분석에 사용하세요.\n");
 		prompt.append("\n");
 	}
 
@@ -3979,7 +3992,7 @@ public class ManseInterpretationService {
 	 * 대운 계산 (선형 탐색을 통한 100% 정확한 인덱스 매칭)
 	 */
 	private void appendDaewoonSimple(StringBuilder prompt, SajuInfo saju, String gender,
-		int birthYear) {
+		int birthYear, int referenceYear) {
 		// 1. 필수 데이터 검증
 		if (saju.getYearSky() == null || saju.getMonthSky() == null
 			|| saju.getMonthGround() == null || saju.getBigFortuneNumber() == null) {
@@ -4032,12 +4045,20 @@ public class ManseInterpretationService {
 			return;
 		}
 
-		// 5. 현재 나이 및 대운 위치
-		int currentYear = java.time.LocalDate.now().getYear();
-		int currentAge = currentYear - birthYear + 1; // 세는 나이
-		int currentDaewoonIndex = Math.max(0, (currentAge - startAge) / 10);
+		// 5. 기준 연도의 대운 위치
+		int currentDaewoonIndex;
+		if (saju.getBigFortuneStartYear() != null) {
+			currentDaewoonIndex = Math.max(0, (referenceYear - saju.getBigFortuneStartYear()) / 10);
+		} else {
+			int currentAge = referenceYear - birthYear + 1; // 세는 나이 (fallback)
+			currentDaewoonIndex = Math.max(0, (currentAge - startAge) / 10);
+		}
 
 		prompt.append(String.format("대운 시작: %d세 | 흐름: %s\n", startAge, flowDirection));
+		String currentDaewoonKor = null;
+		String currentDaewoonChi = null;
+		int currentStartAge = -1;
+		int currentStartYear = -1;
 
 		// 6. 대운 출력 루프
 		for (int i = currentDaewoonIndex; i < currentDaewoonIndex + 3 && i < 9; i++) {
@@ -4058,12 +4079,28 @@ public class ManseInterpretationService {
 			String daewoonKor = GAPJA_CYCLE_KOR.get(nextIndex);
 			String daewoonChi = GAPJA_CYCLE.get(nextIndex);
 			String daewoonStr = String.format("%s(%s)", daewoonKor, daewoonChi);
+			int daewoonStartYear =
+				saju.getBigFortuneStartYear() != null
+					? saju.getBigFortuneStartYear() + (i * 10)
+					: birthYear + age;
 
 			if (i == currentDaewoonIndex) {
 				prompt.append(String.format("▶ %d~%d세: %s (현재)\n", age, age + 9, daewoonStr));
+				currentDaewoonKor = daewoonKor;
+				currentDaewoonChi = daewoonChi;
+				currentStartAge = age;
+				currentStartYear = daewoonStartYear;
 			} else {
 				prompt.append(String.format("  %d~%d세: %s\n", age, age + 9, daewoonStr));
 			}
+		}
+
+		if (currentDaewoonChi != null) {
+			prompt.append(String.format(
+				"[대운 고정값] 기준연도=%d, 현재대운=%s(%s), 구간=%d~%d세, 시작연도=%d\n",
+				referenceYear, currentDaewoonKor, currentDaewoonChi,
+				currentStartAge, currentStartAge + 9, currentStartYear
+			));
 		}
 	}
 

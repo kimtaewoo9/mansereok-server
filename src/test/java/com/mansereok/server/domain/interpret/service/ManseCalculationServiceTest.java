@@ -5,6 +5,8 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.mansereok.server.domain.interpret.calculator.RelationCalculator;
@@ -156,6 +158,102 @@ class ManseCalculationServiceTest {
 		assertNotNull(daySinsal);
 		assertTrue(yearSinsal.contains("문창귀인"));
 		assertTrue(daySinsal.contains("월덕귀인"));
+	}
+
+	@Test
+	void shouldUseReverseSeasonLookupForFemaleWithYangYearStem() {
+		LocalDate inputDate = LocalDate.of(1998, 9, 2);
+		Manse base = manse(inputDate, "戊", "寅", "庚", "申", "壬", "子", null, null);
+		Manse seasonRef = manse(
+			inputDate.minusDays(1),
+			"戊", "寅", "庚", "申", "辛", "亥",
+			"처서",
+			LocalDateTime.of(1998, 9, 1, 12, 0)
+		);
+
+		when(manseRepository.findBySolarDate(inputDate)).thenReturn(Optional.of(base));
+		when(manseRepository.findFirstBySeasonStartTimeLessThanEqualOrderBySeasonStartTimeDesc(
+			any(LocalDateTime.class))).thenReturn(Optional.of(seasonRef));
+
+		ManseryeokCalculationRequest request = new ManseryeokCalculationRequest(
+			"테스트",
+			inputDate,
+			LocalTime.of(12, 2),
+			"FEMALE",
+			false,
+			null
+		);
+
+		service.calculate(request);
+
+		verify(manseRepository).findFirstBySeasonStartTimeLessThanEqualOrderBySeasonStartTimeDesc(
+			any(LocalDateTime.class));
+		verify(manseRepository, never())
+			.findFirstBySeasonStartTimeGreaterThanEqualOrderBySeasonStartTimeAsc(
+				any(LocalDateTime.class));
+	}
+
+	@Test
+	void shouldUseForwardSeasonLookupForMaleWithYangYearStem() {
+		LocalDate inputDate = LocalDate.of(1998, 9, 2);
+		Manse base = manse(inputDate, "戊", "寅", "庚", "申", "壬", "子", null, null);
+		Manse seasonRef = manse(
+			inputDate.plusDays(1),
+			"戊", "寅", "辛", "酉", "癸", "丑",
+			"백로",
+			LocalDateTime.of(1998, 9, 3, 12, 0)
+		);
+
+		when(manseRepository.findBySolarDate(inputDate)).thenReturn(Optional.of(base));
+		when(manseRepository.findFirstBySeasonStartTimeGreaterThanEqualOrderBySeasonStartTimeAsc(
+			any(LocalDateTime.class))).thenReturn(Optional.of(seasonRef));
+
+		ManseryeokCalculationRequest request = new ManseryeokCalculationRequest(
+			"테스트",
+			inputDate,
+			LocalTime.of(12, 2),
+			"MALE",
+			false,
+			null
+		);
+
+		service.calculate(request);
+
+		verify(manseRepository).findFirstBySeasonStartTimeGreaterThanEqualOrderBySeasonStartTimeAsc(
+			any(LocalDateTime.class));
+		verify(manseRepository, never())
+			.findFirstBySeasonStartTimeLessThanEqualOrderBySeasonStartTimeDesc(
+				any(LocalDateTime.class));
+	}
+
+	@Test
+	void shouldCalculateExpectedBigFortuneForFemale19930603Case() {
+		LocalDate inputDate = LocalDate.of(1993, 6, 3);
+		Manse base = manse(inputDate, "癸", "酉", "丁", "巳", "乙", "卯", null, null);
+		Manse seasonRef = manse(
+			LocalDate.of(1993, 6, 6),
+			"癸", "酉", "戊", "午", "戊", "午",
+			"망종",
+			LocalDateTime.of(1993, 6, 6, 1, 12)
+		);
+
+		when(manseRepository.findBySolarDate(inputDate)).thenReturn(Optional.of(base));
+		when(manseRepository.findFirstBySeasonStartTimeGreaterThanEqualOrderBySeasonStartTimeAsc(
+			any(LocalDateTime.class))).thenReturn(Optional.of(seasonRef));
+
+		ManseryeokCalculationRequest request = new ManseryeokCalculationRequest(
+			"오지연",
+			inputDate,
+			LocalTime.of(10, 30),
+			"FEMALE",
+			false,
+			null
+		);
+
+		ManseryeokCalculationResponse response = service.calculate(request);
+
+		assertEquals(2, response.getSaju().getBigFortuneNumber());
+		assertEquals(1995, response.getSaju().getBigFortuneStartYear());
 	}
 
 	private Manse manse(
