@@ -59,7 +59,14 @@ public class ManseCalculationService {
 			String ilganChinese = samju.getDaySky();
 
 			Map<String, List<String>> sinsalInfo = sinsalCalculator.analyzeAllSinsal(
-				ilganChinese, samju.getYearGround(), samju.getMonthGround(), samju.getDayGround(),
+				ilganChinese,
+				samju.getYearSky(),
+				samju.getYearGround(),
+				samju.getMonthSky(),
+				samju.getMonthGround(),
+				samju.getDaySky(),
+				samju.getDayGround(),
+				timePillar.getTimeSky(),
 				timePillar.getTimeGround()
 			);
 			boolean hasGoegang = sinsalCalculator.hasGoegang(ilganChinese, samju.getDayGround());
