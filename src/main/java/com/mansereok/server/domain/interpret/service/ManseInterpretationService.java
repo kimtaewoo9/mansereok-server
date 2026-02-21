@@ -3559,17 +3559,20 @@ public class ManseInterpretationService {
 
 		// 12. 사주 강약 및 용신 (핵심 업그레이드)
 		prompt.append("### 사주 강약 및 용신 (핵심) ###\n");
-		if (saju.getYongsinInfo() != null) {
-			prompt.append(String.format("- 강약 판단: %s (내 세력 %.1f vs 남의 세력 %.1f)\n",
-				saju.getYongsinInfo().getStrength(),
-				saju.getYongsinInfo().getMyScore(),
-				(saju.getYongsinInfo().getTotalScore() - saju.getYongsinInfo().getMyScore())
-			));
-			prompt.append(String.format("- 추천 용신: %s (%s)\n",
-				saju.getYongsinInfo().getYongsin(),
-				saju.getYongsinInfo().getDescription()));
-			prompt.append("※ 이 용신 정보를 바탕으로 사용자에게 행운의 조언을 해주세요.\n");
-		}
+			if (saju.getYongsinInfo() != null) {
+				prompt.append(String.format("- 강약 판단: %s (내 세력 %.1f vs 남의 세력 %.1f)\n",
+					saju.getYongsinInfo().getStrength(),
+					saju.getYongsinInfo().getMyScore(),
+					(saju.getYongsinInfo().getTotalScore() - saju.getYongsinInfo().getMyScore())
+				));
+				prompt.append(String.format("- 적용 규칙: %s (%s)\n",
+					saju.getYongsinInfo().getAppliedRuleName(),
+					saju.getYongsinInfo().getAppliedRuleCode()));
+				prompt.append(String.format("- 추천 용신: %s (%s)\n",
+					saju.getYongsinInfo().getYongsin(),
+					saju.getYongsinInfo().getDescription()));
+				prompt.append("※ 이 용신 정보를 바탕으로 사용자에게 행운의 조언을 해주세요.\n");
+			}
 		prompt.append("\n");
 	}
 
@@ -4258,15 +4261,18 @@ public class ManseInterpretationService {
 		// ==========================================
 		// 1. [핵심] 사주 강약 및 용신 (YongsinResult)
 		// ==========================================
-		if (saju.getYongsinInfo() != null) {
-			prompt.append(String.format("- 사주 강약 판정: %s (내 세력 %.1f vs 남의 세력 %.1f)\n",
-				saju.getYongsinInfo().getStrength(),
-				saju.getYongsinInfo().getMyScore(),
-				(saju.getYongsinInfo().getTotalScore() - saju.getYongsinInfo().getMyScore())
-			));
+			if (saju.getYongsinInfo() != null) {
+				prompt.append(String.format("- 사주 강약 판정: %s (내 세력 %.1f vs 남의 세력 %.1f)\n",
+					saju.getYongsinInfo().getStrength(),
+					saju.getYongsinInfo().getMyScore(),
+					(saju.getYongsinInfo().getTotalScore() - saju.getYongsinInfo().getMyScore())
+				));
+				prompt.append(String.format("- 용신 판단 규칙: %s (%s)\n",
+					saju.getYongsinInfo().getAppliedRuleName(),
+					saju.getYongsinInfo().getAppliedRuleCode()));
 
-			// AI에게 '신강/신약'에 따른 처세술 힌트 제공
-			if (saju.getYongsinInfo().getMyScore() >= saju.getYongsinInfo().getTotalScore() / 2) {
+				// AI에게 '신강/신약'에 따른 처세술 힌트 제공
+				if (saju.getYongsinInfo().getMyScore() >= saju.getYongsinInfo().getTotalScore() / 2) {
 				prompt.append("  -> (지침) 주관이 뚜렷하고 고집이 셉니다. '독단적인 행동'을 주의하라고 조언하세요.\n");
 			} else {
 				prompt.append("  -> (지침) 주변 환경에 잘 휩쓸립니다. '자기 주관'을 가지라고 조언하세요.\n");

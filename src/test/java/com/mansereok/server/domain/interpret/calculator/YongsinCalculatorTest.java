@@ -31,6 +31,7 @@ class YongsinCalculatorTest {
 		assertNotNull(result);
 		assertEquals("수", result.getYongsin());
 		assertTrue(result.getDescription().contains("조후"));
+		assertEquals("EOKBU_JOHU_V1", result.getAppliedRuleCode());
 	}
 
 	@Test
@@ -51,6 +52,7 @@ class YongsinCalculatorTest {
 		assertNotNull(result);
 		assertEquals("화", result.getYongsin());
 		assertTrue(result.getDescription().contains("조후"));
+		assertEquals("EOKBU_JOHU_V1", result.getAppliedRuleCode());
 	}
 
 	@Test
@@ -72,6 +74,8 @@ class YongsinCalculatorTest {
 		assertNotNull(result.getStrength());
 		assertTrue(result.getTotalScore() > 0);
 		assertNotNull(result.getYongsin());
+		assertEquals("EOKBU_JOHU_V1", result.getAppliedRuleCode());
+		assertEquals("억부 중심 + 조후 보정", result.getAppliedRuleName());
 	}
 
 	private PillarElement pillar(String chinese, String fiveCircle) {

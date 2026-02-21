@@ -13,6 +13,14 @@ import org.springframework.stereotype.Component;
 public class YongsinCalculator {
 
 	/**
+	 * 서비스 고정 용신 규칙셋
+	 * - 억부를 기본으로 하되 조후를 우선 보정한다.
+	 * - 종격/전왕 등 특수격 별도 분기는 현재 버전에서 미적용.
+	 */
+	private static final String RULESET_CODE = "EOKBU_JOHU_V1";
+	private static final String RULESET_NAME = "억부 중심 + 조후 보정";
+
+	/**
 	 * 생(生) 관계: 일간을 생해주는 오행(인성)
 	 */
 	private static final Map<String, String> RESOURCE_MAP = Map.of(
@@ -106,7 +114,9 @@ public class YongsinCalculator {
 			roundOne(metrics.myScore),
 			roundOne(metrics.totalScore),
 			decision.yongsin,
-			desc
+			desc,
+			RULESET_CODE,
+			RULESET_NAME
 		);
 	}
 
@@ -418,6 +428,8 @@ public class YongsinCalculator {
 		private double totalScore;
 		private String yongsin;
 		private String description;
+		private String appliedRuleCode;
+		private String appliedRuleName;
 	}
 
 	private static class StrengthMetrics {
