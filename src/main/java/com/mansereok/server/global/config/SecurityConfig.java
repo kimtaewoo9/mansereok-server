@@ -49,16 +49,17 @@ public class SecurityConfig {
 			// 일단 모두 허용 .
 //			.csrf(csrf -> csrf.disable())
 
-			.csrf(csrf -> csrf
-				.csrfTokenRepository(repo)
-				.ignoringRequestMatchers("/api/payment/webhook",
-					"/member/**",
-					"/api/auth/**",
-					"/swagger-ui/**",
-					"/v3/api-docs/**",
-					"/actuator/**"
+				.csrf(csrf -> csrf
+					.csrfTokenRepository(repo)
+					.ignoringRequestMatchers("/api/payment/webhook",
+						"/member/**",
+						"/api/auth/**",
+						"/swagger-ui/**",
+						"/v3/api-docs/**",
+						"/actuator/**",
+						"/api/v1/manseryeok/calculate"
+					)
 				)
-			)
 
 			// CORS 설정 적용
 			.cors(cors -> cors.configurationSource(corsConfigurationSource()))
