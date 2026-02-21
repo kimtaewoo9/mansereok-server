@@ -123,6 +123,41 @@ class ManseCalculationServiceTest {
 		assertEquals("丑", response.getSaju().getDayGround().getChinese());
 	}
 
+	@Test
+	void shouldReturnExpandedGwiinForReportedCase() {
+		LocalDate inputDate = LocalDate.of(1998, 9, 2);
+		Manse base = manse(inputDate, "戊", "寅", "庚", "申", "壬", "子", null, null);
+		Manse seasonRef = manse(
+			LocalDate.of(1998, 9, 7),
+			"戊", "寅", "辛", "酉", "丁", "巳",
+			"백로",
+			LocalDateTime.of(1998, 9, 7, 0, 0)
+		);
+
+		when(manseRepository.findBySolarDate(inputDate)).thenReturn(Optional.of(base));
+		when(manseRepository.findFirstBySeasonStartTimeGreaterThanEqualOrderBySeasonStartTimeAsc(
+			any(LocalDateTime.class))).thenReturn(Optional.of(seasonRef));
+
+		ManseryeokCalculationRequest request = new ManseryeokCalculationRequest(
+			"테스트",
+			inputDate,
+			LocalTime.of(12, 2),
+			"MALE",
+			false,
+			null
+		);
+
+		ManseryeokCalculationResponse response = service.calculate(request);
+
+		List<String> yearSinsal = response.getSaju().getSinsalInfo().get("년주");
+		List<String> daySinsal = response.getSaju().getSinsalInfo().get("일주");
+
+		assertNotNull(yearSinsal);
+		assertNotNull(daySinsal);
+		assertTrue(yearSinsal.contains("문창귀인"));
+		assertTrue(daySinsal.contains("월덕귀인"));
+	}
+
 	private Manse manse(
 		LocalDate solarDate,
 		String yearSky,

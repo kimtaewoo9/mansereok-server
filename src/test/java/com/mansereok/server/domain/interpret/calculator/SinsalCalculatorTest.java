@@ -75,4 +75,21 @@ class SinsalCalculatorTest {
 		assertTrue(result.get("년주").contains("태극귀인"));
 		assertTrue(result.get("일주").contains("국인귀인"));
 	}
+
+	@Test
+	void shouldIncludeMunchangAndWoldeokForGivenSampleCase() {
+		// 사용자 제보 케이스:
+		// 년주 戊寅 / 월주 庚申 / 일주 壬子 / 시주 丙午
+		// 壬일간 기준 문창귀인=寅(년지), 申월 기준 월덕귀인=壬(일간)
+		Map<String, List<String>> result = calculator.analyzeAllSinsal(
+			"壬",
+			"戊", "寅",
+			"庚", "申",
+			"壬", "子",
+			"丙", "午"
+		);
+
+		assertTrue(result.get("년주").contains("문창귀인"));
+		assertTrue(result.get("일주").contains("월덕귀인"));
+	}
 }
