@@ -1,7 +1,9 @@
 package com.mansereok.server.domain.interpret.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 
@@ -72,8 +74,14 @@ class ManseCalculationServiceTest {
 		ManseryeokCalculationResponse response = service.calculate(request);
 
 		assertNull(response.getInput().getSolarTime());
+		assertTrue(response.getInput().getTimeUnknown());
 		assertNull(response.getSaju().getTimeSky());
 		assertNull(response.getSaju().getTimeGround());
+		assertNotNull(response.getSaju().getUncertaintyNotes());
+		assertTrue(response.getSaju().getUncertaintyNotes().stream()
+			.anyMatch(note -> note.contains("출생시간 미입력")));
+		assertNotNull(response.getSaju().getBigFortuneNumberMin());
+		assertNotNull(response.getSaju().getBigFortuneNumberMax());
 	}
 
 	@Test

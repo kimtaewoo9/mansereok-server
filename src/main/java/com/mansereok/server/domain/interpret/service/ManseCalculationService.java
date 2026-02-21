@@ -42,7 +42,12 @@ public class ManseCalculationService {
 				request.getLeapMonth());
 
 			LocalTime rawSolarTime = request.getSolarTime();
-			LocalTime solarTimeForSeason = request.getSolarTimeOrDefault();
+			boolean timeUnknown = rawSolarTime == null;
+			List<String> uncertaintyNotes = new ArrayList<>();
+			if (timeUnknown) {
+				uncertaintyNotes.add("출생시간 미입력: 시주는 계산하지 않았습니다.");
+				uncertaintyNotes.add("출생시간 미입력: 야자시(23:30 이후) 보정은 적용하지 않았습니다.");
+			}
 
 			SamjuResult samju = convertBirthToSamju(
 				request.getIsLunar() ? "LUNAR" : "SOLAR",
@@ -50,11 +55,13 @@ public class ManseCalculationService {
 				rawSolarTime,
 				request.getLeapMonth()
 			);
-			LocalDateTime solarDatetime = LocalDateTime.of(samju.getSolarDate(),
-				solarTimeForSeason);
+			if (samju.isSeasonBoundaryUncertain()) {
+				uncertaintyNotes.add("절입일 출생 + 시간 미입력으로 연주/월주 경계가 불확정입니다.");
+			}
+
 			boolean direction = isRightDirection(request.getGender(), samju.getYearSky());
-			LocalDateTime seasonTime = getSeasonStartTime(direction, solarDatetime);
-			BigFortuneResult bigFortune = getBigFortuneNumber(direction, seasonTime, solarDatetime);
+			BigFortuneRangeResult bigFortune = calculateBigFortuneRange(direction, samju, rawSolarTime,
+				timeUnknown, uncertaintyNotes);
 			TimePillarResult timePillar = getTimePillar(samju.getDaySky(), rawSolarTime);
 			String ilganChinese = samju.getDaySky();
 
@@ -126,8 +133,13 @@ public class ManseCalculationService {
 			// 15. DTO 빌드
 			SajuInfo sajuInfo = SajuInfo.builder()
 				.bigFortuneNumber(bigFortune.getBigFortuneNumber())
+				.bigFortuneNumberMin(bigFortune.getBigFortuneNumberMin())
+				.bigFortuneNumberMax(bigFortune.getBigFortuneNumberMax())
 				.bigFortuneStartYear(bigFortune.getBigFortuneStart())
+				.bigFortuneStartYearMin(bigFortune.getBigFortuneStartMin())
+				.bigFortuneStartYearMax(bigFortune.getBigFortuneStartMax())
 				.seasonStartTime(samju.getSeasonStartTime())
+				.uncertaintyNotes(uncertaintyNotes.isEmpty() ? null : uncertaintyNotes)
 				.yearSky(formatChinese(samju.getYearSky(), samju.getDaySky(), false, ilganChinese))
 				.yearGround(
 					formatChineseWithUnseong(samju.getYearGround(), ilganChinese, samju.getDaySky(),
@@ -159,13 +171,14 @@ public class ManseCalculationService {
 			YongsinResult yongsinResult = yongsinCalculator.analyzeYongsin(sajuInfo);
 			sajuInfo.setYongsinInfo(yongsinResult);
 
-				return ManseryeokCalculationResponse.builder()
-					.input(ManseryeokCalculationResponse.InputInfo.builder()
-						.solarDate(request.getSolarDate())
-						.solarTime(rawSolarTime)
-						.gender(normalizeGender(request.getGender()))
-						.isLunar(request.getIsLunar())
-						.build())
+					return ManseryeokCalculationResponse.builder()
+						.input(ManseryeokCalculationResponse.InputInfo.builder()
+							.solarDate(request.getSolarDate())
+							.solarTime(rawSolarTime)
+							.timeUnknown(timeUnknown)
+							.gender(normalizeGender(request.getGender()))
+							.isLunar(request.getIsLunar())
+							.build())
 					.saju(sajuInfo)
 					.build();
 
@@ -251,7 +264,7 @@ public class ManseCalculationService {
 
 	private SamjuResult convertBirthToSamju(String birthdayType, LocalDate birthday,
 		LocalTime time, Boolean leapMonth) {
-		LocalTime birthtime = time != null ? time : LocalTime.of(12, 0);
+		LocalTime birthtime = time;
 		boolean isYajasi = time != null && !time.isBefore(LocalTime.of(23, 30));
 
 		log.info("만세력 데이터 조회: birthdayType={}, birthday={}, leapMonth={}",
@@ -291,18 +304,24 @@ public class ManseCalculationService {
 		}
 
 		Manse yearMonthManse = baseManse;
+		boolean seasonBoundaryUncertain = false;
 		if (baseManse.getSeason() != null && !baseManse.getSeason().isEmpty()) {
 			log.info("절입일 처리: season={}, seasonStartTime={}", baseManse.getSeason(),
 				baseManse.getSeasonStartTime());
 
 			LocalDateTime seasonTime = baseManse.getSeasonStartTime();
 			LocalDate solarDate = baseManse.getSolarDate();
-			LocalDateTime solarDatetime = LocalDateTime.of(solarDate, birthtime);
+			if (birthtime == null) {
+				seasonBoundaryUncertain = true;
+				log.info("출생시간 미입력 + 절입일: 연주/월주 경계 불확정");
+			} else {
+				LocalDateTime solarDatetime = LocalDateTime.of(solarDate, birthtime);
 
-			if (solarDatetime.isBefore(seasonTime)) {
-				log.info("절입시간 이전 출생: 이전 날짜 만세력 사용(월주 변경), 일주는 유지");
-				yearMonthManse = manseRepository.findBySolarDate(solarDate.minusDays(1))
-					.orElseThrow(() -> new RuntimeException("이전 날짜의 만세력 데이터를 찾을 수 없습니다"));
+				if (solarDatetime.isBefore(seasonTime)) {
+					log.info("절입시간 이전 출생: 이전 날짜 만세력 사용(월주 변경), 일주는 유지");
+					yearMonthManse = manseRepository.findBySolarDate(solarDate.minusDays(1))
+						.orElseThrow(() -> new RuntimeException("이전 날짜의 만세력 데이터를 찾을 수 없습니다"));
+				}
 			}
 		}
 
@@ -316,6 +335,7 @@ public class ManseCalculationService {
 			.dayGround(dayManse.getDayGround())
 			.seasonStartTime(baseManse.getSeasonStartTime() != null ?
 				baseManse.getSeasonStartTime().toString() : null)
+			.seasonBoundaryUncertain(seasonBoundaryUncertain)
 			.build();
 	}
 
@@ -371,6 +391,57 @@ public class ManseCalculationService {
 			manse.getSeasonStartTime(), direction ? "순행" : "역행");
 
 		return manse.getSeasonStartTime();
+	}
+
+	private BigFortuneRangeResult calculateBigFortuneRange(boolean direction, SamjuResult samju,
+		LocalTime rawSolarTime, boolean timeUnknown, List<String> uncertaintyNotes) {
+		if (!timeUnknown) {
+			LocalDateTime solarDatetime = LocalDateTime.of(samju.getSolarDate(), rawSolarTime);
+			LocalDateTime seasonTime = getSeasonStartTime(direction, solarDatetime);
+			BigFortuneResult exact = getBigFortuneNumber(direction, seasonTime, solarDatetime);
+			return BigFortuneRangeResult.builder()
+				.bigFortuneNumber(exact.getBigFortuneNumber())
+				.bigFortuneNumberMin(exact.getBigFortuneNumber())
+				.bigFortuneNumberMax(exact.getBigFortuneNumber())
+				.bigFortuneStart(exact.getBigFortuneStart())
+				.bigFortuneStartMin(exact.getBigFortuneStart())
+				.bigFortuneStartMax(exact.getBigFortuneStart())
+				.build();
+		}
+
+		if (samju.isSeasonBoundaryUncertain()) {
+			uncertaintyNotes.add("출생시간 미입력으로 대운 시작 나이는 확정할 수 없습니다.");
+			return BigFortuneRangeResult.builder().build();
+		}
+
+		LocalDate birthDate = samju.getSolarDate();
+		LocalDateTime startOfDay = LocalDateTime.of(birthDate, LocalTime.MIN);
+		LocalDateTime endOfDay = LocalDateTime.of(birthDate, LocalTime.of(23, 59, 59));
+
+		BigFortuneResult earlyCase = getBigFortuneNumber(direction,
+			getSeasonStartTime(direction, startOfDay), startOfDay);
+		BigFortuneResult lateCase = getBigFortuneNumber(direction,
+			getSeasonStartTime(direction, endOfDay), endOfDay);
+
+		int minNumber = Math.min(earlyCase.getBigFortuneNumber(), lateCase.getBigFortuneNumber());
+		int maxNumber = Math.max(earlyCase.getBigFortuneNumber(), lateCase.getBigFortuneNumber());
+		int minStart = Math.min(earlyCase.getBigFortuneStart(), lateCase.getBigFortuneStart());
+		int maxStart = Math.max(earlyCase.getBigFortuneStart(), lateCase.getBigFortuneStart());
+
+		if (minNumber != maxNumber || minStart != maxStart) {
+			uncertaintyNotes.add(String.format("대운 시작 나이는 %d~%d세 범위입니다.", minNumber, maxNumber));
+		} else {
+			uncertaintyNotes.add(String.format("대운 시작 나이는 %d세로 추정됩니다.", minNumber));
+		}
+
+		return BigFortuneRangeResult.builder()
+			.bigFortuneNumber(minNumber == maxNumber ? minNumber : null)
+			.bigFortuneNumberMin(minNumber)
+			.bigFortuneNumberMax(maxNumber)
+			.bigFortuneStart(minStart == maxStart ? minStart : null)
+			.bigFortuneStartMin(minStart)
+			.bigFortuneStartMax(maxStart)
+			.build();
 	}
 
 	private BigFortuneResult getBigFortuneNumber(boolean direction, LocalDateTime seasonStartTime,
@@ -537,6 +608,7 @@ public class ManseCalculationService {
 		private String daySky;
 		private String dayGround;
 		private String seasonStartTime;
+		private boolean seasonBoundaryUncertain;
 	}
 
 	@lombok.Data
@@ -545,6 +617,18 @@ public class ManseCalculationService {
 
 		private Integer bigFortuneNumber;
 		private Integer bigFortuneStart;
+	}
+
+	@lombok.Data
+	@lombok.Builder
+	private static class BigFortuneRangeResult {
+
+		private Integer bigFortuneNumber;
+		private Integer bigFortuneNumberMin;
+		private Integer bigFortuneNumberMax;
+		private Integer bigFortuneStart;
+		private Integer bigFortuneStartMin;
+		private Integer bigFortuneStartMax;
 	}
 
 	@lombok.Data

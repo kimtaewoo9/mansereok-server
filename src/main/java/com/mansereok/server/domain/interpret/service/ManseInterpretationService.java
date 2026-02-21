@@ -3529,8 +3529,17 @@ public class ManseInterpretationService {
 			int birthYear = input.getSolarDate().getYear();
 			appendDaewoonSimple(prompt, saju, input.getGender(), birthYear);
 
+		} else if (saju.getBigFortuneNumberMin() != null && saju.getBigFortuneNumberMax() != null) {
+			prompt.append(String.format("시작:%d~%d세 | 방향:%s (출생시간 미입력 추정)\n",
+				saju.getBigFortuneNumberMin(),
+				saju.getBigFortuneNumberMax(),
+				getDaewoonDirection(saju, input.getGender())));
+			prompt.append("※ 정확한 출생시간 입력 시 대운 시작 나이를 확정할 수 있습니다.\n");
 		} else {
 			prompt.append("대운 정보 없음\n");
+		}
+		if (saju.getUncertaintyNotes() != null && !saju.getUncertaintyNotes().isEmpty()) {
+			saju.getUncertaintyNotes().forEach(note -> prompt.append("- " + note + "\n"));
 		}
 		prompt.append("\n");
 
@@ -3823,8 +3832,17 @@ public class ManseInterpretationService {
 			int birthYear = input.getSolarDate().getYear();
 			appendDaewoonSimple(prompt, saju, input.getGender(), birthYear);
 
+		} else if (saju.getBigFortuneNumberMin() != null && saju.getBigFortuneNumberMax() != null) {
+			prompt.append(String.format("시작:%d~%d세 | 방향:%s (출생시간 미입력 추정)\n",
+				saju.getBigFortuneNumberMin(),
+				saju.getBigFortuneNumberMax(),
+				getDaewoonDirection(saju, input.getGender())));
+			prompt.append("※ 정확한 출생시간 입력 시 대운 시작 나이를 확정할 수 있습니다.\n");
 		} else {
 			prompt.append("대운 정보 없음\n");
+		}
+		if (saju.getUncertaintyNotes() != null && !saju.getUncertaintyNotes().isEmpty()) {
+			saju.getUncertaintyNotes().forEach(note -> prompt.append("- " + note + "\n"));
 		}
 		prompt.append("\n");
 	}
