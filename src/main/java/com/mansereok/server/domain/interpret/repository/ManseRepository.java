@@ -7,7 +7,6 @@ import java.util.List;
 import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
-import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 @Repository
@@ -36,16 +35,14 @@ public interface ManseRepository extends JpaRepository<Manse, Long> {
 	/**
 	 * 절입시간이 특정 시간 이후인 첫 번째 만세력 조회 (순행용)
 	 */
-	@Query("SELECT m FROM Manse m WHERE m.seasonStartTime >= :datetime AND m.seasonStartTime IS NOT NULL ORDER BY m.solarDate ASC LIMIT 1")
-	Optional<Manse> findFirstBySeasonStartTimeGreaterThanEqualOrderBySolarDateAsc(
-		@Param("datetime") LocalDateTime datetime);
+	Optional<Manse> findFirstBySeasonStartTimeGreaterThanEqualOrderBySeasonStartTimeAsc(
+		LocalDateTime datetime);
 
 	/**
 	 * 절입시간이 특정 시간 이전인 첫 번째 만세력 조회 (역행용)
 	 */
-	@Query("SELECT m FROM Manse m WHERE m.seasonStartTime <= :datetime AND m.seasonStartTime IS NOT NULL ORDER BY m.solarDate DESC LIMIT 1")
-	Optional<Manse> findFirstBySeasonStartTimeLessThanEqualOrderBySolarDateDesc(
-		@Param("datetime") LocalDateTime datetime);
+	Optional<Manse> findFirstBySeasonStartTimeLessThanEqualOrderBySeasonStartTimeDesc(
+		LocalDateTime datetime);
 
 	/**
 	 * 절기 정보가 있는 만세력들 조회

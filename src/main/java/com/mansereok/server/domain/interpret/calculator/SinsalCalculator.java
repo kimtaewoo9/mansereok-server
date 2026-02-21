@@ -127,7 +127,7 @@ public class SinsalCalculator {
 		HONGYEOM_MAP.put("己", "辰"); // 기진
 		HONGYEOM_MAP.put("庚", "戌"); // 경술
 		HONGYEOM_MAP.put("辛", "酉"); // 신유
-		HONGYEOM_MAP.put("壬", "子"); // 임자 (★ 사용자님 해당)
+		HONGYEOM_MAP.put("壬", "子"); // 임자
 		HONGYEOM_MAP.put("癸", "申"); // 계신
 	}
 

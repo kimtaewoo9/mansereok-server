@@ -463,124 +463,112 @@ public class SajuDataService {
 	public Map<String, Map<String, Object>> getJijangan() {
 		Map<String, Map<String, Object>> data = new HashMap<>();
 
-		// 子 (자)
+		// 子: 癸
 		Map<String, Object> ja = new HashMap<>();
-		ja.put("first", Map.of("chinese", "壬", "korean", "임", "fiveCircle", "수",
-			"fiveCircleColor", "#039BE5", "minusPlus", "양", "rate", 10));
+		ja.put("first", hidden("癸", "계", "수", "음", 30));
 		ja.put("second", null);
-		ja.put("third", Map.of("chinese", "癸", "korean", "계", "fiveCircle", "수",
-			"fiveCircleColor", "#039BE5", "minusPlus", "음", "rate", 20));
+		ja.put("third", null);
 		data.put("子", ja);
 
-		// 丑 (축)
+		// 丑: 己 癸 辛
 		Map<String, Object> chuk = new HashMap<>();
-		chuk.put("first", Map.of("chinese", "癸", "korean", "계", "fiveCircle", "수",
-			"fiveCircleColor", "#039BE5", "minusPlus", "음", "rate", 9));
-		chuk.put("second", Map.of("chinese", "辛", "korean", "신", "fiveCircle", "금",
-			"fiveCircleColor", "#E0E0E0", "minusPlus", "음", "rate", 3));
-		chuk.put("third", Map.of("chinese", "己", "korean", "기", "fiveCircle", "토",
-			"fiveCircleColor", "#FFD600", "minusPlus", "음", "rate", 18));
+		chuk.put("first", hidden("己", "기", "토", "음", 18));
+		chuk.put("second", hidden("癸", "계", "수", "음", 9));
+		chuk.put("third", hidden("辛", "신", "금", "음", 3));
 		data.put("丑", chuk);
 
-		// 寅 (인)
+		// 寅: 甲 丙 戊
 		Map<String, Object> in = new HashMap<>();
-		in.put("first", Map.of("chinese", "戊", "korean", "무", "fiveCircle", "토",
-			"fiveCircleColor", "#FFD600", "minusPlus", "양", "rate", 7));
-		in.put("second", Map.of("chinese", "丙", "korean", "병", "fiveCircle", "화",
-			"fiveCircleColor", "#F44336", "minusPlus", "양", "rate", 7));
-		in.put("third", Map.of("chinese", "甲", "korean", "갑", "fiveCircle", "목",
-			"fiveCircleColor", "#4CAF50", "minusPlus", "양", "rate", 16));
+		in.put("first", hidden("甲", "갑", "목", "양", 16));
+		in.put("second", hidden("丙", "병", "화", "양", 7));
+		in.put("third", hidden("戊", "무", "토", "양", 7));
 		data.put("寅", in);
 
-		// 卯 (묘)
+		// 卯: 乙
 		Map<String, Object> myo = new HashMap<>();
-		myo.put("first", Map.of("chinese", "甲", "korean", "갑", "fiveCircle", "목",
-			"fiveCircleColor", "#4CAF50", "minusPlus", "양", "rate", 10));
+		myo.put("first", hidden("乙", "을", "목", "음", 30));
 		myo.put("second", null);
-		myo.put("third", Map.of("chinese", "乙", "korean", "을", "fiveCircle", "목",
-			"fiveCircleColor", "#4CAF50", "minusPlus", "음", "rate", 20));
+		myo.put("third", null);
 		data.put("卯", myo);
 
-		// 辰 (진)
+		// 辰: 戊 乙 癸
 		Map<String, Object> jin = new HashMap<>();
-		jin.put("first", Map.of("chinese", "乙", "korean", "을", "fiveCircle", "목",
-			"fiveCircleColor", "#4CAF50", "minusPlus", "음", "rate", 9));
-		jin.put("second", Map.of("chinese", "癸", "korean", "계", "fiveCircle", "수",
-			"fiveCircleColor", "#039BE5", "minusPlus", "음", "rate", 3));
-		jin.put("third", Map.of("chinese", "戊", "korean", "무", "fiveCircle", "토",
-			"fiveCircleColor", "#FFD600", "minusPlus", "양", "rate", 18));
+		jin.put("first", hidden("戊", "무", "토", "양", 18));
+		jin.put("second", hidden("乙", "을", "목", "음", 9));
+		jin.put("third", hidden("癸", "계", "수", "음", 3));
 		data.put("辰", jin);
 
-		// 巳 (사)
+		// 巳: 丙 庚 戊
 		Map<String, Object> sa = new HashMap<>();
-		sa.put("first", Map.of("chinese", "戊", "korean", "무", "fiveCircle", "토",
-			"fiveCircleColor", "#FFD600", "minusPlus", "양", "rate", 7));
-		sa.put("second", Map.of("chinese", "庚", "korean", "경", "fiveCircle", "금",
-			"fiveCircleColor", "#E0E0E0", "minusPlus", "양", "rate", 7));
-		sa.put("third", Map.of("chinese", "丙", "korean", "병", "fiveCircle", "화",
-			"fiveCircleColor", "#F44336", "minusPlus", "양", "rate", 16));
+		sa.put("first", hidden("丙", "병", "화", "양", 16));
+		sa.put("second", hidden("庚", "경", "금", "양", 7));
+		sa.put("third", hidden("戊", "무", "토", "양", 7));
 		data.put("巳", sa);
 
-		// 午 (오)
+		// 午: 丁 己
 		Map<String, Object> o = new HashMap<>();
-		o.put("first", Map.of("chinese", "丙", "korean", "병", "fiveCircle", "화",
-			"fiveCircleColor", "#F44336", "minusPlus", "양", "rate", 10));
-		o.put("second", Map.of("chinese", "己", "korean", "기", "fiveCircle", "토",
-			"fiveCircleColor", "#FFD600", "minusPlus", "음", "rate", 10));
-		o.put("third", Map.of("chinese", "丁", "korean", "정", "fiveCircle", "화",
-			"fiveCircleColor", "#F44336", "minusPlus", "음", "rate", 10));
+		o.put("first", hidden("丁", "정", "화", "음", 20));
+		o.put("second", hidden("己", "기", "토", "음", 10));
+		o.put("third", null);
 		data.put("午", o);
 
-		// 未 (미)
+		// 未: 己 丁 乙
 		Map<String, Object> mi = new HashMap<>();
-		mi.put("first", Map.of("chinese", "丁", "korean", "정", "fiveCircle", "화",
-			"fiveCircleColor", "#F44336", "minusPlus", "음", "rate", 9));
-		mi.put("second", Map.of("chinese", "乙", "korean", "을", "fiveCircle", "목",
-			"fiveCircleColor", "#4CAF50", "minusPlus", "음", "rate", 3));
-		mi.put("third", Map.of("chinese", "己", "korean", "기", "fiveCircle", "토",
-			"fiveCircleColor", "#FFD600", "minusPlus", "음", "rate", 18));
+		mi.put("first", hidden("己", "기", "토", "음", 18));
+		mi.put("second", hidden("丁", "정", "화", "음", 9));
+		mi.put("third", hidden("乙", "을", "목", "음", 3));
 		data.put("未", mi);
 
-		// 申 (신)
+		// 申: 庚 壬 戊
 		Map<String, Object> sin = new HashMap<>();
-		sin.put("first", Map.of("chinese", "戊", "korean", "무", "fiveCircle", "토",
-			"fiveCircleColor", "#FFD600", "minusPlus", "양", "rate", 7));
-		sin.put("second", Map.of("chinese", "壬", "korean", "임", "fiveCircle", "수",
-			"fiveCircleColor", "#039BE5", "minusPlus", "양", "rate", 7));
-		sin.put("third", Map.of("chinese", "庚", "korean", "경", "fiveCircle", "금",
-			"fiveCircleColor", "#E0E0E0", "minusPlus", "양", "rate", 16));
+		sin.put("first", hidden("庚", "경", "금", "양", 16));
+		sin.put("second", hidden("壬", "임", "수", "양", 7));
+		sin.put("third", hidden("戊", "무", "토", "양", 7));
 		data.put("申", sin);
 
-		// 酉 (유)
+		// 酉: 辛
 		Map<String, Object> yu = new HashMap<>();
-		yu.put("first", Map.of("chinese", "庚", "korean", "경", "fiveCircle", "금",
-			"fiveCircleColor", "#E0E0E0", "minusPlus", "양", "rate", 10));
+		yu.put("first", hidden("辛", "신", "금", "음", 30));
 		yu.put("second", null);
-		yu.put("third", Map.of("chinese", "辛", "korean", "신", "fiveCircle", "금",
-			"fiveCircleColor", "#E0E0E0", "minusPlus", "음", "rate", 20));
+		yu.put("third", null);
 		data.put("酉", yu);
 
-		// 戌 (술)
+		// 戌: 戊 辛 丁
 		Map<String, Object> sul = new HashMap<>();
-		sul.put("first", Map.of("chinese", "辛", "korean", "신", "fiveCircle", "금",
-			"fiveCircleColor", "#E0E0E0", "minusPlus", "음", "rate", 9));
-		sul.put("second", Map.of("chinese", "丁", "korean", "정", "fiveCircle", "화",
-			"fiveCircleColor", "#F44336", "minusPlus", "음", "rate", 3));
-		sul.put("third", Map.of("chinese", "戊", "korean", "무", "fiveCircle", "토",
-			"fiveCircleColor", "#FFD600", "minusPlus", "양", "rate", 18));
+		sul.put("first", hidden("戊", "무", "토", "양", 18));
+		sul.put("second", hidden("辛", "신", "금", "음", 9));
+		sul.put("third", hidden("丁", "정", "화", "음", 3));
 		data.put("戌", sul);
 
-		// 亥 (해)
+		// 亥: 壬 甲
 		Map<String, Object> hae = new HashMap<>();
-		hae.put("first", Map.of("chinese", "戊", "korean", "무", "fiveCircle", "토",
-			"fiveCircleColor", "#FFD600", "minusPlus", "양", "rate", 7));
-		hae.put("second", Map.of("chinese", "甲", "korean", "갑", "fiveCircle", "목",
-			"fiveCircleColor", "#4CAF50", "minusPlus", "양", "rate", 7));
-		hae.put("third", Map.of("chinese", "壬", "korean", "임", "fiveCircle", "수",
-			"fiveCircleColor", "#039BE5", "minusPlus", "양", "rate", 16));
+		hae.put("first", hidden("壬", "임", "수", "양", 20));
+		hae.put("second", hidden("甲", "갑", "목", "양", 10));
+		hae.put("third", null);
 		data.put("亥", hae);
 
 		return data;
+	}
+
+	private Map<String, Object> hidden(String chinese, String korean, String fiveCircle,
+		String minusPlus, int rate) {
+		String color = switch (fiveCircle) {
+			case "목" -> "#4CAF50";
+			case "화" -> "#F44336";
+			case "토" -> "#FFD600";
+			case "금" -> "#E0E0E0";
+			case "수" -> "#039BE5";
+			default -> "";
+		};
+
+		return Map.of(
+			"chinese", chinese,
+			"korean", korean,
+			"fiveCircle", fiveCircle,
+			"fiveCircleColor", color,
+			"minusPlus", minusPlus,
+			"rate", rate
+		);
 	}
 
 	/**
