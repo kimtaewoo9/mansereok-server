@@ -102,7 +102,7 @@ public class SecurityConfig {
 				.requestMatchers("/api/payment/orders/**").authenticated()
 				.requestMatchers("/api/payment/complete").authenticated()
 				// ManseryeokController: 만세력 계산, 사주/궁합 해석 요청
-				.requestMatchers("/api/v1/manseryeok/calculate").authenticated()
+				.requestMatchers("/api/v1/manseryeok/calculate").permitAll()
 				.requestMatchers("/api/v1/manseryeok/interpret/**").authenticated()
 
 				// 3. 그 외 모든 요청은 인증 필요 (기본 규칙)

@@ -41,13 +41,15 @@ public class ManseCalculationService {
 			// 파일 길이가 길어 생략된 부분은 기존 코드를 그대로 두세요!
 			// 변경된 부분은 12번부터입니다.
 
-			log.info("만세력 계산 시작: solarDate={}, gender={}, isLunar={}",
-				request.getSolarDate(), request.getGender(), request.getIsLunar());
+			log.info("만세력 계산 시작: solarDate={}, gender={}, isLunar={}, leapMonth={}",
+				request.getSolarDate(), request.getGender(), request.getIsLunar(),
+				request.getLeapMonth());
 
 			SamjuResult samju = convertBirthToSamju(
 				request.getIsLunar() ? "LUNAR" : "SOLAR",
 				request.getSolarDate(),
-				request.getSolarTime()
+				request.getSolarTime(),
+				request.getLeapMonth()
 			);
 			LocalDateTime solarDatetime = LocalDateTime.of(samju.getSolarDate(),
 				request.getSolarTime());
@@ -151,21 +153,24 @@ public class ManseCalculationService {
 			YongsinResult yongsinResult = yongsinCalculator.analyzeYongsin(sajuInfo);
 			sajuInfo.setYongsinInfo(yongsinResult);
 
-			return ManseryeokCalculationResponse.builder()
-				.input(ManseryeokCalculationResponse.InputInfo.builder()
-					.solarDate(request.getSolarDate())
-					.solarTime(request.getSolarTime())
-					.gender(request.getGender())
-					.isLunar(request.getIsLunar())
-					.build())
-				.saju(sajuInfo)
-				.build();
+				return ManseryeokCalculationResponse.builder()
+					.input(ManseryeokCalculationResponse.InputInfo.builder()
+						.solarDate(request.getSolarDate())
+						.solarTime(request.getSolarTime())
+						.gender(normalizeGender(request.getGender()))
+						.isLunar(request.getIsLunar())
+						.build())
+					.saju(sajuInfo)
+					.build();
 
-		} catch (Exception e) {
-			log.error("만세력 계산 중 오류 발생", e);
-			throw new RuntimeException("만세력 계산 중 오류가 발생했습니다: " + e.getMessage());
+			} catch (IllegalArgumentException e) {
+				log.warn("만세력 계산 입력값 오류: {}", e.getMessage());
+				throw e;
+			} catch (Exception e) {
+				log.error("만세력 계산 중 오류 발생", e);
+				throw new RuntimeException("만세력 계산 중 오류가 발생했습니다: " + e.getMessage());
+			}
 		}
-	}
 
 	// 헬퍼 메서드: 관계 리스트에 추가
 	private void addRelations(List<String> targetList, String label, List<String> relations) {
@@ -239,7 +244,7 @@ public class ManseCalculationService {
 	}
 
 	private SamjuResult convertBirthToSamju(String birthdayType, LocalDate birthday,
-		LocalTime time) {
+		LocalTime time, Boolean leapMonth) {
 		LocalTime birthtime = time != null ? time : LocalTime.of(12, 0);
 
 		if (time != null &&
@@ -249,24 +254,44 @@ public class ManseCalculationService {
 			log.info("자시 처리: 날짜를 다음날로 변경 -> {}", birthday);
 		}
 
-		log.info("만세력 데이터 조회: birthdayType={}, birthday={}", birthdayType, birthday);
+		log.info("만세력 데이터 조회: birthdayType={}, birthday={}, leapMonth={}",
+			birthdayType, birthday, leapMonth);
 
-		Manse samju = birthdayType.equals("SOLAR") ?
-			manseRepository.findBySolarDate(birthday)
-				.orElseThrow(() -> new RuntimeException("해당 양력 날짜의 만세력 데이터를 찾을 수 없습니다.")) :
-			manseRepository.findByLunarDate(birthday)
-				.orElseThrow(() -> new RuntimeException("해당 음력 날짜의 만세력 데이터를 찾을 수 없습니다."));
+		Manse samju;
+		if ("SOLAR".equals(birthdayType)) {
+			samju = manseRepository.findBySolarDate(birthday)
+				.orElseThrow(() -> new RuntimeException("해당 양력 날짜의 만세력 데이터를 찾을 수 없습니다."));
+		} else {
+			List<Manse> lunarCandidates = manseRepository.findAllByLunarDateOrderBySolarDateAsc(
+				birthday);
+			if (lunarCandidates.isEmpty()) {
+				throw new RuntimeException("해당 음력 날짜의 만세력 데이터를 찾을 수 없습니다.");
+			}
+
+			if (lunarCandidates.size() == 1) {
+				samju = lunarCandidates.get(0);
+				} else {
+					if (leapMonth == null) {
+						throw new IllegalArgumentException(
+							"윤달 여부(leapMonth)가 필요합니다. 음력 생일이 평달/윤달 모두 존재합니다: " + birthday);
+					}
+					samju = manseRepository.findByLunarDateAndLeapMonth(birthday, leapMonth)
+						.orElseThrow(() -> new IllegalArgumentException(
+							"음력 날짜와 윤달 여부에 맞는 만세력 데이터를 찾을 수 없습니다."));
+				}
+			}
 
 		if (samju.getSeason() != null && !samju.getSeason().isEmpty()) {
 			log.info("절입일 처리: season={}, seasonStartTime={}", samju.getSeason(),
 				samju.getSeasonStartTime());
 
 			LocalDateTime seasonTime = samju.getSeasonStartTime();
-			LocalDateTime solarDatetime = LocalDateTime.of(birthday, birthtime);
+			LocalDate solarDate = samju.getSolarDate();
+			LocalDateTime solarDatetime = LocalDateTime.of(solarDate, birthtime);
 
 			if (solarDatetime.isBefore(seasonTime)) {
 				log.info("절입시간 이전 출생: 이전 날짜 만세력 사용(월주 변경), 일주는 유지");
-				Manse previousManse = manseRepository.findBySolarDate(birthday.minusDays(1))
+				Manse previousManse = manseRepository.findBySolarDate(solarDate.minusDays(1))
 					.orElseThrow(() -> new RuntimeException("이전 날짜의 만세력 데이터를 찾을 수 없습니다"));
 
 				return SamjuResult.builder()
@@ -297,6 +322,7 @@ public class ManseCalculationService {
 	}
 
 	private boolean isRightDirection(String gender, String yearSky) {
+		String normalizedGender = normalizeGender(gender);
 		String minusPlus = sajuDataService.getMinusPlus().get(yearSky);
 
 		if (minusPlus == null) {
@@ -304,17 +330,30 @@ public class ManseCalculationService {
 		}
 
 		boolean result;
-		if (("MALE".equals(gender) && "양".equals(minusPlus)) ||
-			("FEMALE".equals(gender) && "음".equals(minusPlus))) {
+		if (("MALE".equals(normalizedGender) && "양".equals(minusPlus)) ||
+			("FEMALE".equals(normalizedGender) && "음".equals(minusPlus))) {
 			result = true;
 		} else {
 			result = false;
 		}
 
 		log.info("대운 방향 판단: gender={}, yearSky={}, minusPlus={}, direction={}",
-			gender, yearSky, minusPlus, result ? "순행" : "역행");
+			normalizedGender, yearSky, minusPlus, result ? "순행" : "역행");
 
 		return result;
+	}
+
+	private String normalizeGender(String gender) {
+		if (gender == null || gender.isBlank()) {
+			throw new IllegalArgumentException("성별(gender)은 필수입니다.");
+		}
+
+		String normalized = gender.trim().toUpperCase();
+		return switch (normalized) {
+			case "MALE", "M" -> "MALE";
+			case "FEMALE", "F" -> "FEMALE";
+			default -> throw new IllegalArgumentException("지원하지 않는 성별 값입니다: " + gender);
+		};
 	}
 
 	private LocalDateTime getSeasonStartTime(boolean direction, LocalDateTime solarDatetime) {
@@ -417,8 +456,8 @@ public class ManseCalculationService {
 			}
 		}
 
-		if ((time.isAfter(LocalTime.of(23, 30)) || time.equals(LocalTime.of(23, 30))) ||
-			(time.isBefore(LocalTime.of(1, 30)) && time.isAfter(LocalTime.of(0, 0)))) {
+		if (time.compareTo(LocalTime.of(23, 30)) >= 0 ||
+			time.compareTo(LocalTime.of(1, 29)) <= 0) {
 			return "0";
 		}
 

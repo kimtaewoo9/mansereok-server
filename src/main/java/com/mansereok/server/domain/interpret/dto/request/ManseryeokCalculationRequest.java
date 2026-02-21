@@ -16,6 +16,7 @@ public class ManseryeokCalculationRequest {
 	private LocalTime solarTime;
 	private String gender;
 	private Boolean isLunar;
+	private Boolean leapMonth;
 
 	public LocalTime getSolarTime() {
 		return solarTime != null ? solarTime : LocalTime.of(12, 0);
@@ -38,8 +39,22 @@ public class ManseryeokCalculationRequest {
 			request.getName(),
 			LocalDate.parse(cleanDate),
 			LocalTime.parse(safeTime), // 수정된 safeTime 사용
-			request.getGender(),
-			isLunar
+			normalizeGender(request.getGender()),
+			isLunar,
+			request.getLeapMonth()
 		);
+	}
+
+	private static String normalizeGender(String gender) {
+		if (gender == null || gender.isBlank()) {
+			throw new IllegalArgumentException("성별(gender)은 필수입니다.");
+		}
+
+		String normalized = gender.trim().toUpperCase();
+		return switch (normalized) {
+			case "MALE", "M" -> "MALE";
+			case "FEMALE", "F" -> "FEMALE";
+			default -> throw new IllegalArgumentException("지원하지 않는 성별 값입니다: " + gender);
+		};
 	}
 }

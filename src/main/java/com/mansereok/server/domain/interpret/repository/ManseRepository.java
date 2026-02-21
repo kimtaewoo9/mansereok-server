@@ -24,6 +24,16 @@ public interface ManseRepository extends JpaRepository<Manse, Long> {
 	Optional<Manse> findByLunarDate(LocalDate lunarDate);
 
 	/**
+	 * 음력 날짜(+윤달 여부)로 만세력 조회
+	 */
+	Optional<Manse> findByLunarDateAndLeapMonth(LocalDate lunarDate, Boolean leapMonth);
+
+	/**
+	 * 음력 날짜로 만세력 전체 조회 (윤달 분기 판단용)
+	 */
+	List<Manse> findAllByLunarDateOrderBySolarDateAsc(LocalDate lunarDate);
+
+	/**
 	 * 절입시간이 특정 시간 이후인 첫 번째 만세력 조회 (순행용)
 	 */
 	@Query("SELECT m FROM Manse m WHERE m.seasonStartTime >= :datetime AND m.seasonStartTime IS NOT NULL ORDER BY m.solarDate ASC LIMIT 1")
