@@ -57,14 +57,15 @@ public class ManseryeokController {
 
 		// 2. 만세력 계산 (공통)
 		ManseryeokCalculationResponse manse = manseCalculationService.calculate(
-			new ManseryeokCalculationRequest(
-				request.getName(),
-				request.getSolarDate(),
-				request.getSolarTime(),
-				request.getGender(),
-				request.getIsLunar()
-			)
-		);
+				new ManseryeokCalculationRequest(
+					request.getName(),
+					request.getSolarDate(),
+					request.getSolarTime(),
+					request.getGender(),
+					request.getIsLunar(),
+					request.getLeapMonth()
+				)
+			);
 
 		if (subcategoryId >= 100) {
 			manseInterpretationService.interpretFree(
@@ -105,24 +106,26 @@ public class ManseryeokController {
 		resultService.updateCompatibilityStatusToProcessing(request.getPaymentId());
 
 		ManseryeokCalculationResponse person1Response = manseCalculationService.calculate(
-			new ManseryeokCalculationRequest(
-				person1.getName(),
-				person1.getSolarDate(),
-				person1.getSolarTime(),
-				person1.getGender(),
-				person1.getIsLunar()
-			)
-		);
+				new ManseryeokCalculationRequest(
+					person1.getName(),
+					person1.getSolarDate(),
+					person1.getSolarTime(),
+					person1.getGender(),
+					person1.getIsLunar(),
+					person1.getLeapMonth()
+				)
+			);
 
 		ManseryeokCalculationResponse person2Response = manseCalculationService.calculate(
-			new ManseryeokCalculationRequest(
-				person2.getName(),
-				person2.getSolarDate(),
-				person2.getSolarTime(),
-				person2.getGender(),
-				person2.getIsLunar()
-			)
-		);
+				new ManseryeokCalculationRequest(
+					person2.getName(),
+					person2.getSolarDate(),
+					person2.getSolarTime(),
+					person2.getGender(),
+					person2.getIsLunar(),
+					person2.getLeapMonth()
+				)
+			);
 
 		manseInterpretationService.analyzeCompatibilityWithSubcategory(
 			person1.getName(), person1Response,
@@ -155,14 +158,15 @@ public class ManseryeokController {
 
 		// 2. 만세력 계산
 		ManseryeokCalculationResponse manse = manseCalculationService.calculate(
-			new ManseryeokCalculationRequest(
-				request.getName(),
-				request.getSolarDate(),
-				request.getSolarTime(),
-				request.getGender(),
-				request.getIsLunar()
-			)
-		);
+				new ManseryeokCalculationRequest(
+					request.getName(),
+					request.getSolarDate(),
+					request.getSolarTime(),
+					request.getGender(),
+					request.getIsLunar(),
+					request.getLeapMonth()
+				)
+			);
 
 		// 3. 상태 변경 INPUT_REQUIRED -> PROCESSING
 		resultService.updateStatusToProcessing(payment.getId());

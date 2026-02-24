@@ -37,28 +37,43 @@ public class ManseCalculationService {
 
 	public ManseryeokCalculationResponse calculate(ManseryeokCalculationRequest request) {
 		try {
-			// ... (기존 1~11번 로직: 생년월일 변환, 신살 계산 등 동일) ...
-			// 파일 길이가 길어 생략된 부분은 기존 코드를 그대로 두세요!
-			// 변경된 부분은 12번부터입니다.
+			log.info("만세력 계산 시작: solarDate={}, gender={}, isLunar={}, leapMonth={}",
+				request.getSolarDate(), request.getGender(), request.getIsLunar(),
+				request.getLeapMonth());
 
-			log.info("만세력 계산 시작: solarDate={}, gender={}, isLunar={}",
-				request.getSolarDate(), request.getGender(), request.getIsLunar());
+			LocalTime rawSolarTime = request.getSolarTime();
+			boolean timeUnknown = rawSolarTime == null;
+			List<String> uncertaintyNotes = new ArrayList<>();
+			if (timeUnknown) {
+				uncertaintyNotes.add("출생시간 미입력: 시주는 계산하지 않았습니다.");
+				uncertaintyNotes.add("출생시간 미입력: 야자시(23:30 이후) 보정은 적용하지 않았습니다.");
+			}
 
 			SamjuResult samju = convertBirthToSamju(
 				request.getIsLunar() ? "LUNAR" : "SOLAR",
 				request.getSolarDate(),
-				request.getSolarTime()
+				rawSolarTime,
+				request.getLeapMonth()
 			);
-			LocalDateTime solarDatetime = LocalDateTime.of(samju.getSolarDate(),
-				request.getSolarTime());
+			if (samju.isSeasonBoundaryUncertain()) {
+				uncertaintyNotes.add("절입일 출생 + 시간 미입력으로 연주/월주 경계가 불확정입니다.");
+			}
+
 			boolean direction = isRightDirection(request.getGender(), samju.getYearSky());
-			LocalDateTime seasonTime = getSeasonStartTime(direction, solarDatetime);
-			BigFortuneResult bigFortune = getBigFortuneNumber(direction, seasonTime, solarDatetime);
-			TimePillarResult timePillar = getTimePillar(samju.getDaySky(), request.getSolarTime());
+			BigFortuneRangeResult bigFortune = calculateBigFortuneRange(direction, samju, rawSolarTime,
+				timeUnknown, uncertaintyNotes);
+			TimePillarResult timePillar = getTimePillar(samju.getDaySky(), rawSolarTime);
 			String ilganChinese = samju.getDaySky();
 
 			Map<String, List<String>> sinsalInfo = sinsalCalculator.analyzeAllSinsal(
-				ilganChinese, samju.getYearGround(), samju.getMonthGround(), samju.getDayGround(),
+				ilganChinese,
+				samju.getYearSky(),
+				samju.getYearGround(),
+				samju.getMonthSky(),
+				samju.getMonthGround(),
+				samju.getDaySky(),
+				samju.getDayGround(),
+				timePillar.getTimeSky(),
 				timePillar.getTimeGround()
 			);
 			boolean hasGoegang = sinsalCalculator.hasGoegang(ilganChinese, samju.getDayGround());
@@ -118,8 +133,13 @@ public class ManseCalculationService {
 			// 15. DTO 빌드
 			SajuInfo sajuInfo = SajuInfo.builder()
 				.bigFortuneNumber(bigFortune.getBigFortuneNumber())
+				.bigFortuneNumberMin(bigFortune.getBigFortuneNumberMin())
+				.bigFortuneNumberMax(bigFortune.getBigFortuneNumberMax())
 				.bigFortuneStartYear(bigFortune.getBigFortuneStart())
+				.bigFortuneStartYearMin(bigFortune.getBigFortuneStartMin())
+				.bigFortuneStartYearMax(bigFortune.getBigFortuneStartMax())
 				.seasonStartTime(samju.getSeasonStartTime())
+				.uncertaintyNotes(uncertaintyNotes.isEmpty() ? null : uncertaintyNotes)
 				.yearSky(formatChinese(samju.getYearSky(), samju.getDaySky(), false, ilganChinese))
 				.yearGround(
 					formatChineseWithUnseong(samju.getYearGround(), ilganChinese, samju.getDaySky(),
@@ -151,21 +171,25 @@ public class ManseCalculationService {
 			YongsinResult yongsinResult = yongsinCalculator.analyzeYongsin(sajuInfo);
 			sajuInfo.setYongsinInfo(yongsinResult);
 
-			return ManseryeokCalculationResponse.builder()
-				.input(ManseryeokCalculationResponse.InputInfo.builder()
-					.solarDate(request.getSolarDate())
-					.solarTime(request.getSolarTime())
-					.gender(request.getGender())
-					.isLunar(request.getIsLunar())
-					.build())
-				.saju(sajuInfo)
-				.build();
+					return ManseryeokCalculationResponse.builder()
+						.input(ManseryeokCalculationResponse.InputInfo.builder()
+							.solarDate(request.getSolarDate())
+							.solarTime(rawSolarTime)
+							.timeUnknown(timeUnknown)
+							.gender(normalizeGender(request.getGender()))
+							.isLunar(request.getIsLunar())
+							.build())
+					.saju(sajuInfo)
+					.build();
 
-		} catch (Exception e) {
-			log.error("만세력 계산 중 오류 발생", e);
-			throw new RuntimeException("만세력 계산 중 오류가 발생했습니다: " + e.getMessage());
+			} catch (IllegalArgumentException e) {
+				log.warn("만세력 계산 입력값 오류: {}", e.getMessage());
+				throw e;
+			} catch (Exception e) {
+				log.error("만세력 계산 중 오류 발생", e);
+				throw new RuntimeException("만세력 계산 중 오류가 발생했습니다: " + e.getMessage());
+			}
 		}
-	}
 
 	// 헬퍼 메서드: 관계 리스트에 추가
 	private void addRelations(List<String> targetList, String label, List<String> relations) {
@@ -239,64 +263,84 @@ public class ManseCalculationService {
 	}
 
 	private SamjuResult convertBirthToSamju(String birthdayType, LocalDate birthday,
-		LocalTime time) {
-		LocalTime birthtime = time != null ? time : LocalTime.of(12, 0);
+		LocalTime time, Boolean leapMonth) {
+		LocalTime birthtime = time;
+		boolean isYajasi = time != null && !time.isBefore(LocalTime.of(23, 30));
 
-		if (time != null &&
-			((time.isAfter(LocalTime.of(23, 30)) || time.equals(LocalTime.of(23, 30))) &&
-				time.isBefore(LocalTime.of(23, 59, 59)))) {
-			birthday = birthday.plusDays(1);
-			log.info("자시 처리: 날짜를 다음날로 변경 -> {}", birthday);
+		log.info("만세력 데이터 조회: birthdayType={}, birthday={}, leapMonth={}",
+			birthdayType, birthday, leapMonth);
+
+		Manse baseManse;
+		if ("SOLAR".equals(birthdayType)) {
+			baseManse = manseRepository.findBySolarDate(birthday)
+				.orElseThrow(() -> new RuntimeException("해당 양력 날짜의 만세력 데이터를 찾을 수 없습니다."));
+		} else {
+			List<Manse> lunarCandidates = manseRepository.findAllByLunarDateOrderBySolarDateAsc(
+				birthday);
+			if (lunarCandidates.isEmpty()) {
+				throw new RuntimeException("해당 음력 날짜의 만세력 데이터를 찾을 수 없습니다.");
+			}
+
+			if (lunarCandidates.size() == 1) {
+				baseManse = lunarCandidates.get(0);
+			} else {
+				if (leapMonth == null) {
+					throw new IllegalArgumentException(
+						"윤달 여부(leapMonth)가 필요합니다. 음력 생일이 평달/윤달 모두 존재합니다: " + birthday);
+				}
+				baseManse = manseRepository.findByLunarDateAndLeapMonth(birthday, leapMonth)
+					.orElseThrow(() -> new IllegalArgumentException(
+						"음력 날짜와 윤달 여부에 맞는 만세력 데이터를 찾을 수 없습니다."));
+			}
 		}
 
-		log.info("만세력 데이터 조회: birthdayType={}, birthday={}", birthdayType, birthday);
+		LocalDate civilSolarDate = baseManse.getSolarDate();
+		Manse dayManse = baseManse;
+		if (isYajasi) {
+			LocalDate shiftedDate = civilSolarDate.plusDays(1);
+			dayManse = manseRepository.findBySolarDate(shiftedDate)
+				.orElseThrow(() -> new RuntimeException("자시 보정 대상 날짜의 만세력 데이터를 찾을 수 없습니다."));
+			log.info("자시 처리: 일주 기준 날짜를 다음날로 보정 -> {}", shiftedDate);
+		}
 
-		Manse samju = birthdayType.equals("SOLAR") ?
-			manseRepository.findBySolarDate(birthday)
-				.orElseThrow(() -> new RuntimeException("해당 양력 날짜의 만세력 데이터를 찾을 수 없습니다.")) :
-			manseRepository.findByLunarDate(birthday)
-				.orElseThrow(() -> new RuntimeException("해당 음력 날짜의 만세력 데이터를 찾을 수 없습니다."));
+		Manse yearMonthManse = baseManse;
+		boolean seasonBoundaryUncertain = false;
+		if (baseManse.getSeason() != null && !baseManse.getSeason().isEmpty()) {
+			log.info("절입일 처리: season={}, seasonStartTime={}", baseManse.getSeason(),
+				baseManse.getSeasonStartTime());
 
-		if (samju.getSeason() != null && !samju.getSeason().isEmpty()) {
-			log.info("절입일 처리: season={}, seasonStartTime={}", samju.getSeason(),
-				samju.getSeasonStartTime());
+			LocalDateTime seasonTime = baseManse.getSeasonStartTime();
+			LocalDate solarDate = baseManse.getSolarDate();
+			if (birthtime == null) {
+				seasonBoundaryUncertain = true;
+				log.info("출생시간 미입력 + 절입일: 연주/월주 경계 불확정");
+			} else {
+				LocalDateTime solarDatetime = LocalDateTime.of(solarDate, birthtime);
 
-			LocalDateTime seasonTime = samju.getSeasonStartTime();
-			LocalDateTime solarDatetime = LocalDateTime.of(birthday, birthtime);
-
-			if (solarDatetime.isBefore(seasonTime)) {
-				log.info("절입시간 이전 출생: 이전 날짜 만세력 사용(월주 변경), 일주는 유지");
-				Manse previousManse = manseRepository.findBySolarDate(birthday.minusDays(1))
-					.orElseThrow(() -> new RuntimeException("이전 날짜의 만세력 데이터를 찾을 수 없습니다"));
-
-				return SamjuResult.builder()
-					.solarDate(samju.getSolarDate())
-					.yearSky(previousManse.getYearSky())       // 연주는 절기 기준 (입춘 등 고려하여 이전 값 사용)
-					.yearGround(previousManse.getYearGround())
-					.monthSky(previousManse.getMonthSky())     // 월주는 절기 기준 (이전 달 사용)
-					.monthGround(previousManse.getMonthGround())
-					.daySky(samju.getDaySky())                 // 일간은 당일 데이터 사용 (기토 己)
-					.dayGround(samju.getDayGround())           // 일지는 당일 데이터 사용 (사화 巳)
-					.seasonStartTime(samju.getSeasonStartTime() != null ?
-						samju.getSeasonStartTime().toString() : null)
-					.build();
+				if (solarDatetime.isBefore(seasonTime)) {
+					log.info("절입시간 이전 출생: 이전 날짜 만세력 사용(월주 변경), 일주는 유지");
+					yearMonthManse = manseRepository.findBySolarDate(solarDate.minusDays(1))
+						.orElseThrow(() -> new RuntimeException("이전 날짜의 만세력 데이터를 찾을 수 없습니다"));
+				}
 			}
 		}
 
 		return SamjuResult.builder()
-			.solarDate(samju.getSolarDate())
-			.yearSky(samju.getYearSky())
-			.yearGround(samju.getYearGround())
-			.monthSky(samju.getMonthSky())
-			.monthGround(samju.getMonthGround())
-			.daySky(samju.getDaySky())
-			.dayGround(samju.getDayGround())
-			.seasonStartTime(samju.getSeasonStartTime() != null ?
-				samju.getSeasonStartTime().toString() : null)
+			.solarDate(civilSolarDate)
+			.yearSky(yearMonthManse.getYearSky())
+			.yearGround(yearMonthManse.getYearGround())
+			.monthSky(yearMonthManse.getMonthSky())
+			.monthGround(yearMonthManse.getMonthGround())
+			.daySky(dayManse.getDaySky())
+			.dayGround(dayManse.getDayGround())
+			.seasonStartTime(baseManse.getSeasonStartTime() != null ?
+				baseManse.getSeasonStartTime().toString() : null)
+			.seasonBoundaryUncertain(seasonBoundaryUncertain)
 			.build();
 	}
 
 	private boolean isRightDirection(String gender, String yearSky) {
+		String normalizedGender = normalizeGender(gender);
 		String minusPlus = sajuDataService.getMinusPlus().get(yearSky);
 
 		if (minusPlus == null) {
@@ -304,28 +348,41 @@ public class ManseCalculationService {
 		}
 
 		boolean result;
-		if (("MALE".equals(gender) && "양".equals(minusPlus)) ||
-			("FEMALE".equals(gender) && "음".equals(minusPlus))) {
+		if (("MALE".equals(normalizedGender) && "양".equals(minusPlus)) ||
+			("FEMALE".equals(normalizedGender) && "음".equals(minusPlus))) {
 			result = true;
 		} else {
 			result = false;
 		}
 
 		log.info("대운 방향 판단: gender={}, yearSky={}, minusPlus={}, direction={}",
-			gender, yearSky, minusPlus, result ? "순행" : "역행");
+			normalizedGender, yearSky, minusPlus, result ? "순행" : "역행");
 
 		return result;
+	}
+
+	private String normalizeGender(String gender) {
+		if (gender == null || gender.isBlank()) {
+			throw new IllegalArgumentException("성별(gender)은 필수입니다.");
+		}
+
+		String normalized = gender.trim().toUpperCase();
+		return switch (normalized) {
+			case "MALE", "M" -> "MALE";
+			case "FEMALE", "F" -> "FEMALE";
+			default -> throw new IllegalArgumentException("지원하지 않는 성별 값입니다: " + gender);
+		};
 	}
 
 	private LocalDateTime getSeasonStartTime(boolean direction, LocalDateTime solarDatetime) {
 		Manse manse;
 
 		if (direction) {
-			manse = manseRepository.findFirstBySeasonStartTimeGreaterThanEqualOrderBySolarDateAsc(
+			manse = manseRepository.findFirstBySeasonStartTimeGreaterThanEqualOrderBySeasonStartTimeAsc(
 					solarDatetime)
 				.orElseThrow(() -> new RuntimeException("순행 절입 시간을 찾을 수 없습니다"));
 		} else {
-			manse = manseRepository.findFirstBySeasonStartTimeLessThanEqualOrderBySolarDateDesc(
+			manse = manseRepository.findFirstBySeasonStartTimeLessThanEqualOrderBySeasonStartTimeDesc(
 					solarDatetime)
 				.orElseThrow(() -> new RuntimeException("역행 절입 시간을 찾을 수 없습니다"));
 		}
@@ -334,6 +391,57 @@ public class ManseCalculationService {
 			manse.getSeasonStartTime(), direction ? "순행" : "역행");
 
 		return manse.getSeasonStartTime();
+	}
+
+	private BigFortuneRangeResult calculateBigFortuneRange(boolean direction, SamjuResult samju,
+		LocalTime rawSolarTime, boolean timeUnknown, List<String> uncertaintyNotes) {
+		if (!timeUnknown) {
+			LocalDateTime solarDatetime = LocalDateTime.of(samju.getSolarDate(), rawSolarTime);
+			LocalDateTime seasonTime = getSeasonStartTime(direction, solarDatetime);
+			BigFortuneResult exact = getBigFortuneNumber(direction, seasonTime, solarDatetime);
+			return BigFortuneRangeResult.builder()
+				.bigFortuneNumber(exact.getBigFortuneNumber())
+				.bigFortuneNumberMin(exact.getBigFortuneNumber())
+				.bigFortuneNumberMax(exact.getBigFortuneNumber())
+				.bigFortuneStart(exact.getBigFortuneStart())
+				.bigFortuneStartMin(exact.getBigFortuneStart())
+				.bigFortuneStartMax(exact.getBigFortuneStart())
+				.build();
+		}
+
+		if (samju.isSeasonBoundaryUncertain()) {
+			uncertaintyNotes.add("출생시간 미입력으로 대운 시작 나이는 확정할 수 없습니다.");
+			return BigFortuneRangeResult.builder().build();
+		}
+
+		LocalDate birthDate = samju.getSolarDate();
+		LocalDateTime startOfDay = LocalDateTime.of(birthDate, LocalTime.MIN);
+		LocalDateTime endOfDay = LocalDateTime.of(birthDate, LocalTime.of(23, 59, 59));
+
+		BigFortuneResult earlyCase = getBigFortuneNumber(direction,
+			getSeasonStartTime(direction, startOfDay), startOfDay);
+		BigFortuneResult lateCase = getBigFortuneNumber(direction,
+			getSeasonStartTime(direction, endOfDay), endOfDay);
+
+		int minNumber = Math.min(earlyCase.getBigFortuneNumber(), lateCase.getBigFortuneNumber());
+		int maxNumber = Math.max(earlyCase.getBigFortuneNumber(), lateCase.getBigFortuneNumber());
+		int minStart = Math.min(earlyCase.getBigFortuneStart(), lateCase.getBigFortuneStart());
+		int maxStart = Math.max(earlyCase.getBigFortuneStart(), lateCase.getBigFortuneStart());
+
+		if (minNumber != maxNumber || minStart != maxStart) {
+			uncertaintyNotes.add(String.format("대운 시작 나이는 %d~%d세 범위입니다.", minNumber, maxNumber));
+		} else {
+			uncertaintyNotes.add(String.format("대운 시작 나이는 %d세로 추정됩니다.", minNumber));
+		}
+
+		return BigFortuneRangeResult.builder()
+			.bigFortuneNumber(minNumber == maxNumber ? minNumber : null)
+			.bigFortuneNumberMin(minNumber)
+			.bigFortuneNumberMax(maxNumber)
+			.bigFortuneStart(minStart == maxStart ? minStart : null)
+			.bigFortuneStartMin(minStart)
+			.bigFortuneStartMax(maxStart)
+			.build();
 	}
 
 	private BigFortuneResult getBigFortuneNumber(boolean direction, LocalDateTime seasonStartTime,
@@ -417,8 +525,8 @@ public class ManseCalculationService {
 			}
 		}
 
-		if ((time.isAfter(LocalTime.of(23, 30)) || time.equals(LocalTime.of(23, 30))) ||
-			(time.isBefore(LocalTime.of(1, 30)) && time.isAfter(LocalTime.of(0, 0)))) {
+		if (time.compareTo(LocalTime.of(23, 30)) >= 0 ||
+			time.compareTo(LocalTime.of(1, 29)) <= 0) {
 			return "0";
 		}
 
@@ -500,6 +608,7 @@ public class ManseCalculationService {
 		private String daySky;
 		private String dayGround;
 		private String seasonStartTime;
+		private boolean seasonBoundaryUncertain;
 	}
 
 	@lombok.Data
@@ -508,6 +617,18 @@ public class ManseCalculationService {
 
 		private Integer bigFortuneNumber;
 		private Integer bigFortuneStart;
+	}
+
+	@lombok.Data
+	@lombok.Builder
+	private static class BigFortuneRangeResult {
+
+		private Integer bigFortuneNumber;
+		private Integer bigFortuneNumberMin;
+		private Integer bigFortuneNumberMax;
+		private Integer bigFortuneStart;
+		private Integer bigFortuneStartMin;
+		private Integer bigFortuneStartMax;
 	}
 
 	@lombok.Data

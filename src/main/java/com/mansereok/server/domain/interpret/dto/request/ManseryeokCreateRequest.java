@@ -7,8 +7,9 @@ import lombok.Data;
 public class ManseryeokCreateRequest {
 
 	private String name;            //
-	private String gender;          // "M" (M/F)
+	private String gender;          // "MALE" or "FEMALE" (M/F also accepted)
 	private String calendar;        // "S" (S=양력, L=음력)
+	private Boolean leapMonth;      // 음력 윤달 여부 (true=윤달, false=평달)
 	private String birthday;        // "YYYY/MM/DD"
 	private String birthtime;       // "12:00"
 	private boolean hmUnsure;       // 시간 모름 or 야자시/조자시
@@ -27,6 +28,7 @@ public class ManseryeokCreateRequest {
 		apiRequest.name = request.getName();
 		apiRequest.gender = request.getGender();
 		apiRequest.calendar = request.getCalendar();
+		apiRequest.leapMonth = request.getLeapMonth();
 		apiRequest.birthday = request.getBirthday();
 		apiRequest.birthtime = request.getBirthtime();
 		apiRequest.hmUnsure = request.isHmUnsure();

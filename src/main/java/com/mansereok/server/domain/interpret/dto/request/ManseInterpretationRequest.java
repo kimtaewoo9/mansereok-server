@@ -16,6 +16,7 @@ public class ManseInterpretationRequest {
 	private LocalTime solarTime;
 	private String gender;
 	private Boolean isLunar; // 양력인지 음력인지 입력 .
+	private Boolean leapMonth; // 음력인 경우 윤달 여부
 
 	private String sourceTitle; // 애니명
 

@@ -10,6 +10,7 @@ import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -41,6 +42,9 @@ public class User {
 
 	// profile 정보
 	private LocalDate birthDate; // 생년월일 필드 추가
+	private LocalTime birthTime; // 태어난 시각
+	private String birthPlace; // 태어난 장소
+
 	@Enumerated(EnumType.STRING)
 	private Gender gender; // 성별 필드 추가
 

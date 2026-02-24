@@ -85,7 +85,8 @@ public class ManseInterpretationService {
 		CompatibilityResultRepository compatibilityResultRepository,
 		OgImageGenerationService ogImageGenerationService,
 		DiscordNotificationService discordNotificationService,
-		EmailService emailService, SajuResultService sajuResultService
+		EmailService emailService,
+		SajuResultService sajuResultService
 	) {
 		this.gptApiRetryService = gptApiRetryService;
 		this.userService = userService;
@@ -595,6 +596,7 @@ public class ManseInterpretationService {
 			case 17 -> createLoveLuckPrompt(name, response); // 연애운
 			case 18 -> createNewYear2026Prompt(name, response); // 신년 운세
 			case 20 -> createMoneyLuckPrompt(name, response);
+			case 21 -> createBusinessLuckPrompt(name, response);
 			default -> throw new IllegalArgumentException("지원하지 않는 카테고리입니다: " + subcategoryId);
 		};
 	}
@@ -1375,7 +1377,7 @@ public class ManseInterpretationService {
 
 		// ===== [1단계] 분석 대상자 정보 =====
 		prompt.append("\n### 5. 분석 대상자 상세 정보 ###\n");
-		appendPersonDetailInfo(prompt, name, response);
+		appendPersonDetailInfo(prompt, name, response, 2026);
 
 		// ===== [2단계] 절대 기준(Fact) 주입 =====
 		appendKeywords(prompt, response);
@@ -1767,6 +1769,80 @@ public class ManseInterpretationService {
 		// ──────────────────────────────────────────────────────────
 		appendSajuJsonResponseFormat(prompt, name);
 
+		return prompt.toString();
+	}
+
+	// ==================== 사업운 분석 프롬프트 ====================
+	private String createBusinessLuckPrompt(String name, ManseryeokCalculationResponse response) {
+		StringBuilder prompt = new StringBuilder();
+
+		prompt.append("### 역할 ###\n");
+		prompt.append("너는 한국 명리학 기반의 사업 컨설팅형 역술가다.\n");
+		prompt.append("단순한 길흉 판단이 아니라, 사주 구조를 근거로 사업의 시작 타이밍, 아이템 적성, 운영 방식, 리스크 관리, 안정화 시점까지 현실적으로 조언한다.\n");
+		prompt.append("전문 용어를 사용하되 반드시 일반인이 이해하도록 바로 풀어서 설명한다.\n");
+		prompt.append("문장은 줄글 중심으로 작성하며, 불필요한 큰따옴표나 작은따옴표는 사용하지 않는다.\n\n");
+
+		prompt.append("### 절대 규칙 ###\n");
+		prompt.append("1. 사주팔자, 대운, 세운, 월운, 합, 충, 형, 파, 해는 절대 추측하지 말고 입력 JSON만 사용한다.\n");
+		prompt.append("2. 일간과 일주를 혼동하지 않는다. 일간은 나 자신이다.\n");
+		prompt.append("3. 날짜, 연도, 월을 말할 때는 입력 데이터 범위 내에서만 말한다. 데이터에 없는 연도나 월은 임의로 만들지 않는다.\n");
+		prompt.append("4. 과장 표현(무조건 대박, 100% 성공) 금지. 가능성은 구조적 근거와 조건으로 말한다.\n");
+		prompt.append("5. 나열은 쉼표와 띄어쓰기로 구분한다.\n");
+		prompt.append("6. 조언은 추상적으로 끝내지 말고, 실행 가능한 행동으로 제시한다.\n\n");
+
+		prompt.append("### 분석 대상자 데이터 (서버 산출값) ###\n");
+		appendPersonDetailInfo(prompt, name, response);
+		appendKeywords(prompt, response);
+		prompt.append("\n");
+
+		prompt.append("### 출력 목표 ###\n");
+		prompt.append("사용자가 이 리포트를 읽고 다음을 한 번에 이해하게 만든다.\n");
+		prompt.append("1. 언제 시작하는 게 유리한지, 연도와 월까지\n");
+		prompt.append("2. 어떤 업종과 아이템이 맞는지, 왜 맞는지\n");
+		prompt.append("3. 1인, 소규모, 팀 확장 중 무엇이 맞는지\n");
+		prompt.append("4. 돈이 새는 지점과 리스크가 무엇인지\n");
+		prompt.append("5. 언제부터 재물 흐름이 안정화될지\n\n");
+
+		prompt.append("### 출력 형식 (반드시 이 순서) ###\n");
+		prompt.append("## 1. 한 줄 결론\n");
+		prompt.append("사업운을 약함, 보통, 강함 중 하나로 단정하고, 바로 뒤에 한 문장으로 근거를 붙인다.\n\n");
+
+		prompt.append("## 2. 사업가 기질과 돈을 만드는 방식\n");
+		prompt.append("일간 성향, 신강과 신약, 오행 불균형을 근거로 강점과 약점을 설명한다.\n");
+		prompt.append("돈을 버는 방식은 브랜드형, 콘텐츠형, 유통형, 전문 서비스형, 시스템형 중 1개 또는 2개를 선택한다.\n");
+		prompt.append("이유는 십성과 오행으로 설명한다.\n\n");
+
+		prompt.append("## 3. 시작 타이밍, 연도와 월\n");
+		prompt.append("대운, 세운, 월운에서 사업 시작에 유리한 구간 2개를 선정한다.\n");
+		prompt.append("각 구간마다 왜 유리한지, 그 시기에 해야 할 일, 그 시기에 하면 위험한 선택을 세트로 설명한다.\n");
+		prompt.append("월운 데이터가 없으면 월은 쓰지 말고 연도까지만 제시한다.\n\n");
+
+		prompt.append("## 4. 아이템 추천, 구체적으로\n");
+		prompt.append("이 사주 구조에서 맞는 아이템을 3개 카테고리로 제시한다.\n");
+		prompt.append("각 카테고리마다 왜 맞는지, 어떤 판매 방식이 맞는지, 초기에 추천하는 현실적인 MVP 형태를 구체적으로 설명한다.\n\n");
+
+		prompt.append("## 5. 운영 방식, 1인 소규모 확장\n");
+		prompt.append("처음에 1인으로 갈지, 소규모로 갈지, 어느 시점부터 팀 확장이 좋은지 대운 흐름으로 제시한다.\n");
+		prompt.append("역할 분담 추천도 포함한다.\n\n");
+
+		prompt.append("## 6. 리스크 경고, 사업이 새는 구멍\n");
+		prompt.append("돈이 새기 쉬운 지점 4가지를 구체적으로 적고, 리스크가 커지는 시기를 연도 또는 연월로 연결한다.\n");
+		prompt.append("각 리스크마다 방지 전략을 현실적으로 제시한다.\n\n");
+
+		prompt.append("## 7. 재물 안정화 시점\n");
+		prompt.append("대운과 세운 기준으로 매출이 만들어지는 시기, 수익 구조가 자리 잡는 시기, 안정화되는 시기를 구분한다.\n");
+		prompt.append("안정화의 기준은 매월 반복 수익, 고정비 커버, 운영 루틴화, 현금흐름 안정처럼 명확히 적는다.\n\n");
+
+		prompt.append("## 8. 실행 체크리스트\n");
+		prompt.append("지금 당장 할 수 있는 실행 항목 7개를 짧고 명확하게 제시한다.\n\n");
+
+		prompt.append("### 문장 스타일 ###\n");
+		prompt.append("상담자가 말하듯 자연스럽고 구체적으로 작성한다.\n");
+		prompt.append("추상적인 칭찬, 뜬구름 잡는 문장은 피한다.\n");
+		prompt.append("전체 분량은 충분히 길게 작성한다. 짧게 요약하지 않는다.\n");
+		prompt.append("불필요한 큰따옴표나 작은따옴표는 사용하지 않는다.\n\n");
+
+		appendSajuJsonResponseFormat(prompt, name);
 		return prompt.toString();
 	}
 
@@ -3077,7 +3153,7 @@ public class ManseInterpretationService {
 		prompt.append("오직 사용자가 물어본 '2026년 상반기의 변화' 5가지만 명확하게 전달하세요.\n\n");
 
 		prompt.append("### 5. 분석 대상자 정보 ###\n");
-		appendPersonDetailInfo(prompt, name, response);
+		appendPersonDetailInfo(prompt, name, response, 2026);
 
 		prompt.append("\n### [2026년(병오년) 상반기 변화 분석] 요청 ###\n");
 		prompt.append("혜안 선생님, 2026년 병오년(丙午年)의 기운이 " + name
@@ -3089,6 +3165,8 @@ public class ManseInterpretationService {
 			"2. **[연도 고정]** 지금은 2025년이 아닙니다. 분석 시점은 무조건 **'2026년 상반기'**입니다. '올해'라고 이야기를 하지 말고 **'2026년', '병오년'**에 일어날 일만 서술하세요.\n");
 		prompt.append(
 			"3. **[목차 강제]** 결과물은 오직 아래 제시된 **5가지 목차**로만 구성되어야 합니다. 서론이나 결론도 길게 쓰지 마세요.\n\n");
+		prompt.append(
+			"4. **[대운 고정값 준수]** 프롬프트의 `[대운 고정값]`과 다른 대운명(예: 계축 등)을 임의로 쓰면 안 됩니다. 대운은 절대 재계산 금지입니다.\n\n");
 
 		prompt.append("--- [분석 시작] ---\n");
 		prompt.append("\"2026년 병오년, 붉은 말의 해가 밝아오네요. " + name + "님에게는...\" 으로 자연스럽게 시작.\n\n");
@@ -3111,7 +3189,7 @@ public class ManseInterpretationService {
 		prompt.append("### 0. 시스템 역할 정의 ###\n");
 		prompt.append("당신은 핵심만 꿰뚫는 '통찰의 대가'입니다. 사족 없이 단 하나의 키워드와 그 이유만 명확히 제시하세요.\n\n");
 
-		appendPersonDetailInfo(prompt, name, response);
+		appendPersonDetailInfo(prompt, name, response, 2026);
 
 		prompt.append("\n### [2026년 운명 키워드] 요청 ###\n");
 		prompt.append("2026년 상반기, " + name + "님을 관통하는 **단 하나의 핵심 운명 키워드**를 뽑고 그 이유를 서술해주세요.\n\n");
@@ -3121,6 +3199,8 @@ public class ManseInterpretationService {
 			"1. **[연도 고정]** 지금은 2025년이 아닙니다. 분석 시점은 무조건 **'2026년 상반기'**입니다. '올해'라고 지칭하지 말고 반드시 **'2026년', '병오년'**이라고 명확하게 써주세요.\n");
 		prompt.append(
 			"2. **[목차 강제]** 결과물은 오직 아래 제시된 **목차**로만 구성되어야 합니다. 서론(첫인사)이나 결론을 길게 쓰지 마세요.\n\n");
+		prompt.append(
+			"3. **[대운 고정값 준수]** 프롬프트의 `[대운 고정값]`과 다른 대운명(예: 계축 등)을 임의로 쓰면 안 됩니다. 대운은 절대 재계산 금지입니다.\n\n");
 
 		prompt.append("--- [분석 시작] ---\n");
 		prompt.append("## 2026년 상반기 운명 키워드: [키워드 명]\n");
@@ -3445,8 +3525,14 @@ public class ManseInterpretationService {
 	// ==================== 공통 유틸리티 메서드 (기존 유지) ====================
 	private void appendPersonDetailInfo(StringBuilder prompt, String name,
 		ManseryeokCalculationResponse response) {
+		appendPersonDetailInfo(prompt, name, response, null);
+	}
+
+	private void appendPersonDetailInfo(StringBuilder prompt, String name,
+		ManseryeokCalculationResponse response, Integer referenceYear) {
 		ManseryeokCalculationResponse.SajuInfo saju = response.getSaju();
 		ManseryeokCalculationResponse.InputInfo input = response.getInput();
+		int targetYear = referenceYear != null ? referenceYear : java.time.LocalDate.now().getYear();
 
 		prompt.append("### ⚠️ [매우 중요] 일간 확인 ###\n");
 		prompt.append(String.format("**%s님의 일간(日干)은 %s%s입니다.**\n",
@@ -3463,7 +3549,7 @@ public class ManseInterpretationService {
 			"MALE".equalsIgnoreCase(input.getGender()) ? "남성" : "여성",
 			input.getSolarDate(),
 			input.getSolarTime(),
-			java.time.LocalDate.now().getYear()));
+			targetYear));
 
 		// 2. 사주 팔자
 		prompt.append("### 사주팔자 ###\n");
@@ -3527,11 +3613,21 @@ public class ManseInterpretationService {
 
 			// [수정] birthYear 전달!
 			int birthYear = input.getSolarDate().getYear();
-			appendDaewoonSimple(prompt, saju, input.getGender(), birthYear);
+			appendDaewoonSimple(prompt, saju, input.getGender(), birthYear, targetYear);
 
+		} else if (saju.getBigFortuneNumberMin() != null && saju.getBigFortuneNumberMax() != null) {
+			prompt.append(String.format("시작:%d~%d세 | 방향:%s (출생시간 미입력 추정)\n",
+				saju.getBigFortuneNumberMin(),
+				saju.getBigFortuneNumberMax(),
+				getDaewoonDirection(saju, input.getGender())));
+			prompt.append("※ 정확한 출생시간 입력 시 대운 시작 나이를 확정할 수 있습니다.\n");
 		} else {
 			prompt.append("대운 정보 없음\n");
 		}
+		if (saju.getUncertaintyNotes() != null && !saju.getUncertaintyNotes().isEmpty()) {
+			saju.getUncertaintyNotes().forEach(note -> prompt.append("- " + note + "\n"));
+		}
+		prompt.append("※ 대운은 위 계산 결과를 절대 재계산/수정하지 말고 그대로 분석에 사용하세요.\n");
 		prompt.append("\n");
 
 		// 9. 관계성 분석 (업그레이드 버전)
@@ -3559,17 +3655,20 @@ public class ManseInterpretationService {
 
 		// 12. 사주 강약 및 용신 (핵심 업그레이드)
 		prompt.append("### 사주 강약 및 용신 (핵심) ###\n");
-		if (saju.getYongsinInfo() != null) {
-			prompt.append(String.format("- 강약 판단: %s (내 세력 %.1f vs 남의 세력 %.1f)\n",
-				saju.getYongsinInfo().getStrength(),
-				saju.getYongsinInfo().getMyScore(),
-				(saju.getYongsinInfo().getTotalScore() - saju.getYongsinInfo().getMyScore())
-			));
-			prompt.append(String.format("- 추천 용신: %s (%s)\n",
-				saju.getYongsinInfo().getYongsin(),
-				saju.getYongsinInfo().getDescription()));
-			prompt.append("※ 이 용신 정보를 바탕으로 사용자에게 행운의 조언을 해주세요.\n");
-		}
+			if (saju.getYongsinInfo() != null) {
+				prompt.append(String.format("- 강약 판단: %s (내 세력 %.1f vs 남의 세력 %.1f)\n",
+					saju.getYongsinInfo().getStrength(),
+					saju.getYongsinInfo().getMyScore(),
+					(saju.getYongsinInfo().getTotalScore() - saju.getYongsinInfo().getMyScore())
+				));
+				prompt.append(String.format("- 적용 규칙: %s (%s)\n",
+					saju.getYongsinInfo().getAppliedRuleName(),
+					saju.getYongsinInfo().getAppliedRuleCode()));
+				prompt.append(String.format("- 추천 용신: %s (%s)\n",
+					saju.getYongsinInfo().getYongsin(),
+					saju.getYongsinInfo().getDescription()));
+				prompt.append("※ 이 용신 정보를 바탕으로 사용자에게 행운의 조언을 해주세요.\n");
+			}
 		prompt.append("\n");
 	}
 
@@ -3725,6 +3824,7 @@ public class ManseInterpretationService {
 
 		ManseryeokCalculationResponse.SajuInfo saju = manseResponse.getSaju();
 		ManseryeokCalculationResponse.InputInfo input = manseResponse.getInput();
+		int referenceYear = java.time.LocalDate.now().getYear();
 
 		// ===== 1. 기본 정보 =====
 		prompt.append("### 기본 정보 ###\n");
@@ -3733,7 +3833,7 @@ public class ManseInterpretationService {
 			"MALE".equalsIgnoreCase(input.getGender()) ? "남성" : "여성",
 			input.getSolarDate(),
 			input.getSolarTime(),
-			java.time.LocalDate.now().getYear()));
+			referenceYear));
 
 		// ===== 2. 사주팔자 =====
 		prompt.append("### 사주팔자 ###\n");
@@ -3818,11 +3918,21 @@ public class ManseInterpretationService {
 
 			// [수정] birthYear 전달!
 			int birthYear = input.getSolarDate().getYear();
-			appendDaewoonSimple(prompt, saju, input.getGender(), birthYear);
+			appendDaewoonSimple(prompt, saju, input.getGender(), birthYear, referenceYear);
 
+		} else if (saju.getBigFortuneNumberMin() != null && saju.getBigFortuneNumberMax() != null) {
+			prompt.append(String.format("시작:%d~%d세 | 방향:%s (출생시간 미입력 추정)\n",
+				saju.getBigFortuneNumberMin(),
+				saju.getBigFortuneNumberMax(),
+				getDaewoonDirection(saju, input.getGender())));
+			prompt.append("※ 정확한 출생시간 입력 시 대운 시작 나이를 확정할 수 있습니다.\n");
 		} else {
 			prompt.append("대운 정보 없음\n");
 		}
+		if (saju.getUncertaintyNotes() != null && !saju.getUncertaintyNotes().isEmpty()) {
+			saju.getUncertaintyNotes().forEach(note -> prompt.append("- " + note + "\n"));
+		}
+		prompt.append("※ 대운은 위 계산 결과를 절대 재계산/수정하지 말고 그대로 분석에 사용하세요.\n");
 		prompt.append("\n");
 	}
 
@@ -3958,7 +4068,7 @@ public class ManseInterpretationService {
 	 * 대운 계산 (선형 탐색을 통한 100% 정확한 인덱스 매칭)
 	 */
 	private void appendDaewoonSimple(StringBuilder prompt, SajuInfo saju, String gender,
-		int birthYear) {
+		int birthYear, int referenceYear) {
 		// 1. 필수 데이터 검증
 		if (saju.getYearSky() == null || saju.getMonthSky() == null
 			|| saju.getMonthGround() == null || saju.getBigFortuneNumber() == null) {
@@ -4011,12 +4121,20 @@ public class ManseInterpretationService {
 			return;
 		}
 
-		// 5. 현재 나이 및 대운 위치
-		int currentYear = java.time.LocalDate.now().getYear();
-		int currentAge = currentYear - birthYear + 1; // 세는 나이
-		int currentDaewoonIndex = Math.max(0, (currentAge - startAge) / 10);
+		// 5. 기준 연도의 대운 위치
+		int currentDaewoonIndex;
+		if (saju.getBigFortuneStartYear() != null) {
+			currentDaewoonIndex = Math.max(0, (referenceYear - saju.getBigFortuneStartYear()) / 10);
+		} else {
+			int currentAge = referenceYear - birthYear + 1; // 세는 나이 (fallback)
+			currentDaewoonIndex = Math.max(0, (currentAge - startAge) / 10);
+		}
 
 		prompt.append(String.format("대운 시작: %d세 | 흐름: %s\n", startAge, flowDirection));
+		String currentDaewoonKor = null;
+		String currentDaewoonChi = null;
+		int currentStartAge = -1;
+		int currentStartYear = -1;
 
 		// 6. 대운 출력 루프
 		for (int i = currentDaewoonIndex; i < currentDaewoonIndex + 3 && i < 9; i++) {
@@ -4037,12 +4155,28 @@ public class ManseInterpretationService {
 			String daewoonKor = GAPJA_CYCLE_KOR.get(nextIndex);
 			String daewoonChi = GAPJA_CYCLE.get(nextIndex);
 			String daewoonStr = String.format("%s(%s)", daewoonKor, daewoonChi);
+			int daewoonStartYear =
+				saju.getBigFortuneStartYear() != null
+					? saju.getBigFortuneStartYear() + (i * 10)
+					: birthYear + age;
 
 			if (i == currentDaewoonIndex) {
 				prompt.append(String.format("▶ %d~%d세: %s (현재)\n", age, age + 9, daewoonStr));
+				currentDaewoonKor = daewoonKor;
+				currentDaewoonChi = daewoonChi;
+				currentStartAge = age;
+				currentStartYear = daewoonStartYear;
 			} else {
 				prompt.append(String.format("  %d~%d세: %s\n", age, age + 9, daewoonStr));
 			}
+		}
+
+		if (currentDaewoonChi != null) {
+			prompt.append(String.format(
+				"[대운 고정값] 기준연도=%d, 현재대운=%s(%s), 구간=%d~%d세, 시작연도=%d\n",
+				referenceYear, currentDaewoonKor, currentDaewoonChi,
+				currentStartAge, currentStartAge + 9, currentStartYear
+			));
 		}
 	}
 
@@ -4258,15 +4392,18 @@ public class ManseInterpretationService {
 		// ==========================================
 		// 1. [핵심] 사주 강약 및 용신 (YongsinResult)
 		// ==========================================
-		if (saju.getYongsinInfo() != null) {
-			prompt.append(String.format("- 사주 강약 판정: %s (내 세력 %.1f vs 남의 세력 %.1f)\n",
-				saju.getYongsinInfo().getStrength(),
-				saju.getYongsinInfo().getMyScore(),
-				(saju.getYongsinInfo().getTotalScore() - saju.getYongsinInfo().getMyScore())
-			));
+			if (saju.getYongsinInfo() != null) {
+				prompt.append(String.format("- 사주 강약 판정: %s (내 세력 %.1f vs 남의 세력 %.1f)\n",
+					saju.getYongsinInfo().getStrength(),
+					saju.getYongsinInfo().getMyScore(),
+					(saju.getYongsinInfo().getTotalScore() - saju.getYongsinInfo().getMyScore())
+				));
+				prompt.append(String.format("- 용신 판단 규칙: %s (%s)\n",
+					saju.getYongsinInfo().getAppliedRuleName(),
+					saju.getYongsinInfo().getAppliedRuleCode()));
 
-			// AI에게 '신강/신약'에 따른 처세술 힌트 제공
-			if (saju.getYongsinInfo().getMyScore() >= saju.getYongsinInfo().getTotalScore() / 2) {
+				// AI에게 '신강/신약'에 따른 처세술 힌트 제공
+				if (saju.getYongsinInfo().getMyScore() >= saju.getYongsinInfo().getTotalScore() / 2) {
 				prompt.append("  -> (지침) 주관이 뚜렷하고 고집이 셉니다. '독단적인 행동'을 주의하라고 조언하세요.\n");
 			} else {
 				prompt.append("  -> (지침) 주변 환경에 잘 휩쓸립니다. '자기 주관'을 가지라고 조언하세요.\n");

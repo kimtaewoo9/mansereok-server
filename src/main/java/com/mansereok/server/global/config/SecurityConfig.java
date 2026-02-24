@@ -36,22 +36,30 @@ public class SecurityConfig {
 
 	@Bean
 	public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
+		CookieCsrfTokenRepository repo = CookieCsrfTokenRepository.withHttpOnlyFalse();
+		repo.setCookieCustomizer(c -> c
+			.path("/")
+			.sameSite("None")
+			.secure(true)
+		);
+
 		http
 //			 CSRF 설정
 
 			// 일단 모두 허용 .
 //			.csrf(csrf -> csrf.disable())
 
-			.csrf(csrf -> csrf
-				.csrfTokenRepository(CookieCsrfTokenRepository.withHttpOnlyFalse())
-				.ignoringRequestMatchers("/api/payment/webhook",
-					"/member/**",
-					"/api/auth/**",
-					"/swagger-ui/**",
-					"/v3/api-docs/**",
-					"/actuator/**"
+				.csrf(csrf -> csrf
+					.csrfTokenRepository(repo)
+					.ignoringRequestMatchers("/api/payment/webhook",
+						"/member/**",
+						"/api/auth/**",
+						"/swagger-ui/**",
+						"/v3/api-docs/**",
+						"/actuator/**",
+						"/api/v1/manseryeok/calculate"
+					)
 				)
-			)
 
 			// CORS 설정 적용
 			.cors(cors -> cors.configurationSource(corsConfigurationSource()))
@@ -95,7 +103,7 @@ public class SecurityConfig {
 				.requestMatchers("/api/payment/orders/**").authenticated()
 				.requestMatchers("/api/payment/complete").authenticated()
 				// ManseryeokController: 만세력 계산, 사주/궁합 해석 요청
-				.requestMatchers("/api/v1/manseryeok/calculate").authenticated()
+				.requestMatchers("/api/v1/manseryeok/calculate").permitAll()
 				.requestMatchers("/api/v1/manseryeok/interpret/**").authenticated()
 
 				// 3. 그 외 모든 요청은 인증 필요 (기본 규칙)
@@ -127,9 +135,7 @@ public class SecurityConfig {
 			"https://www.namedsaju.com",
 			"https://dev-front.namedsaju.com",
 			"https://manselab-front.vercel.app",
-			"https://*.vercel.app",
-			"/api/v1/manseryeok/**"
-
+			"https://*.vercel.app"
 		));
 
 		// 허용할 HTTP 메서드

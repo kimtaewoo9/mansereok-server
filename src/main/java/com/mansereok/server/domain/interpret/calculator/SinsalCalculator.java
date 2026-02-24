@@ -16,6 +16,13 @@ import org.springframework.stereotype.Component;
  * - 역마살(驛馬殺): 변화, 이동
  * - 화개살(華蓋殺): 예술, 학문
  * - 천을귀인(天乙貴人): 귀인의 도움
+ * - 천덕귀인(天德貴人): 덕성, 완화, 귀인의 도움
+ * - 천덕합(天德合): 화합, 완충, 중재
+ * - 월덕귀인(月德貴人): 덕성, 완화, 귀인의 도움
+ * - 월덕합(月德合): 월덕의 화합 작용
+ * - 문창귀인(文昌貴人): 학문, 문서, 시험운
+ * - 태극귀인(太極貴人): 정신성, 철학성, 위기 완충
+ * - 국인귀인(國印貴人): 명예, 공적 권한, 문서운
  * - 양인살(羊刃殺): 강한 추진력
  * - 괴강살(魁罡殺): 강한 성격
  * - 백호대살(白虎大殺): 강한 기운, 재난 주의
@@ -95,6 +102,126 @@ public class SinsalCalculator {
 		CHEONUL_MAP.put("癸", Arrays.asList("卯", "巳"));
 	}
 
+	// 월지 기준 월덕귀인 (해당 천간을 보면 성립)
+	private static final Map<String, String> WOLDEOK_MAP = new HashMap<>();
+
+	static {
+		WOLDEOK_MAP.put("寅", "丙");
+		WOLDEOK_MAP.put("卯", "甲");
+		WOLDEOK_MAP.put("辰", "壬");
+		WOLDEOK_MAP.put("巳", "庚");
+		WOLDEOK_MAP.put("午", "丙");
+		WOLDEOK_MAP.put("未", "甲");
+		WOLDEOK_MAP.put("申", "壬");
+		WOLDEOK_MAP.put("酉", "庚");
+		WOLDEOK_MAP.put("戌", "丙");
+		WOLDEOK_MAP.put("亥", "甲");
+		WOLDEOK_MAP.put("子", "壬");
+		WOLDEOK_MAP.put("丑", "庚");
+	}
+
+	// 월지 기준 월덕합 (해당 천간을 보면 성립)
+	private static final Map<String, String> WOLDEOKHAP_MAP = new HashMap<>();
+
+	static {
+		WOLDEOKHAP_MAP.put("寅", "辛");
+		WOLDEOKHAP_MAP.put("卯", "己");
+		WOLDEOKHAP_MAP.put("辰", "丁");
+		WOLDEOKHAP_MAP.put("巳", "乙");
+		WOLDEOKHAP_MAP.put("午", "辛");
+		WOLDEOKHAP_MAP.put("未", "己");
+		WOLDEOKHAP_MAP.put("申", "丁");
+		WOLDEOKHAP_MAP.put("酉", "乙");
+		WOLDEOKHAP_MAP.put("戌", "辛");
+		WOLDEOKHAP_MAP.put("亥", "己");
+		WOLDEOKHAP_MAP.put("子", "丁");
+		WOLDEOKHAP_MAP.put("丑", "乙");
+	}
+
+	// 일간 기준 문창귀인
+	private static final Map<String, String> MUNCHANG_MAP = new HashMap<>();
+
+	static {
+		MUNCHANG_MAP.put("甲", "巳");
+		MUNCHANG_MAP.put("乙", "午");
+		MUNCHANG_MAP.put("丙", "申");
+		MUNCHANG_MAP.put("丁", "酉");
+		MUNCHANG_MAP.put("戊", "申");
+		MUNCHANG_MAP.put("己", "酉");
+		MUNCHANG_MAP.put("庚", "亥");
+		MUNCHANG_MAP.put("辛", "子");
+		MUNCHANG_MAP.put("壬", "寅");
+		MUNCHANG_MAP.put("癸", "卯");
+	}
+
+	// 월지 기준 천덕귀인 (천간/지지 혼합)
+	private static final Map<String, String> CHEONDEOK_MAP = new HashMap<>();
+
+	static {
+		CHEONDEOK_MAP.put("寅", "丁");
+		CHEONDEOK_MAP.put("卯", "申");
+		CHEONDEOK_MAP.put("辰", "壬");
+		CHEONDEOK_MAP.put("巳", "辛");
+		CHEONDEOK_MAP.put("午", "亥");
+		CHEONDEOK_MAP.put("未", "甲");
+		CHEONDEOK_MAP.put("申", "癸");
+		CHEONDEOK_MAP.put("酉", "寅");
+		CHEONDEOK_MAP.put("戌", "丙");
+		CHEONDEOK_MAP.put("亥", "乙");
+		CHEONDEOK_MAP.put("子", "巳");
+		CHEONDEOK_MAP.put("丑", "庚");
+	}
+
+	// 월지 기준 천덕합 (천덕귀인의 합성 대응값)
+	private static final Map<String, String> CHEONDEOKHAP_MAP = new HashMap<>();
+
+	static {
+		CHEONDEOKHAP_MAP.put("寅", "壬");
+		CHEONDEOKHAP_MAP.put("卯", "巳");
+		CHEONDEOKHAP_MAP.put("辰", "丁");
+		CHEONDEOKHAP_MAP.put("巳", "丙");
+		CHEONDEOKHAP_MAP.put("午", "寅");
+		CHEONDEOKHAP_MAP.put("未", "己");
+		CHEONDEOKHAP_MAP.put("申", "戊");
+		CHEONDEOKHAP_MAP.put("酉", "亥");
+		CHEONDEOKHAP_MAP.put("戌", "辛");
+		CHEONDEOKHAP_MAP.put("亥", "庚");
+		CHEONDEOKHAP_MAP.put("子", "申");
+		CHEONDEOKHAP_MAP.put("丑", "乙");
+	}
+
+	// 일간 기준 태극귀인
+	private static final Map<String, List<String>> TAEGEUK_MAP = new HashMap<>();
+
+	static {
+		TAEGEUK_MAP.put("甲", Arrays.asList("子", "午"));
+		TAEGEUK_MAP.put("乙", Arrays.asList("子", "午"));
+		TAEGEUK_MAP.put("丙", Arrays.asList("卯", "酉"));
+		TAEGEUK_MAP.put("丁", Arrays.asList("卯", "酉"));
+		TAEGEUK_MAP.put("戊", Arrays.asList("辰", "戌", "丑", "未"));
+		TAEGEUK_MAP.put("己", Arrays.asList("辰", "戌", "丑", "未"));
+		TAEGEUK_MAP.put("庚", Arrays.asList("寅", "亥"));
+		TAEGEUK_MAP.put("辛", Arrays.asList("寅", "亥"));
+		TAEGEUK_MAP.put("壬", Arrays.asList("巳", "申"));
+		TAEGEUK_MAP.put("癸", Arrays.asList("巳", "申"));
+	}
+
+	// 일간 기준 국인귀인
+	private static final Map<String, String> GUKIN_MAP = new HashMap<>();
+
+	static {
+		GUKIN_MAP.put("甲", "戌");
+		GUKIN_MAP.put("乙", "亥");
+		GUKIN_MAP.put("丙", "丑");
+		GUKIN_MAP.put("丁", "寅");
+		GUKIN_MAP.put("戊", "丑");
+		GUKIN_MAP.put("己", "寅");
+		GUKIN_MAP.put("庚", "辰");
+		GUKIN_MAP.put("辛", "巳");
+		GUKIN_MAP.put("壬", "未");
+		GUKIN_MAP.put("癸", "申");
+	}
+
 	// 괴강살 (일주 기준)
 	private static final List<String> GOEGANG_LIST = Arrays.asList(
 		"庚辰", "庚戌", "壬辰", "戊戌"
@@ -127,7 +254,7 @@ public class SinsalCalculator {
 		HONGYEOM_MAP.put("己", "辰"); // 기진
 		HONGYEOM_MAP.put("庚", "戌"); // 경술
 		HONGYEOM_MAP.put("辛", "酉"); // 신유
-		HONGYEOM_MAP.put("壬", "子"); // 임자 (★ 사용자님 해당)
+		HONGYEOM_MAP.put("壬", "子"); // 임자
 		HONGYEOM_MAP.put("癸", "申"); // 계신
 	}
 
@@ -142,35 +269,43 @@ public class SinsalCalculator {
 	);
 
 	/**
-	 * 전체 신살 분석 (연지와 일지를 모두 기준으로 계산)
+	 * 전체 신살 분석 (연지/일지, 월지/일간 기준을 함께 계산)
 	 *
 	 * @param ilganChinese     일간 한자 (예: "壬")
+	 * @param yearSkyChinese   년간 한자 (예: "甲")
 	 * @param yearJijiChinese  년지 한자 (예: "午")
+	 * @param monthSkyChinese  월간 한자 (예: "丙")
 	 * @param monthJijiChinese 월지 한자 (예: "巳")
+	 * @param daySkyChinese    일간 한자 (예: "壬")
 	 * @param dayJijiChinese   일지 한자 (예: "子")
+	 * @param timeSkyChinese   시간 한자 (예: "丁", null 가능)
 	 * @param timeJijiChinese  시지 한자 (예: "未", null 가능)
 	 * @return 각 기둥별 신살 목록
 	 */
 	public Map<String, List<String>> analyzeAllSinsal(
 		String ilganChinese,
+		String yearSkyChinese,
 		String yearJijiChinese,
+		String monthSkyChinese,
 		String monthJijiChinese,
+		String daySkyChinese,
 		String dayJijiChinese,
+		String timeSkyChinese,
 		String timeJijiChinese
 	) {
 		Map<String, List<String>> result = new HashMap<>();
 
-		// 연지와 일지를 모두 기준으로 신살 계산
-		result.put("년주", analyzePillarSinsal(ilganChinese, yearJijiChinese,
-			yearJijiChinese, dayJijiChinese));
-		result.put("월주", analyzePillarSinsal(ilganChinese, monthJijiChinese,
-			yearJijiChinese, dayJijiChinese));
-		result.put("일주", analyzePillarSinsal(ilganChinese, dayJijiChinese,
-			yearJijiChinese, dayJijiChinese));
+		// 연지/일지 + 월지/일간 기준 신살 계산
+		result.put("년주", analyzePillarSinsal(ilganChinese, yearSkyChinese, yearJijiChinese,
+			yearJijiChinese, monthJijiChinese, dayJijiChinese));
+		result.put("월주", analyzePillarSinsal(ilganChinese, monthSkyChinese, monthJijiChinese,
+			yearJijiChinese, monthJijiChinese, dayJijiChinese));
+		result.put("일주", analyzePillarSinsal(ilganChinese, daySkyChinese, dayJijiChinese,
+			yearJijiChinese, monthJijiChinese, dayJijiChinese));
 
 		if (timeJijiChinese != null) {
-			result.put("시주", analyzePillarSinsal(ilganChinese, timeJijiChinese,
-				yearJijiChinese, dayJijiChinese));
+			result.put("시주", analyzePillarSinsal(ilganChinese, timeSkyChinese, timeJijiChinese,
+				yearJijiChinese, monthJijiChinese, dayJijiChinese));
 		}
 
 		return result;
@@ -180,54 +315,111 @@ public class SinsalCalculator {
 	 * 개별 기둥의 신살 분석
 	 *
 	 * @param ilgan      일간 한자
+	 * @param targetSky  분석 대상 천간
 	 * @param targetJiji 분석 대상 지지
 	 * @param yearJiji   년지 (도화/역마/화개살 기준용)
+	 * @param monthJiji  월지 (월덕귀인/월덕합 기준용)
 	 * @param dayJiji    일지 (도화/역마/화개살 기준용)
 	 * @return 해당 기둥의 신살 목록
 	 */
-	private List<String> analyzePillarSinsal(String ilgan, String targetJiji,
-		String yearJiji, String dayJiji) {
+	private List<String> analyzePillarSinsal(String ilgan, String targetSky, String targetJiji,
+		String yearJiji, String monthJiji, String dayJiji) {
 		List<String> sinsalList = new ArrayList<>();
 
 		// 도화살 체크 (연지 또는 일지 기준)
 		String dohwaByYear = DOHWA_MAP.get(yearJiji);
 		String dohwaByDay = DOHWA_MAP.get(dayJiji);
 		if (targetJiji.equals(dohwaByYear) || targetJiji.equals(dohwaByDay)) {
-			sinsalList.add("도화살");
+			addIfAbsent(sinsalList, "도화살");
 		}
 
 		// 역마살 체크 (연지 또는 일지 기준)
 		String yeogmaByYear = YEOGMA_MAP.get(yearJiji);
 		String yeogmaByDay = YEOGMA_MAP.get(dayJiji);
 		if (targetJiji.equals(yeogmaByYear) || targetJiji.equals(yeogmaByDay)) {
-			sinsalList.add("역마살");
+			addIfAbsent(sinsalList, "역마살");
 		}
 
 		// 화개살 체크 (연지 또는 일지 기준)
 		String hwagaeByYear = HWAGAE_MAP.get(yearJiji);
 		String hwagaeByDay = HWAGAE_MAP.get(dayJiji);
 		if (targetJiji.equals(hwagaeByYear) || targetJiji.equals(hwagaeByDay)) {
-			sinsalList.add("화개살");
+			addIfAbsent(sinsalList, "화개살");
 		}
 
 		// 천을귀인 체크 (일간 기준)
 		List<String> cheonulList = CHEONUL_MAP.get(ilgan);
 		if (cheonulList != null && cheonulList.contains(targetJiji)) {
-			sinsalList.add("천을귀인");
+			addIfAbsent(sinsalList, "천을귀인");
+		}
+
+		// 월덕귀인/월덕합 체크 (월지 기준, 천간에 작용)
+		if (targetSky != null && monthJiji != null) {
+			String woldeok = WOLDEOK_MAP.get(monthJiji);
+			String woldeokhap = WOLDEOKHAP_MAP.get(monthJiji);
+			if (targetSky.equals(woldeok)) {
+				addIfAbsent(sinsalList, "월덕귀인");
+			}
+			if (targetSky.equals(woldeokhap)) {
+				addIfAbsent(sinsalList, "월덕합");
+			}
+		}
+
+		// 천덕귀인/천덕합 체크 (월지 기준, 천간/지지 혼합)
+		if (monthJiji != null) {
+			String cheondeok = CHEONDEOK_MAP.get(monthJiji);
+			String cheondeokhap = CHEONDEOKHAP_MAP.get(monthJiji);
+			if (matchesTarget(targetSky, targetJiji, cheondeok)) {
+				addIfAbsent(sinsalList, "천덕귀인");
+			}
+			if (matchesTarget(targetSky, targetJiji, cheondeokhap)) {
+				addIfAbsent(sinsalList, "천덕합");
+			}
+		}
+
+		// 문창귀인 체크 (일간 기준)
+		String munchang = MUNCHANG_MAP.get(ilgan);
+		if (targetJiji.equals(munchang)) {
+			addIfAbsent(sinsalList, "문창귀인");
+		}
+
+		// 태극귀인 체크 (일간 기준)
+		List<String> taegeukTargets = TAEGEUK_MAP.get(ilgan);
+		if (taegeukTargets != null && taegeukTargets.contains(targetJiji)) {
+			addIfAbsent(sinsalList, "태극귀인");
+		}
+
+		// 국인귀인 체크 (일간 기준)
+		String gukin = GUKIN_MAP.get(ilgan);
+		if (targetJiji.equals(gukin)) {
+			addIfAbsent(sinsalList, "국인귀인");
 		}
 
 		// 양인살 체크 (일간 기준)
 		String yangin = YANGIN_MAP.get(ilgan);
 		if (targetJiji.equals(yangin)) {
-			sinsalList.add("양인살");
+			addIfAbsent(sinsalList, "양인살");
 		}
 
 		String hongyeom = HONGYEOM_MAP.get(ilgan);
 		if (targetJiji.equals(hongyeom)) {
-			sinsalList.add("홍염살");
+			addIfAbsent(sinsalList, "홍염살");
 		}
 
 		return sinsalList;
+	}
+
+	private void addIfAbsent(List<String> list, String value) {
+		if (!list.contains(value)) {
+			list.add(value);
+		}
+	}
+
+	private boolean matchesTarget(String targetSky, String targetJiji, String candidate) {
+		if (candidate == null) {
+			return false;
+		}
+		return candidate.equals(targetSky) || candidate.equals(targetJiji);
 	}
 
 	/**
@@ -326,6 +518,13 @@ public class SinsalCalculator {
 			case "역마살" -> "변화, 이동, 활동성 (직업이동, 이사 多)";
 			case "화개살" -> "예술, 종교, 학문적 재능 (고독한 성향)";
 			case "천을귀인" -> "귀인의 도움, 위기 탈출 (대길신)";
+			case "천덕귀인" -> "덕이 작용해 흉을 완화하고 도움을 받기 쉬움";
+			case "천덕합" -> "중재/화합 능력이 올라가고 갈등 완충에 유리";
+			case "월덕귀인" -> "덕이 작용해 흉을 완화하고 도움을 받기 쉬움";
+			case "월덕합" -> "대인관계의 화합, 조율 능력, 완충 작용";
+			case "문창귀인" -> "학업, 문서, 기획, 시험운에 유리";
+			case "태극귀인" -> "직관, 철학성, 위기 완충력이 강함";
+			case "국인귀인" -> "명예, 책임, 공적 권한/문서운에 유리";
 			case "양인살" -> "강한 추진력, 독립성 (과격함 조절 필요)";
 			case "괴강살" -> "강한 성격, 독립성, 돌파력";
 			case "백호대살" -> "강한 기운, 재난 주의 (조심 필요)";

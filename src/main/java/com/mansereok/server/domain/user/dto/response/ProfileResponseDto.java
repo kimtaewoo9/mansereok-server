@@ -1,9 +1,11 @@
 package com.mansereok.server.domain.user.dto.response;
 
+import com.fasterxml.jackson.annotation.JsonFormat;
 import com.mansereok.server.domain.user.entity.RegistrationType;
 import com.mansereok.server.domain.user.entity.SocialType;
 import com.mansereok.server.domain.user.entity.User;
 import java.time.LocalDate;
+import java.time.LocalTime;
 import lombok.Getter;
 
 @Getter
@@ -12,6 +14,9 @@ public class ProfileResponseDto {
 	private final String name;
 	private final String email;
 	private final LocalDate birthDate;
+	@JsonFormat(pattern = "HH:mm")
+	private final LocalTime birthTime;
+	private final String birthPlace;
 	private final String gender;
 	private final boolean marketingAgreed;
 
@@ -23,10 +28,15 @@ public class ProfileResponseDto {
 		this.name = user.getName();
 		this.email = user.getEmail();
 		this.birthDate = user.getBirthDate();
+		this.birthTime = user.getBirthTime();
+		this.birthPlace = user.getBirthPlace();
 		this.gender = user.getGender() != null ? user.getGender().name() : null;
 		this.marketingAgreed = user.isMarketingAgreed();
 		
-		this.isNewUser = (user.getBirthDate() == null || user.getGender() == null);
+		this.isNewUser =
+			(user.getBirthDate() == null || user.getBirthTime() == null
+				|| user.getBirthPlace() == null || user.getBirthPlace().isBlank()
+				|| user.getGender() == null);
 		this.registrationType = determineRegistrationType(user.getSocialType());
 	}
 

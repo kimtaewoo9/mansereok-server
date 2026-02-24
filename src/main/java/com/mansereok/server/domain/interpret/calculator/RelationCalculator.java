@@ -40,7 +40,43 @@ public class RelationCalculator {
 		entry("巳", "戌"), entry("戌", "巳")
 	);
 
-	// 4. 천간합(天干合)
+	// 4. 형(刑)
+	private static final Map<String, Set<String>> HYEONG_MAP = Map.ofEntries(
+		entry("子", Set.of("卯")),
+		entry("卯", Set.of("子")),
+		entry("寅", Set.of("巳", "申")),
+		entry("巳", Set.of("寅", "申")),
+		entry("申", Set.of("寅", "巳")),
+		entry("丑", Set.of("戌", "未")),
+		entry("戌", Set.of("丑", "未")),
+		entry("未", Set.of("丑", "戌")),
+		entry("辰", Set.of("辰")),
+		entry("午", Set.of("午")),
+		entry("酉", Set.of("酉")),
+		entry("亥", Set.of("亥"))
+	);
+
+	// 5. 파(破)
+	private static final Map<String, String> PA_MAP = Map.ofEntries(
+		entry("子", "酉"), entry("酉", "子"),
+		entry("丑", "辰"), entry("辰", "丑"),
+		entry("寅", "亥"), entry("亥", "寅"),
+		entry("卯", "午"), entry("午", "卯"),
+		entry("申", "巳"), entry("巳", "申"),
+		entry("戌", "未"), entry("未", "戌")
+	);
+
+	// 6. 해(害)
+	private static final Map<String, String> HAE_MAP = Map.ofEntries(
+		entry("子", "未"), entry("未", "子"),
+		entry("丑", "午"), entry("午", "丑"),
+		entry("寅", "巳"), entry("巳", "寅"),
+		entry("卯", "辰"), entry("辰", "卯"),
+		entry("申", "亥"), entry("亥", "申"),
+		entry("酉", "戌"), entry("戌", "酉")
+	);
+
+	// 7. 천간합(天干合)
 	private static final Map<String, String> SKY_HAP_MAP = Map.of(
 		"甲", "己", "己", "甲",
 		"乙", "庚", "庚", "乙",
@@ -49,7 +85,7 @@ public class RelationCalculator {
 		"戊", "癸", "癸", "戊"
 	);
 
-	// 5. 천간충(天干沖)
+	// 8. 천간충(天干沖)
 	private static final Map<String, String> SKY_CHUNG_MAP = Map.of(
 		"甲", "庚", "庚", "甲",
 		"乙", "辛", "辛", "乙",
@@ -69,6 +105,15 @@ public class RelationCalculator {
 		}
 		if (jiji2.equals(WONJIN_MAP.get(jiji1))) {
 			relations.add("원진");
+		}
+		if (HYEONG_MAP.getOrDefault(jiji1, Set.of()).contains(jiji2)) {
+			relations.add("형");
+		}
+		if (jiji2.equals(PA_MAP.get(jiji1))) {
+			relations.add("파");
+		}
+		if (jiji2.equals(HAE_MAP.get(jiji1))) {
+			relations.add("해");
 		}
 
 		for (SamhapGroup group : SAMHAP_GROUPS) {

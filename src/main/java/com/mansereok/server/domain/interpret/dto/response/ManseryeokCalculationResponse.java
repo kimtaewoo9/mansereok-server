@@ -28,16 +28,18 @@ public class ManseryeokCalculationResponse {
 	@Builder
 	@NoArgsConstructor
 	@AllArgsConstructor
-	public static class InputInfo {
+		public static class InputInfo {
 
 		@JsonProperty("solar_date")
 		private LocalDate solarDate;
-		@JsonProperty("solar_time")
-		private LocalTime solarTime;
-		private String gender;
-		@JsonProperty("is_lunar")
-		private Boolean isLunar;
-	}
+			@JsonProperty("solar_time")
+			private LocalTime solarTime;
+			@JsonProperty("time_unknown")
+			private Boolean timeUnknown;
+			private String gender;
+			@JsonProperty("is_lunar")
+			private Boolean isLunar;
+		}
 
 	@Data
 	@Builder
@@ -45,12 +47,22 @@ public class ManseryeokCalculationResponse {
 	@AllArgsConstructor
 	public static class SajuInfo {
 
-		@JsonProperty("big_fortune_number")
-		private Integer bigFortuneNumber;
-		@JsonProperty("big_fortune_start_year")
-		private Integer bigFortuneStartYear;
-		@JsonProperty("season_start_time")
-		private String seasonStartTime;
+			@JsonProperty("big_fortune_number")
+			private Integer bigFortuneNumber;
+			@JsonProperty("big_fortune_number_min")
+			private Integer bigFortuneNumberMin;
+			@JsonProperty("big_fortune_number_max")
+			private Integer bigFortuneNumberMax;
+			@JsonProperty("big_fortune_start_year")
+			private Integer bigFortuneStartYear;
+			@JsonProperty("big_fortune_start_year_min")
+			private Integer bigFortuneStartYearMin;
+			@JsonProperty("big_fortune_start_year_max")
+			private Integer bigFortuneStartYearMax;
+			@JsonProperty("season_start_time")
+			private String seasonStartTime;
+			@JsonProperty("uncertainty_notes")
+			private List<String> uncertaintyNotes;
 
 		@JsonProperty("year_sky")
 		private PillarElement yearSky;
