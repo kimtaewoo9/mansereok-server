@@ -85,7 +85,8 @@ public class ManseInterpretationService {
 		CompatibilityResultRepository compatibilityResultRepository,
 		OgImageGenerationService ogImageGenerationService,
 		DiscordNotificationService discordNotificationService,
-		EmailService emailService, SajuResultService sajuResultService
+		EmailService emailService,
+		SajuResultService sajuResultService
 	) {
 		this.gptApiRetryService = gptApiRetryService;
 		this.userService = userService;
@@ -595,6 +596,7 @@ public class ManseInterpretationService {
 			case 17 -> createLoveLuckPrompt(name, response); // 연애운
 			case 18 -> createNewYear2026Prompt(name, response); // 신년 운세
 			case 20 -> createMoneyLuckPrompt(name, response);
+			case 21 -> createBusinessLuckPrompt(name, response);
 			default -> throw new IllegalArgumentException("지원하지 않는 카테고리입니다: " + subcategoryId);
 		};
 	}
@@ -1767,6 +1769,80 @@ public class ManseInterpretationService {
 		// ──────────────────────────────────────────────────────────
 		appendSajuJsonResponseFormat(prompt, name);
 
+		return prompt.toString();
+	}
+
+	// ==================== 사업운 분석 프롬프트 ====================
+	private String createBusinessLuckPrompt(String name, ManseryeokCalculationResponse response) {
+		StringBuilder prompt = new StringBuilder();
+
+		prompt.append("### 역할 ###\n");
+		prompt.append("너는 한국 명리학 기반의 사업 컨설팅형 역술가다.\n");
+		prompt.append("단순한 길흉 판단이 아니라, 사주 구조를 근거로 사업의 시작 타이밍, 아이템 적성, 운영 방식, 리스크 관리, 안정화 시점까지 현실적으로 조언한다.\n");
+		prompt.append("전문 용어를 사용하되 반드시 일반인이 이해하도록 바로 풀어서 설명한다.\n");
+		prompt.append("문장은 줄글 중심으로 작성하며, 불필요한 큰따옴표나 작은따옴표는 사용하지 않는다.\n\n");
+
+		prompt.append("### 절대 규칙 ###\n");
+		prompt.append("1. 사주팔자, 대운, 세운, 월운, 합, 충, 형, 파, 해는 절대 추측하지 말고 입력 JSON만 사용한다.\n");
+		prompt.append("2. 일간과 일주를 혼동하지 않는다. 일간은 나 자신이다.\n");
+		prompt.append("3. 날짜, 연도, 월을 말할 때는 입력 데이터 범위 내에서만 말한다. 데이터에 없는 연도나 월은 임의로 만들지 않는다.\n");
+		prompt.append("4. 과장 표현(무조건 대박, 100% 성공) 금지. 가능성은 구조적 근거와 조건으로 말한다.\n");
+		prompt.append("5. 나열은 쉼표와 띄어쓰기로 구분한다.\n");
+		prompt.append("6. 조언은 추상적으로 끝내지 말고, 실행 가능한 행동으로 제시한다.\n\n");
+
+		prompt.append("### 분석 대상자 데이터 (서버 산출값) ###\n");
+		appendPersonDetailInfo(prompt, name, response);
+		appendKeywords(prompt, response);
+		prompt.append("\n");
+
+		prompt.append("### 출력 목표 ###\n");
+		prompt.append("사용자가 이 리포트를 읽고 다음을 한 번에 이해하게 만든다.\n");
+		prompt.append("1. 언제 시작하는 게 유리한지, 연도와 월까지\n");
+		prompt.append("2. 어떤 업종과 아이템이 맞는지, 왜 맞는지\n");
+		prompt.append("3. 1인, 소규모, 팀 확장 중 무엇이 맞는지\n");
+		prompt.append("4. 돈이 새는 지점과 리스크가 무엇인지\n");
+		prompt.append("5. 언제부터 재물 흐름이 안정화될지\n\n");
+
+		prompt.append("### 출력 형식 (반드시 이 순서) ###\n");
+		prompt.append("## 1. 한 줄 결론\n");
+		prompt.append("사업운을 약함, 보통, 강함 중 하나로 단정하고, 바로 뒤에 한 문장으로 근거를 붙인다.\n\n");
+
+		prompt.append("## 2. 사업가 기질과 돈을 만드는 방식\n");
+		prompt.append("일간 성향, 신강과 신약, 오행 불균형을 근거로 강점과 약점을 설명한다.\n");
+		prompt.append("돈을 버는 방식은 브랜드형, 콘텐츠형, 유통형, 전문 서비스형, 시스템형 중 1개 또는 2개를 선택한다.\n");
+		prompt.append("이유는 십성과 오행으로 설명한다.\n\n");
+
+		prompt.append("## 3. 시작 타이밍, 연도와 월\n");
+		prompt.append("대운, 세운, 월운에서 사업 시작에 유리한 구간 2개를 선정한다.\n");
+		prompt.append("각 구간마다 왜 유리한지, 그 시기에 해야 할 일, 그 시기에 하면 위험한 선택을 세트로 설명한다.\n");
+		prompt.append("월운 데이터가 없으면 월은 쓰지 말고 연도까지만 제시한다.\n\n");
+
+		prompt.append("## 4. 아이템 추천, 구체적으로\n");
+		prompt.append("이 사주 구조에서 맞는 아이템을 3개 카테고리로 제시한다.\n");
+		prompt.append("각 카테고리마다 왜 맞는지, 어떤 판매 방식이 맞는지, 초기에 추천하는 현실적인 MVP 형태를 구체적으로 설명한다.\n\n");
+
+		prompt.append("## 5. 운영 방식, 1인 소규모 확장\n");
+		prompt.append("처음에 1인으로 갈지, 소규모로 갈지, 어느 시점부터 팀 확장이 좋은지 대운 흐름으로 제시한다.\n");
+		prompt.append("역할 분담 추천도 포함한다.\n\n");
+
+		prompt.append("## 6. 리스크 경고, 사업이 새는 구멍\n");
+		prompt.append("돈이 새기 쉬운 지점 4가지를 구체적으로 적고, 리스크가 커지는 시기를 연도 또는 연월로 연결한다.\n");
+		prompt.append("각 리스크마다 방지 전략을 현실적으로 제시한다.\n\n");
+
+		prompt.append("## 7. 재물 안정화 시점\n");
+		prompt.append("대운과 세운 기준으로 매출이 만들어지는 시기, 수익 구조가 자리 잡는 시기, 안정화되는 시기를 구분한다.\n");
+		prompt.append("안정화의 기준은 매월 반복 수익, 고정비 커버, 운영 루틴화, 현금흐름 안정처럼 명확히 적는다.\n\n");
+
+		prompt.append("## 8. 실행 체크리스트\n");
+		prompt.append("지금 당장 할 수 있는 실행 항목 7개를 짧고 명확하게 제시한다.\n\n");
+
+		prompt.append("### 문장 스타일 ###\n");
+		prompt.append("상담자가 말하듯 자연스럽고 구체적으로 작성한다.\n");
+		prompt.append("추상적인 칭찬, 뜬구름 잡는 문장은 피한다.\n");
+		prompt.append("전체 분량은 충분히 길게 작성한다. 짧게 요약하지 않는다.\n");
+		prompt.append("불필요한 큰따옴표나 작은따옴표는 사용하지 않는다.\n\n");
+
+		appendSajuJsonResponseFormat(prompt, name);
 		return prompt.toString();
 	}
 
