@@ -1772,76 +1772,84 @@ public class ManseInterpretationService {
 		return prompt.toString();
 	}
 
-	// ==================== 사업운 분석 프롬프트 ====================
+	// 21. 사업운 분석 프롬프트
 	private String createBusinessLuckPrompt(String name, ManseryeokCalculationResponse response) {
 		StringBuilder prompt = new StringBuilder();
 
 		prompt.append("### 역할 ###\n");
 		prompt.append("너는 한국 명리학 기반의 사업 컨설팅형 역술가다.\n");
-		prompt.append(
-			"단순한 길흉 판단이 아니라, 사주 구조를 근거로 사업의 시작 타이밍, 아이템 적성, 운영 방식, 리스크 관리, 안정화 시점까지 현실적으로 조언한다.\n");
-		prompt.append("전문 용어를 사용하되 반드시 일반인이 이해하도록 바로 풀어서 설명한다.\n");
-		prompt.append("문장은 줄글 중심으로 작성하며, 불필요한 큰따옴표나 작은따옴표는 사용하지 않는다.\n\n");
+		prompt.append("단순 길흉이 아니라 사주 구조를 근거로 사업 시작 시점, 아이템, 운영 방식, 리스크, 안정화 시점을 현실적으로 제시한다.\n");
+		prompt.append("전문 용어를 쓰되 일반인이 이해하도록 바로 풀어서 설명한다.\n");
+		prompt.append("불필요한 큰따옴표와 작은따옴표는 사용하지 않는다.\n\n");
 
 		prompt.append("### 절대 규칙 ###\n");
 		prompt.append("1. 사주팔자, 대운, 세운, 월운, 합, 충, 형, 파, 해는 절대 추측하지 말고 입력 JSON만 사용한다.\n");
 		prompt.append("2. 일간과 일주를 혼동하지 않는다. 일간은 나 자신이다.\n");
 		prompt.append("3. 날짜, 연도, 월을 말할 때는 입력 데이터 범위 내에서만 말한다. 데이터에 없는 연도나 월은 임의로 만들지 않는다.\n");
 		prompt.append("4. 과장 표현(무조건 대박, 100% 성공) 금지. 가능성은 구조적 근거와 조건으로 말한다.\n");
-		prompt.append("5. 나열은 쉼표와 띄어쓰기로 구분한다.\n");
-		prompt.append("6. 조언은 추상적으로 끝내지 말고, 실행 가능한 행동으로 제시한다.\n\n");
+		prompt.append("5. 내부 사유 문구 금지. 예: 데이터가 없어서, 추정상, 참고용.\n");
+		prompt.append("6. 조언은 추상적으로 끝내지 말고 실행 가능한 행동으로 제시한다.\n\n");
+
+		prompt.append("### 분량/페이지 규칙 ###\n");
+		prompt.append("fullAnalysis 총 분량은 3800자 이상 4300자 이하로 작성한다.\n");
+		prompt.append("한 문장 한 줄로 작성한다.\n");
+		prompt.append("각 대목이 끝날 때 [PAGE_BREAK]를 단독 한 줄로 정확히 한 번 출력한다.\n");
+		prompt.append("각 대목의 권장 분량과 줄 수를 반드시 지킨다.\n\n");
 
 		prompt.append("### 분석 대상자 데이터 (서버 산출값) ###\n");
 		appendPersonDetailInfo(prompt, name, response);
 		appendKeywords(prompt, response);
 		prompt.append("\n");
 
-		prompt.append("### 출력 목표 ###\n");
-		prompt.append("사용자가 이 리포트를 읽고 다음을 한 번에 이해하게 만든다.\n");
-		prompt.append("1. 언제 시작하는 게 유리한지, 연도와 월까지\n");
-		prompt.append("2. 어떤 업종과 아이템이 맞는지, 왜 맞는지\n");
-		prompt.append("3. 1인, 소규모, 팀 확장 중 무엇이 맞는지\n");
-		prompt.append("4. 돈이 새는 지점과 리스크가 무엇인지\n");
-		prompt.append("5. 언제부터 재물 흐름이 안정화될지\n\n");
-
 		prompt.append("### 출력 형식 (반드시 이 순서) ###\n");
-		prompt.append("## 1. 한 줄 결론\n");
-		prompt.append("사업운을 약함, 보통, 강함 중 하나로 단정하고, 바로 뒤에 한 문장으로 근거를 붙인다.\n\n");
+		prompt.append("## 1. 성격 분석 + 사주적 근거\n");
+		prompt.append("권장 분량 650~750자, 10~12줄.\n");
+		prompt.append("세부 목차 1-1 핵심 성향, 1-2 사업 강점, 1-3 사업 약점, 1-4 사주 근거 요약.\n");
+		prompt.append("성격을 먼저 설명하고 그 뒤에 근거를 붙인다.\n");
+		prompt.append("근거는 일간, 신강/신약, 오행 불균형, 십성, 합충형파해 중 핵심만 사용한다.\n");
+		prompt.append("대목 마지막 줄에 [PAGE_BREAK]를 단독 출력한다.\n\n");
 
-		prompt.append("## 2. 사업가 기질과 돈을 만드는 방식\n");
-		prompt.append("일간 성향, 신강과 신약, 오행 불균형을 근거로 강점과 약점을 설명한다.\n");
-		prompt.append("돈을 버는 방식은 브랜드형, 콘텐츠형, 유통형, 전문 서비스형, 시스템형 중 1개 또는 2개를 선택한다.\n");
-		prompt.append("이유는 십성과 오행으로 설명한다.\n\n");
+		prompt.append("## 2. 시작 타이밍\n");
+		prompt.append("권장 분량 650~750자, 8~10줄.\n");
+		prompt.append("세부 목차 2-1 유리 구간 A, 2-2 유리 구간 B, 2-3 구간별 해야 할 일, 2-4 구간별 금지 선택.\n");
+		prompt.append("대운, 세운, 절입 기준 월운을 근거로 제시한다.\n");
+		prompt.append("월 단위는 월운 적용 구간(period_start~period_end) 안에서만 언급한다.\n");
+		prompt.append("대목 마지막 줄에 [PAGE_BREAK]를 단독 출력한다.\n\n");
 
-		prompt.append("## 3. 시작 타이밍\n");
-		prompt.append("대운, 세운, 월운에서 사업 시작에 유리한 구간 2개를 선정한다.\n");
-		prompt.append("각 구간마다 왜 유리한지, 그 시기에 해야 할 일, 그 시기에 하면 위험한 선택을 세트로 설명한다.\n");
-		prompt.append("월운 데이터가 없으면 월은 쓰지 말고 연도까지만 제시한다.\n\n");
+		prompt.append("## 3. 아이템 추천(핵심)\n");
+		prompt.append("권장 분량 850~1000자, 10~12줄.\n");
+		prompt.append("세부 목차 3-1 카테고리 1, 3-2 카테고리 2, 3-3 카테고리 3, 3-4 카테고리별 MVP.\n");
+		prompt.append("아이템 추천은 아래 근거 우선순위로 판정한다.\n");
+		prompt.append("1순위 일간, 신강/신약, 용신/희신, 오행 분포.\n");
+		prompt.append("2순위 십성 분포(식상, 재성, 관성, 인성, 비겁)와 돈 버는 구조.\n");
+		prompt.append("3순위 합충형파해, 공망, 신살(역마, 도화 등)로 운영 리스크 보정.\n");
+		prompt.append("4순위 대운, 세운, 월운으로 런칭/확장 타이밍 보정.\n");
+		prompt.append("각 아이템마다 왜 맞는지 근거 2~3개, 판매 방식, MVP를 반드시 제시한다.\n");
+		prompt.append("대목 마지막 줄에 [PAGE_BREAK]를 단독 출력한다.\n\n");
 
-		prompt.append("## 4. 아이템 추천(구체적으로)\n");
-		prompt.append("이 사주 구조에서 맞는 아이템을 3개 카테고리로 제시한다.\n");
-		prompt.append("각 카테고리마다 왜 맞는지, 어떤 판매 방식이 맞는지, 초기에 추천하는 현실적인 MVP 형태를 구체적으로 설명한다.\n\n");
+		prompt.append("## 4. 운영 방식(1인, 소규모, 확장)\n");
+		prompt.append("권장 분량 550~700자, 8~10줄.\n");
+		prompt.append("세부 목차 4-1 초기 1인 운영, 4-2 소규모 전환 조건, 4-3 확장 시점과 역할 분담.\n");
+		prompt.append("확장 트리거는 반복 매출, 이익률, 운영 피로도, 품질 유지 가능성으로 판단한다.\n");
+		prompt.append("대목 마지막 줄에 [PAGE_BREAK]를 단독 출력한다.\n\n");
 
-		prompt.append("## 5. 운영 방식, 1인 소규모 확장\n");
-		prompt.append("처음에 1인으로 갈지, 소규모로 갈지, 어느 시점부터 팀 확장이 좋은지 대운 흐름으로 제시한다.\n");
-		prompt.append("역할 분담 추천도 포함한다.\n\n");
+		prompt.append("## 5. 리스크 경고 + 방지 전략\n");
+		prompt.append("권장 분량 650~800자, 8~10줄.\n");
+		prompt.append("세부 목차 5-1 핵심 리스크 4개, 5-2 조기 신호, 5-3 예방 장치, 5-4 문제 발생 시 대응.\n");
+		prompt.append("각 리스크는 발생 가능 시기(연도 또는 연월)와 연결하고, 반드시 방지 행동을 붙인다.\n");
+		prompt.append("대목 마지막 줄에 [PAGE_BREAK]를 단독 출력한다.\n\n");
 
-		prompt.append("## 6. 리스크 경고, 사업이 새는 구멍\n");
-		prompt.append("돈이 새기 쉬운 지점 4가지를 구체적으로 적고, 리스크가 커지는 시기를 연도 또는 연월로 연결한다.\n");
-		prompt.append("각 리스크마다 방지 전략을 현실적으로 제시한다.\n\n");
-
-		prompt.append("## 7. 재물 안정화 시점\n");
-		prompt.append("대운과 세운 기준으로 매출이 만들어지는 시기, 수익 구조가 자리 잡는 시기, 안정화되는 시기를 구분한다.\n");
-		prompt.append("안정화의 기준은 매월 반복 수익, 고정비 커버, 운영 루틴화, 현금흐름 안정처럼 명확히 적는다.\n\n");
-
-		prompt.append("## 8. 실행 체크리스트\n");
-		prompt.append("지금 당장 할 수 있는 실행 항목 7개를 짧고 명확하게 제시한다.\n\n");
+		prompt.append("## 6. 안정화 로드맵 + 실행 체크리스트\n");
+		prompt.append("권장 분량 550~700자, 8~10줄.\n");
+		prompt.append("세부 목차 6-1 매출 발생 단계, 6-2 수익 정착 단계, 6-3 안정화 단계, 6-4 실행 7개.\n");
+		prompt.append("안정화 기준은 반복 수익, 고정비 커버, 현금흐름 안정, 운영 루틴화로 명확히 제시한다.\n");
+		prompt.append("실행 7개는 오늘 3개, 2주 내 2개, 30일 내 2개로 나눠 제시한다.\n");
+		prompt.append("대목 마지막 줄에 [PAGE_BREAK]를 단독 출력한다.\n\n");
 
 		prompt.append("### 문장 스타일 ###\n");
 		prompt.append("상담자가 말하듯 자연스럽고 구체적으로 작성한다.\n");
-		prompt.append("추상적인 칭찬, 뜬구름 잡는 문장은 피한다.\n");
-		prompt.append("전체 분량은 충분히 길게 작성한다. 짧게 요약하지 않는다.\n");
-		prompt.append("불필요한 큰따옴표나 작은따옴표는 사용하지 않는다.\n\n");
+		prompt.append("추상적 칭찬, 뜬구름 문장, 과한 미사여구는 금지한다.\n");
+		prompt.append("사용자에게 바로 실행 가능한 문장으로 끝낸다.\n\n");
 
 		appendSajuJsonResponseFormat(prompt, name);
 		return prompt.toString();
@@ -3631,6 +3639,39 @@ public class ManseInterpretationService {
 		}
 		prompt.append("※ 대운은 위 계산 결과를 절대 재계산/수정하지 말고 그대로 분석에 사용하세요.\n");
 		prompt.append("\n");
+
+		if (saju.getMonthlyFortunes() != null && !saju.getMonthlyFortunes().isEmpty()) {
+			prompt.append("### 월운 (향후 12개월) ###\n");
+			saju.getMonthlyFortunes().forEach(monthly -> {
+				String monthSky =
+					monthly.getMonthSky() != null ? monthly.getMonthSky().getKorean() : "?";
+				String monthGround =
+					monthly.getMonthGround() != null ? monthly.getMonthGround().getKorean() : "?";
+				String monthSkyTenStar =
+					monthly.getMonthSky() != null ? monthly.getMonthSky().getTenStar() : "?";
+				String monthGroundTenStar = monthly.getMonthGround() != null
+					? monthly.getMonthGround().getTenStar() : "?";
+				String season = monthly.getSeason() != null ? monthly.getSeason() : "-";
+				String periodStart =
+					monthly.getPeriodStart() != null ? monthly.getPeriodStart().toString() : "-";
+				String periodEnd =
+					monthly.getPeriodEnd() != null ? monthly.getPeriodEnd().toString()
+						: "다음 절입 직전까지";
+
+				prompt.append(String.format(
+					"- %d년 %d월(%s): %s%s (천간십성:%s, 지지십성:%s) | 적용구간:%s ~ %s\n",
+					monthly.getYear(),
+					monthly.getMonth(),
+					season,
+					monthSky,
+					monthGround,
+					monthSkyTenStar,
+					monthGroundTenStar,
+					periodStart,
+					periodEnd));
+			});
+			prompt.append("\n");
+		}
 
 		// 9. 관계성 분석 (업그레이드 버전)
 		prompt.append("### 지지 관계성 (합/충/원진) ###\n");
