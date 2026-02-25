@@ -4,6 +4,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import com.mansereok.server.domain.interpret.calculator.YongsinCalculator.YongsinResult;
 import io.swagger.v3.oas.annotations.media.Schema;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.List;
 import java.util.Map;
@@ -104,6 +105,9 @@ public class ManseryeokCalculationResponse {
 
 		@JsonProperty("yongsin_info")
 		private YongsinResult yongsinInfo;
+
+		@JsonProperty("monthly_fortunes")
+		private List<MonthlyFortune> monthlyFortunes;
 	}
 
 	@Data
@@ -158,5 +162,24 @@ public class ManseryeokCalculationResponse {
 		private Integer rate;
 		@JsonProperty("ten_star")
 		private String tenStar;
+	}
+
+	@Data
+	@Builder
+	@NoArgsConstructor
+	@AllArgsConstructor
+	public static class MonthlyFortune {
+
+		private Integer year;
+		private Integer month;
+		private String season;
+		@JsonProperty("period_start")
+		private LocalDateTime periodStart;
+		@JsonProperty("period_end")
+		private LocalDateTime periodEnd;
+		@JsonProperty("month_sky")
+		private PillarElement monthSky;
+		@JsonProperty("month_ground")
+		private PillarElement monthGround;
 	}
 }

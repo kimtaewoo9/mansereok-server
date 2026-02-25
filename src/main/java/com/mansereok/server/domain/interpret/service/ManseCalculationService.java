@@ -13,6 +13,7 @@ import com.mansereok.server.domain.interpret.repository.ManseRepository;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
+import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
@@ -165,6 +166,7 @@ public class ManseCalculationService {
 				.groundRelations(allGroundRelations)
 				.skyRelations(allSkyRelations)
 				.samhap(fullSamhap)
+				.monthlyFortunes(calculateMonthlyFortunes(samju.getDaySky(), ilganChinese))
 				.build();
 
 			// 16. 용신 계산
@@ -196,6 +198,64 @@ public class ManseCalculationService {
 		if (relations != null && !relations.isEmpty()) {
 			targetList.add(label + ": " + String.join(", ", relations));
 		}
+	}
+
+	private List<ManseryeokCalculationResponse.MonthlyFortune> calculateMonthlyFortunes(
+		String daySky, String ilganChinese) {
+		List<ManseryeokCalculationResponse.MonthlyFortune> monthlyFortunes = new ArrayList<>();
+		LocalDateTime nowKst = LocalDateTime.now(ZoneId.of("Asia/Seoul"));
+
+		Manse currentBoundary = manseRepository
+			.findFirstBySeasonStartTimeLessThanEqualOrderBySeasonStartTimeDesc(nowKst)
+			.orElse(null);
+		if (currentBoundary == null || currentBoundary.getSeasonStartTime() == null) {
+			log.warn("월운 계산 실패: 현재 절입 기준점 조회 불가");
+			return null;
+		}
+
+		LocalDateTime cursor = currentBoundary.getSeasonStartTime();
+		for (int i = 0; i < 12; i++) {
+			Manse startBoundary = manseRepository
+				.findFirstBySeasonStartTimeGreaterThanEqualOrderBySeasonStartTimeAsc(cursor)
+				.orElse(null);
+			if (startBoundary == null || startBoundary.getSeasonStartTime() == null) {
+				break;
+			}
+
+			LocalDateTime periodStart = startBoundary.getSeasonStartTime();
+			Manse nextBoundary = manseRepository
+				.findFirstBySeasonStartTimeGreaterThanEqualOrderBySeasonStartTimeAsc(
+					periodStart.plusSeconds(1))
+				.orElse(null);
+			LocalDateTime periodEnd =
+				nextBoundary != null && nextBoundary.getSeasonStartTime() != null
+					? nextBoundary.getSeasonStartTime().minusSeconds(1)
+					: null;
+
+			ManseryeokCalculationResponse.PillarElement monthSky = formatChinese(
+				startBoundary.getMonthSky(), daySky, false, ilganChinese
+			);
+			ManseryeokCalculationResponse.PillarElement monthGround = formatChineseWithUnseong(
+				startBoundary.getMonthGround(), ilganChinese, daySky, true, ilganChinese
+			);
+
+			monthlyFortunes.add(ManseryeokCalculationResponse.MonthlyFortune.builder()
+				.year(periodStart.getYear())
+				.month(periodStart.getMonthValue())
+				.season(startBoundary.getSeason())
+				.periodStart(periodStart)
+				.periodEnd(periodEnd)
+				.monthSky(monthSky)
+				.monthGround(monthGround)
+				.build());
+
+			if (nextBoundary == null || nextBoundary.getSeasonStartTime() == null) {
+				break;
+			}
+			cursor = nextBoundary.getSeasonStartTime();
+		}
+
+		return monthlyFortunes.isEmpty() ? null : monthlyFortunes;
 	}
 
 	// ... (나머지 private 메서드들은 기존 코드 그대로 사용) ...

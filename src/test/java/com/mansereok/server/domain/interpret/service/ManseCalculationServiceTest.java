@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -21,6 +22,7 @@ import java.lang.reflect.Constructor;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
+import java.time.ZoneId;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
@@ -186,10 +188,8 @@ class ManseCalculationServiceTest {
 
 		service.calculate(request);
 
-		verify(manseRepository).findFirstBySeasonStartTimeLessThanEqualOrderBySeasonStartTimeDesc(
-			any(LocalDateTime.class));
-		verify(manseRepository, never())
-			.findFirstBySeasonStartTimeGreaterThanEqualOrderBySeasonStartTimeAsc(
+		verify(manseRepository, atLeastOnce())
+			.findFirstBySeasonStartTimeLessThanEqualOrderBySeasonStartTimeDesc(
 				any(LocalDateTime.class));
 	}
 
@@ -219,10 +219,8 @@ class ManseCalculationServiceTest {
 
 		service.calculate(request);
 
-		verify(manseRepository).findFirstBySeasonStartTimeGreaterThanEqualOrderBySeasonStartTimeAsc(
-			any(LocalDateTime.class));
-		verify(manseRepository, never())
-			.findFirstBySeasonStartTimeLessThanEqualOrderBySeasonStartTimeDesc(
+		verify(manseRepository, atLeastOnce())
+			.findFirstBySeasonStartTimeGreaterThanEqualOrderBySeasonStartTimeAsc(
 				any(LocalDateTime.class));
 	}
 
@@ -254,6 +252,82 @@ class ManseCalculationServiceTest {
 
 		assertEquals(2, response.getSaju().getBigFortuneNumber());
 		assertEquals(1995, response.getSaju().getBigFortuneStartYear());
+	}
+
+	@Test
+	void shouldCalculateMonthlyFortunesUsingSeasonBoundaries() {
+		LocalDateTime nowKst = LocalDateTime.now(ZoneId.of("Asia/Seoul")).withNano(0);
+		LocalDate inputDate = nowKst.toLocalDate().minusDays(2);
+
+		Manse base = manse(inputDate, "甲", "子", "乙", "丑", "甲", "子", null, null);
+
+		Manse boundary1 = manse(inputDate.plusDays(1), "甲", "子", "丙", "寅", "乙", "丑", "입춘",
+			nowKst.minusDays(1));
+		Manse boundary2 = manse(inputDate.plusDays(31), "甲", "子", "丁", "卯", "丙", "寅", "경칩",
+			nowKst.plusDays(29));
+		Manse boundary3 = manse(inputDate.plusDays(61), "甲", "子", "戊", "辰", "丁", "卯", "청명",
+			nowKst.plusDays(59));
+		List<Manse> boundaries = List.of(boundary1, boundary2, boundary3);
+
+		when(manseRepository.findBySolarDate(inputDate)).thenReturn(Optional.of(base));
+
+		when(manseRepository.findFirstBySeasonStartTimeLessThanEqualOrderBySeasonStartTimeDesc(
+			any(LocalDateTime.class))).thenAnswer(invocation -> {
+			LocalDateTime target = invocation.getArgument(0);
+			Manse latest = null;
+			for (Manse candidate : boundaries) {
+				if (candidate.getSeasonStartTime() != null &&
+					!candidate.getSeasonStartTime().isAfter(target)) {
+					latest = candidate;
+				}
+			}
+			return Optional.ofNullable(latest);
+		});
+
+		when(manseRepository.findFirstBySeasonStartTimeGreaterThanEqualOrderBySeasonStartTimeAsc(
+			any(LocalDateTime.class))).thenAnswer(invocation -> {
+			LocalDateTime target = invocation.getArgument(0);
+			for (Manse candidate : boundaries) {
+				if (candidate.getSeasonStartTime() != null &&
+					!candidate.getSeasonStartTime().isBefore(target)) {
+					return Optional.of(candidate);
+				}
+			}
+			return Optional.empty();
+		});
+
+		ManseryeokCalculationRequest request = new ManseryeokCalculationRequest(
+			"테스트",
+			inputDate,
+			LocalTime.of(12, 0),
+			"MALE",
+			false,
+			null
+		);
+
+		ManseryeokCalculationResponse response = service.calculate(request);
+
+		List<ManseryeokCalculationResponse.MonthlyFortune> monthlyFortunes =
+			response.getSaju().getMonthlyFortunes();
+
+		assertNotNull(monthlyFortunes);
+		assertEquals(3, monthlyFortunes.size());
+
+		assertEquals("입춘", monthlyFortunes.get(0).getSeason());
+		assertEquals("경칩", monthlyFortunes.get(1).getSeason());
+		assertEquals("청명", monthlyFortunes.get(2).getSeason());
+
+		assertEquals(boundary1.getSeasonStartTime(), monthlyFortunes.get(0).getPeriodStart());
+		assertEquals(boundary2.getSeasonStartTime().minusSeconds(1),
+			monthlyFortunes.get(0).getPeriodEnd());
+		assertEquals(boundary2.getSeasonStartTime(), monthlyFortunes.get(1).getPeriodStart());
+		assertEquals(boundary3.getSeasonStartTime().minusSeconds(1),
+			monthlyFortunes.get(1).getPeriodEnd());
+		assertEquals(boundary3.getSeasonStartTime(), monthlyFortunes.get(2).getPeriodStart());
+		assertNull(monthlyFortunes.get(2).getPeriodEnd());
+
+		assertEquals("丙", monthlyFortunes.get(0).getMonthSky().getChinese());
+		assertEquals("寅", monthlyFortunes.get(0).getMonthGround().getChinese());
 	}
 
 	private Manse manse(
