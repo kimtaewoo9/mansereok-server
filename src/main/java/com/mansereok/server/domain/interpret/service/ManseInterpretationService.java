@@ -19,12 +19,15 @@ import com.mansereok.server.domain.user.entity.User;
 import com.mansereok.server.domain.user.service.EmailService;
 import com.mansereok.server.domain.user.service.UserService;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Async;
@@ -72,11 +75,36 @@ public class ManseInterpretationService {
 			"당신은 30년 경력의 전문 사주명리학자입니다. " +
 			"자연스럽고 전문적인 어조로 사주 해석을 제공하되, 절대 다음 표현들을 사용하지 마세요:\n" +
 			"- 해석이 AI나 시스템에 의한 것임을 암시하는 모든 메타적 표현 절대 금지\n\n" +
-			"대신, 마치 대면 상담에서 직접 말하듯이 자연스럽게 시작하세요.\n" +
+			"도입은 짧고 자연스럽게 시작하되, 인위적인 안내 멘트 없이 바로 본론으로 이어가세요.\n" +
 			"부정적인 내용도 포함하되 극복 방안을 함께 제시하고, 운명론적이기보다는 개인의 노력과 선택의 중요성을 강조하세요. " +
 			"'해요'체를 기본으로 사용하되, 전문적인 분석이나 정보를 전달할 때는 '~입니다', '~습니다' 체를 자연스럽게 혼용하여 신뢰감과 친근함을 모두 갖춘 어조를 사용하세요.\n\n"
 			+
 			"--- USER QUERY ---\n";
+
+	private static final Pattern BUSINESS_PAGE_BREAK_PATTERN = Pattern.compile(
+		"(?i)\\[\\s*PAGE_BREAK\\s*\\]");
+	private static final Pattern BRACKET_SECTION_TITLE_PATTERN = Pattern.compile(
+		"(?m)^\\s*\\[[0-9]+\\.[^\\]]*\\]\\s*\\n?");
+	private static final Pattern NUMBERED_SUBSECTION_PATTERN = Pattern.compile(
+		"(?m)^\\s*\\d+[-.]\\d+\\s+");
+	private static final Pattern NUMBERED_LIST_PATTERN = Pattern.compile(
+		"(?m)^\\s*\\d+\\s*[-.)]\\s+");
+	private static final Pattern HASH_HEADER_PATTERN = Pattern.compile(
+		"(?m)^\\s*#+\\s*");
+	private static final Pattern ISO_LOCAL_DATETIME_WITH_OPTIONAL_SECONDS_PATTERN = Pattern.compile(
+		"(\\d{4}-\\d{2}-\\d{2})T(\\d{2}:\\d{2})(?::\\d{2})?");
+	private static final Pattern DATETIME_WITH_SPACE_PATTERN = Pattern.compile(
+		"(\\d{4})-(\\d{2})-(\\d{2})\\s+(\\d{2}:\\d{2})(?::\\d{2})?");
+	private static final Pattern DATE_WITH_DAY_PATTERN = Pattern.compile(
+		"(\\d{4})-(\\d{2})-(\\d{2})");
+	private static final Pattern YEAR_MONTH_PATTERN = Pattern.compile(
+		"\\b(\\d{4})-(0[1-9]|1[0-2])\\b");
+	private static final Pattern THREE_OR_MORE_NEWLINES_PATTERN = Pattern.compile(
+		"\\n{3,}");
+	private static final Pattern KEYWORD_TITLE_LINE_PATTERN = Pattern.compile(
+		"^\\s*\\[[^\\]\\n]{1,120}\\]");
+	private static final int BUSINESS_SUMMARY_MAX_LINES = 5;
+	private static final int BUSINESS_SUMMARY_MAX_CHARS = 280;
 
 	public ManseInterpretationService(@Value("${openai.api.key}") String apiKey,
 		@Value("${openai.api.base-url:https://api.openai.com}") String baseUrl,
@@ -154,12 +182,17 @@ public class ManseInterpretationService {
 				GptSajuResponse.class
 			);
 
+			String normalizedFullAnalysis = normalizeAnalysisBySubcategory(subcategoryId,
+				gptData.getFullAnalysis());
+			String normalizedSummary = normalizeSummaryBySubcategory(subcategoryId,
+				gptData.getSummary());
+
 			// 4. [DB] 결과 저장 (DB 커넥션 사용 O -> 즉시 반납)
 			User user = userService.findByUsername(username);
 			Result savedResult = sajuResultService.saveFinalResult(
 				resultId,
-				gptData.getFullAnalysis(),
-				gptData.getSummary()
+				normalizedFullAnalysis,
+				normalizedSummary
 			);
 			log.info("해석 결과 저장 완료: resultId={}", savedResult.getId());
 
@@ -301,9 +334,14 @@ public class ManseInterpretationService {
 			GptSajuResponse gptData = objectMapper.readValue(
 				extractContentFromResponseGpt5(gptResponse), GptSajuResponse.class);
 
+			String normalizedFullAnalysis = normalizeAnalysisBySubcategory(subcategoryId,
+				gptData.getFullAnalysis());
+			String normalizedSummary = normalizeSummaryBySubcategory(subcategoryId,
+				gptData.getSummary());
+
 			// 3. [DB] 결과 저장
 			Result savedResult = sajuResultService.saveFinalResult(resultId,
-				gptData.getFullAnalysis(), gptData.getSummary());
+				normalizedFullAnalysis, normalizedSummary);
 
 			// 4. 후처리
 			try {
@@ -1438,7 +1476,6 @@ public class ManseInterpretationService {
 			name));
 		prompt.append("- **핵심 테마 선정**: 위 '절대 기준'에서 도출된 사주 강약, 십성 분포, 용신을 종합하여 ");
 		prompt.append("2026년의 **가장 중요한 키워드 1개**를 선택하세요.\n");
-		prompt.append("  (예시: '확장', '내실', '변화', '정리', '도약', '숙성', '재정비' 등)\n");
 		prompt.append("- **심리 변화 묘사**: 사용자의 타고난 기질(일간 성향)과 2026년 기운이 만났을 때 ");
 		prompt.append("**어떤 내적 갈등이나 각성**이 일어날지 구체적으로 서술하세요.\n");
 		prompt.append("- **주의점 제시**: '절대 기준'에서 발견된 약점(예: 무식상, 충 등)을 바탕으로 ");
@@ -1777,8 +1814,10 @@ public class ManseInterpretationService {
 		StringBuilder prompt = new StringBuilder();
 
 		prompt.append("### 역할 ###\n");
-		prompt.append("너는 한국 명리학 기반의 사업 컨설팅형 역술가다.\n");
-		prompt.append("단순 길흉이 아니라 사주 구조를 근거로 사업 시작 시점, 아이템, 운영 방식, 리스크, 안정화 시점을 현실적으로 제시한다.\n");
+		prompt.append("너는 한국 명리학 기반의 사업운 전문 역술가다.\n");
+		prompt.append(
+			"사주 구조를 깊이 풀어서 이 사람이 사업에서 어떤 패턴을 반복하게 되는지, 돈이 어떻게 들어오고 빠지는지, 어떤 함정에 빠지기 쉬운지를 생생하게 묘사하는 것이 핵심이다.\n");
+		prompt.append("너의 역할은 컨설턴트가 아니라 역술가다. 할 일 목록을 주는 게 아니라 이 팔자가 어떻게 생겨먹었는지를 알려주는 것이 본업이다.\n");
 		prompt.append("전문 용어를 쓰되 일반인이 이해하도록 바로 풀어서 설명한다.\n");
 		prompt.append("불필요한 큰따옴표와 작은따옴표는 사용하지 않는다.\n\n");
 
@@ -1788,71 +1827,160 @@ public class ManseInterpretationService {
 		prompt.append("3. 날짜, 연도, 월을 말할 때는 입력 데이터 범위 내에서만 말한다. 데이터에 없는 연도나 월은 임의로 만들지 않는다.\n");
 		prompt.append("4. 과장 표현(무조건 대박, 100% 성공) 금지. 가능성은 구조적 근거와 조건으로 말한다.\n");
 		prompt.append("5. 내부 사유 문구 금지. 예: 데이터가 없어서, 추정상, 참고용.\n");
-		prompt.append("6. 조언은 추상적으로 끝내지 말고 실행 가능한 행동으로 제시한다.\n\n");
+		prompt.append("6. 오행/십성/강약 점수(예: 2.4, 7.0, 11.1) 같은 소수 수치는 본문에 직접 쓰지 않는다.\n");
+		prompt.append("7. 수치는 강한 편, 보완 필요, 우세, 약세 같은 정성 표현으로 바꿔 설명한다.\n");
+		prompt.append("8. 한자(寅, 卯, 沖, 合 등) 직접 노출 절대 금지. 모든 한자는 한글로만 표기한다.\n");
+		prompt.append("9. 색깔/방향/숫자 개운법 추천 절대 금지. 청색, 녹색, 동쪽, 3과 8 같은 미신적 조언을 쓰면 안 된다.\n");
+		prompt.append(
+			"10. 사주 전문 용어(수국, 천간충, 양인살, 반합, 식상생재 등)는 단독 사용 금지. 반드시 한 문장 이상의 풀이를 붙여야 한다.\n\n");
+
+		prompt.append("### 글의 본질 — 가장 중요한 원칙 ###\n");
+		prompt.append("이 글의 목적은 행동 지침을 주는 게 아니다.\n");
+		prompt.append("이 글의 목적은 이 사람의 팔자가 사업이라는 무대에서 어떻게 작동하는지를 낱낱이 보여주는 것이다.\n");
+		prompt.append("읽는 사람이 아 나는 이런 사람이구나, 그래서 이런 일이 생기는 거구나 하고 스스로 고개를 끄덕이게 만들어야 한다.\n\n");
+
+		prompt.append("글 전체에서 사주 풀이와 패턴 묘사가 80%, 행동 조언이 20% 이내여야 한다.\n");
+		prompt.append("행동 조언은 글의 마지막 1~2문단에만 모아서 짧게 정리한다.\n");
+		prompt.append("본문 중간에 ~하세요, ~잡으세요, ~만들어두세요 같은 지시형 문장을 반복하지 않는다.\n");
+		prompt.append("대신 이런 구조의 사람은 사업을 하면 이런 장면이 나옵니다 식의 묘사로 채운다.\n\n");
+
+		prompt.append("### 사주 풀이 깊이 규칙 (반드시 지킬 것) ###\n");
+		prompt.append("이 분석은 10,000원짜리 유료 상품이다. 사주를 보지 않아도 할 수 있는 말은 돈값을 못 한다.\n");
+		prompt.append("모든 핵심 문단에는 반드시 아래 3단 구조를 갖춘다:\n\n");
+
+		prompt.append(
+			"(1단) 사주 구조: 어느 기둥(년/월/일/시)에 어떤 글자(십성/오행)가 있고, 다른 글자와 어떤 관계(합/충/형/생/극)인지 밝힌다.\n");
+		prompt.append("(2단) 성향 풀이: 이 구조가 이 사람의 성격, 습관, 판단 방식에서 어떻게 드러나는지 구체적으로 묘사한다.\n");
+		prompt.append("(3단) 사업 장면: 이 성향이 사업 현장에서 어떤 패턴, 어떤 장면, 어떤 반복으로 나타나는지 생생하게 그려준다.\n\n");
+
+		prompt.append("(3단)은 ~하세요 같은 지시가 아니라, 이런 일이 벌어집니다/이런 패턴이 반복됩니다 같은 묘사여야 한다.\n");
+		prompt.append("읽는 사람이 아 맞아 나 그래 하고 소름이 돋을 정도로 구체적이어야 한다.\n\n");
+
+		prompt.append("❌ 나쁜 예 1: 편인이 두드러져요. 편인은 남들보다 빨리 공부하는 힘입니다. 그래서 기획을 먼저 하세요.\n");
+		prompt.append("→ 어디에 있는지 안 밝힘, 풀이가 한 줄, 바로 지시로 넘어감\n\n");
+
+		prompt.append("✅ 좋은 예 1: 월주 천간에 편인이 자리하고 있어요. 편인은 쉽게 말해 남의 것을 빠르게 흡수해서 ");
+		prompt.append("내 방식으로 재가공하는 능력입니다. 이게 일간 임수를 직접 돕는 위치에 앉아 있으니, ");
+		prompt.append("뭘 보든 구조가 먼저 눈에 들어오는 타입이에요. 남이 운영하는 가게를 봐도 ");
+		prompt.append("저기는 동선이 비효율적이네, 메뉴판을 이렇게 바꾸면 객단가가 오를 텐데 하는 생각이 자동으로 돌아갑니다. ");
+		prompt.append("그래서 사업을 하면 맨땅에서 창작하는 것보다 이미 돌아가는 모델을 가져와서 고치는 방식에서 돈이 먼저 붙습니다.\n\n");
+
+		prompt.append("❌ 나쁜 예 2: 겁재 기운이 올라오니 자금이 새기 쉽습니다. 소액 테스트로 시작하세요.\n");
+		prompt.append("→ 겁재가 뭔지 설명 없음, 어디서 올라오는지 근거 없음, 바로 지시\n\n");
+
+		prompt.append("✅ 좋은 예 2: 일지에 겁재가 깔려 있어요. 겁재는 내 것을 나눠 가져가는 기운인데, ");
+		prompt.append("이게 배우자궁 자리에 있다는 건 가장 가까운 사람, 동업자, 파트너를 통해 돈이 새는 패턴이 반복된다는 뜻입니다. ");
+		prompt.append("통장에 돈이 찍히면 마음이 커지고, 같이 하자는 제안에 쉽게 끌려요. ");
+		prompt.append("매출은 올랐는데 정산하고 나면 남는 게 없다, 이런 장면이 이 사주에서는 한두 번이 아닐 겁니다.\n\n");
 
 		prompt.append("### 분량/페이지 규칙 ###\n");
-		prompt.append("fullAnalysis 총 분량은 3800자 이상 4300자 이하로 작성한다.\n");
-		prompt.append("한 문장 한 줄로 작성한다.\n");
-		prompt.append("각 대목이 끝날 때 [PAGE_BREAK]를 단독 한 줄로 정확히 한 번 출력한다.\n");
-		prompt.append("각 대목의 권장 분량과 줄 수를 반드시 지킨다.\n\n");
+		prompt.append("fullAnalysis 총 분량은 5000~6000자 사이로 작성한다.\n");
+		prompt.append("페이지 분리는 반드시 줄바꿈 두 번(\\\\n\\\\n)으로만 한다.\n");
+		prompt.append("총 페이지는 6~8개 흐름으로 구성한다.\n");
+		prompt.append("한 페이지는 7~10줄 내외의 문단 1개로 구성한다.\n");
+		prompt.append("문단 내부는 자연스러운 줄글로 이어 쓰고, 문단 경계에서만 \\\\n\\\\n을 사용한다.\n");
+		prompt.append("문장마다 줄바꿈하지 않는다.\n");
+		prompt.append("사주 풀이의 깊이가 분량 제한보다 우선한다. 3단 구조를 제대로 채우기 위해 분량이 늘어나는 것은 허용한다.\n");
+		prompt.append("늘어난 분량은 수사/감탄/행동지시에 쓰지 않고, 오직 사주 구조 풀이와 패턴 묘사에만 배분한다.\n");
+		prompt.append("다음 표기 금지: [PAGE_BREAK], [1.], 1-1, 1), ##, ###, -, * 같은 목차/라벨/마크다운 기호.\n");
+		prompt.append("즉, 본문에는 번호형 목차를 출력하지 말고 순수 문장 단락만 출력한다.\n\n");
+
+		prompt.append("### 문체 기준 (골드 스탠다드) ###\n");
+		prompt.append("아래 호흡과 톤을 재현하되 문장을 그대로 복사하지 않는다.\n");
+		prompt.append("돈이 들어오는 문은 크게 열려 있는데, 나가는 문도 같이 열려 있는 구조입니다.");
+		prompt.append("벌어도 벌어도 남는 게 없다는 느낌을 반복할 수 있어요. ");
+		prompt.append("왜 그런지, 어디서 새는지, 언제 흐름이 바뀌는지를 사주 구조를 따라가면서 하나씩 풀어볼게요.\n\n");
+
+		prompt.append("### 이야기 흐름 (제목/번호는 출력하지 말 것) ###\n");
+		prompt.append("글은 다음 흐름으로 자연스럽게 이어간다. 각 흐름에서 사주 구조 풀이가 중심이고, 행동 조언은 최소화한다.\n\n");
+
+		prompt.append("1) 사업 체질 진단: 일간, 일주, 신강/신약, 오행 분포를 풀어서 이 사람이 사업판에서 어떤 플레이어인지 그려준다. ");
+		prompt.append("어떤 에너지가 강하고, 어떤 게 부족하고, 그래서 어떤 유형의 사업에 체질적으로 끌리는지를 묘사한다.\n\n");
+
+		prompt.append("2) 돈의 흐름과 함정: 재성의 위치와 상태, 겁재/비견과의 관계, 식상생재 구조 유무를 풀어서 ");
+		prompt.append("돈이 어떻게 들어오고 어디서 새는지를 구체적 장면으로 보여준다. ");
+		prompt.append("이 사주가 착각하기 쉬운 구조(돈이 되는 것처럼 보이지만 실제로는 빠지는 패턴)를 짚는다.\n\n");
+
+		prompt.append("3) 사업에서 반복될 패턴: 합/충/형, 신살, 공망 등을 풀어서 이 사람이 사업을 하면 반복하게 될 실수, ");
+		prompt.append("갈등, 판단 오류의 패턴을 생생하게 묘사한다. 아 맞아 나 그래 하고 고개를 끄덕일 수준의 구체성이 필요하다.\n\n");
+
+		prompt.append("4) 타이밍 — 시작, 가속, 안정화: 대운과 월운을 풀어서 언제 움직여야 하고 언제 멈춰야 하는지를 3개 시점으로 짚는다. ");
+		prompt.append("각 시점마다 해당 월운의 십성이 뭔지, 그게 원국과 만나면 어떤 일이 벌어지는지를 풀어서 설명한다. ");
+		prompt.append("단순히 이 달이 좋다가 아니라 왜 이 달에 이 흐름이 열리는지를 사주 구조로 보여준다.\n\n");
+
+		prompt.append("5) 어울리는 아이템: 용신, 오행, 십성 구조, 신살을 종합해서 이 사주에 맞는 사업 방향 2~3가지를 제시한다. ");
+		prompt.append("각 방향마다 이 사주의 어떤 구조 때문에 이 아이템이 맞는지 연결 고리를 반드시 밝힌다. ");
+		prompt.append("사주와 무관한 뜬금없는 추천은 금지한다.\n\n");
+
+		prompt.append("6) 정리와 조언: 여기서만 짧게 행동 조언을 묶는다. 글 전체에서 이 문단만 ~하세요 톤이 허용된다. ");
+		prompt.append(
+			"앞에서 풀어낸 사주 구조와 패턴을 근거로, 이 사람이 가장 조심해야 할 한 가지와 가장 믿어도 되는 한 가지를 짚고 마무리한다.\n\n");
+
+		prompt.append("### 절대 금지 패턴 ###\n");
+		prompt.append("- 1-1, 1-2, 첫째는, 둘째는, 셋째는, A는, B는 같은 번호/라벨 전개 금지\n");
+		prompt.append("- ~는 ~이고, ~는 ~이며, ~는 ~입니다 형태의 기계적 나열 문장 금지\n");
+		prompt.append("- ~기운이 들어오니 ~에 좋습니다 형태로 원인과 결론을 직행하는 문장 금지 (중간에 풀이 필수)\n");
+		prompt.append("- 이 달에는 ~해보세요처럼 행동만 던지고 맥락을 생략하는 문장 금지\n");
+		prompt.append("- 한 문단에 월 2개 이상 언급 금지 (달력식 나열 금지)\n");
+		prompt.append("- 2026년 2월, 3월, 4월 식의 연속 월 나열 금지\n");
+		prompt.append("- 한 문장에 사주 데이터포인트 3개 이상 욱여넣기 금지\n");
+		prompt.append("- ~하세요로 끝나는 문장이 마지막 문단 외에서 3회 이상 등장 금지\n");
+		prompt.append("- ~이라 ~해요 패턴을 연속으로 반복하는 문장 금지\n");
+		prompt.append("- 연속 2문장 이상이 같은 어미(해요/입니다)로 끝나는 패턴 금지\n");
+		prompt.append("- 쉼표 4개 이상으로 길게 연결한 문장 금지\n");
+		prompt.append(
+			"- 사주 용어를 풀이 없이 단독 사용 금지 (편인, 겁재, 상관, 정관, 편관, 식신, 정재, 편재, 비견, 정인 모두 해당. 처음 등장 시 반드시 1문장 이상 풀이. 두 번째부터는 생략 가능)\n");
+		prompt.append("- 사주 근거 없이 결론만 던지는 문장 금지 (예: 추진력이 강합니다 → 왜? 어디서?)\n");
+		prompt.append("- 색깔/방향/숫자 개운법 금지 (청색, 동쪽, 3과 8 등)\n");
+		prompt.append("- 본문 중간에 오늘 할 일은, 지금 당장, 바로 적용할 같은 즉시행동 유도 금지 (마지막 문단에서만 허용)\n\n");
+
+		prompt.append("### 권장 서술 패턴 ###\n");
+		prompt.append("사주 구조를 밝히고, 그게 이 사람의 성격/습관에서 어떻게 드러나는지 묘사하고, 사업 현장에서 어떤 장면으로 나타나는지 그려준다.\n");
+		prompt.append("비유와 구체적 장면 묘사를 적극 활용한다. 예: 통장에 돈이 찍히면 마음이 커지고, 같이 하자는 제안에 쉽게 끌려요.\n");
+		prompt.append("문장 길이를 섞어 리듬을 만든다. 짧은 문장, 설명 문장, 묘사 문장을 교차한다.\n");
+		prompt.append("단락이 바뀔 때는 전환 문장을 넣는다. 예: 여기서 한 가지 주목할 점이 있어요.\n");
+		prompt.append("사주 용어가 처음 등장할 때는 반드시 한 문장 이상의 쉬운 풀이를 붙인다.\n");
+		prompt.append("같은 용어가 두 번째 이후 등장하면 풀이 없이 써도 된다.\n\n");
+
+		prompt.append("### 문장 스타일 ###\n");
+		prompt.append("30년 경력 역술가가 대면 상담에서 말하듯 자연스럽고 구체적으로 작성한다.\n");
+		prompt.append("추상적 칭찬, 뜬구름 문장, 과한 미사여구는 금지한다.\n");
+		prompt.append("문단 사이에 연결 문장을 넣어 앞뒤 맥락이 끊기지 않게 작성한다.\n");
+		prompt.append("문장 시작을 반복하지 말고 접속어와 질문형 전환을 섞어 리듬을 만든다.\n");
+		prompt.append("해요체를 기본으로 하되, 핵심 판단은 합니다체로 무게를 준다.\n\n");
 
 		prompt.append("### 분석 대상자 데이터 (서버 산출값) ###\n");
 		appendPersonDetailInfo(prompt, name, response);
 		appendKeywords(prompt, response);
+		prompt.append(
+			"※ 위 데이터의 수치값은 내부 판단용이다. 최종 본문(fullAnalysis)에는 점수/개수를 직접 쓰지 말고 강약 경향으로만 표현한다.\n");
 		prompt.append("\n");
 
-		prompt.append("### 출력 형식 (반드시 이 순서) ###\n");
-		prompt.append("## 1. 성격 분석 + 사주적 근거\n");
-		prompt.append("권장 분량 650~750자, 10~12줄.\n");
-		prompt.append("세부 목차 1-1 핵심 성향, 1-2 사업 강점, 1-3 사업 약점, 1-4 사주 근거 요약.\n");
-		prompt.append("성격을 먼저 설명하고 그 뒤에 근거를 붙인다.\n");
-		prompt.append("근거는 일간, 신강/신약, 오행 불균형, 십성, 합충형파해 중 핵심만 사용한다.\n");
-		prompt.append("대목 마지막 줄에 [PAGE_BREAK]를 단독 출력한다.\n\n");
+		prompt.append("시점 표기는 yyyy년 M월 형식만 사용하고 일/시간/분/초/T 문자는 절대 쓰지 않는다.\n\n");
 
-		prompt.append("## 2. 시작 타이밍\n");
-		prompt.append("권장 분량 650~750자, 8~10줄.\n");
-		prompt.append("세부 목차 2-1 유리 구간 A, 2-2 유리 구간 B, 2-3 구간별 해야 할 일, 2-4 구간별 금지 선택.\n");
-		prompt.append("대운, 세운, 절입 기준 월운을 근거로 제시한다.\n");
-		prompt.append("월 단위는 월운 적용 구간(period_start~period_end) 안에서만 언급한다.\n");
-		prompt.append("대목 마지막 줄에 [PAGE_BREAK]를 단독 출력한다.\n\n");
-
-		prompt.append("## 3. 아이템 추천(핵심)\n");
-		prompt.append("권장 분량 850~1000자, 10~12줄.\n");
-		prompt.append("세부 목차 3-1 카테고리 1, 3-2 카테고리 2, 3-3 카테고리 3, 3-4 카테고리별 MVP.\n");
-		prompt.append("아이템 추천은 아래 근거 우선순위로 판정한다.\n");
-		prompt.append("1순위 일간, 신강/신약, 용신/희신, 오행 분포.\n");
-		prompt.append("2순위 십성 분포(식상, 재성, 관성, 인성, 비겁)와 돈 버는 구조.\n");
-		prompt.append("3순위 합충형파해, 공망, 신살(역마, 도화 등)로 운영 리스크 보정.\n");
-		prompt.append("4순위 대운, 세운, 월운으로 런칭/확장 타이밍 보정.\n");
-		prompt.append("각 아이템마다 왜 맞는지 근거 2~3개, 판매 방식, MVP를 반드시 제시한다.\n");
-		prompt.append("대목 마지막 줄에 [PAGE_BREAK]를 단독 출력한다.\n\n");
-
-		prompt.append("## 4. 운영 방식(1인, 소규모, 확장)\n");
-		prompt.append("권장 분량 550~700자, 8~10줄.\n");
-		prompt.append("세부 목차 4-1 초기 1인 운영, 4-2 소규모 전환 조건, 4-3 확장 시점과 역할 분담.\n");
-		prompt.append("확장 트리거는 반복 매출, 이익률, 운영 피로도, 품질 유지 가능성으로 판단한다.\n");
-		prompt.append("대목 마지막 줄에 [PAGE_BREAK]를 단독 출력한다.\n\n");
-
-		prompt.append("## 5. 리스크 경고 + 방지 전략\n");
-		prompt.append("권장 분량 650~800자, 8~10줄.\n");
-		prompt.append("세부 목차 5-1 핵심 리스크 4개, 5-2 조기 신호, 5-3 예방 장치, 5-4 문제 발생 시 대응.\n");
-		prompt.append("각 리스크는 발생 가능 시기(연도 또는 연월)와 연결하고, 반드시 방지 행동을 붙인다.\n");
-		prompt.append("대목 마지막 줄에 [PAGE_BREAK]를 단독 출력한다.\n\n");
-
-		prompt.append("## 6. 안정화 로드맵 + 실행 체크리스트\n");
-		prompt.append("권장 분량 550~700자, 8~10줄.\n");
-		prompt.append("세부 목차 6-1 매출 발생 단계, 6-2 수익 정착 단계, 6-3 안정화 단계, 6-4 실행 7개.\n");
-		prompt.append("안정화 기준은 반복 수익, 고정비 커버, 현금흐름 안정, 운영 루틴화로 명확히 제시한다.\n");
-		prompt.append("실행 7개는 오늘 3개, 2주 내 2개, 30일 내 2개로 나눠 제시한다.\n");
-		prompt.append("대목 마지막 줄에 [PAGE_BREAK]를 단독 출력한다.\n\n");
-
-		prompt.append("### 문장 스타일 ###\n");
-		prompt.append("상담자가 말하듯 자연스럽고 구체적으로 작성한다.\n");
-		prompt.append("추상적 칭찬, 뜬구름 문장, 과한 미사여구는 금지한다.\n");
-		prompt.append("사용자에게 바로 실행 가능한 문장으로 끝낸다.\n\n");
-
-		appendSajuJsonResponseFormat(prompt, name);
+		appendBusinessJsonResponseFormat(prompt);
 		return prompt.toString();
+	}
+
+	private void appendBusinessJsonResponseFormat(StringBuilder prompt) {
+		prompt.append("\n\n### 최종 출력 형식 (JSON) ###\n");
+		prompt.append("반드시 순수 JSON 객체만 출력한다. markdown 코드블록 금지.\n");
+		prompt.append("JSON 문자열 내부 줄바꿈은 반드시 \\\\n으로 이스케이프한다.\n");
+		prompt.append("fullAnalysis에는 번호형 목차, 대괄호 제목, 목록 기호 없이 순수 문장 단락만 작성한다.\n");
+		prompt.append("fullAnalysis의 단락 구분은 \\\\n\\\\n만 사용한다.\n");
+		prompt.append("문단 내부에서 문장별 줄바꿈은 금지하고, 한 문단은 자연스러운 연속 문장으로 작성한다.\n");
+		prompt.append("전환 문장 없이 단락을 끊지 말고 앞 단락의 의미를 다음 단락으로 연결한다.\n");
+		prompt.append("다음 표기 금지: [PAGE_BREAK], [1.], 1-1, 1), ##, ###, -, *.\n");
+		prompt.append("첫째는, 둘째는, 셋째는 같은 번호성 전개는 금지한다.\n");
+		prompt.append("한자 직접 표기, 색/방향/숫자 개운법 추천은 금지한다.\n");
+		prompt.append("summary는 4~5줄로 작성하고, 핵심 행동만 짧게 정리한다.\n");
+		prompt.append("summary 총 길이는 280자 이내로 제한한다.\n");
+		prompt.append("기간 표기는 yyyy년 M월 형식만 허용한다.\n");
+		prompt.append("출력 스키마:\n");
+		prompt.append("{\n");
+		prompt.append("  \"fullAnalysis\": \"...\",\n");
+		prompt.append("  \"summary\": \"...\"\n");
+		prompt.append("}\n");
 	}
 
 	// ==================== 4,6,14 러브 스토리 프롬프트 (혜안 적용) ====================
@@ -3196,25 +3324,31 @@ public class ManseInterpretationService {
 		StringBuilder prompt = new StringBuilder();
 
 		prompt.append("### 0. 시스템 역할 정의 ###\n");
-		prompt.append("당신은 핵심만 꿰뚫는 '통찰의 대가'입니다. 사족 없이 단 하나의 키워드와 그 이유만 명확히 제시하세요.\n\n");
+		prompt.append("당신은 사주 구조를 현실 언어로 풀어주는 명리 상담가입니다.\n");
+		prompt.append("문장은 자연스럽고 읽기 쉬워야 하며, 보고서처럼 딱딱한 문체를 피하세요.\n\n");
 
 		appendPersonDetailInfo(prompt, name, response, 2026);
 
-		prompt.append("\n### [2026년 운명 키워드] 요청 ###\n");
-		prompt.append("2026년 상반기, " + name + "님을 관통하는 **단 하나의 핵심 운명 키워드**를 뽑고 그 이유를 서술해주세요.\n\n");
+		prompt.append("\n### [2026년 상반기 운명 키워드 분석 요청] ###\n");
+		prompt.append(
+			"2026년 상반기 " + name + "님에게 가장 중요한 운명 키워드를 1개만 제시하고, 왜 그 키워드가 중요한지 풀어서 설명해주세요.\n\n");
 
-		prompt.append("### ⚠️ [필수 작성 지침] (어기면 안됨) ###\n");
+		prompt.append("### ⚠️ [필수 작성 지침] ###\n");
+		prompt.append("1. 분석 시점은 반드시 2026년 상반기와 병오년으로 고정합니다.\n");
+		prompt.append("2. 첫 줄은 [2026년 상반기 운명 키워드: 키워드명] 형식으로만 작성합니다.\n");
+		prompt.append("3. 첫 줄 이후 본문은 정확히 4개 문단으로 작성하고, 문단 사이는 반드시 줄바꿈 두 번(\\\\n\\\\n)으로 구분합니다.\n");
+		prompt.append("4. 각 문단은 4~5문장으로 구성하고, 문단마다 한 가지 주제만 다룹니다.\n");
+		prompt.append("5. 각 문단은 너무 짧지 않게 150~220자 안팎으로 작성해 카드 한 페이지가 6~7줄 정도 읽히도록 맞춥니다.\n");
 		prompt.append(
-			"1. **[연도 고정]** 지금은 2025년이 아닙니다. 분석 시점은 무조건 **'2026년 상반기'**입니다. '올해'라고 지칭하지 말고 반드시 **'2026년', '병오년'**이라고 명확하게 써주세요.\n");
+			"6. 번호형 나열(1-1, 첫째, 둘째), 목록 기호(-, *, 1.), 마크다운 제목(##, ###), 대괄호 소제목 사용을 금지합니다.\n");
 		prompt.append(
-			"2. **[목차 강제]** 결과물은 오직 아래 제시된 **목차**로만 구성되어야 합니다. 서론(첫인사)이나 결론을 길게 쓰지 마세요.\n\n");
-		prompt.append(
-			"3. **[대운 고정값 준수]** 프롬프트의 `[대운 고정값]`과 다른 대운명(예: 계축 등)을 임의로 쓰면 안 됩니다. 대운은 절대 재계산 금지입니다.\n\n");
-
-		prompt.append("--- [분석 시작] ---\n");
-		prompt.append("## 2026년 상반기 운명 키워드: [키워드 명]\n");
-		prompt.append("- 이 키워드가 당신의 운명 키워드인 이유 (대운과 세운의 조화, 병오년의 화 기운 영향 등)\n");
-		prompt.append("- 이 키워드를 긍정적으로 활용하기 위해 어떤 마음가짐을 가져야 하는지 조언\n");
+			"7. 인위적 안내 문구를 금지합니다. 예: \"직접 대면 상담하듯 핵심만 전해드립니다\", \"핵심만 전해드리겠습니다\", \"AI가 분석한 결과\".\n");
+		prompt.append("8. 날짜 표기는 2026년 3월처럼 년-월까지만 사용하고 시/분/초 표기는 금지합니다.\n");
+		prompt.append("9. 문체 흐름은 다음 순서를 따릅니다.\n");
+		prompt.append("   - 1문단: 키워드의 의미와 현재 흐름\n");
+		prompt.append("   - 2문단: 사주 근거와 왜 이 키워드가 핵심인지\n");
+		prompt.append("   - 3문단: 상반기 실행 포인트\n");
+		prompt.append("   - 4문단: 주의할 선택과 마무리 조언\n");
 
 		appendSajuJsonResponseFormat(prompt, name);
 		return prompt.toString();
@@ -3652,11 +3786,10 @@ public class ManseInterpretationService {
 				String monthGroundTenStar = monthly.getMonthGround() != null
 					? monthly.getMonthGround().getTenStar() : "?";
 				String season = monthly.getSeason() != null ? monthly.getSeason() : "-";
-				String periodStart =
-					monthly.getPeriodStart() != null ? monthly.getPeriodStart().toString() : "-";
-				String periodEnd =
-					monthly.getPeriodEnd() != null ? monthly.getPeriodEnd().toString()
-						: "다음 절입 직전까지";
+				String periodStart = formatMonthPeriod(monthly.getPeriodStart());
+				String periodEnd = monthly.getPeriodEnd() != null
+					? formatMonthPeriod(monthly.getPeriodEnd())
+					: "다음 절입 직전";
 
 				prompt.append(String.format(
 					"- %d년 %d월(%s): %s%s (천간십성:%s, 지지십성:%s) | 적용구간:%s ~ %s\n",
@@ -3713,6 +3846,269 @@ public class ManseInterpretationService {
 			prompt.append("※ 이 용신 정보를 바탕으로 사용자에게 행운의 조언을 해주세요.\n");
 		}
 		prompt.append("\n");
+	}
+
+	private String formatMonthPeriod(LocalDateTime value) {
+		if (value == null) {
+			return "-";
+		}
+		return value.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"));
+	}
+
+	private String normalizeAnalysisBySubcategory(Long subcategoryId, String fullAnalysis) {
+		if (fullAnalysis == null) {
+			return null;
+		}
+		if (subcategoryId != null && subcategoryId == 21L) {
+			return normalizeBusinessText(fullAnalysis);
+		}
+		if (subcategoryId != null && subcategoryId == 102L) {
+			return normalizeKeywordText(fullAnalysis);
+		}
+		return fullAnalysis;
+	}
+
+	private String normalizeSummaryBySubcategory(Long subcategoryId, String summary) {
+		if (summary == null) {
+			return null;
+		}
+		if (subcategoryId != null && subcategoryId == 21L) {
+			return limitBusinessSummaryLength(normalizeBusinessSummary(summary));
+		}
+		if (subcategoryId != null && subcategoryId == 102L) {
+			return normalizeKeywordSummary(summary);
+		}
+		return summary;
+	}
+
+	private String normalizeBusinessText(String text) {
+		String normalized = text
+			.replace("\r\n", "\n")
+			.replace("\r", "\n");
+
+		// UI 페이지 구분은 반드시 빈 줄 1개(\n\n)로 통일
+		normalized = BUSINESS_PAGE_BREAK_PATTERN.matcher(normalized).replaceAll("\n\n");
+
+		// 요구하지 않은 라벨/목차 제거
+		normalized = BRACKET_SECTION_TITLE_PATTERN.matcher(normalized).replaceAll("");
+		normalized = NUMBERED_SUBSECTION_PATTERN.matcher(normalized).replaceAll("");
+		normalized = NUMBERED_LIST_PATTERN.matcher(normalized).replaceAll("");
+		normalized = HASH_HEADER_PATTERN.matcher(normalized).replaceAll("");
+
+		// 기간 표기 통일: 2026-02-04T04:38:00 / 2026-02-04 04:38 / 2026-02-04 -> 2026-02
+		normalized = ISO_LOCAL_DATETIME_WITH_OPTIONAL_SECONDS_PATTERN.matcher(normalized)
+			.replaceAll("$1 $2");
+		normalized = DATETIME_WITH_SPACE_PATTERN.matcher(normalized).replaceAll("$1-$2");
+		normalized = DATE_WITH_DAY_PATTERN.matcher(normalized).replaceAll("$1-$2");
+		normalized = convertYearMonthToKorean(normalized);
+		normalized = expandBusinessJargonForReadability(normalized);
+		normalized = removeBusinessForbiddenAdviceLines(normalized);
+		normalized = normalized.replaceAll("(?m)^.*(오행 점수|내 세력|남의 세력).*$\\n?", "");
+		normalized = normalized.replaceAll("(?m)([목화토금수])\\s*\\d+\\.\\d+", "$1 기운");
+		normalized = normalized.replaceAll("\\b\\d+\\.\\d+\\b", "");
+		normalized = normalized.replaceAll("\\p{IsHan}+", "");
+
+		// 문장 단위 줄바꿈을 문단 줄글로 정리
+		normalized = mergeSingleLineBreaksWithinParagraph(normalized);
+
+		// 과도한 공백 정리
+		normalized = THREE_OR_MORE_NEWLINES_PATTERN.matcher(normalized).replaceAll("\n\n");
+		return normalized.trim();
+	}
+
+	private String normalizeBusinessSummary(String text) {
+		String normalized = text
+			.replace("\r\n", "\n")
+			.replace("\r", "\n");
+		normalized = BUSINESS_PAGE_BREAK_PATTERN.matcher(normalized).replaceAll("\n\n");
+		normalized = BRACKET_SECTION_TITLE_PATTERN.matcher(normalized).replaceAll("");
+		normalized = NUMBERED_SUBSECTION_PATTERN.matcher(normalized).replaceAll("");
+		normalized = NUMBERED_LIST_PATTERN.matcher(normalized).replaceAll("");
+		normalized = HASH_HEADER_PATTERN.matcher(normalized).replaceAll("");
+		normalized = ISO_LOCAL_DATETIME_WITH_OPTIONAL_SECONDS_PATTERN.matcher(normalized)
+			.replaceAll("$1 $2");
+		normalized = DATETIME_WITH_SPACE_PATTERN.matcher(normalized).replaceAll("$1-$2");
+		normalized = DATE_WITH_DAY_PATTERN.matcher(normalized).replaceAll("$1-$2");
+		normalized = convertYearMonthToKorean(normalized);
+		normalized = expandBusinessJargonForReadability(normalized);
+		normalized = removeBusinessForbiddenAdviceLines(normalized);
+		normalized = normalized.replaceAll("(?m)^.*(오행 점수|내 세력|남의 세력).*$\\n?", "");
+		normalized = normalized.replaceAll("(?m)([목화토금수])\\s*\\d+\\.\\d+", "$1 기운");
+		normalized = normalized.replaceAll("\\b\\d+\\.\\d+\\b", "");
+		normalized = normalized.replaceAll("\\p{IsHan}+", "");
+		normalized = THREE_OR_MORE_NEWLINES_PATTERN.matcher(normalized).replaceAll("\n\n");
+		return normalized.trim();
+	}
+
+	private String normalizeKeywordText(String text) {
+		String normalized = text
+			.replace("\r\n", "\n")
+			.replace("\r", "\n");
+		normalized = BUSINESS_PAGE_BREAK_PATTERN.matcher(normalized).replaceAll("\n\n");
+		normalized = BRACKET_SECTION_TITLE_PATTERN.matcher(normalized).replaceAll("");
+		normalized = NUMBERED_SUBSECTION_PATTERN.matcher(normalized).replaceAll("");
+		normalized = NUMBERED_LIST_PATTERN.matcher(normalized).replaceAll("");
+		normalized = HASH_HEADER_PATTERN.matcher(normalized).replaceAll("");
+		normalized = removeKeywordMetaPhrases(normalized);
+		normalized = ISO_LOCAL_DATETIME_WITH_OPTIONAL_SECONDS_PATTERN.matcher(normalized)
+			.replaceAll("$1 $2");
+		normalized = DATETIME_WITH_SPACE_PATTERN.matcher(normalized).replaceAll("$1-$2");
+		normalized = DATE_WITH_DAY_PATTERN.matcher(normalized).replaceAll("$1-$2");
+		normalized = convertYearMonthToKorean(normalized);
+		normalized = mergeSingleLineBreaksWithinParagraph(normalized);
+		normalized = ensureKeywordParagraphBreaks(normalized);
+		normalized = THREE_OR_MORE_NEWLINES_PATTERN.matcher(normalized).replaceAll("\n\n");
+		return normalized.trim();
+	}
+
+	private String normalizeKeywordSummary(String text) {
+		String normalized = text
+			.replace("\r\n", "\n")
+			.replace("\r", "\n");
+		normalized = removeKeywordMetaPhrases(normalized);
+		normalized = THREE_OR_MORE_NEWLINES_PATTERN.matcher(normalized).replaceAll("\n\n");
+		return normalized.trim();
+	}
+
+	private String limitBusinessSummaryLength(String summary) {
+		String normalized = summary == null ? "" : summary
+			.replace("\r\n", "\n")
+			.replace("\r", "\n")
+			.trim();
+		if (normalized.isEmpty()) {
+			return normalized;
+		}
+
+		List<String> lines = Arrays.stream(normalized.split("\n"))
+			.map(String::trim)
+			.filter(line -> !line.isEmpty())
+			.limit(BUSINESS_SUMMARY_MAX_LINES)
+			.toList();
+
+		String limited = String.join("\n", lines);
+		if (limited.length() > BUSINESS_SUMMARY_MAX_CHARS) {
+			limited = limited.substring(0, BUSINESS_SUMMARY_MAX_CHARS).trim();
+		}
+		return limited;
+	}
+
+	private String expandBusinessJargonForReadability(String text) {
+		String normalized = text;
+		normalized = normalized.replace("수국", "수기운 결속 구조");
+		normalized = normalized.replace("천간충", "천간 충돌(생각과 실행이 맞부딪히는 구조)");
+		normalized = normalized.replace("양인살", "양인살(추진력이 강하지만 과속 시 마찰이 생기기 쉬운 신살)");
+		normalized = normalized.replace("공망", "공망(기대와 현실이 어긋나기 쉬운 구간)");
+		normalized = normalized.replace("역마살", "역마살(이동과 변화가 많아지는 기운)");
+		return normalized;
+	}
+
+	private String removeBusinessForbiddenAdviceLines(String text) {
+		return text.replaceAll(
+			"(?m)^.*(행운의 색|개운색|개운법|청색|녹색|동쪽|서쪽|남쪽|북쪽|3과\\s*8|숫자\\s*3|숫자\\s*8).*$\\n?",
+			"");
+	}
+
+	private String mergeSingleLineBreaksWithinParagraph(String text) {
+		String[] paragraphBlocks = text.split("\\n\\s*\\n");
+		List<String> mergedBlocks = new ArrayList<>();
+
+		for (String block : paragraphBlocks) {
+			String trimmed = block.trim();
+			if (trimmed.isEmpty()) {
+				continue;
+			}
+			String merged = trimmed
+				.replaceAll("\\n+", " ")
+				.replaceAll("[ \\t]{2,}", " ");
+			mergedBlocks.add(merged);
+		}
+
+		return String.join("\n\n", mergedBlocks);
+	}
+
+	private String removeKeywordMetaPhrases(String text) {
+		String normalized = text;
+		normalized = normalized.replaceAll(
+			"직접\\s*대면\\s*상담하듯\\s*핵심만\\s*전해드(?:립니|릴게)다\\.?",
+			"");
+		normalized = normalized.replaceAll("핵심만\\s*전해드(?:립니|릴게)다\\.?", "");
+		normalized = normalized.replaceAll("AI가\\s*분석한\\s*결과", "");
+		return normalized;
+	}
+
+	private String ensureKeywordParagraphBreaks(String text) {
+		String normalized = text == null ? "" : text.trim();
+		if (normalized.isEmpty()) {
+			return normalized;
+		}
+
+		String titleLine = "";
+		Matcher titleMatcher = KEYWORD_TITLE_LINE_PATTERN.matcher(normalized);
+		if (titleMatcher.find() && titleMatcher.start() == 0) {
+			titleLine = titleMatcher.group().trim();
+			normalized = normalized.substring(titleMatcher.end()).trim();
+		}
+
+		List<String> existingParagraphs = Arrays.stream(normalized.split("\\n\\s*\\n"))
+			.map(String::trim)
+			.filter(line -> !line.isEmpty())
+			.toList();
+
+		if (existingParagraphs.size() >= 3) {
+			List<String> mergedParagraphs = new ArrayList<>(existingParagraphs);
+			if (!titleLine.isEmpty()) {
+				mergedParagraphs.set(0, titleLine + "\n" + mergedParagraphs.get(0));
+			}
+			return String.join("\n\n", mergedParagraphs);
+		}
+
+		List<String> sentences = Arrays.stream(normalized.split("(?<=[.!?])\\s+"))
+			.map(String::trim)
+			.filter(line -> !line.isEmpty())
+			.toList();
+		if (sentences.isEmpty()) {
+			return titleLine.isEmpty() ? normalized : titleLine + "\n" + normalized;
+		}
+
+		int sentencesPerParagraph = sentences.size() >= 12 ? 4 : 3;
+		List<String> rebuiltParagraphs = new ArrayList<>();
+		StringBuilder block = new StringBuilder();
+		int count = 0;
+
+		for (String sentence : sentences) {
+			if (block.length() > 0) {
+				block.append(" ");
+			}
+			block.append(sentence);
+			count++;
+			if (count >= sentencesPerParagraph) {
+				rebuiltParagraphs.add(block.toString().trim());
+				block.setLength(0);
+				count = 0;
+			}
+		}
+
+		if (block.length() > 0) {
+			rebuiltParagraphs.add(block.toString().trim());
+		}
+
+		if (!titleLine.isEmpty() && !rebuiltParagraphs.isEmpty()) {
+			rebuiltParagraphs.set(0, titleLine + "\n" + rebuiltParagraphs.get(0));
+		}
+		return String.join("\n\n", rebuiltParagraphs);
+	}
+
+	private String convertYearMonthToKorean(String text) {
+		Matcher matcher = YEAR_MONTH_PATTERN.matcher(text);
+		StringBuffer sb = new StringBuffer();
+		while (matcher.find()) {
+			String year = matcher.group(1);
+			int month = Integer.parseInt(matcher.group(2));
+			String replaced = year + "년 " + month + "월";
+			matcher.appendReplacement(sb, Matcher.quoteReplacement(replaced));
+		}
+		matcher.appendTail(sb);
+		return sb.toString();
 	}
 
 	private void appendJijangganDetail(StringBuilder prompt, String pillarName,
