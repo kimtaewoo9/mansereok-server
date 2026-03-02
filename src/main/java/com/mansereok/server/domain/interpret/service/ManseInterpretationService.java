@@ -103,6 +103,9 @@ public class ManseInterpretationService {
 		"\\n{3,}");
 	private static final Pattern KEYWORD_TITLE_LINE_PATTERN = Pattern.compile(
 		"^\\s*\\[[^\\]\\n]{1,120}\\]");
+	private static final List<String> FREE_PARAGRAPH_TRANSITIONS = List.of(
+		"다만", "반면", "또한", "그리고", "한편", "특히", "무엇보다", "이때", "여기서", "정리하면",
+		"결론적으로", "요약하면", "반대로");
 	private static final int BUSINESS_SUMMARY_MAX_LINES = 5;
 	private static final int BUSINESS_SUMMARY_MAX_CHARS = 280;
 
@@ -3404,6 +3407,17 @@ public class ManseInterpretationService {
 	// 104. 사떡 궁합
 	private String createChemistryMatchPrompt(String name, ManseryeokCalculationResponse response) {
 		StringBuilder prompt = new StringBuilder();
+		String userGender = response != null && response.getInput() != null
+			? response.getInput().getGender()
+			: null;
+		String targetGenderRule;
+		if ("MALE".equalsIgnoreCase(userGender)) {
+			targetGenderRule = "추천 대상은 반드시 여성으로만 선정하세요.";
+		} else if ("FEMALE".equalsIgnoreCase(userGender)) {
+			targetGenderRule = "추천 대상은 반드시 남성으로만 선정하세요.";
+		} else {
+			targetGenderRule = "추천 대상은 반드시 이성(반대 성별)으로만 선정하세요.";
+		}
 
 		// 1. 역할 정의
 		prompt.append("### 0. 시스템 역할 정의 ###\n");
@@ -3416,38 +3430,50 @@ public class ManseInterpretationService {
 		appendPersonDetailInfo(prompt, name, response);
 
 		prompt.append("\n### 2. [명령] 사떡궁합 매칭 리포트 작성 ###\n");
-		prompt.append(name + "님의 사주 구성을 보고, 가장 잘 맞는 **유명인(아이돌, 배우) 및 애니메이션 캐릭터** 3명을 추천해주세요.\n");
+		prompt.append(name + "님의 사주 구성을 보고, 가장 잘 맞는 인물을 아래 구성으로 추천해주세요.\n");
+		prompt.append("- 아이돌 1명, 배우 1명, 캐릭터 1명 (총 3명)\n");
+		prompt.append("- 선정 과정 설명보다 인물과 궁합 이유를 바로 제시\n");
 
 		// 3. 제약 조건
 		prompt.append("### ⚠️ [필수 작성 지침] (절대 엄수) ###\n");
+		prompt.append("1. **[성별 규칙]**: " + targetGenderRule + "\n");
 		prompt.append(
-			"1. **[대상 선정]**: 'K-POP 아이돌', '유명 배우', '애니/웹툰 캐릭터' 중 골고루 섞어서 Top 3 선정.\n");
+			"2. **[대상 구성 고정]**: 아이돌 1명, 배우 1명, 캐릭터 1명을 반드시 모두 채우세요.\n");
 		prompt.append(
-			"2. **[언어 절대 고정]**: 모든 이름과 작품명은 **무조건 '한국어'**로만 표기. (영어 병기 금지)\n");
+			"3. **[언어 절대 고정]**: 모든 이름과 작품명은 무조건 한국어로만 표기하세요. 영어 병기 금지.\n");
 		prompt.append(
-			"3. **[카드 분리]**: **Top 3 랭킹 발표가 끝나면 반드시 줄바꿈을 두 번(\\n\\n) 하여, 상세 설명이 다음 장(카드)에 나오도록 하세요.**\n"); // 👈 핵심 수정
+			"4. **[후보별 필수 정보]**: 각 후보마다 맞는 이유 2개, 주의점 1개를 반드시 포함하세요.\n");
 		prompt.append(
-			"4. **[말투]**: \"~입니다\" 지양, \"~하는 꿀조합\", \"~라 완전 찰떡\" 등 덕질 용어 사용.\n\n");
+			"5. **[이름 표기 규칙]**: 단일 이름만 쓰지 말고 반드시 소속/작품을 붙여 표기하세요. 예: 블랙핑크의 지수, 배우 박보영, 원피스의 나미.\n");
+		prompt.append(
+			"6. **[캐릭터 범위 고정]**: 캐릭터 1명은 반드시 애니메이션 캐릭터만 허용합니다.\n");
+		prompt.append(
+			"7. **[캐릭터 표기 규칙]**: 캐릭터는 반드시 작품명+캐릭터명으로 표기하세요. 예: 원피스의 나미, 귀멸의 칼날의 탄지로.\n");
+		prompt.append(
+			"8. **[도입 필수]**: 본문 시작은 반드시 4문장정도로 작성하세요. "
+				+ name
+				+ "님의 사주 핵심 성향을 간단히 설명하고, 이런 성향이 어떤 사람과 잘 맞는지 자연스럽게 연결하세요.\n");
+		prompt.append(
+			"9. **[추천 시작 문장 고정]**: 도입 다음, 추천 파트의 첫 문장은 반드시 아래 형식으로 시작하세요. \""
+				+ name
+				+ "님과 가장 잘 어울리는 아이돌은 [아이돌 이름]님, 배우는 [배우 이름]님, 캐릭터는 [작품명]의 [캐릭터명]입니다.\"\n");
+		prompt.append(
+			"10. **[문단 분리]**: 추천 시작 문장 다음부터 인물 한 명 설명이 끝날 때마다 줄바꿈 두 번(\\n\\n)으로 다음 문단으로 넘기세요.\n");
+		prompt.append("11. **[문단 길이]**: 한 인물 설명은 3~5문장으로 작성하세요.\n");
+		prompt.append("12. **[AI 라벨 금지]**: [아이돌 추천], [배우 추천], [캐릭터 추천] 같은 대괄호 라벨 금지.\n");
+		prompt.append(
+			"13. **[미신형 팁 금지]**: 색깔, 방향, 숫자 같은 개운법은 금지합니다.\n");
+		prompt.append(
+			"14. **[선정 과정 표현 금지]**: '남성 라인', '여성 라인', '카테고리', '골랐습니다', '선정했습니다' 같은 표현 금지.\n");
+		prompt.append("15. **[문체]**: 딱딱한 보고서체보다 읽기 쉬운 설명체를 사용하세요.\n\n");
 
 		prompt.append("--- [작성할 내용 및 구조] ---\n");
-
-		// [1페이지: 랭킹 보드]
-		prompt.append("## [" + name + "님을 위한 명예의 전당] \n"); // 제목 변경
-		prompt.append("🥇 1위: [이름] ([그룹/작품명])\n");
-		prompt.append("- [선정 한 줄 평: 예) 당신의 예민함을 잠재워줄 인간 수면제]\n\n"); // 가독성을 위해 한 줄 띄움
-		prompt.append("🥈 2위: [이름] ([그룹/작품명])\n");
-		prompt.append("- [선정 한 줄 평]\n\n");
-		prompt.append("🥉 3위: [이름] ([그룹/작품명])\n");
-		prompt.append("- [선정 한 줄 평]\n\n");
-
-		// 여기서 강제로 줄바꿈을 유도하는 지침 추가
-		prompt.append("(여기서 반드시 줄바꿈을 두 번(\\n\\n) 하여 랭킹과 상세 분석을 시각적으로 분리하세요.)\n\n");
-
-		// [2페이지: 상세 분석]
-		prompt.append("## 💘 이 중 내 '원픽(One Pick)'은? : [1위 이름]\n");
-		prompt.append("### 선정 이유 (사주적 근거)\n");
-		prompt.append("- 사용자(" + name + ")의 사주 특징 요약 (신강/신약, 부족한 오행 등)\n");
-		prompt.append("- 왜 [1위 이름]이 최고의 궁합인지 오행/성격적 관점에서 상세하게 풀어서 설명 (주접 멘트 섞어서)\n");
+		prompt.append("도입 문단: 사주 핵심 성향 + 잘 맞는 상대 타입 설명\n");
+		prompt.append("추천 시작 문장: 아이돌/배우/캐릭터 1명 이름을 한 문장에 제시\n");
+		prompt.append("아이돌 1명 추천 문단\n");
+		prompt.append("배우 1명 추천 문단\n");
+		prompt.append("캐릭터 1명 추천 문단\n");
+		prompt.append("※ 각 후보는 독립 문단으로 작성하고, 한 문단에 여러 후보를 섞지 마세요.\n");
 
 		appendSajuJsonResponseFormat(prompt, name);
 		return prompt.toString();
@@ -3862,8 +3888,8 @@ public class ManseInterpretationService {
 		if (subcategoryId != null && subcategoryId == 21L) {
 			return normalizeBusinessText(fullAnalysis);
 		}
-		if (subcategoryId != null && subcategoryId == 102L) {
-			return normalizeKeywordText(fullAnalysis);
+		if (isFreeFortuneSubcategory(subcategoryId)) {
+			return normalizeFreeFortuneText(subcategoryId, fullAnalysis);
 		}
 		return fullAnalysis;
 	}
@@ -3875,10 +3901,83 @@ public class ManseInterpretationService {
 		if (subcategoryId != null && subcategoryId == 21L) {
 			return limitBusinessSummaryLength(normalizeBusinessSummary(summary));
 		}
-		if (subcategoryId != null && subcategoryId == 102L) {
-			return normalizeKeywordSummary(summary);
+		if (isFreeFortuneSubcategory(subcategoryId)) {
+			return normalizeFreeFortuneSummary(subcategoryId, summary);
 		}
 		return summary;
+	}
+
+	private boolean isFreeFortuneSubcategory(Long subcategoryId) {
+		if (subcategoryId == null) {
+			return false;
+		}
+		return subcategoryId == 101L
+			|| subcategoryId == 102L
+			|| subcategoryId == 103L
+			|| subcategoryId == 104L
+			|| subcategoryId == 105L;
+	}
+
+	private String normalizeFreeFortuneText(Long subcategoryId, String text) {
+		String normalized = text
+			.replace("\r\n", "\n")
+			.replace("\r", "\n");
+		normalized = BUSINESS_PAGE_BREAK_PATTERN.matcher(normalized).replaceAll("\n\n");
+		normalized = BRACKET_SECTION_TITLE_PATTERN.matcher(normalized).replaceAll("");
+		normalized = NUMBERED_SUBSECTION_PATTERN.matcher(normalized).replaceAll("");
+		normalized = NUMBERED_LIST_PATTERN.matcher(normalized).replaceAll("");
+		normalized = HASH_HEADER_PATTERN.matcher(normalized).replaceAll("");
+		normalized = ISO_LOCAL_DATETIME_WITH_OPTIONAL_SECONDS_PATTERN.matcher(normalized)
+			.replaceAll("$1 $2");
+		normalized = DATETIME_WITH_SPACE_PATTERN.matcher(normalized).replaceAll("$1-$2");
+		normalized = DATE_WITH_DAY_PATTERN.matcher(normalized).replaceAll("$1-$2");
+		normalized = convertYearMonthToKorean(normalized);
+		normalized = mergeSingleLineBreaksWithinParagraph(normalized);
+
+		if (subcategoryId == 101L) {
+			normalized = ensureContextAwareParagraphBreaks(
+				normalized,
+				List.of("환경의 변화", "인간관계의 변화", "연애와 애정운", "학업 및 성취운", "건강 및 컨디션"),
+				150,
+				250
+			);
+		} else if (subcategoryId == 102L) {
+			normalized = removeKeywordMetaPhrases(normalized);
+			normalized = ensureKeywordParagraphBreaks(normalized);
+		} else if (subcategoryId == 103L) {
+			normalized = ensureContextAwareParagraphBreaks(
+				normalized,
+				List.of("당신의 매력 포인트", "나만의 플러팅 비법", "이것만은 주의하세요"),
+				140,
+				230
+			);
+		} else if (subcategoryId == 104L) {
+			normalized = normalized.replaceAll(
+				"\\[(아이돌\\s*추천|배우\\s*추천|캐릭터\\s*추천)\\]\\s*",
+				"");
+			normalized = ensureChemistryParagraphBreaks(normalized);
+		} else if (subcategoryId == 105L) {
+			normalized = ensureContextAwareParagraphBreaks(
+				normalized,
+				List.of("오늘의 총운", "재물운", "금전운", "애정운", "성취운"),
+				130,
+				220
+			);
+		}
+
+		normalized = THREE_OR_MORE_NEWLINES_PATTERN.matcher(normalized).replaceAll("\n\n");
+		return normalized.trim();
+	}
+
+	private String normalizeFreeFortuneSummary(Long subcategoryId, String text) {
+		String normalized = text
+			.replace("\r\n", "\n")
+			.replace("\r", "\n");
+		if (subcategoryId == 102L) {
+			normalized = removeKeywordMetaPhrases(normalized);
+		}
+		normalized = THREE_OR_MORE_NEWLINES_PATTERN.matcher(normalized).replaceAll("\n\n");
+		return normalized.trim();
 	}
 
 	private String normalizeBusinessText(String text) {
@@ -3966,6 +4065,24 @@ public class ManseInterpretationService {
 			.replace("\r\n", "\n")
 			.replace("\r", "\n");
 		normalized = removeKeywordMetaPhrases(normalized);
+		normalized = THREE_OR_MORE_NEWLINES_PATTERN.matcher(normalized).replaceAll("\n\n");
+		return normalized.trim();
+	}
+
+	private String normalizeChemistryText(String text) {
+		String normalized = text
+			.replace("\r\n", "\n")
+			.replace("\r", "\n");
+		normalized = BUSINESS_PAGE_BREAK_PATTERN.matcher(normalized).replaceAll("\n\n");
+		normalized = BRACKET_SECTION_TITLE_PATTERN.matcher(normalized).replaceAll("");
+		normalized = normalized.replaceAll(
+			"(?m)^\\s*\\[(아이돌\\s*추천|배우\\s*추천|캐릭터\\s*추천)\\]\\s*\\n?",
+			"");
+		normalized = NUMBERED_SUBSECTION_PATTERN.matcher(normalized).replaceAll("");
+		normalized = NUMBERED_LIST_PATTERN.matcher(normalized).replaceAll("");
+		normalized = HASH_HEADER_PATTERN.matcher(normalized).replaceAll("");
+		normalized = mergeSingleLineBreaksWithinParagraph(normalized);
+		normalized = ensureChemistryParagraphBreaks(normalized);
 		normalized = THREE_OR_MORE_NEWLINES_PATTERN.matcher(normalized).replaceAll("\n\n");
 		return normalized.trim();
 	}
@@ -4062,40 +4179,156 @@ public class ManseInterpretationService {
 			return String.join("\n\n", mergedParagraphs);
 		}
 
-		List<String> sentences = Arrays.stream(normalized.split("(?<=[.!?])\\s+"))
+		String body = ensureContextAwareParagraphBreaks(
+			normalized,
+			List.of("다만", "특히", "반면", "무엇보다", "결론적으로"),
+			150,
+			240
+		);
+		List<String> rebuiltParagraphs = Arrays.stream(body.split("\\n\\s*\\n"))
+			.map(String::trim)
+			.filter(line -> !line.isEmpty())
+			.collect(java.util.stream.Collectors.toCollection(ArrayList::new));
+		if (rebuiltParagraphs.size() < 2 && normalized.length() > 120) {
+			rebuiltParagraphs = new ArrayList<>(
+				splitParagraphByContext(normalized, List.of(), 90, 150));
+		}
+		if (rebuiltParagraphs.isEmpty()) {
+			return titleLine.isEmpty() ? normalized : titleLine + "\n" + normalized;
+		}
+
+		if (!titleLine.isEmpty() && !rebuiltParagraphs.isEmpty()) {
+			List<String> titledParagraphs = new ArrayList<>(rebuiltParagraphs);
+			titledParagraphs.set(0, titleLine + "\n" + titledParagraphs.get(0));
+			return String.join("\n\n", titledParagraphs);
+		}
+		return String.join("\n\n", rebuiltParagraphs);
+	}
+
+	private String ensureChemistryParagraphBreaks(String text) {
+		String normalized = text == null ? "" : text.trim();
+		if (normalized.isEmpty()) {
+			return normalized;
+		}
+
+		List<String> existingParagraphs = Arrays.stream(normalized.split("\\n\\s*\\n"))
+			.map(String::trim)
+			.filter(line -> !line.isEmpty())
+			.toList();
+		if (existingParagraphs.size() >= 3) {
+			return String.join("\n\n", existingParagraphs);
+		}
+
+		String markerSplit = normalized;
+		markerSplit = markerSplit.replaceAll(
+			"\\s*(아이돌\\s*1명\\s*추천\\s*문단|배우\\s*1명\\s*추천\\s*문단|캐릭터\\s*1명\\s*추천\\s*문단|아이돌\\s*추천\\s*3명|배우\\s*추천\\s*3명|캐릭터\\s*추천\\s*3명|종합 원픽\\s*TOP3)",
+			"\n\n$1");
+		markerSplit = markerSplit.replaceAll("\\s*(🥇|🥈|🥉)\\s*", "\n\n$1 ");
+		markerSplit = markerSplit.replaceAll("(?<!\\d)([123])위\\s*[:：]", "\n\n$1위:");
+		markerSplit = markerSplit.replaceAll(
+			"\\s*(아이돌\\s*[1-3]위|배우\\s*[1-3]위|캐릭터\\s*[1-3]위|아이돌\\s*추천\\s*[1-3]|배우\\s*추천\\s*[1-3]|캐릭터\\s*추천\\s*[1-3]|아이돌\\s*1명|배우\\s*1명|캐릭터\\s*1명)\\s*[:：]?",
+			"\n\n$1 ");
+		markerSplit = markerSplit.replaceAll(
+			"(?<=[.!?])\\s*(?=[가-힣A-Za-z0-9]{2,20}(은|는)\\s)",
+			"\n\n");
+		markerSplit = THREE_OR_MORE_NEWLINES_PATTERN.matcher(markerSplit).replaceAll("\n\n");
+
+		List<String> markerParagraphs = Arrays.stream(markerSplit.split("\\n\\s*\\n"))
+			.map(String::trim)
+			.filter(line -> !line.isEmpty())
+			.toList();
+		if (markerParagraphs.size() >= 3) {
+			return String.join("\n\n", markerParagraphs);
+		}
+
+		return ensureContextAwareParagraphBreaks(
+			markerSplit,
+			List.of("또한", "다만", "특히", "반면", "그리고"),
+			140,
+			240
+		);
+	}
+
+	private String ensureContextAwareParagraphBreaks(String text, List<String> topicMarkers,
+		int minChars, int maxChars) {
+		String normalized = text == null ? "" : text.trim();
+		if (normalized.isEmpty()) {
+			return normalized;
+		}
+
+		String withMarkerHints = normalized;
+		for (String marker : topicMarkers) {
+			withMarkerHints = withMarkerHints.replaceAll(
+				"(?<!\\n\\n)\\s+(?=" + Pattern.quote(marker) + ")",
+				"\n\n");
+		}
+		withMarkerHints = THREE_OR_MORE_NEWLINES_PATTERN.matcher(withMarkerHints)
+			.replaceAll("\n\n");
+
+		List<String> paragraphs = Arrays.stream(withMarkerHints.split("\\n\\s*\\n"))
+			.map(String::trim)
+			.filter(line -> !line.isEmpty())
+			.toList();
+
+		List<String> rebuilt = new ArrayList<>();
+		for (String paragraph : paragraphs) {
+			rebuilt.addAll(splitParagraphByContext(paragraph, topicMarkers, minChars, maxChars));
+		}
+		return String.join("\n\n", rebuilt);
+	}
+
+	private List<String> splitParagraphByContext(String paragraph, List<String> topicMarkers,
+		int minChars, int maxChars) {
+		List<String> sentences = Arrays.stream(paragraph.split("(?<=[.!?])\\s+"))
 			.map(String::trim)
 			.filter(line -> !line.isEmpty())
 			.toList();
 		if (sentences.isEmpty()) {
-			return titleLine.isEmpty() ? normalized : titleLine + "\n" + normalized;
+			return List.of(paragraph);
 		}
 
-		int sentencesPerParagraph = sentences.size() >= 12 ? 4 : 3;
-		List<String> rebuiltParagraphs = new ArrayList<>();
-		StringBuilder block = new StringBuilder();
-		int count = 0;
+		if (sentences.size() == 1 && paragraph.length() <= maxChars) {
+			return List.of(paragraph);
+		}
 
-		for (String sentence : sentences) {
-			if (block.length() > 0) {
-				block.append(" ");
+		List<String> chunks = new ArrayList<>();
+		StringBuilder current = new StringBuilder();
+		for (int i = 0; i < sentences.size(); i++) {
+			String sentence = sentences.get(i);
+			if (current.length() > 0) {
+				current.append(" ");
 			}
-			block.append(sentence);
-			count++;
-			if (count >= sentencesPerParagraph) {
-				rebuiltParagraphs.add(block.toString().trim());
-				block.setLength(0);
-				count = 0;
+			current.append(sentence);
+
+			String next = (i + 1) < sentences.size() ? sentences.get(i + 1).trim() : "";
+			boolean contextShift = startsWithAny(next, topicMarkers)
+				|| startsWithAny(next, FREE_PARAGRAPH_TRANSITIONS);
+			boolean overSoftLimit = current.length() >= maxChars;
+			boolean canSplit = current.length() >= minChars;
+
+			if ((contextShift && canSplit) || overSoftLimit) {
+				chunks.add(current.toString().trim());
+				current.setLength(0);
 			}
 		}
 
-		if (block.length() > 0) {
-			rebuiltParagraphs.add(block.toString().trim());
+		if (current.length() > 0) {
+			chunks.add(current.toString().trim());
 		}
+		return chunks;
+	}
 
-		if (!titleLine.isEmpty() && !rebuiltParagraphs.isEmpty()) {
-			rebuiltParagraphs.set(0, titleLine + "\n" + rebuiltParagraphs.get(0));
+	private boolean startsWithAny(String text, List<String> prefixes) {
+		if (text == null || text.isBlank()) {
+			return false;
 		}
-		return String.join("\n\n", rebuiltParagraphs);
+		String trimmed = text.trim();
+		for (String prefix : prefixes) {
+			if (trimmed.startsWith(prefix)) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	private String convertYearMonthToKorean(String text) {
