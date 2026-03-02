@@ -123,6 +123,42 @@ class ManseInterpretationServicePromptTest {
 	}
 
 	@Test
+	void shouldGenerateChemistryPromptWithParagraphRules() throws Exception {
+		ManseryeokCalculationResponse response = sampleResponse();
+
+		Method method = ManseInterpretationService.class.getDeclaredMethod(
+			"createChemistryMatchPrompt",
+			String.class,
+			ManseryeokCalculationResponse.class
+		);
+		method.setAccessible(true);
+
+		String prompt = (String) method.invoke(service, "은정", response);
+
+		assertNotNull(prompt);
+		assertTrue(prompt.contains("추천 대상은 반드시 여성으로만 선정하세요."));
+		assertTrue(prompt.contains("아이돌 1명, 배우 1명, 캐릭터 1명을 반드시 모두 채우세요."));
+		assertTrue(prompt.contains("각 후보마다 맞는 이유 2개, 주의점 1개"));
+		assertTrue(prompt.contains("블랙핑크의 지수, 배우 박보영, 원피스의 나미"));
+		assertTrue(prompt.contains("캐릭터 1명은 반드시 애니메이션 캐릭터만 허용"));
+		assertTrue(prompt.contains("원피스의 나미, 귀멸의 칼날의 탄지로"));
+		assertTrue(prompt.contains("본문 시작은 반드시 2~4문장으로 작성"));
+		assertTrue(prompt.contains("님의 사주 핵심 성향을 간단히 설명"));
+		assertTrue(prompt.contains("추천 파트의 첫 문장은 반드시 아래 형식으로 시작"));
+		assertTrue(prompt.contains("은정님과 가장 잘 어울리는 아이돌은 [아이돌 이름]님, 배우는 [배우 이름]님, 캐릭터는 [작품명]의 [캐릭터명]입니다."));
+		assertTrue(prompt.contains("인물 한 명 설명이 끝날 때마다 줄바꿈 두 번(\\n\\n)"));
+		assertTrue(prompt.contains("한 인물 설명은 3~5문장"));
+		assertTrue(prompt.contains("[아이돌 추천], [배우 추천], [캐릭터 추천] 같은 대괄호 라벨 금지"));
+		assertTrue(prompt.contains("도입 문단: 사주 핵심 성향 + 잘 맞는 상대 타입 설명"));
+		assertTrue(prompt.contains("추천 시작 문장: 아이돌/배우/캐릭터 1명 이름을 한 문장에 제시"));
+		assertTrue(prompt.contains("아이돌 1명 추천 문단"));
+		assertTrue(prompt.contains("배우 1명 추천 문단"));
+		assertTrue(prompt.contains("캐릭터 1명 추천 문단"));
+		assertTrue(prompt.contains("'남성 라인', '여성 라인', '카테고리', '골랐습니다', '선정했습니다'"));
+		assertFalse(prompt.contains("종합 원픽 TOP3"));
+	}
+
+	@Test
 	void shouldNormalizeBusinessOutputMarkersAndDatetimeFormat() throws Exception {
 		Method method = ManseInterpretationService.class.getDeclaredMethod(
 			"normalizeAnalysisBySubcategory",
@@ -183,13 +219,72 @@ class ManseInterpretationServicePromptTest {
 		assertFalse(normalized.contains("핵심만 전해드립니다"));
 		assertFalse(normalized.contains("T04:38"));
 		assertTrue(normalized.contains("2026년 2월~2026년 4월"));
+
+		long paragraphCount = Arrays.stream(normalized.split("\\n\\s*\\n"))
+			.map(String::trim)
+			.filter(line -> !line.isEmpty())
+			.count();
+		assertTrue(paragraphCount >= 1);
+	}
+
+	@Test
+	void shouldNormalizeChemistryOutputAndSplitIntoMultipleParagraphs() throws Exception {
+		Method method = ManseInterpretationService.class.getDeclaredMethod(
+			"normalizeAnalysisBySubcategory",
+			Long.class,
+			String.class
+		);
+		method.setAccessible(true);
+
+		String raw = """
+			[아이돌 추천] 병화 기운이 강한 분에게는 감정의 온도를 조절해주는 유형이 잘 맞습니다. 블랙핑크의 지수는 안정적인 정서 리듬을 만들어 주는 점이 강점입니다. 다만 감정표현 속도 차이는 주의가 필요합니다. 실전 포인트는 갈등 시 결론보다 감정 확인을 먼저 하는 방식입니다. [배우 추천] 배우 박보영은 부드러운 공감력으로 감정 파고를 낮춰주는 타입입니다. 다만 의존도가 높아지면 주도권 균형이 깨질 수 있습니다. 실전 포인트는 역할을 미리 합의하는 방식입니다.
+			""";
+
+		String normalized = (String) method.invoke(service, 104L, raw);
+
+		assertNotNull(normalized);
+		assertFalse(normalized.contains("[아이돌 추천]"));
+		assertFalse(normalized.contains("[배우 추천]"));
 		assertTrue(normalized.contains("\n\n"));
 
 		long paragraphCount = Arrays.stream(normalized.split("\\n\\s*\\n"))
 			.map(String::trim)
 			.filter(line -> !line.isEmpty())
 			.count();
-		assertTrue(paragraphCount >= 2);
+		assertTrue(paragraphCount >= 3);
+	}
+
+	@Test
+	void shouldNormalizeAllFreeFortunesWithContextAwareParagraphs() throws Exception {
+		Method method = ManseInterpretationService.class.getDeclaredMethod(
+			"normalizeAnalysisBySubcategory",
+			Long.class,
+			String.class
+		);
+		method.setAccessible(true);
+
+		String raw101 = """
+			환경의 변화에서 이동수가 강하게 들어오며 일과 생활 리듬이 바뀔 가능성이 큽니다. 인간관계의 변화에서는 새로운 협업 제안이 들어오지만 조율이 필요합니다. 연애와 애정운은 감정 기복을 관리하면 안정적으로 이어질 흐름입니다. 학업 및 성취운은 집중력만 유지하면 성과가 확실히 보이는 구간입니다. 건강 및 컨디션은 수면과 회복 루틴을 먼저 잡아야 낙폭이 줄어듭니다.
+			""";
+
+		String raw103 = """
+			당신의 매력 포인트는 무대 장악력과 솔직한 에너지입니다. 나만의 플러팅 비법은 과한 설명보다 짧고 정확한 표현으로 상대의 반응을 끌어내는 방식입니다. 이것만은 주의하세요 감정이 올라왔을 때 말의 강도가 높아지면 오해가 빠르게 커질 수 있습니다.
+			""";
+
+		String raw105 = """
+			오늘의 총운은 속도를 낮추고 우선순위를 정리할수록 결과가 좋아지는 흐름입니다. 재물운에서는 즉흥 결제보다 검토 후 지출이 안정성을 높입니다. 애정운은 경청이 핵심이며 성취운은 작은 마감부터 끝내는 방식이 효율을 올립니다.
+			""";
+
+		String normalized101 = (String) method.invoke(service, 101L, raw101);
+		String normalized103 = (String) method.invoke(service, 103L, raw103);
+		String normalized105 = (String) method.invoke(service, 105L, raw105);
+
+		assertTrue(Arrays.stream(normalized101.split("\\n\\s*\\n"))
+			.map(String::trim).filter(line -> !line.isEmpty()).count() >= 3);
+		assertTrue(Arrays.stream(normalized103.split("\\n\\s*\\n"))
+			.map(String::trim).filter(line -> !line.isEmpty()).count() >= 3);
+		assertTrue(Arrays.stream(normalized105.split("\\n\\s*\\n"))
+			.map(String::trim).filter(line -> !line.isEmpty()).count() >= 3);
 	}
 
 	@Test
