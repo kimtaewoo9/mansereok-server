@@ -688,6 +688,7 @@ public class ManseInterpretationService {
 			case 103 -> createFlirtingPrompt(name, response);
 			case 104 -> createChemistryMatchPrompt(name, response);
 			case 105 -> createTodayFortunePrompt(name, response);
+			case 106 -> createMarchMonthlyFortunePrompt(name, response);
 			default -> throw new IllegalArgumentException("지원하지 않는 카테고리입니다.");
 		};
 	}
@@ -3589,6 +3590,58 @@ public class ManseInterpretationService {
 		return prompt.toString();
 	}
 
+	// 106. 3월 월간운세
+	private String createMarchMonthlyFortunePrompt(String name,
+		ManseryeokCalculationResponse response) {
+		StringBuilder prompt = new StringBuilder();
+
+		prompt.append("### 0. 시스템 역할 정의 ###\n");
+		prompt.append("당신은 사주를 현실 언어로 풀어주는 명리 상담가입니다.\n");
+		prompt.append("설명은 자연스럽고 사람다운 문장으로 작성하고, 보고서체/AI 안내문처럼 딱딱한 표현은 금지합니다.\n");
+		prompt.append("좋은 흐름만 미화하지 말고, 실제로 주의할 리스크·불편·손실 가능성도 균형 있게 함께 다뤄주세요.\n\n");
+
+		appendPersonDetailInfo(prompt, name, response, 2026);
+
+		prompt.append("\n### [2026년 3월 월간운세 분석 요청] ###\n");
+		prompt.append(
+			"2026년 3월(신금·묘목의 흐름) 한 달 동안 " + name
+				+ "님에게 나타날 운의 흐름을 생활 관점으로 구체적으로 설명해주세요.\n\n");
+
+		prompt.append("### ⚠️ [필수 작성 지침] ###\n");
+		prompt.append("1. 분석 범위는 반드시 2026년 3월 한 달로 고정합니다.\n");
+		prompt.append("2. 본문은 아래 7개 섹션을 순서대로 모두 포함합니다.\n");
+		prompt.append("3. 섹션과 섹션 사이는 반드시 줄바꿈 두 번(\\\\n\\\\n)으로 구분합니다.\n");
+		prompt.append("4. 각 섹션은 4~6문장 내외로 작성하고, 한 문단이 지나치게 길어지지 않게 구성합니다.\n");
+		prompt.append(
+			"5. 번호형 나열(1., 1-1, 첫째/둘째), 마크다운 제목(##, ###), 대괄호 라벨([요약], [핵심]) 사용을 금지합니다.\n");
+		prompt.append(
+			"6. 인위적인 AI 안내 문구를 금지합니다. 예: '직접 대면 상담하듯 핵심만 전해드립니다', 'AI가 분석한 결과'.\n");
+		prompt.append("7. 실천 조언은 현실 행동 중심으로 제시합니다. 색깔, 방향, 숫자 개운법은 금지합니다.\n");
+		prompt.append(
+			"8. 사주 용어는 필요한 만큼만 쓰고, 바로 쉬운 말로 풀어 설명합니다. 한자(甲, 寅, 沖 등)는 출력하지 않습니다.\n");
+		prompt.append("9. 날짜 표기는 '2026년 3월'처럼 년/월까지만 사용하고 시/분/초 표기는 금지합니다.\n");
+		prompt.append(
+			"10. 각 섹션에는 유리한 흐름과 주의할 리스크를 함께 포함하고, 마지막은 현실 대응 조언으로 마무리하세요.\n");
+		prompt.append(
+			"11. 모든 판단은 입력 데이터(원국, 대운, 월운, 합/충/형/파/해, 오행/십성) 근거 안에서만 작성하세요. 데이터에 없는 사건은 만들어내지 마세요.\n");
+		prompt.append(
+			"12. 무조건 좋다/나쁘다 같은 과장이나 단정은 금지하고, 가능성·조건 중심으로 서술하세요.\n\n");
+
+		prompt.append("--- [작성할 섹션 고정 순서] ---\n");
+		prompt.append("3월 핵심 키워드\n");
+		prompt.append("금전운\n");
+		prompt.append("연애운\n");
+		prompt.append("학업/일운\n");
+		prompt.append("건강운\n");
+		prompt.append("주의할 점과 조언\n");
+		prompt.append("3월운 총평\n");
+		prompt.append(
+			"※ 마지막 두 섹션에서는 '이번 달은 어떤 달인지'를 짚고, 무리하지 않으면서 실천 가능한 행동 방향을 자연스럽게 제시한 뒤 3월운 총평으로 깔끔하게 마무리하세요.\n\n");
+
+		appendSajuJsonResponseFormat(prompt, name);
+		return prompt.toString();
+	}
+
 	private String calculateTodayDayPillar(java.time.LocalDate today) {
 		// 기준일: 1900-01-01 = 甲戌日 (60갑자 중 10번째)
 		java.time.LocalDate baseDate = java.time.LocalDate.of(1900, 1, 1);
@@ -3915,7 +3968,8 @@ public class ManseInterpretationService {
 			|| subcategoryId == 102L
 			|| subcategoryId == 103L
 			|| subcategoryId == 104L
-			|| subcategoryId == 105L;
+			|| subcategoryId == 105L
+			|| subcategoryId == 106L;
 	}
 
 	private String normalizeFreeFortuneText(Long subcategoryId, String text) {
@@ -3962,6 +4016,14 @@ public class ManseInterpretationService {
 				List.of("오늘의 총운", "재물운", "금전운", "애정운", "성취운"),
 				130,
 				220
+			);
+		} else if (subcategoryId == 106L) {
+			normalized = ensureContextAwareParagraphBreaks(
+				normalized,
+				List.of("3월 핵심 키워드", "금전운", "연애운", "학업/일운", "건강운",
+					"주의할 점과 조언", "주의할 점", "조언", "3월운 총평", "총평"),
+				140,
+				230
 			);
 		}
 
