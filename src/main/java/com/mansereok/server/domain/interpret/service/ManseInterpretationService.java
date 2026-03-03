@@ -24,6 +24,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.regex.Matcher;
@@ -108,6 +109,17 @@ public class ManseInterpretationService {
 		"결론적으로", "요약하면", "반대로");
 	private static final int BUSINESS_SUMMARY_MAX_LINES = 5;
 	private static final int BUSINESS_SUMMARY_MAX_CHARS = 280;
+	private static final int MARCH_MONTHLY_SECTION_MAX_CHARS = 230;
+	private static final List<String> MARCH_MONTHLY_SECTION_TITLES = List.of(
+		"3월 핵심 키워드",
+		"금전운",
+		"연애운",
+		"학업운",
+		"직장/일운",
+		"건강운",
+		"주의할 점과 조언",
+		"3월운 총평"
+	);
 
 	public ManseInterpretationService(@Value("${openai.api.key}") String apiKey,
 		@Value("${openai.api.base-url:https://api.openai.com}") String baseUrl,
@@ -3609,7 +3621,7 @@ public class ManseInterpretationService {
 
 		prompt.append("### ⚠️ [필수 작성 지침] ###\n");
 		prompt.append("1. 분석 범위는 반드시 2026년 3월 한 달로 고정합니다.\n");
-		prompt.append("2. 본문은 아래 7개 섹션을 순서대로 모두 포함합니다.\n");
+		prompt.append("2. 본문은 아래 8개 섹션을 순서대로 모두 포함합니다.\n");
 		prompt.append("3. 섹션과 섹션 사이는 반드시 줄바꿈 두 번(\\\\n\\\\n)으로 구분합니다.\n");
 		prompt.append("4. 각 섹션은 4~6문장 내외로 작성하고, 한 문단이 지나치게 길어지지 않게 구성합니다.\n");
 		prompt.append(
@@ -3631,7 +3643,8 @@ public class ManseInterpretationService {
 		prompt.append("3월 핵심 키워드\n");
 		prompt.append("금전운\n");
 		prompt.append("연애운\n");
-		prompt.append("학업/일운\n");
+		prompt.append("학업운\n");
+		prompt.append("직장/일운\n");
 		prompt.append("건강운\n");
 		prompt.append("주의할 점과 조언\n");
 		prompt.append("3월운 총평\n");
@@ -4018,13 +4031,7 @@ public class ManseInterpretationService {
 				220
 			);
 		} else if (subcategoryId == 106L) {
-			normalized = ensureContextAwareParagraphBreaks(
-				normalized,
-				List.of("3월 핵심 키워드", "금전운", "연애운", "학업/일운", "건강운",
-					"주의할 점과 조언", "주의할 점", "조언", "3월운 총평", "총평"),
-				140,
-				230
-			);
+			normalized = normalizeMarchMonthlyText(normalized);
 		}
 
 		normalized = THREE_OR_MORE_NEWLINES_PATTERN.matcher(normalized).replaceAll("\n\n");
@@ -4129,6 +4136,118 @@ public class ManseInterpretationService {
 		normalized = removeKeywordMetaPhrases(normalized);
 		normalized = THREE_OR_MORE_NEWLINES_PATTERN.matcher(normalized).replaceAll("\n\n");
 		return normalized.trim();
+	}
+
+	private String normalizeMarchMonthlyText(String text) {
+		String normalized = text == null ? "" : text;
+
+		// 1) 섹션 제목 변형(대괄호, 줄바꿈 분리, 콜론 표기)을 표준 제목으로 통일
+		normalized = normalized.replaceAll("(?is)\\[\\s*3월\\s*핵심\\s*키워드\\s*\\]", "3월 핵심 키워드");
+		normalized = normalized.replaceAll("(?is)\\[\\s*금전\\s*운\\s*\\]", "금전운");
+		normalized = normalized.replaceAll("(?is)\\[\\s*연애\\s*운\\s*\\]", "연애운");
+		normalized = normalized.replaceAll("(?is)\\[\\s*학업\\s*운\\s*\\]", "학업운");
+		normalized = normalized.replaceAll("(?is)\\[\\s*학업\\s*/\\s*일\\s*운\\s*\\]", "학업운");
+		normalized = normalized.replaceAll("(?is)\\[\\s*직장\\s*운\\s*\\]", "직장/일운");
+		normalized = normalized.replaceAll("(?is)\\[\\s*직장\\s*/\\s*일\\s*운\\s*\\]", "직장/일운");
+		normalized = normalized.replaceAll("(?is)\\[\\s*건강\\s*운\\s*\\]", "건강운");
+		normalized = normalized.replaceAll("(?is)\\[\\s*주의할\\s*점과\\s*조언\\s*\\]", "주의할 점과 조언");
+		normalized = normalized.replaceAll("(?is)\\[\\s*3월운\\s*총평\\s*\\]", "3월운 총평");
+
+		normalized = normalized.replaceAll("(?m)^\\s*3월\\s*핵심\\s*키워드\\s*[:：-]?\\s*", "\n\n3월 핵심 키워드\n");
+		normalized = normalized.replaceAll("(?m)^\\s*금전\\s*운\\s*[:：-]?\\s*", "\n\n금전운\n");
+		normalized = normalized.replaceAll("(?m)^\\s*연애\\s*운\\s*[:：-]?\\s*", "\n\n연애운\n");
+		normalized = normalized.replaceAll("(?m)^\\s*학업\\s*운\\s*[:：-]?\\s*", "\n\n학업운\n");
+		normalized = normalized.replaceAll("(?m)^\\s*학업\\s*/\\s*일\\s*운\\s*[:：-]?\\s*", "\n\n학업운\n");
+		normalized = normalized.replaceAll("(?m)^\\s*직장\\s*운\\s*[:：-]?\\s*", "\n\n직장/일운\n");
+		normalized = normalized.replaceAll("(?m)^\\s*직장\\s*/\\s*일\\s*운\\s*[:：-]?\\s*", "\n\n직장/일운\n");
+		normalized = normalized.replaceAll("(?m)^\\s*건강\\s*운\\s*[:：-]?\\s*", "\n\n건강운\n");
+		normalized = normalized.replaceAll("(?m)^\\s*주의할\\s*점과\\s*조언\\s*[:：-]?\\s*", "\n\n주의할 점과 조언\n");
+		normalized = normalized.replaceAll("(?m)^\\s*3월운\\s*총평\\s*[:：-]?\\s*", "\n\n3월운 총평\n");
+		normalized = THREE_OR_MORE_NEWLINES_PATTERN.matcher(normalized).replaceAll("\n\n").trim();
+
+		// 2) 섹션 단위로 재조립해 제목이 분리되는 문제 방지 + 섹션당 길이 상한 적용
+		Map<String, StringBuilder> sectionBodies = new LinkedHashMap<>();
+		for (String title : MARCH_MONTHLY_SECTION_TITLES) {
+			sectionBodies.put(title, new StringBuilder());
+		}
+
+		String currentTitle = null;
+		List<String> blocks = Arrays.stream(normalized.split("\\n\\s*\\n"))
+			.map(String::trim)
+			.filter(block -> !block.isEmpty())
+			.toList();
+
+		for (String block : blocks) {
+			if (MARCH_MONTHLY_SECTION_TITLES.contains(block)) {
+				currentTitle = block;
+				continue;
+			}
+
+			boolean consumed = false;
+			for (String title : MARCH_MONTHLY_SECTION_TITLES) {
+				if (block.startsWith(title + "\n")) {
+					currentTitle = title;
+					String body = block.substring(title.length()).trim();
+					appendSectionBody(sectionBodies.get(title), body);
+					consumed = true;
+					break;
+				}
+			}
+			if (consumed) {
+				continue;
+			}
+
+			if (currentTitle != null) {
+				appendSectionBody(sectionBodies.get(currentTitle), block);
+			}
+		}
+
+		List<String> rebuilt = new ArrayList<>();
+		for (String title : MARCH_MONTHLY_SECTION_TITLES) {
+			String body = sectionBodies.get(title).toString().trim();
+			if (body.isEmpty()) {
+				continue;
+			}
+			body = trimToSentenceLength(body, MARCH_MONTHLY_SECTION_MAX_CHARS);
+			rebuilt.add(title + "\n" + body);
+		}
+
+		return String.join("\n\n", rebuilt).trim();
+	}
+
+	private void appendSectionBody(StringBuilder builder, String text) {
+		if (text == null || text.isBlank()) {
+			return;
+		}
+		if (builder.length() > 0) {
+			builder.append(" ");
+		}
+		builder.append(text.replaceAll("\\s+", " ").trim());
+	}
+
+	private String trimToSentenceLength(String text, int maxChars) {
+		if (text == null) {
+			return "";
+		}
+		String normalized = text.trim();
+		if (normalized.length() <= maxChars) {
+			return normalized;
+		}
+
+		int hardCut = Math.min(maxChars, normalized.length());
+		int cut = -1;
+		String[] markers = {"다.", "요.", "니다.", ".", "!", "?"};
+		for (String marker : markers) {
+			int idx = normalized.lastIndexOf(marker, hardCut);
+			if (idx > cut) {
+				cut = idx + marker.length();
+			}
+		}
+
+		if (cut < (int) (maxChars * 0.55)) {
+			cut = hardCut;
+		}
+		return normalized.substring(0, cut).trim();
 	}
 
 	private String normalizeChemistryText(String text) {
