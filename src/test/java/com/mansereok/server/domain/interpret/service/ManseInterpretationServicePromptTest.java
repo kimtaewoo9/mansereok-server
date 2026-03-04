@@ -76,8 +76,8 @@ class ManseInterpretationServicePromptTest {
 
 		assertNotNull(prompt);
 		assertTrue(
-			prompt.contains("fullAnalysis 총 분량은 5000~6000자 사이로 작성한다.")
-				|| prompt.contains("fullAnalysis 총 분량은 5000자 이상 6000자 이하"));
+			prompt.contains("fullAnalysis 총 분량은 최소 4000자 이상으로 작성한다.")
+				|| prompt.contains("fullAnalysis 총 분량은 최소 4000자 이상으로 작성한다. 분량 상한은 두지 않는다."));
 		assertTrue(prompt.contains("페이지 분리는 반드시 줄바꿈 두 번(\\\\n\\\\n)으로만 한다."));
 		assertTrue(prompt.contains("### 문체 기준 (골드 스탠다드) ###"));
 		assertTrue(prompt.contains("### 이야기 흐름 (제목/번호는 출력하지 말 것) ###"));
@@ -96,6 +96,27 @@ class ManseInterpretationServicePromptTest {
 		assertFalse(prompt.contains("대괄호(`[]`)"));
 		assertFalse(prompt.contains("첫 번째 단락 묶음"));
 		assertFalse(prompt.contains("fullAnalysis 총 분량은 약 4000자 내외"));
+	}
+
+	@Test
+	void shouldGenerateMoneyLuckPromptWithoutLetteredFrameAndWithTargetLength() throws Exception {
+		ManseryeokCalculationResponse response = sampleResponse();
+
+		Method method = ManseInterpretationService.class.getDeclaredMethod(
+			"createMoneyLuckPrompt",
+			String.class,
+			ManseryeokCalculationResponse.class
+		);
+		method.setAccessible(true);
+
+		String prompt = (String) method.invoke(service, "김태우", response);
+
+		assertNotNull(prompt);
+		assertTrue(prompt.contains("fullAnalysis 총 분량은 3800자 이상 4600자 이하로 작성한다."));
+		assertTrue(prompt.contains("번호 라벨(A, B, C...)이나 대괄호 제목 없이 자연 문단형으로 쓴다."));
+		assertTrue(prompt.contains("같은 조언 반복 금지"));
+		assertFalse(prompt.contains("프레임마다 꼭 A, B, C, D, E, H"));
+		assertFalse(prompt.contains("A. 돈벼락 가능성"));
 	}
 
 	@Test
@@ -196,6 +217,35 @@ class ManseInterpretationServicePromptTest {
 		assertFalse(normalized.contains("3과 8"));
 		assertFalse(normalized.contains("천간충"));
 		assertTrue(normalized.contains("천간 충돌"));
+	}
+
+	@Test
+	void shouldNormalizeMoneyLuckOutputAndRemoveCorruptedUnicode() throws Exception {
+		Method method = ManseInterpretationService.class.getDeclaredMethod(
+			"normalizeAnalysisBySubcategory",
+			Long.class,
+			String.class
+		);
+		method.setAccessible(true);
+
+		String raw = """
+			[A. 돈벼락 가능성]
+			인생의 판이 바뀔 수 있습니다.
+			جذب力이 강하게 작동합니다.
+			[주의할 점과
+			조언]
+			2026-02-04T04:38~2026-04-05T03:32:59에 흐름이 바뀝니다.
+			""";
+
+		String normalized = (String) method.invoke(service, 20L, raw);
+
+		assertNotNull(normalized);
+		assertFalse(normalized.contains("[A. 돈벼락 가능성]"));
+		assertFalse(normalized.contains("جذب"));
+		assertTrue(normalized.contains("흡인력"));
+		assertFalse(normalized.contains("[주의할 점과"));
+		assertFalse(normalized.contains("조언]"));
+		assertTrue(normalized.contains("2026년 2월~2026년 4월"));
 	}
 
 	@Test
