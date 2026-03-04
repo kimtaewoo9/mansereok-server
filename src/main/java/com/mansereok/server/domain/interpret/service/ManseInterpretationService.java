@@ -102,6 +102,18 @@ public class ManseInterpretationService {
 		"\\b(\\d{4})-(0[1-9]|1[0-2])\\b");
 	private static final Pattern THREE_OR_MORE_NEWLINES_PATTERN = Pattern.compile(
 		"\\n{3,}");
+	private static final Pattern MONEY_LUCK_LETTERED_SECTION_PATTERN = Pattern.compile(
+		"(?m)^\\s*\\[?[A-H]\\s*[.)]\\s*[^\\n]*\\n?");
+	private static final Pattern MONEY_LUCK_BRACKET_OPEN_FRAGMENT_PATTERN = Pattern.compile(
+		"(?m)^\\s*\\[\\s*([^\\]\\n]{1,120})\\s*$");
+	private static final Pattern MONEY_LUCK_BRACKET_CLOSE_FRAGMENT_PATTERN = Pattern.compile(
+		"(?m)^\\s*([^\\[\\]\\n]{1,120})\\s*\\]\\s*$");
+	private static final Pattern MONEY_LUCK_BRACKET_ONLY_HEADING_PATTERN = Pattern.compile(
+		"(?m)^\\s*\\[[^\\]\\n]{1,120}\\]\\s*$");
+	private static final Pattern ARABIC_OR_CYRILLIC_PATTERN = Pattern.compile(
+		"[\\p{IsArabic}\\p{IsCyrillic}]+");
+	private static final Pattern MULTI_SPACE_PATTERN = Pattern.compile(
+		"[ \\t]{2,}");
 	private static final Pattern KEYWORD_TITLE_LINE_PATTERN = Pattern.compile(
 		"^\\s*\\[[^\\]\\n]{1,120}\\]");
 	private static final List<String> FREE_PARAGRAPH_TRANSITIONS = List.of(
@@ -1637,190 +1649,48 @@ public class ManseInterpretationService {
 		return prompt.toString();
 	}
 
-	// ==================== 20. 돈벼락(재물운) 분석 프롬프트 (v5 - 확률 통제 및 몰입 강화) ====================
+	// ==================== 20. 돈벼락(재물운) 분석 프롬프트 (v6 - 자연문단형) ====================
 	private String createMoneyLuckPrompt(String name, ManseryeokCalculationResponse response) {
 		StringBuilder prompt = new StringBuilder();
-		// ──────────────────────────────────────────────────────────
-		// 0. 시스템 역할 + 페르소나
-		// ──────────────────────────────────────────────────────────
-		prompt.append("### 0. 시스템 역할 정의 ###\n");
-		prompt.append("사용자는 '돈벼락(큰 돈이 한 번에 터지거나, 규모가 급격히 커지는 재물 흐름)'의 가능성을 보고 싶어 합니다.\n");
-		prompt.append("돈벼락은 횡재만 의미하지 않습니다. 규모의 급팽창, 단가 상승, 거래처 급확장, 투자 수익 폭발도 돈벼락으로 정의합니다.\n\n");
+		prompt.append("### 역할 ###\n");
+		prompt.append("너는 한국 명리학 기반 재물운 전문 역술가다.\n");
+		prompt.append("결론만 던지는 컨설턴트가 아니라, 사주 구조가 현실의 돈 흐름에서 어떻게 작동하는지 풀어주는 해석가다.\n\n");
 
-		// ──────────────────────────────────────────────────────────
-		// 핵심: 문장 구조 + 가독성 + 몰입 규칙
-		// ──────────────────────────────────────────────────────────
-		prompt.append("### 문장 구조 규칙 (가장 중요 — 반드시 지킬 것) ###\n\n");
+		prompt.append("### 핵심 목적 ###\n");
+		prompt.append(String.format(
+			"%s님의 재물운을 분석하되, 큰돈이 열리는 가능성과 함께 손실/누수 리스크를 균형 있게 보여준다.\n",
+			name));
+		prompt.append("돈벼락은 횡재만 의미하지 않는다. 규모의 급팽창, 단가 상승, 거래처 확장, 투자 수익 확대도 포함한다.\n\n");
 
-		prompt.append("#### 규칙 1: 현실 먼저, 근거는 뒤에 ####\n");
-		prompt.append("모든 문장은 '현실에서 어떤 의미인지'를 먼저 말하고, 사주 근거는 그 뒤에 짧게 붙이세요.\n");
+		prompt.append("### 작성 원칙 ###\n");
+		prompt.append("1. 입력 JSON 밖의 사실은 추측하지 않는다.\n");
+		prompt.append("2. 근거 없는 단정 금지. 핵심 판단마다 사주 근거를 붙인다.\n");
+		prompt.append("3. 좋은 점만 미화하지 말고 리스크와 손실 가능성을 반드시 같이 다룬다.\n");
+		prompt.append("4. 전문 용어는 필요한 순간에만 쓰고, 첫 등장 1회만 쉬운 풀이를 붙인다.\n");
+		prompt.append("5. 한 문단에 전문 용어는 최대 1개만 사용한다.\n");
+		prompt.append("6. 월운은 12개월 나열 대신 핵심 3구간만 설명한다.\n");
+		prompt.append("7. 날짜는 yyyy년 M월 형식만 사용한다. 일/시/분/초/T 표기는 금지한다.\n");
+		prompt.append("8. 색/방향/숫자 개운법은 쓰지 않는다.\n");
+		prompt.append("9. 마크다운과 라벨형 목차(A., [ ], 1-1)는 쓰지 않는다.\n\n");
 
-		prompt.append("#### 규칙 2: 사주 용어 비율은 문장의 20~30% 이하 ####\n");
-		prompt.append("한 문장 안에 사주 용어(십성명, 천간지지명, 오행 등)가 2개를 넘지 않도록 하세요.\n");
-		prompt.append("용어를 여러 개 언급해야 할 때는 문장을 나눠서 하나씩 풀어주세요.\n\n");
+		prompt.append("### 작성 방식 ###\n");
+		prompt.append("돈의 성격, 강점과 누수, 타이밍 3구간, 최종 조언 순으로 자연스럽게 이어서 쓴다.\n");
+		prompt.append("보고서처럼 딱딱한 체크리스트 문장 대신 상담형 줄글로 작성한다.\n");
+		prompt.append("오행 점수, 십성 개수 같은 수치값은 본문에 직접 노출하지 않고 강약 경향으로만 표현한다.\n");
+		prompt.append("같은 조언을 문장만 바꿔 반복하지 않는다.\n\n");
 
-		prompt.append("#### 규칙 3: 대괄호 [ ] 표기 금지 ####\n");
-		prompt.append("[시주 시간 병화(편재)] 같은 대괄호 표기를 절대 사용하지 마세요.\n");
-		prompt.append("사주 근거를 밝힐 때는 자연스러운 문장 속에 녹여서 쓰세요.\n\n");
+		prompt.append("### 분량/문단 규칙 ###\n");
+		prompt.append("fullAnalysis 총 분량은 3800자 이상 4600자 이하로 작성한다.\n");
+		prompt.append("전체는 6~8개 문단으로 구성하고, 문단 구분은 줄바꿈 두 번(\\\\n\\\\n)만 사용한다.\n");
+		prompt.append("한 문단이 과도하게 길어지면 문맥 기준으로 자연스럽게 나눈다.\n");
+		prompt.append("분량을 늘릴 때는 미사여구가 아니라 근거와 현실 장면 설명을 채운다.\n\n");
 
-		prompt.append("#### 규칙 4: 년도와 날짜는 반드시 숫자로 표기 ####\n");
-		prompt.append("'이천이십육년' (X) → '2026년' (O)\n");
-		prompt.append("'삼월' (X) → '3월' (O)\n");
-		prompt.append("모든 년도와 날짜는 아라비아 숫자로만 표기하세요.\n\n");
-
-		// ──────────────────────────────────────────────────────────
-		// 절대 금지 패턴
-		// ──────────────────────────────────────────────────────────
-		prompt.append("### 절대 금지 패턴 ###\n");
-		prompt.append("- \"좋은 기운이 흐르고 있습니다\" 같은 추상적 표현\n");
-		prompt.append("- \"재물운이 좋습니다/나쁩니다\" 같은 단순 결론\n");
-		prompt.append("- \"노력하면 좋은 결과가 있을 것입니다\" 같은 근거 없는 격려\n");
-		prompt.append("- 마크다운 문법(##, **, -, 번호 목록 등) 사용\n");
-		prompt.append("- 한 문장에 사주 용어 3개 이상 나열\n");
-		prompt.append("- 한글이 아닌 문자(아랍어, 특수문자 등) 사용. 반드시 한글과 기본 문장부호만 쓰세요.\n\n");
-
-		// ──────────────────────────────────────────────────────────
-		// 절대 규칙
-		// ──────────────────────────────────────────────────────────
-		prompt.append("### 절대 규칙 ###\n");
-		prompt.append("- 만세력 계산은 추측하지 말고 입력된 데이터만 사용합니다.\n");
-		prompt.append("- 사주 용어는 정확히 구분합니다. 일간=나 자신, 일주=일간+일지.\n");
-		prompt.append("- 한자는 무조건 한글로 표기합니다 (예: 병화, 진토, 오화).\n");
-		prompt.append("- 나열은 쉼표와 띄어쓰기로 구분합니다.\n");
-		prompt.append("- 결과는 얼버무리지 말고, 근거를 제시한 뒤 결론을 내립니다.\n");
-		prompt.append("- 출력은 반드시 한글과 기본 문장부호(마침표, 쉼표, 물음표, 느낌표, 따옴표)만 사용하세요. 아랍어 등 절대 금지\n\n");
-
-		// ──────────────────────────────────────────────────────────
-		// 분석 대상자 데이터 주입
-		// ──────────────────────────────────────────────────────────
 		prompt.append("### 분석 대상자 데이터 (만세력) ###\n");
 		appendPersonDetailInfo(prompt, name, response);
 		appendKeywords(prompt, response);
+		prompt.append("\n");
 
-		// ──────────────────────────────────────────────────────────
-		// 분석 프레임 (A~H)
-		// ──────────────────────────────────────────────────────────
-		prompt.append("\n### [돈벼락 가능성 구조적 분석] ###\n");
-		prompt.append(String.format(
-			"%s님의 사주가 '돈벼락을 맞을 가능성이 있는 구조인지' 아래 순서대로 분석해주세요.\n", name));
-		prompt.append(
-			"프레임마다 꼭 A, B, C, D, E, H 같은 인덱스를 붙여주시고, [A. 돈벼락 가능성]과 같이 제목에는 대괄호를 붙여주세요.\n\n");
-
-		// ── A. 한 줄 결론 (수정된 핵심 로직: 비율 강제 및 판별 기준) ──
-		prompt.append("A. 돈벼락 가능성\n");
-		prompt.append("**[작성 지침]**\n");
-		prompt.append("- 첫 문장: '인생의 판이 바뀌는 재물 확장의 가능성은 [낮음/중간/높음] 수준입니다.'\n\n");
-
-		prompt.append("**[가능성 판별 기준 (비율 강제 할당) - 절대 엄수]**\n");
-		prompt.append(
-			"AI는 사주 구조를 매우 엄격하게 평가하여, 전체 사용자의 판별 비율이 대략 [높음 10%, 중간 60%, 낮음 30%]가 되도록 아래 기준을 타이트하게 적용하세요.\n");
-		prompt.append(
-			"- [높음] (상위 10%): 편재(偏財)가 뚜렷하고 식상생재가 강하게 연결되며, 대운/세운에서 큰 재물 흐름이 완벽히 받쳐주는 '특출난 사주'에만 주저 없이 부여하세요. (조금이라도 조건이 부족하거나 애매하면 무조건 '중간'으로 내릴 것)\n");
-		prompt.append(
-			"- [중간] (표준 60%): 정재 위주의 안정적 재물이거나, 재물이 들어와도 비견/겁재로 새는 구멍이 혼재된 경우. 폭발적이진 않지만 노력에 비례해 꾸준히 성장하는 대다수의 사주에 부여하세요.\n");
-		prompt.append(
-			"- [낮음] (하위 30%): 재성이 아예 없거나(무재), 재성이 심하게 파극/고립되어 방어적 자산 관리가 절대적으로 우선되어야 하는 사주에 부여하세요.\n\n");
-
-		prompt.append("- 두 번째 문장: 그 판단의 **핵심 근거** 1~2가지를 사주 원국과 대운을 바탕으로 간단히 제시\n");
-		prompt.append("- 세 번째 문장: '하지만 [구체적 방법]을 하면 재물운을 키울 수 있어요.'\n");
-		prompt.append("  예시: '하지만 사업 구조를 탄탄히 잡고 시스템화하면 재물운을 키울 수 있어요.'\n");
-		prompt.append("- 마지막 문장: B섹션으로 자연스럽게 연결되는 전환 문장\n");
-		prompt.append("  예시: '먼저 당신의 돈 그릇부터 살펴볼게요.'\n\n");
-
-		// ── B. 돈 그릇 ──
-		prompt.append("B. 사주의 돈 그릇\n");
-		prompt.append("- 큰돈이 들어왔을 때 감당할 수 있는 체력이 되는지 설명하세요.\n");
-		prompt.append("- 사주 근거는 비유 뒤에 짧게 붙이세요.\n");
-		prompt.append("- 마지막에 돈벼락이 가능한 그릇인지 1차 판별하세요.\n\n");
-
-		// ── C. 재성 구조 ──
-		prompt.append("C. 재성 구조 — 어떤 종류의 돈인가\n");
-		prompt.append(
-			"- 먼저 '재성'이 뭔지 한 문장으로 설명하세요. 예: \"재성은 사주에서 돈을 나타내는 요소입니다. 정재는 월급처럼 안정적인 돈, 편재는 사업이나 투자처럼 변동이 큰 돈을 의미합니다.\"\n");
-		prompt.append("- 이 사주에 맞는 돈의 성격(월급형/사업형/투자형)을 먼저 말하세요.\n");
-		prompt.append("- 사주 근거는 그 뒤에 짧게.\n");
-		prompt.append("- 재성 위치(년/월/일/시)에 따른 돈의 타이밍도 설명하세요.\n");
-		prompt.append("- 단정형 공감 문장을 넣으세요. 예: \"월급만으로는 뭔가 부족한 느낌이 있었을 겁니다. 이 사주는 그게 정상이에요.\"\n\n");
-
-		// ── D. 식상생재 ──
-		prompt.append("D. 돈을 만드는 능력 — 식상생재\n");
-		prompt.append(
-			"- 먼저 '식상생재'가 뭔지 한 문장으로 설명하세요. 예: \"식상생재는 내 능력(식상)이 돈(재성)을 만들어내는 구조입니다. 쉽게 말해 내 실력으로 돈을 버는 엔진이 있는지를 나타냅니다.\"\n");
-		prompt.append("- '내 능력으로 돈을 만들어내는 엔진이 있는지'를 먼저 말하세요.\n");
-		prompt.append("- 엔진이 강하면 어떤 능력으로 돈을 만드는지, 약하면 어떤 방식으로 극복해야할지를 설명해주세요.\n");
-		prompt.append("- 이 구조가 돈벼락과 어떻게 연결되는지 마무리하세요.\n\n");
-
-		// ── E. 돈이 새는 구멍 ──
-		prompt.append("E. 돈이 새는 구멍 — 비견·겁재 리스크\n");
-		prompt.append("- 돈이 빠져나가는 패턴을 특정해서 설명해주세요.\n");
-		prompt.append("- 리스크만 말하지 말고, 막는 현실적 장치도 같이 제시하세요. 현실적으로 가능한 조언으로 제시하세요.\n\n");
-
-		// ── F. 돈창고 ──
-		prompt.append("F. 돈창고와 열리는 타이밍\n");
-		prompt.append("- 저장형인지 회전형인지 먼저 말하고, 그에 맞는 돈 관리 방식을 제시하세요.\n\n");
-
-		// ── G. 트리거 구간 (핵심 + 심리 문장 추가) ──
-		prompt.append("G. 돈벼락 트리거 구간 — 대운/세운 (가장 자세하게, 최소 1500자)\n");
-		prompt.append("**이 섹션이 10,900원의 핵심 가치입니다. 독자가 '와, 이건 진짜 내 얘기네'라고 느껴야 합니다.**\n\n");
-
-		prompt.append("**[작성 규칙 - 절대 엄수]**\n");
-		prompt.append("1. **쉼표(,) 남발 금지**: 문장은 마침표(.)로 끝내세요.\n");
-		prompt.append("2. **심리 묘사는 구체적으로**: '이런 생각이 강해질 겁니다' 같은 뻔한 표현 금지.\n");
-		prompt.append("3. **타이밍마다 변화를 줘라**: 4개 시기를 똑같은 패턴으로 쓰지 마세요.\n");
-		prompt.append("   - 1순위: 감정+기회 중심\n");
-		prompt.append("   - 2순위: 위기+전환 중심\n");
-		prompt.append("   - 3순위: 시스템+구조 중심\n");
-		prompt.append("   - 4순위: 철학+완성 중심\n\n");
-
-		prompt.append("- 돈이 크게 몰리는 시기 3~4개를 콕 집으세요.\n");
-		prompt.append("- **각 시기마다 최소 200자 이상** 서술하세요.\n");
-		prompt.append("- 각 시기마다 아래 요소를 **반드시** 포함:\n");
-		prompt.append("  (1) 돈이 커지는 **구체적 방식** (계약 확장 → 어떤 계약? 투자 수익 → 어떤 투자?)\n");
-		prompt.append("  (2) 그 시기 **특유의 심리 상태**를 체감되게 묘사 (막연한 '생각이 강해진다' 금지)\n");
-		prompt.append("  (3) **함정을 왜 빠지는지** 심리적 메커니즘 설명\n");
-		prompt.append("  (4) **즉시 실행 가능한 행동** (추상적 조언 금지)\n\n");
-
-		// ── H. 현실 조언 + 인생 숙제 ──
-		prompt.append("H. 현실 조언과 마무리 (최소 800자)\n");
-
-		prompt.append("**[절대 금지]**\n");
-		prompt.append("- 색깔 추천 (청색, 녹색 등) 절대 금지\n");
-		prompt.append("- 방향 추천 (동쪽, 서쪽 등) 절대 금지\n");
-		prompt.append("- 숫자 추천 (3, 8 등) 절대 금지\n");
-		prompt.append("→ 이런 미신적 조언은 10,900원 콘텐츠의 품격을 떨어뜨립니다.\n\n");
-
-		prompt.append("**[필수 구성]**\n");
-		prompt.append("1. 돈 벌기 유형 판정 (300자)\n");
-		prompt.append("   - [월급형/사업형/투자형/전문직형/콘텐츠형] 중 1~2개 선택\n");
-		prompt.append("   - 왜 그 유형인지 사주 구조 기반으로 명확히 설명\n\n");
-
-		prompt.append("2. 즉시 실행 가능한 행동 3가지 (200자)\n");
-
-		prompt.append("3. 돈에 대한 인생 숙제 (300자 이상, 가장 중요)\n");
-		prompt.append("   이 사주가 평생 돈과 관련해서 풀어야 할 **철학적 과제**를 한 문단으로 정리하세요.\n");
-		prompt.append("   예시 톤: '사용자님 사주의 돈 숙제는 버는 법이 아니라 남기는 법입니다...'\n\n");
-
-		prompt.append("4. 희망적 마무리 (100자)\n");
-		prompt.append("   단정적이면서도 희망적으로. 마지막 문장이 여운을 남겨야 합니다.\n\n");
-
-		// ──────────────────────────────────────────────────────────
-		// 출력 전 자가 점검
-		// ──────────────────────────────────────────────────────────
-		prompt.append("### 출력 전 자가 점검 ###\n");
-		prompt.append("작성 후 아래 항목을 점검하고, 하나라도 해당되면 수정하세요:\n");
-		prompt.append("**(가장 중요) 전체 문장을 읽어보고, 말투나 표현이 자연스러운지 확인 후 자연스럽지 않다면 수정**\n");
-		prompt.append("□ 대괄호 [ ] 가 있는가? → 자연스러운 문장으로 대체\n");
-		prompt.append("□ 현실 의미 없이 용어만 나열된 문장이 있는가? → 현실 의미를 앞에 추가\n");
-		prompt.append("□ G섹션에 심리 문장(사용자가 느낄 감정/생각)이 각 시기마다 있는가? → 없으면 추가\n");
-		prompt.append("□ G섹션이 전체에서 가장 긴 섹션인가? → 아니라면 보강\n");
-		prompt.append("□ H섹션 마지막에 '인생 숙제' 문단이 있는가? → 없으면 추가\n");
-		prompt.append("□ 한글과 기본 문장부호 외의 문자가 있는가? → 삭제\n");
-		prompt.append("□ 마크다운(##, **, - 등)을 사용했는가? → 순수 텍스트로 수정\n\n");
-
-		// ──────────────────────────────────────────────────────────
-		// 출력 형식 (JSON)
-		// ──────────────────────────────────────────────────────────
-		appendSajuJsonResponseFormat(prompt, name);
+		appendMoneyLuckJsonResponseFormat(prompt);
 
 		return prompt.toString();
 	}
@@ -1890,7 +1760,7 @@ public class ManseInterpretationService {
 		prompt.append("매출은 올랐는데 정산하고 나면 남는 게 없다, 이런 장면이 이 사주에서는 한두 번이 아닐 겁니다.\n\n");
 
 		prompt.append("### 분량/페이지 규칙 ###\n");
-		prompt.append("fullAnalysis 총 분량은 5000~6000자 사이로 작성한다.\n");
+		prompt.append("fullAnalysis 총 분량은 최소 4000자 이상으로 작성한다. 분량 상한은 두지 않는다.\n");
 		prompt.append("페이지 분리는 반드시 줄바꿈 두 번(\\\\n\\\\n)으로만 한다.\n");
 		prompt.append("총 페이지는 6~8개 흐름으로 구성한다.\n");
 		prompt.append("한 페이지는 7~10줄 내외의 문단 1개로 구성한다.\n");
@@ -1992,6 +1862,21 @@ public class ManseInterpretationService {
 		prompt.append("summary는 4~5줄로 작성하고, 핵심 행동만 짧게 정리한다.\n");
 		prompt.append("summary 총 길이는 280자 이내로 제한한다.\n");
 		prompt.append("기간 표기는 yyyy년 M월 형식만 허용한다.\n");
+		prompt.append("출력 스키마:\n");
+		prompt.append("{\n");
+		prompt.append("  \"fullAnalysis\": \"...\",\n");
+		prompt.append("  \"summary\": \"...\"\n");
+		prompt.append("}\n");
+	}
+
+	private void appendMoneyLuckJsonResponseFormat(StringBuilder prompt) {
+		prompt.append("\n\n### 최종 출력 형식 (JSON) ###\n");
+		prompt.append("반드시 순수 JSON 객체만 출력한다. markdown 코드블록 금지.\n");
+		prompt.append("JSON 문자열 내부 줄바꿈은 반드시 \\\\n으로 이스케이프한다.\n");
+		prompt.append("fullAnalysis에는 번호형 라벨(A., 1., 첫째), 대괄호 제목([ ... ]), 목록 기호(-, *)를 쓰지 않는다.\n");
+		prompt.append("fullAnalysis의 문단 구분은 \\\\n\\\\n만 사용한다.\n");
+		prompt.append("fullAnalysis 길이는 3800자 이상 4600자 이하를 지킨다.\n");
+		prompt.append("summary는 4~5줄로 작성하고 총 길이는 280자 이내로 제한한다.\n");
 		prompt.append("출력 스키마:\n");
 		prompt.append("{\n");
 		prompt.append("  \"fullAnalysis\": \"...\",\n");
@@ -3951,6 +3836,9 @@ public class ManseInterpretationService {
 		if (fullAnalysis == null) {
 			return null;
 		}
+		if (subcategoryId != null && subcategoryId == 20L) {
+			return normalizeMoneyLuckText(fullAnalysis);
+		}
 		if (subcategoryId != null && subcategoryId == 21L) {
 			return normalizeBusinessText(fullAnalysis);
 		}
@@ -4045,6 +3933,45 @@ public class ManseInterpretationService {
 		if (subcategoryId == 102L) {
 			normalized = removeKeywordMetaPhrases(normalized);
 		}
+		normalized = THREE_OR_MORE_NEWLINES_PATTERN.matcher(normalized).replaceAll("\n\n");
+		return normalized.trim();
+	}
+
+	private String normalizeMoneyLuckText(String text) {
+		String normalized = text
+			.replace("\r\n", "\n")
+			.replace("\r", "\n");
+
+		normalized = BUSINESS_PAGE_BREAK_PATTERN.matcher(normalized).replaceAll("\n\n");
+		normalized = MONEY_LUCK_LETTERED_SECTION_PATTERN.matcher(normalized).replaceAll("");
+		normalized = BRACKET_SECTION_TITLE_PATTERN.matcher(normalized).replaceAll("");
+		normalized = NUMBERED_SUBSECTION_PATTERN.matcher(normalized).replaceAll("");
+		normalized = NUMBERED_LIST_PATTERN.matcher(normalized).replaceAll("");
+		normalized = HASH_HEADER_PATTERN.matcher(normalized).replaceAll("");
+
+		// 깨진 대괄호 제목 조각 정리 ([주의할 점과 / 조언] 같은 케이스)
+		normalized = MONEY_LUCK_BRACKET_OPEN_FRAGMENT_PATTERN.matcher(normalized).replaceAll("$1");
+		normalized = MONEY_LUCK_BRACKET_CLOSE_FRAGMENT_PATTERN.matcher(normalized).replaceAll("$1");
+		normalized = MONEY_LUCK_BRACKET_ONLY_HEADING_PATTERN.matcher(normalized).replaceAll("");
+
+		// 대표 깨짐 토큰 보정
+		normalized = normalized.replace("جذب力", "흡인력");
+		normalized = normalized.replace("جذب 력", "흡인력");
+		normalized = normalized.replace(" جذب", " 흡인력");
+		normalized = normalized.replace("جذب", "흡인력");
+
+		normalized = ISO_LOCAL_DATETIME_WITH_OPTIONAL_SECONDS_PATTERN.matcher(normalized)
+			.replaceAll("$1 $2");
+		normalized = DATETIME_WITH_SPACE_PATTERN.matcher(normalized).replaceAll("$1-$2");
+		normalized = DATE_WITH_DAY_PATTERN.matcher(normalized).replaceAll("$1-$2");
+		normalized = convertYearMonthToKorean(normalized);
+
+		// 비정상 유니코드(아랍/키릴) 제거
+		normalized = ARABIC_OR_CYRILLIC_PATTERN.matcher(normalized).replaceAll("");
+
+		normalized = mergeSingleLineBreaksWithinParagraph(normalized);
+		normalized = MULTI_SPACE_PATTERN.matcher(normalized).replaceAll(" ");
+		normalized = normalized.replaceAll("[ \\t]+\\n", "\n");
 		normalized = THREE_OR_MORE_NEWLINES_PATTERN.matcher(normalized).replaceAll("\n\n");
 		return normalized.trim();
 	}
@@ -4153,15 +4080,18 @@ public class ManseInterpretationService {
 		normalized = normalized.replaceAll("(?is)\\[\\s*주의할\\s*점과\\s*조언\\s*\\]", "주의할 점과 조언");
 		normalized = normalized.replaceAll("(?is)\\[\\s*3월운\\s*총평\\s*\\]", "3월운 총평");
 
-		normalized = normalized.replaceAll("(?m)^\\s*3월\\s*핵심\\s*키워드\\s*[:：-]?\\s*", "\n\n3월 핵심 키워드\n");
+		normalized = normalized.replaceAll("(?m)^\\s*3월\\s*핵심\\s*키워드\\s*[:：-]?\\s*",
+			"\n\n3월 핵심 키워드\n");
 		normalized = normalized.replaceAll("(?m)^\\s*금전\\s*운\\s*[:：-]?\\s*", "\n\n금전운\n");
 		normalized = normalized.replaceAll("(?m)^\\s*연애\\s*운\\s*[:：-]?\\s*", "\n\n연애운\n");
 		normalized = normalized.replaceAll("(?m)^\\s*학업\\s*운\\s*[:：-]?\\s*", "\n\n학업운\n");
 		normalized = normalized.replaceAll("(?m)^\\s*학업\\s*/\\s*일\\s*운\\s*[:：-]?\\s*", "\n\n학업운\n");
 		normalized = normalized.replaceAll("(?m)^\\s*직장\\s*운\\s*[:：-]?\\s*", "\n\n직장/일운\n");
-		normalized = normalized.replaceAll("(?m)^\\s*직장\\s*/\\s*일\\s*운\\s*[:：-]?\\s*", "\n\n직장/일운\n");
+		normalized = normalized.replaceAll("(?m)^\\s*직장\\s*/\\s*일\\s*운\\s*[:：-]?\\s*",
+			"\n\n직장/일운\n");
 		normalized = normalized.replaceAll("(?m)^\\s*건강\\s*운\\s*[:：-]?\\s*", "\n\n건강운\n");
-		normalized = normalized.replaceAll("(?m)^\\s*주의할\\s*점과\\s*조언\\s*[:：-]?\\s*", "\n\n주의할 점과 조언\n");
+		normalized = normalized.replaceAll("(?m)^\\s*주의할\\s*점과\\s*조언\\s*[:：-]?\\s*",
+			"\n\n주의할 점과 조언\n");
 		normalized = normalized.replaceAll("(?m)^\\s*3월운\\s*총평\\s*[:：-]?\\s*", "\n\n3월운 총평\n");
 		normalized = THREE_OR_MORE_NEWLINES_PATTERN.matcher(normalized).replaceAll("\n\n").trim();
 
