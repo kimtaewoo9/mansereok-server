@@ -1654,8 +1654,7 @@ public class ManseInterpretationService {
 		StringBuilder prompt = new StringBuilder();
 		prompt.append("### 역할 ###\n");
 		prompt.append("너는 한국 명리학 기반 재물운 전문 역술가다.\n");
-		prompt.append("결론만 던지는 컨설턴트가 아니라, 사주 구조가 현실의 돈 흐름에서 어떻게 작동하는지 풀어주는 해석가다.\n");
-		prompt.append("전문 용어는 쓰되 반드시 풀이를 붙이고, 글은 자연스러운 문단형으로 작성한다.\n\n");
+		prompt.append("결론만 던지는 컨설턴트가 아니라, 사주 구조가 현실의 돈 흐름에서 어떻게 작동하는지 풀어주는 해석가다.\n\n");
 
 		prompt.append("### 핵심 목적 ###\n");
 		prompt.append(String.format(
@@ -1663,27 +1662,28 @@ public class ManseInterpretationService {
 			name));
 		prompt.append("돈벼락은 횡재만 의미하지 않는다. 규모의 급팽창, 단가 상승, 거래처 확장, 투자 수익 확대도 포함한다.\n\n");
 
-		prompt.append("### 절대 규칙 ###\n");
+		prompt.append("### 작성 원칙 ###\n");
 		prompt.append("1. 입력 JSON 밖의 사실은 추측하지 않는다.\n");
 		prompt.append("2. 근거 없는 단정 금지. 핵심 판단마다 사주 근거를 붙인다.\n");
 		prompt.append("3. 좋은 점만 미화하지 말고 리스크와 손실 가능성을 반드시 같이 다룬다.\n");
-		prompt.append("4. 한자 원문, 아랍문자, 키릴문자 등 비정상 문자는 출력하지 않는다.\n");
-		prompt.append("5. 날짜는 yyyy년 M월 형식만 사용한다. 일/시/분/초/T 표기는 금지한다.\n");
-		prompt.append("6. 같은 조언 반복 금지. 문서화/정산/계약 같은 동일 처방을 반복 남발하지 않는다.\n");
-		prompt.append("7. 마크다운(##, **, -, 번호 목록)과 라벨형 목차 사용 금지.\n\n");
+		prompt.append("4. 전문 용어는 필요한 순간에만 쓰고, 첫 등장 1회만 쉬운 풀이를 붙인다.\n");
+		prompt.append("5. 한 문단에 전문 용어는 최대 1개만 사용한다.\n");
+		prompt.append("6. 월운은 12개월 나열 대신 핵심 3구간만 설명한다.\n");
+		prompt.append("7. 날짜는 yyyy년 M월 형식만 사용한다. 일/시/분/초/T 표기는 금지한다.\n");
+		prompt.append("8. 색/방향/숫자 개운법은 쓰지 않는다.\n");
+		prompt.append("9. 마크다운과 라벨형 목차(A., [ ], 1-1)는 쓰지 않는다.\n\n");
 
 		prompt.append("### 작성 방식 ###\n");
-		prompt.append("번호 라벨(A, B, C...)이나 대괄호 제목 없이 자연 문단형으로 쓴다.\n");
-		prompt.append(
-			"흐름은 돈벼락 가능성 판단, 돈 그릇, 돈이 들어오는 구조, 돈이 새는 구조, 시기별 트리거, 최종 조언 순으로 자연스럽게 이어간다.\n");
-		prompt.append("각 문단에서 사주 구조 근거, 현실 해석, 실제로 벌어지는 장면을 끊기지 않게 연결한다.\n");
+		prompt.append("돈의 성격, 강점과 누수, 타이밍 3구간, 최종 조언 순으로 자연스럽게 이어서 쓴다.\n");
 		prompt.append("보고서처럼 딱딱한 체크리스트 문장 대신 상담형 줄글로 작성한다.\n");
-		prompt.append("오행 점수, 십성 개수 같은 수치값은 본문에 직접 노출하지 않고 강약 경향으로만 표현한다.\n\n");
+		prompt.append("오행 점수, 십성 개수 같은 수치값은 본문에 직접 노출하지 않고 강약 경향으로만 표현한다.\n");
+		prompt.append("같은 조언을 문장만 바꿔 반복하지 않는다.\n\n");
 
 		prompt.append("### 분량/문단 규칙 ###\n");
 		prompt.append("fullAnalysis 총 분량은 3800자 이상 4600자 이하로 작성한다.\n");
 		prompt.append("전체는 6~8개 문단으로 구성하고, 문단 구분은 줄바꿈 두 번(\\\\n\\\\n)만 사용한다.\n");
-		prompt.append("한 문단이 과도하게 길어지면 문맥 기준으로 자연스럽게 나눈다.\n\n");
+		prompt.append("한 문단이 과도하게 길어지면 문맥 기준으로 자연스럽게 나눈다.\n");
+		prompt.append("분량을 늘릴 때는 미사여구가 아니라 근거와 현실 장면 설명을 채운다.\n\n");
 
 		prompt.append("### 분석 대상자 데이터 (만세력) ###\n");
 		appendPersonDetailInfo(prompt, name, response);
@@ -4080,15 +4080,18 @@ public class ManseInterpretationService {
 		normalized = normalized.replaceAll("(?is)\\[\\s*주의할\\s*점과\\s*조언\\s*\\]", "주의할 점과 조언");
 		normalized = normalized.replaceAll("(?is)\\[\\s*3월운\\s*총평\\s*\\]", "3월운 총평");
 
-		normalized = normalized.replaceAll("(?m)^\\s*3월\\s*핵심\\s*키워드\\s*[:：-]?\\s*", "\n\n3월 핵심 키워드\n");
+		normalized = normalized.replaceAll("(?m)^\\s*3월\\s*핵심\\s*키워드\\s*[:：-]?\\s*",
+			"\n\n3월 핵심 키워드\n");
 		normalized = normalized.replaceAll("(?m)^\\s*금전\\s*운\\s*[:：-]?\\s*", "\n\n금전운\n");
 		normalized = normalized.replaceAll("(?m)^\\s*연애\\s*운\\s*[:：-]?\\s*", "\n\n연애운\n");
 		normalized = normalized.replaceAll("(?m)^\\s*학업\\s*운\\s*[:：-]?\\s*", "\n\n학업운\n");
 		normalized = normalized.replaceAll("(?m)^\\s*학업\\s*/\\s*일\\s*운\\s*[:：-]?\\s*", "\n\n학업운\n");
 		normalized = normalized.replaceAll("(?m)^\\s*직장\\s*운\\s*[:：-]?\\s*", "\n\n직장/일운\n");
-		normalized = normalized.replaceAll("(?m)^\\s*직장\\s*/\\s*일\\s*운\\s*[:：-]?\\s*", "\n\n직장/일운\n");
+		normalized = normalized.replaceAll("(?m)^\\s*직장\\s*/\\s*일\\s*운\\s*[:：-]?\\s*",
+			"\n\n직장/일운\n");
 		normalized = normalized.replaceAll("(?m)^\\s*건강\\s*운\\s*[:：-]?\\s*", "\n\n건강운\n");
-		normalized = normalized.replaceAll("(?m)^\\s*주의할\\s*점과\\s*조언\\s*[:：-]?\\s*", "\n\n주의할 점과 조언\n");
+		normalized = normalized.replaceAll("(?m)^\\s*주의할\\s*점과\\s*조언\\s*[:：-]?\\s*",
+			"\n\n주의할 점과 조언\n");
 		normalized = normalized.replaceAll("(?m)^\\s*3월운\\s*총평\\s*[:：-]?\\s*", "\n\n3월운 총평\n");
 		normalized = THREE_OR_MORE_NEWLINES_PATTERN.matcher(normalized).replaceAll("\n\n").trim();
 

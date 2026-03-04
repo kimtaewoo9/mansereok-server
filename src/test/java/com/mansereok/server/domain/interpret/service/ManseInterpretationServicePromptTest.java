@@ -113,8 +113,8 @@ class ManseInterpretationServicePromptTest {
 
 		assertNotNull(prompt);
 		assertTrue(prompt.contains("fullAnalysis 총 분량은 3800자 이상 4600자 이하로 작성한다."));
-		assertTrue(prompt.contains("번호 라벨(A, B, C...)이나 대괄호 제목 없이 자연 문단형으로 쓴다."));
-		assertTrue(prompt.contains("같은 조언 반복 금지"));
+		assertTrue(prompt.contains("월운은 12개월 나열 대신 핵심 3구간만 설명한다."));
+		assertTrue(prompt.contains("같은 조언을 문장만 바꿔 반복하지 않는다."));
 		assertFalse(prompt.contains("프레임마다 꼭 A, B, C, D, E, H"));
 		assertFalse(prompt.contains("A. 돈벼락 가능성"));
 	}
