@@ -3,7 +3,10 @@ package com.mansereok.server.global.config;
 import com.mansereok.server.domain.auth.filter.JwtAuthenticationFilter;
 import com.mansereok.server.domain.auth.security.JwtAccessDeniedHandler;
 import com.mansereok.server.domain.auth.security.JwtAuthenticationEntryPoint;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import java.util.Arrays;
+import java.util.function.Supplier;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -20,6 +23,11 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
+import org.springframework.security.web.csrf.CsrfToken;
+import org.springframework.security.web.csrf.CsrfTokenRequestAttributeHandler;
+import org.springframework.security.web.csrf.CsrfTokenRequestHandler;
+import org.springframework.security.web.csrf.XorCsrfTokenRequestAttributeHandler;
+import org.springframework.util.StringUtils;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
@@ -51,6 +59,7 @@ public class SecurityConfig {
 
 				.csrf(csrf -> csrf
 					.csrfTokenRepository(repo)
+					.csrfTokenRequestHandler(spaCsrfTokenRequestHandler())
 					.ignoringRequestMatchers("/api/payment/webhook",
 						"/member/**",
 						"/api/auth/**",
@@ -122,6 +131,37 @@ public class SecurityConfig {
 			.addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
 
 		return http.build();
+	}
+
+	private CsrfTokenRequestHandler spaCsrfTokenRequestHandler() {
+		return new SpaCsrfTokenRequestHandler();
+	}
+
+	/**
+	 * SPA 환경에서 X-XSRF-TOKEN 헤더를 우선 사용하고,
+	 * 그 외 요청은 XOR 토큰 처리도 호환되도록 하는 핸들러.
+	 */
+	private static final class SpaCsrfTokenRequestHandler implements CsrfTokenRequestHandler {
+
+		private final CsrfTokenRequestHandler plainHandler = new CsrfTokenRequestAttributeHandler();
+		private final CsrfTokenRequestHandler xorHandler = new XorCsrfTokenRequestAttributeHandler();
+
+		@Override
+		public void handle(HttpServletRequest request, HttpServletResponse response,
+			Supplier<CsrfToken> csrfToken) {
+			this.xorHandler.handle(request, response, csrfToken);
+			// 토큰 생성을 강제해 쿠키(XSRF-TOKEN)가 안정적으로 내려가게 한다.
+			csrfToken.get();
+		}
+
+		@Override
+		public String resolveCsrfTokenValue(HttpServletRequest request, CsrfToken csrfToken) {
+			String tokenFromHeader = request.getHeader(csrfToken.getHeaderName());
+			if (StringUtils.hasText(tokenFromHeader)) {
+				return this.plainHandler.resolveCsrfTokenValue(request, csrfToken);
+			}
+			return this.xorHandler.resolveCsrfTokenValue(request, csrfToken);
+		}
 	}
 
 	@Bean

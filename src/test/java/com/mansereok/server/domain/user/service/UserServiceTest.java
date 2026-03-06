@@ -14,6 +14,8 @@ import com.mansereok.server.domain.notification.service.DiscordNotificationServi
 import com.mansereok.server.domain.notification.service.SlackNotificationService;
 import com.mansereok.server.domain.order.repository.OrderRepository;
 import com.mansereok.server.domain.payment.repository.PaymentRepository;
+import com.mansereok.server.domain.review.repository.ReviewRepository;
+import com.mansereok.server.domain.auth.PasswordResetTokenRepository;
 import com.mansereok.server.domain.user.dto.request.ProfileUpdateRequestDto;
 import com.mansereok.server.domain.user.entity.Gender;
 import com.mansereok.server.domain.user.entity.User;
@@ -55,6 +57,10 @@ public class UserServiceTest {
 	private OrderRepository orderRepository;
 	@Mock
 	private PaymentRepository paymentRepository;
+	@Mock
+	private PasswordResetTokenRepository passwordResetTokenRepository;
+	@Mock
+	private ReviewRepository reviewRepository;
 
 	// UserService 생성자에 필요한 기타 Mock 객체들
 	@Mock
@@ -171,6 +177,7 @@ public class UserServiceTest {
 			username, "테스트유저", "pw", "test@email.com",
 			LocalDate.now(), Gender.MALE, true, true, true
 		);
+		mockUser.setId(userId);
 
 		given(userRepository.findByUsername(username)).willReturn(Optional.of(mockUser));
 		// mockUser.getId()가 1L을 반환한다고 가정 (User 엔티티에 id가 세팅되어야 함)

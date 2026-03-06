@@ -10,6 +10,8 @@ import org.springframework.http.MediaType;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.web.csrf.InvalidCsrfTokenException;
+import org.springframework.security.web.csrf.MissingCsrfTokenException;
 import org.springframework.security.web.access.AccessDeniedHandler;
 import org.springframework.stereotype.Component;
 
@@ -22,6 +24,8 @@ public class JwtAccessDeniedHandler implements AccessDeniedHandler {
 	public void handle(HttpServletRequest request,
 		HttpServletResponse response,
 		AccessDeniedException accessDeniedException) throws IOException {
+		boolean isCsrfFailure = accessDeniedException instanceof MissingCsrfTokenException
+			|| accessDeniedException instanceof InvalidCsrfTokenException;
 
 		// 응답 헤더 설정
 		response.setContentType(MediaType.APPLICATION_JSON_VALUE);
@@ -37,13 +41,19 @@ public class JwtAccessDeniedHandler implements AccessDeniedHandler {
 		// 에러 응답 메시지 구성
 		Map<String, Object> body = new HashMap<>();
 		body.put("status", HttpServletResponse.SC_FORBIDDEN);
-		body.put("error", "FORBIDDEN");
-		body.put("message", "접근 권한이 부족합니다.");
+		body.put("error", isCsrfFailure ? "CSRF_FORBIDDEN" : "FORBIDDEN");
+		body.put("message", isCsrfFailure
+			? "CSRF 토큰이 없거나 유효하지 않습니다."
+			: "접근 권한이 부족합니다.");
 		body.put("path", request.getServletPath());
+		body.put("method", request.getMethod());
 		body.put("timestamp", System.currentTimeMillis());
 		body.put("currentUser", currentUser);
 		body.put("currentRole", currentRole);
-		body.put("hint", "해당 리소스에 접근하려면 더 높은 권한이 필요합니다. 관리자에게 문의하세요.");
+		body.put("reason", accessDeniedException.getClass().getSimpleName());
+		body.put("hint", isCsrfFailure
+			? "GET /api/auth/csrf-token으로 토큰을 발급받고 X-XSRF-TOKEN 헤더와 쿠키를 함께 전송하세요."
+			: "해당 리소스에 접근하려면 더 높은 권한이 필요합니다. 관리자에게 문의하세요.");
 
 		// JSON 응답 전송
 		objectMapper.writeValue(response.getOutputStream(), body);
