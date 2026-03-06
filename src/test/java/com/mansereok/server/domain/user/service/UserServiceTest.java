@@ -1,5 +1,6 @@
 package com.mansereok.server.domain.user.service;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.BDDMockito.given;
@@ -13,11 +14,13 @@ import com.mansereok.server.domain.notification.service.DiscordNotificationServi
 import com.mansereok.server.domain.notification.service.SlackNotificationService;
 import com.mansereok.server.domain.order.repository.OrderRepository;
 import com.mansereok.server.domain.payment.repository.PaymentRepository;
+import com.mansereok.server.domain.user.dto.request.ProfileUpdateRequestDto;
 import com.mansereok.server.domain.user.entity.Gender;
 import com.mansereok.server.domain.user.entity.User;
 import com.mansereok.server.domain.user.repository.RefreshTokenRepository;
 import com.mansereok.server.domain.user.repository.UserRepository;
 import java.time.LocalDate;
+import java.time.LocalTime;
 import java.util.Optional;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -188,5 +191,90 @@ public class UserServiceTest {
 		verify(refreshTokenRepository, times(1)).deleteByUser(mockUser);
 		verify(resultRepository, times(1)).deleteAllByUserId(mockUser.getId());
 		verify(userRepository, times(1)).delete(mockUser);
+	}
+
+	@Test
+	@DisplayName("프로필 수정: marketingAgreed=true여도 birthTime 없이 저장된다")
+	void updateUserProfile_ShouldAllowNullBirthTime_WhenMarketingAgreedTrue() {
+		String username = "tester";
+		User user = User.create(
+			username,
+			"테스터",
+			"pw",
+			"t@test.com",
+			LocalDate.of(1998, 9, 2),
+			Gender.MALE,
+			true,
+			true,
+			false
+		);
+		user.setBirthTime(null);
+
+		ProfileUpdateRequestDto request = new ProfileUpdateRequestDto();
+		request.setMarketingAgreed(true);
+		request.setBirthTime(null);
+
+		given(userRepository.findByUsername(username)).willReturn(Optional.of(user));
+		given(userRepository.save(user)).willReturn(user);
+
+		User saved = userService.updateUserProfile(username, request);
+
+		assertThat(saved.isMarketingAgreed()).isTrue();
+		assertThat(saved.getBirthTime()).isNull();
+		verify(userRepository, times(1)).save(user);
+	}
+
+	@Test
+	@DisplayName("프로필 수정: 이름/생년월일/성별은 marketingAgreed와 무관하게 필수다")
+	void updateUserProfile_ShouldRequireNameBirthDateGender() {
+		String username = "tester";
+		User user = User.create(
+			username,
+			"테스터",
+			"pw",
+			"t@test.com",
+			LocalDate.of(1998, 9, 2),
+			Gender.MALE,
+			true,
+			true,
+			false
+		);
+		user.setName(null);
+
+		ProfileUpdateRequestDto request = new ProfileUpdateRequestDto();
+		request.setMarketingAgreed(false);
+
+		given(userRepository.findByUsername(username)).willReturn(Optional.of(user));
+
+		assertThatThrownBy(() -> userService.updateUserProfile(username, request))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessageContaining("이름을 입력해주세요.");
+	}
+
+	@Test
+	@DisplayName("프로필 수정: birthPlace는 선택값이지만 공백 문자열은 허용하지 않는다")
+	void updateUserProfile_ShouldRejectBlankBirthPlace() {
+		String username = "tester";
+		User user = User.create(
+			username,
+			"테스터",
+			"pw",
+			"t@test.com",
+			LocalDate.of(1998, 9, 2),
+			Gender.MALE,
+			true,
+			true,
+			false
+		);
+		user.setBirthTime(LocalTime.of(10, 30));
+
+		ProfileUpdateRequestDto request = new ProfileUpdateRequestDto();
+		request.setBirthPlace("   ");
+
+		given(userRepository.findByUsername(username)).willReturn(Optional.of(user));
+
+		assertThatThrownBy(() -> userService.updateUserProfile(username, request))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessageContaining("태어난 장소는 공백일 수 없습니다.");
 	}
 }

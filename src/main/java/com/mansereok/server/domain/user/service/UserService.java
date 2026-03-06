@@ -207,23 +207,16 @@ public class UserService {
 			user.setMarketingAgreed(requestDto.getMarketingAgreed());
 		}
 
-		if (user.isMarketingAgreed()) {
-			if (user.getName() == null || user.getName().isBlank()) {
-				throw new IllegalArgumentException("이름을 입력해주세요.");
-			}
-			if (user.getBirthDate() == null) {
-				throw new IllegalArgumentException("생년월일을 입력해주세요.");
-			}
-			if (user.getBirthTime() == null) {
-				throw new IllegalArgumentException("태어난 시각을 입력해주세요.");
-			}
-			if (user.getBirthPlace() == null || user.getBirthPlace().isBlank()) {
-				throw new IllegalArgumentException("태어난 장소를 입력해주세요.");
-			}
-
-			if (user.getGender() == null) {
-				throw new IllegalArgumentException("성별을 선택해주세요.");
-			}
+		// marketingAgreed 여부와 무관하게 동일한 프로필 필수 검증을 적용한다.
+		// 필수: 이름, 생년월일, 성별 / 선택: 태어난 시각, 태어난 장소
+		if (user.getName() == null || user.getName().isBlank()) {
+			throw new IllegalArgumentException("이름을 입력해주세요.");
+		}
+		if (user.getBirthDate() == null) {
+			throw new IllegalArgumentException("생년월일을 입력해주세요.");
+		}
+		if (user.getGender() == null) {
+			throw new IllegalArgumentException("성별을 선택해주세요.");
 		}
 
 		return userRepository.save(user);
