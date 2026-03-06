@@ -26,7 +26,6 @@ import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
 import org.springframework.security.web.csrf.CsrfToken;
 import org.springframework.security.web.csrf.CsrfTokenRequestAttributeHandler;
 import org.springframework.security.web.csrf.CsrfTokenRequestHandler;
-import org.springframework.security.web.csrf.XorCsrfTokenRequestAttributeHandler;
 import org.springframework.util.StringUtils;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
@@ -144,12 +143,11 @@ public class SecurityConfig {
 	private static final class SpaCsrfTokenRequestHandler implements CsrfTokenRequestHandler {
 
 		private final CsrfTokenRequestHandler plainHandler = new CsrfTokenRequestAttributeHandler();
-		private final CsrfTokenRequestHandler xorHandler = new XorCsrfTokenRequestAttributeHandler();
 
 		@Override
 		public void handle(HttpServletRequest request, HttpServletResponse response,
 			Supplier<CsrfToken> csrfToken) {
-			this.xorHandler.handle(request, response, csrfToken);
+			this.plainHandler.handle(request, response, csrfToken);
 			// 토큰 생성을 강제해 쿠키(XSRF-TOKEN)가 안정적으로 내려가게 한다.
 			csrfToken.get();
 		}
@@ -160,7 +158,7 @@ public class SecurityConfig {
 			if (StringUtils.hasText(tokenFromHeader)) {
 				return this.plainHandler.resolveCsrfTokenValue(request, csrfToken);
 			}
-			return this.xorHandler.resolveCsrfTokenValue(request, csrfToken);
+			return this.plainHandler.resolveCsrfTokenValue(request, csrfToken);
 		}
 	}
 
