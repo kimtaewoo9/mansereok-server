@@ -258,7 +258,7 @@ public class PaymentService {
 			log.info("completePayment에서 결제 처리 완료: orderId={}, paymentId={}",
 				savedOrder.getId(), request.getPaymentId());
 
-			return savedOrder;  // 이제 PAID 상태로 반환!
+			return savedOrder;  // 이제 PAID 상태로 반환
 		}
 
 		// PAID가 아닌 경우
