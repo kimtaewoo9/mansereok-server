@@ -263,7 +263,7 @@ public class PaymentService {
 
 		// PAID가 아닌 경우
 		log.warn("결제가 아직 완료되지 않았습니다: status={}", paymentStatus);
-		return order;  // PENDING 상태 유지
+		return order;
 	}
 
 	@Transactional
