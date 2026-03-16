@@ -18,7 +18,7 @@ public class AsyncConfig {
 	@Bean(name = "gptTaskExecutor")
 	public Executor gptTaskExecutor() {
 		ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
-		executor.setCorePoolSize(20);
+		executor.setCorePoolSize(25);
 		executor.setMaxPoolSize(25); // (429 Too Many Request) 이거 설정 25까지 해도 괜찮을 듯 .
 		executor.setQueueCapacity(100);
 		executor.setThreadNamePrefix("GptAsync-");
