@@ -23,7 +23,7 @@ public class AsyncConfig {
 		executor.setQueueCapacity(100);
 		executor.setThreadNamePrefix("GptAsync-");
 
-		// 우아한 종료 적용 유료 사주 요청이 누락되면 안되기 때문에 ..
+		// 우아한 종료 적용
 		executor.setWaitForTasksToCompleteOnShutdown(true);
 		executor.setAwaitTerminationSeconds(120);
 
