@@ -18,12 +18,12 @@ public class AsyncConfig {
 	@Bean(name = "gptTaskExecutor")
 	public Executor gptTaskExecutor() {
 		ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
-		executor.setCorePoolSize(20);
+		executor.setCorePoolSize(25);
 		executor.setMaxPoolSize(25); // (429 Too Many Request) 이거 설정 25까지 해도 괜찮을 듯 .
 		executor.setQueueCapacity(100);
 		executor.setThreadNamePrefix("GptAsync-");
 
-		// 우아한 종료 적용 유료 사주 요청이 누락되면 안되기 때문에 ..
+		// 우아한 종료 적용
 		executor.setWaitForTasksToCompleteOnShutdown(true);
 		executor.setAwaitTerminationSeconds(120);
 
