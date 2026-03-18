@@ -31,7 +31,7 @@ public class OgImageGenerationService {
 	private final CompatibilityResultRepository compatibilityResultRepository;
 
 	// 1. 폰트 경로
-	private static final String FONT_PATH_REGULAR = "fonts/NotoSansKR-Regular.ttf";
+	private static final String FONT_PATH_REGULAR = "fonts/NotoSansKR-Light.ttf";
 	// private static final String FONT_PATH_BOLD = "fonts/NotoSansKR-Bold.ttf"; // Bold 제거
 
 	private static final String SAJU_TEMPLATE_PATH = "static/result_image_template.png";
@@ -56,7 +56,7 @@ public class OgImageGenerationService {
 
 			// Bold 폰트 로드 제거
 		} catch (Exception e) {
-			log.error("!!!!!!!!!! Noto Sans KR 폰트 로드 실패: {}. 기본 폰트를 사용합니다. !!!!!!!!!!!",
+			log.error("!!!!!!!!!! Noto Sans KR Light 폰트 로드 실패: {}. 기본 폰트를 사용합니다. !!!!!!!!!!!",
 				e.getMessage());
 			this.notoSansRegular = new Font("Arial", Font.PLAIN, 30);
 			// this.notoSansBold = new Font("Arial", Font.BOLD, 30); // Bold 제거
