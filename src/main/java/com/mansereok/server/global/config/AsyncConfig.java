@@ -14,7 +14,7 @@ import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 @Slf4j
 public class AsyncConfig {
 
-	// 사주 해석 전용 스레드 풀 ..
+	// 사주 해석 전용 스레드 풀
 	@Bean(name = "gptTaskExecutor")
 	public Executor gptTaskExecutor() {
 		ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
