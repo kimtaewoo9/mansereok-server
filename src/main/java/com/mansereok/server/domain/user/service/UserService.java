@@ -363,10 +363,17 @@ public class UserService {
 	@Transactional
 	public void requestPasswordReset(String email) {
 		User user = userRepository.findByEmail(email)
-			.orElseThrow(() -> new EntityNotFoundException("가입되지 않은 이메일입니다."));
+			.orElse(null);
 
+		// 미가입 이메일이면 조용히 리턴 (보안: 계정 존재 여부 노출 방지)
+		if (user == null) {
+			return;
+		}
+
+		// 소셜 로그인 사용자면 안내 메일 발송 후 리턴
 		if (user.getSocialType() != null) {
-			throw new IllegalArgumentException("소셜 로그인 사용자는 비밀번호를 재설정할 수 없습니다.");
+			emailService.sendSocialLoginGuideEmail(user.getEmail(), user.getName());
+			return;
 		}
 
 		// 기존에 발급된 토큰이 있다면 삭제 (한 사람이 여러 번 요청했을 때 처리)

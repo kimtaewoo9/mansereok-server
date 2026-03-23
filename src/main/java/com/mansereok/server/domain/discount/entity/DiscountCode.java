@@ -74,7 +74,10 @@ public class DiscountCode {
 		// 10원 단위로 가격 내림 .. (1의 자리 제거)
 		discountedAmount = (discountedAmount / 10) * 10;
 
-		return Math.max(1000, discountedAmount); // 천원 미만 방지.
+		if (discountedAmount <= 0) {
+			return 0;
+		}
+		return Math.max(1000, discountedAmount);
 	}
 
 	// 선착순 할인 . 할인 횟수 증가 !

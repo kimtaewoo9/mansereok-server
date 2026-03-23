@@ -48,6 +48,7 @@ public class AsyncConfig {
 		executor.setQueueCapacity(100);   // 100개까지 대기
 		executor.setThreadNamePrefix("DefaultAsync-");
 
+		// blocking queue가 초과 되는 경우 .. abortpolicy 로 요청 거부 ..
 		executor.setRejectedExecutionHandler((r, executor1) -> {
 			log.error("🚨 [GPT 스레드 풀 초과] 요청 거부됨. activeCount={}, queueSize={}",
 				executor1.getActiveCount(), executor1.getQueue().size());

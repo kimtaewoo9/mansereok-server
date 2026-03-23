@@ -67,27 +67,25 @@ public class OauthController {
 		boolean isNewUser = false;
 
 		if (user == null) {
-			// 2. 구글로 가입 안 되어 있으면 → 이메일로 일반 가입 여부 확인
+			// 2. 구글로 가입 안 되어 있으면 → 이메일로 기존 가입 여부 확인
 			User existingUser = userRepository.findByEmail(googleProfileDto.getEmail())
 				.orElse(null);
 
 			if (existingUser != null) {
-				// 이미 일반 회원가입으로 가입된 이메일
-				throw new DuplicateEmailException(
-					"해당 이메일은 이미 일반 회원가입으로 등록되어 있습니다. " +
-						"일반 로그인을 이용해주세요."
+				// 같은 이메일로 가입된 계정이 있으면 해당 계정으로 로그인
+				user = existingUser;
+				log.info("기존 계정({})으로 구글 로그인 연동: userId={}", existingUser.getSocialType(), existingUser.getId());
+			} else {
+				// 3. 신규 구글 회원가입
+				user = userService.registerWithOauth(
+					googleProfileDto.getSub(),
+					googleProfileDto.getEmail(),
+					googleProfileDto.getName(),
+					googleProfileDto.getSub(),
+					SocialType.GOOGLE
 				);
+				isNewUser = true;
 			}
-
-			// 3. 신규 구글 회원가입
-			user = userService.registerWithOauth(
-				googleProfileDto.getSub(),
-				googleProfileDto.getEmail(),
-				googleProfileDto.getName(),
-				googleProfileDto.getSub(),
-				SocialType.GOOGLE
-			);
-			isNewUser = true;
 		}
 
 		return createTokenResponse(response, user, isNewUser);
@@ -117,28 +115,25 @@ public class OauthController {
 		boolean isNewUser = false;
 
 		if (user == null) {
-			// 2. 카카오로 가입 안 되어 있으면 → 이메일로 일반 가입 여부 확인
+			// 2. 카카오로 가입 안 되어 있으면 → 이메일로 기존 가입 여부 확인
 			User existingUser = userRepository
 				.findByEmail(kakaoProfileDto.getKakao_account().getEmail()).orElse(null);
 
 			if (existingUser != null) {
-				// 이미 일반 회원가입으로 가입된 이메일
-				throw new DuplicateEmailException(
-					"해당 이메일은 이미 일반 회원가입으로 등록되어 있습니다. " +
-						"일반 로그인을 이용해주세요."
+				// 같은 이메일로 가입된 계정이 있으면 해당 계정으로 로그인
+				user = existingUser;
+				log.info("기존 계정({})으로 카카오 로그인 연동: userId={}", existingUser.getSocialType(), existingUser.getId());
+			} else {
+				// 3. 신규 카카오 회원가입
+				user = userService.registerWithOauth(
+					kakaoProfileDto.getId(),
+					kakaoProfileDto.getKakao_account().getEmail(),
+					kakaoProfileDto.getNickname(),
+					kakaoProfileDto.getId(),
+					SocialType.KAKAO
 				);
+				isNewUser = true;
 			}
-
-			// 3. 신규 카카오 회원가입
-			user = userService.registerWithOauth(
-				kakaoProfileDto.getId(),
-				kakaoProfileDto.getKakao_account().getEmail(),
-				kakaoProfileDto.getNickname(),
-				kakaoProfileDto.getId(),
-				SocialType.KAKAO
-			);
-
-			isNewUser = true; // 신규 가입시 isNewUser 표시해주기.
 		}
 
 		return createTokenResponse(response, user, isNewUser);
@@ -220,30 +215,28 @@ public class OauthController {
 		if (user == null) {
 			String email = xProfileDto.getEmail();
 
-			// ⭐ 추가: 이메일 중복 검사 로직
-			// X는 이메일이 없을 수도 있으므로, 이메일이 있는 경우에만 체크
+			// 이메일이 있는 경우 기존 계정 확인
 			if (email != null && !email.isBlank()) {
 				User existingUser = userRepository.findByEmail(email).orElse(null);
 
 				if (existingUser != null) {
-					throw new DuplicateEmailException(
-						"해당 이메일은 이미 일반 회원가입으로 등록되어 있습니다. " +
-							"일반 로그인을 이용해주세요."
-					);
+					// 같은 이메일로 가입된 계정이 있으면 해당 계정으로 로그인
+					user = existingUser;
+					log.info("기존 계정({})으로 X 로그인 연동: userId={}", existingUser.getSocialType(), existingUser.getId());
 				}
 			}
 
-			// 3. 신규 X 회원가입
-			user = userService.registerWithOauth(
-				xProfileDto.getId(), // social id
-				xProfileDto.getName(),
-				email != null ? email : "", // 이메일 없으면 빈 문자열 처리
-				xProfileDto.getId(),
-				SocialType.X
-			);
-
-			// 신규 가입임을 표시
-			isNewUser = true;
+			// 기존 계정이 없으면 신규 회원가입
+			if (user == null) {
+				user = userService.registerWithOauth(
+					xProfileDto.getId(),
+					xProfileDto.getName(),
+					email != null ? email : "",
+					xProfileDto.getId(),
+					SocialType.X
+				);
+				isNewUser = true;
+			}
 		}
 
 		return createTokenResponse(response, user, isNewUser);
