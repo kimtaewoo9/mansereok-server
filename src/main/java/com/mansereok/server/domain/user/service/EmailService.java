@@ -625,6 +625,65 @@ public class EmailService {
 		}
 	}
 
+	@Async
+	public void sendSocialLoginGuideEmail(String toEmail, String name) {
+		try {
+			String subject = "[NAMED] 비밀번호 재설정 안내";
+			String htmlBody = """
+				<!DOCTYPE html>
+				<html lang="ko">
+				<head>
+				    <meta charset="UTF-8">
+				    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+				</head>
+				<body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Malgun Gothic', sans-serif; background-color: #ffffff;">
+				    <table width="100%%" cellpadding="0" cellspacing="0" style="max-width: 600px; margin: 0 auto; padding: 40px 20px;">
+				        <tr>
+				            <td style="text-align: center; padding-bottom: 30px;">
+				                <h1 style="color: #333; font-size: 24px;">NAMED</h1>
+				            </td>
+				        </tr>
+				        <tr>
+				            <td style="padding: 20px; background-color: #f8f9fa; border-radius: 8px;">
+				                <p style="color: #333; font-size: 16px; line-height: 1.6;">
+				                    안녕하세요, %s님.<br><br>
+				                    비밀번호 재설정을 요청해주셨는데, 해당 이메일은 <b>소셜 로그인</b>으로 가입된 계정입니다.<br><br>
+				                    소셜 로그인 계정은 별도의 비밀번호가 없으므로, 가입하신 소셜 로그인(카카오, 구글, 네이버 등)을 이용해주세요.<br><br>
+				                    본인이 요청하지 않으셨다면 이 메일을 무시하셔도 됩니다.
+				                </p>
+				            </td>
+				        </tr>
+				        <tr>
+				            <td style="text-align: center; padding-top: 30px; color: #999; font-size: 12px;">
+				                &copy; NAMED. All rights reserved.
+				            </td>
+				        </tr>
+				    </table>
+				</body>
+				</html>
+				""".formatted(name != null ? name : "회원");
+
+			String fromAddress = fromName + " <" + fromEmail + ">";
+
+			SendEmailRequest request = SendEmailRequest.builder()
+				.destination(Destination.builder().toAddresses(toEmail).build())
+				.message(Message.builder()
+					.subject(Content.builder().charset("UTF-8").data(subject).build())
+					.body(Body.builder()
+						.html(Content.builder().charset("UTF-8").data(htmlBody).build())
+						.build())
+					.build())
+				.source(fromAddress)
+				.build();
+
+			sesClient.sendEmail(request);
+			log.info("소셜 로그인 안내 메일 전송 완료: {}", toEmail);
+
+		} catch (Exception e) {
+			log.error("소셜 로그인 안내 메일 전송 실패: {}", e.getMessage(), e);
+		}
+	}
+
 	private String createPasswordResetEmailHtml(String resetLink) {
 		return """
 			<!DOCTYPE html>
