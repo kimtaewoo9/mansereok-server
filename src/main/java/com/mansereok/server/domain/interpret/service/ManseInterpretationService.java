@@ -194,7 +194,7 @@ public class ManseInterpretationService {
 			String requestBody = objectMapper.
 				writeValueAsString(
 					new Gpt5Request(
-						"gpt-5.2",
+						"gpt-5.4",
 						input,
 						16384,
 						"high",
@@ -293,7 +293,7 @@ public class ManseInterpretationService {
 
 			String requestBody = objectMapper.writeValueAsString(
 				new Gpt5Request(
-					"gpt-5.2",
+					"gpt-5.4",
 					systemInstruction + userPrompt,
 					16384,
 					"high",
@@ -420,7 +420,7 @@ public class ManseInterpretationService {
 
 			// 4. GPT 호출
 			String requestBody = objectMapper.writeValueAsString(
-				new Gpt5Request("gpt-5.2", GPT5_SYSTEM_INSTRUCTION + userPrompt, 16384, "high",
+				new Gpt5Request("gpt-5.4", GPT5_SYSTEM_INSTRUCTION + userPrompt, 16384, "high",
 					"high")
 			);
 
