@@ -196,7 +196,7 @@ public class ManseInterpretationService {
 					new Gpt5Request(
 						"gpt-5.4",
 						input,
-						16384,
+						32768,
 						"high",
 						"high")
 				);
@@ -204,8 +204,11 @@ public class ManseInterpretationService {
 			log.info("GPT API 호출 시작...");
 			String gptResponse = gptApiRetryService.callGptApiWithRetry(requestBody);
 
+			String rawContent = extractContentFromResponseGpt5(gptResponse);
+			String sanitizedContent = sanitizeGptJsonResponse(rawContent);
+
 			GptSajuResponse gptData = objectMapper.readValue(
-				extractContentFromResponseGpt5(gptResponse),
+				sanitizedContent,
 				GptSajuResponse.class
 			);
 
@@ -295,7 +298,7 @@ public class ManseInterpretationService {
 				new Gpt5Request(
 					"gpt-5.4",
 					systemInstruction + userPrompt,
-					16384,
+					32768,
 					"high",
 					"high")
 			);
@@ -304,7 +307,7 @@ public class ManseInterpretationService {
 			String gptResponse = gptApiRetryService.callGptApiWithRetry(requestBody);
 
 			GptCompatibilityResponse gptData = objectMapper.readValue(
-				extractContentFromResponseGpt5(gptResponse), GptCompatibilityResponse.class);
+				sanitizeGptJsonResponse(extractContentFromResponseGpt5(gptResponse)), GptCompatibilityResponse.class);
 
 			// 3. [DB] 결과 저장
 			CompatibilityResult savedResult = sajuResultService.saveCompatibilityFinalResult(
@@ -359,7 +362,7 @@ public class ManseInterpretationService {
 			log.info("GPT-5-mini 호출...");
 			String gptResponse = gptApiRetryService.callGptApiWithRetry(requestBody);
 			GptSajuResponse gptData = objectMapper.readValue(
-				extractContentFromResponseGpt5(gptResponse), GptSajuResponse.class);
+				sanitizeGptJsonResponse(extractContentFromResponseGpt5(gptResponse)), GptSajuResponse.class);
 
 			String normalizedFullAnalysis = normalizeAnalysisBySubcategory(subcategoryId,
 				gptData.getFullAnalysis());
@@ -420,7 +423,7 @@ public class ManseInterpretationService {
 
 			// 4. GPT 호출
 			String requestBody = objectMapper.writeValueAsString(
-				new Gpt5Request("gpt-5.4", GPT5_SYSTEM_INSTRUCTION + userPrompt, 16384, "high",
+				new Gpt5Request("gpt-5.4", GPT5_SYSTEM_INSTRUCTION + userPrompt, 32768, "high",
 					"high")
 			);
 
@@ -428,7 +431,7 @@ public class ManseInterpretationService {
 			String gptResponse = gptApiRetryService.callGptApiWithRetry(requestBody);
 
 			GptCompatibilityResponse gptData = objectMapper.readValue(
-				extractContentFromResponseGpt5(gptResponse), GptCompatibilityResponse.class);
+				sanitizeGptJsonResponse(extractContentFromResponseGpt5(gptResponse)), GptCompatibilityResponse.class);
 
 			// 5. [DB] 결과 저장
 			CompatibilityResult savedResult = sajuResultService.saveCompatibilityFinalResult(
@@ -1926,14 +1929,15 @@ public class ManseInterpretationService {
 		prompt.append("저 부분은 이렇게 정리하면 더 빠를 텐데 하는 생각이 자동으로 돌아갑니다. ");
 		prompt.append("그래서 정석 커리큘럼을 따르기보다 자기만의 방식으로 재구성했을 때 흡수 속도가 훨씬 빠릅니다.\n\n");
 
-		prompt.append("### 분량/페이지 규칙 ###\n");
+		prompt.append("### 분량/페이지 규칙 (가장 중요 — 반드시 지킬 것) ###\n");
 		prompt.append("fullAnalysis 총 분량은 최소 4000자 이상으로 작성한다. 분량 상한은 두지 않는다.\n");
 		prompt.append("페이지 분리는 반드시 줄바꿈 두 번(\\\\n\\\\n)으로만 한다.\n");
-		prompt.append("총 페이지는 7~9개 흐름으로 구성한다.\n");
-		prompt.append("한 페이지는 7~10줄 내외의 문단 1개로 구성한다.\n");
+		prompt.append("총 페이지는 9~12개 흐름으로 구성한다.\n");
+		prompt.append("**[핵심] 한 페이지(문단)는 반드시 7~8줄(약 250~350자) 이내로 제한한다. 이 규칙은 절대적이다.**\n");
+		prompt.append("한 문단이 8줄을 넘기면 반드시 \\\\n\\\\n으로 끊어서 다음 문단으로 넘긴다.\n");
+		prompt.append("모바일 화면에서 읽히는 분량이므로, 한 페이지가 길어지면 사용자가 이탈한다. 짧게 끊되 내용은 깊게.\n");
 		prompt.append("문단 내부는 자연스러운 줄글로 이어 쓰고, 문단 경계에서만 \\\\n\\\\n을 사용한다.\n");
 		prompt.append("문장마다 줄바꿈하지 않는다.\n");
-		prompt.append("사주 풀이의 깊이가 분량 제한보다 우선한다. 3단 구조를 제대로 채우기 위해 분량이 늘어나는 것은 허용한다.\n");
 		prompt.append("다음 표기 금지: [PAGE_BREAK], [1.], 1-1, 1), ##, ###, -, * 같은 목차/라벨/마크다운 기호.\n\n");
 
 		prompt.append("### 문체 기준 (골드 스탠다드) ###\n");
@@ -2056,14 +2060,15 @@ public class ManseInterpretationService {
 		prompt.append("(3단)은 ~하세요 같은 지시가 아니라, 이런 일이 벌어집니다/이런 감정이 올라옵니다 같은 묘사여야 한다.\n");
 		prompt.append("읽는 사람이 아 맞아 나 그래 하고 소름이 돋을 정도로 구체적이어야 한다.\n\n");
 
-		prompt.append("### 분량/페이지 규칙 ###\n");
+		prompt.append("### 분량/페이지 규칙 (가장 중요 — 반드시 지킬 것) ###\n");
 		prompt.append("fullAnalysis 총 분량은 최소 4000자 이상으로 작성한다. 분량 상한은 두지 않는다.\n");
 		prompt.append("페이지 분리는 반드시 줄바꿈 두 번(\\\\n\\\\n)으로만 한다.\n");
-		prompt.append("총 페이지는 7~9개 흐름으로 구성한다.\n");
-		prompt.append("한 페이지는 7~10줄 내외의 문단 1개로 구성한다.\n");
+		prompt.append("총 페이지는 9~12개 흐름으로 구성한다.\n");
+		prompt.append("**[핵심] 한 페이지(문단)는 반드시 7~8줄(약 250~350자) 이내로 제한한다. 이 규칙은 절대적이다.**\n");
+		prompt.append("한 문단이 8줄을 넘기면 반드시 \\\\n\\\\n으로 끊어서 다음 문단으로 넘긴다.\n");
+		prompt.append("모바일 화면에서 읽히는 분량이므로, 한 페이지가 길어지면 사용자가 이탈한다. 짧게 끊되 내용은 깊게.\n");
 		prompt.append("문단 내부는 자연스러운 줄글로 이어 쓰고, 문단 경계에서만 \\\\n\\\\n을 사용한다.\n");
 		prompt.append("문장마다 줄바꿈하지 않는다.\n");
-		prompt.append("사주 풀이의 깊이가 분량 제한보다 우선한다.\n");
 		prompt.append("다음 표기 금지: [PAGE_BREAK], [1.], 1-1, 1), ##, ###, -, * 같은 목차/라벨/마크다운 기호.\n\n");
 
 		prompt.append("### 문체 기준 (골드 스탠다드) ###\n");
@@ -5253,6 +5258,50 @@ public class ManseInterpretationService {
 			return "";
 		}
 		return str.substring(0, 1);
+	}
+
+	/**
+	 * GPT 응답 JSON을 정리한다.
+	 * 1) markdown 코드블록(```json ... ```) 제거
+	 * 2) max_tokens에 의해 잘린 JSON 복구 시도
+	 */
+	private String sanitizeGptJsonResponse(String raw) {
+		if (raw == null || raw.trim().isEmpty()) {
+			return raw;
+		}
+
+		String sanitized = raw.trim();
+
+		// 1) markdown 코드블록 제거
+		if (sanitized.startsWith("```")) {
+			sanitized = sanitized.replaceFirst("^```(?:json)?\\s*", "");
+			sanitized = sanitized.replaceFirst("\\s*```$", "");
+			sanitized = sanitized.trim();
+		}
+
+		// 2) 잘린 JSON 복구: fullAnalysis나 summary가 닫히지 않은 경우
+		if (!sanitized.endsWith("}")) {
+			log.warn("GPT 응답 JSON이 잘렸습니다. 복구 시도 중... 길이: {}", sanitized.length());
+
+			// 마지막으로 완전한 키-값 쌍을 찾아서 그 뒤를 정리
+			int lastQuoteIdx = sanitized.lastIndexOf("\"");
+			if (lastQuoteIdx > 0) {
+				// 이스케이프되지 않은 마지막 따옴표 찾기
+				String beforeLastQuote = sanitized.substring(0, lastQuoteIdx);
+				// fullAnalysis 값이 잘린 경우: 따옴표로 닫고 JSON 종료
+				if (sanitized.contains("\"fullAnalysis\"") && !sanitized.contains("\"summary\"")) {
+					// summary 없이 fullAnalysis만 있는 경우
+					sanitized = beforeLastQuote + "\",\n  \"summary\": \"요약을 생성할 수 없습니다.\"\n}";
+					log.info("GPT 응답 복구 완료 (fullAnalysis만 존재, summary 대체)");
+				} else {
+					// 마지막 따옴표 뒤에 } 추가
+					sanitized = sanitized + "\"\n}";
+					log.info("GPT 응답 복구 완료 (닫는 따옴표/중괄호 추가)");
+				}
+			}
+		}
+
+		return sanitized;
 	}
 
 	private String extractContentFromResponseGpt5(String jsonResponse)

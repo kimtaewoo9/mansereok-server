@@ -117,7 +117,7 @@ springdoc:
 app:
   jwt:
     secret: ${JWT_SECRET_KEY}
-    access-token-expiration: 7200000
+    access-token-expiration: 28800000
     refresh-token-expiration: 2592000000
     issuer: ${JWT_ISSUER:www.namedsaju.com}
   frontend-url: https://dev-front.namedsaju.com
