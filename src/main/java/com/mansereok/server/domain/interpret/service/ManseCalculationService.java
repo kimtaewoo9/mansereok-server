@@ -438,7 +438,7 @@ public class ManseCalculationService {
 		Manse manse;
 
 		if (direction) {
-			manse = manseRepository.findFirstBySeasonStartTimeGreaterThanEqualOrderBySeasonStartTimeAsc(
+			manse = manseRepository.findFirstBySeasonStartTimeGreaterThanOrderBySeasonStartTimeAsc(
 					solarDatetime)
 				.orElseThrow(() -> new RuntimeException("순행 절입 시간을 찾을 수 없습니다"));
 		} else {
@@ -514,14 +514,23 @@ public class ManseCalculationService {
 			diffDays = ChronoUnit.DAYS.between(seasonStartTime, solarDatetime);
 		}
 
+		if (diffDays < 4) {
+			int bigFortuneNumber = 1;
+			int bigFortuneStart = solarDatetime.getYear() + bigFortuneNumber;
+
+			log.info("대운 계산 완료 (early return): diffDays={}, bigFortuneNumber={}, bigFortuneStart={}",
+				diffDays, bigFortuneNumber, bigFortuneStart);
+
+			return BigFortuneResult.builder()
+				.bigFortuneNumber(bigFortuneNumber)
+				.bigFortuneStart(bigFortuneStart)
+				.build();
+		}
+
 		int divider = (int) (diffDays / 3);
 		int remainder = (int) (diffDays % 3);
 
 		int bigFortuneNumber = divider;
-		if (diffDays < 4) {
-			bigFortuneNumber = 1;
-		}
-
 		if (remainder == 2) {
 			bigFortuneNumber += 1;
 		}
