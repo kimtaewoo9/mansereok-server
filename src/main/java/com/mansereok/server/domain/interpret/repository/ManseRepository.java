@@ -33,9 +33,15 @@ public interface ManseRepository extends JpaRepository<Manse, Long> {
 	List<Manse> findAllByLunarDateOrderBySolarDateAsc(LocalDate lunarDate);
 
 	/**
-	 * 절입시간이 특정 시간 이후인 첫 번째 만세력 조회 (순행용)
+	 * 절입시간이 특정 시간 이후인 첫 번째 만세력 조회 (순행용 - 같은 시간 포함)
 	 */
 	Optional<Manse> findFirstBySeasonStartTimeGreaterThanEqualOrderBySeasonStartTimeAsc(
+		LocalDateTime datetime);
+
+	/**
+	 * 절입시간이 특정 시간 이후인 첫 번째 만세력 조회 (대운 순행용 - 같은 시간 제외)
+	 */
+	Optional<Manse> findFirstBySeasonStartTimeGreaterThanOrderBySeasonStartTimeAsc(
 		LocalDateTime datetime);
 
 	/**

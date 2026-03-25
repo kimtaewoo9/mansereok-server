@@ -224,7 +224,7 @@ public class SinsalCalculator {
 
 	// 괴강살 (일주 기준)
 	private static final List<String> GOEGANG_LIST = Arrays.asList(
-		"庚辰", "庚戌", "壬辰", "戊戌"
+		"庚辰", "庚戌", "壬辰", "壬戌", "戊戌"
 	);
 
 	// 백호대살 (일주 기준)
@@ -247,7 +247,7 @@ public class SinsalCalculator {
 
 	static {
 		HONGYEOM_MAP.put("甲", "午"); // 갑오
-		HONGYEOM_MAP.put("乙", "午"); // 을오
+		HONGYEOM_MAP.put("乙", "申"); // 을신
 		HONGYEOM_MAP.put("丙", "寅"); // 병인
 		HONGYEOM_MAP.put("丁", "未"); // 정미
 		HONGYEOM_MAP.put("戊", "辰"); // 무진
