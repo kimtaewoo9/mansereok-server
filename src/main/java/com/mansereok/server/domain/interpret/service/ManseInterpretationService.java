@@ -196,7 +196,7 @@ public class ManseInterpretationService {
 					new Gpt5Request(
 						"gpt-5.4",
 						input,
-						16384,
+						32768,
 						"high",
 						"high")
 				);
@@ -204,8 +204,11 @@ public class ManseInterpretationService {
 			log.info("GPT API 호출 시작...");
 			String gptResponse = gptApiRetryService.callGptApiWithRetry(requestBody);
 
+			String rawContent = extractContentFromResponseGpt5(gptResponse);
+			String sanitizedContent = sanitizeGptJsonResponse(rawContent);
+
 			GptSajuResponse gptData = objectMapper.readValue(
-				extractContentFromResponseGpt5(gptResponse),
+				sanitizedContent,
 				GptSajuResponse.class
 			);
 
@@ -295,7 +298,7 @@ public class ManseInterpretationService {
 				new Gpt5Request(
 					"gpt-5.4",
 					systemInstruction + userPrompt,
-					16384,
+					32768,
 					"high",
 					"high")
 			);
@@ -304,7 +307,7 @@ public class ManseInterpretationService {
 			String gptResponse = gptApiRetryService.callGptApiWithRetry(requestBody);
 
 			GptCompatibilityResponse gptData = objectMapper.readValue(
-				extractContentFromResponseGpt5(gptResponse), GptCompatibilityResponse.class);
+				sanitizeGptJsonResponse(extractContentFromResponseGpt5(gptResponse)), GptCompatibilityResponse.class);
 
 			// 3. [DB] 결과 저장
 			CompatibilityResult savedResult = sajuResultService.saveCompatibilityFinalResult(
@@ -359,7 +362,7 @@ public class ManseInterpretationService {
 			log.info("GPT-5-mini 호출...");
 			String gptResponse = gptApiRetryService.callGptApiWithRetry(requestBody);
 			GptSajuResponse gptData = objectMapper.readValue(
-				extractContentFromResponseGpt5(gptResponse), GptSajuResponse.class);
+				sanitizeGptJsonResponse(extractContentFromResponseGpt5(gptResponse)), GptSajuResponse.class);
 
 			String normalizedFullAnalysis = normalizeAnalysisBySubcategory(subcategoryId,
 				gptData.getFullAnalysis());
@@ -420,7 +423,7 @@ public class ManseInterpretationService {
 
 			// 4. GPT 호출
 			String requestBody = objectMapper.writeValueAsString(
-				new Gpt5Request("gpt-5.4", GPT5_SYSTEM_INSTRUCTION + userPrompt, 16384, "high",
+				new Gpt5Request("gpt-5.4", GPT5_SYSTEM_INSTRUCTION + userPrompt, 32768, "high",
 					"high")
 			);
 
@@ -428,7 +431,7 @@ public class ManseInterpretationService {
 			String gptResponse = gptApiRetryService.callGptApiWithRetry(requestBody);
 
 			GptCompatibilityResponse gptData = objectMapper.readValue(
-				extractContentFromResponseGpt5(gptResponse), GptCompatibilityResponse.class);
+				sanitizeGptJsonResponse(extractContentFromResponseGpt5(gptResponse)), GptCompatibilityResponse.class);
 
 			// 5. [DB] 결과 저장
 			CompatibilityResult savedResult = sajuResultService.saveCompatibilityFinalResult(
@@ -5255,6 +5258,50 @@ public class ManseInterpretationService {
 			return "";
 		}
 		return str.substring(0, 1);
+	}
+
+	/**
+	 * GPT 응답 JSON을 정리한다.
+	 * 1) markdown 코드블록(```json ... ```) 제거
+	 * 2) max_tokens에 의해 잘린 JSON 복구 시도
+	 */
+	private String sanitizeGptJsonResponse(String raw) {
+		if (raw == null || raw.trim().isEmpty()) {
+			return raw;
+		}
+
+		String sanitized = raw.trim();
+
+		// 1) markdown 코드블록 제거
+		if (sanitized.startsWith("```")) {
+			sanitized = sanitized.replaceFirst("^```(?:json)?\\s*", "");
+			sanitized = sanitized.replaceFirst("\\s*```$", "");
+			sanitized = sanitized.trim();
+		}
+
+		// 2) 잘린 JSON 복구: fullAnalysis나 summary가 닫히지 않은 경우
+		if (!sanitized.endsWith("}")) {
+			log.warn("GPT 응답 JSON이 잘렸습니다. 복구 시도 중... 길이: {}", sanitized.length());
+
+			// 마지막으로 완전한 키-값 쌍을 찾아서 그 뒤를 정리
+			int lastQuoteIdx = sanitized.lastIndexOf("\"");
+			if (lastQuoteIdx > 0) {
+				// 이스케이프되지 않은 마지막 따옴표 찾기
+				String beforeLastQuote = sanitized.substring(0, lastQuoteIdx);
+				// fullAnalysis 값이 잘린 경우: 따옴표로 닫고 JSON 종료
+				if (sanitized.contains("\"fullAnalysis\"") && !sanitized.contains("\"summary\"")) {
+					// summary 없이 fullAnalysis만 있는 경우
+					sanitized = beforeLastQuote + "\",\n  \"summary\": \"요약을 생성할 수 없습니다.\"\n}";
+					log.info("GPT 응답 복구 완료 (fullAnalysis만 존재, summary 대체)");
+				} else {
+					// 마지막 따옴표 뒤에 } 추가
+					sanitized = sanitized + "\"\n}";
+					log.info("GPT 응답 복구 완료 (닫는 따옴표/중괄호 추가)");
+				}
+			}
+		}
+
+		return sanitized;
 	}
 
 	private String extractContentFromResponseGpt5(String jsonResponse)
