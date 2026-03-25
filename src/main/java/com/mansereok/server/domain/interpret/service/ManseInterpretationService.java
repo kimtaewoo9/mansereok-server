@@ -4269,8 +4269,7 @@ public class ManseInterpretationService {
 		normalized = removeBusinessForbiddenAdviceLines(normalized);
 		normalized = normalized.replaceAll("(?m)^.*(오행 점수|내 세력|남의 세력).*$\\n?", "");
 		normalized = normalized.replaceAll("(?m)([목화토금수])\\s*\\d+\\.\\d+", "$1 기운");
-		normalized = normalized.replaceAll("\\b\\d+\\.\\d+\\b", "");
-		normalized = normalized.replaceAll("\\p{IsHan}+", "");
+		normalized = normalized.replaceAll("\\(\\p{IsHan}+\\)", "");
 
 		// 문장 단위 줄바꿈을 문단 줄글로 정리
 		normalized = mergeSingleLineBreaksWithinParagraph(normalized);
@@ -4298,8 +4297,7 @@ public class ManseInterpretationService {
 		normalized = removeBusinessForbiddenAdviceLines(normalized);
 		normalized = normalized.replaceAll("(?m)^.*(오행 점수|내 세력|남의 세력).*$\\n?", "");
 		normalized = normalized.replaceAll("(?m)([목화토금수])\\s*\\d+\\.\\d+", "$1 기운");
-		normalized = normalized.replaceAll("\\b\\d+\\.\\d+\\b", "");
-		normalized = normalized.replaceAll("\\p{IsHan}+", "");
+		normalized = normalized.replaceAll("\\(\\p{IsHan}+\\)", "");
 		normalized = THREE_OR_MORE_NEWLINES_PATTERN.matcher(normalized).replaceAll("\n\n");
 		return normalized.trim();
 	}
