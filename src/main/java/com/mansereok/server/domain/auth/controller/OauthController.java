@@ -167,17 +167,8 @@ public class OauthController {
 			User existingUser = userRepository.findByEmail(email).orElse(null);
 
 			if (existingUser != null) {
-				// [중요 수정] 이메일은 있는데, 그게 'NAVER' 회원이면 -> 본인으로 인정!
-				if (existingUser.getSocialType() == SocialType.NAVER) {
-					user = existingUser;
-					// (선택) DB의 SocialID가 바뀌었을 수 있으니 최신값으로 업데이트 로직 추가 권장
-					// userService.updateSocialId(user, socialId);
-				} else {
-					// 다른 소셜(구글, 카카오)이나 일반 가입자면 -> 진짜 중복 에러
-					throw new DuplicateEmailException(
-						"이미 " + existingUser.getSocialType() + "로 가입된 이메일입니다."
-					);
-				}
+				// 같은 이메일이면 소셜 타입 상관없이 기존 계정으로 로그인
+				user = existingUser;
 			} else {
 				// 이메일도 없으면 -> 진짜 신규 가입
 				user = userService.registerWithOauth(
