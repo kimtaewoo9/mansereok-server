@@ -74,9 +74,11 @@ public class DiscountCode {
 		// 10원 단위로 가격 내림 .. (1의 자리 제거)
 		discountedAmount = (discountedAmount / 10) * 10;
 
-		if (discountedAmount <= 0) {
+		// PERCENTAGE 100% 할인만 0원 허용 (무료 쿠폰)
+		if (this.discountType == DiscountType.PERCENTAGE && this.discountValue == 100) {
 			return 0;
 		}
+		// 그 외 할인은 최소 1000원 유지
 		return Math.max(1000, discountedAmount);
 	}
 
