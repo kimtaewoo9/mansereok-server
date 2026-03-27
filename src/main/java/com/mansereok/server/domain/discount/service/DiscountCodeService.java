@@ -133,6 +133,13 @@ public class DiscountCodeService {
 			!discountCode.getSubCategoryId().equals(subCategoryId)) {
 			throw new PaymentException("이 상품에는 적용할 수 없는 할인 코드입니다.");
 		}
+		if (discountCode.getCategoryId() != null) {
+			SubCategory subCategory = subCategoryRepository.findById(subCategoryId)
+				.orElseThrow(() -> new PaymentException("상품을 찾을 수 없습니다."));
+			if (!discountCode.getCategoryId().equals(subCategory.getCategoryId())) {
+				throw new PaymentException("이 상품에는 적용할 수 없는 할인 코드입니다.");
+			}
+		}
 	}
 
 	@Getter
