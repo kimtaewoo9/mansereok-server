@@ -43,6 +43,9 @@ public class DiscountCode {
 	@Column(name = "sub_category_id")
 	private Long subCategoryId; // 특정 상품(subCategory) ID. // null 이면 모든 상품 가능 .
 
+	@Column(name = "category_id")
+	private Long categoryId; // 특정 카테고리 ID. null이면 모든 카테고리 가능.
+
 	public void validate() {
 		if (!this.isActive) {
 			throw new PaymentException("비활성화된 코드입니다.");
