@@ -11,7 +11,8 @@ public enum OrderStatus {
 	VIRTUAL_ACCOUNT_ISSUED("가상계좌 발급됨"),
 	PAID("결제 완료"),
 	CANCELLED("결제 취소"),
-	FAILED("결제 실패");
+	FAILED("결제 실패"),
+	EXPIRED("주문 만료");
 
 	private final String description;
 }
