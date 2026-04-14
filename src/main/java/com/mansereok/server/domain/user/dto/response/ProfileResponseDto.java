@@ -34,9 +34,9 @@ public class ProfileResponseDto {
 		this.marketingAgreed = user.isMarketingAgreed();
 		
 		this.isNewUser =
-			(user.getBirthDate() == null || user.getBirthTime() == null
-				|| user.getBirthPlace() == null || user.getBirthPlace().isBlank()
-				|| user.getGender() == null);
+			(user.getBirthDate() == null
+				|| user.getGender() == null
+				|| user.getName() == null || user.getName().isBlank());
 		this.registrationType = determineRegistrationType(user.getSocialType());
 	}
 

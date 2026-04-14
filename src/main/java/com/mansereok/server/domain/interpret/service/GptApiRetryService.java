@@ -80,9 +80,28 @@ public class GptApiRetryService {
 
 	@Recover
 	public String recover(RestClientException e, String requestBody) {
-		log.error("[Recover] GPT API 4회 재시도 최종 실패. (requestBody 길이: {}) Error: {}",
-			requestBody.length(), e.getMessage(), e);
+		log.warn("[Recover] GPT API 4회 재시도 최종 실패. fallback 모델(gpt-5.2)로 재시도합니다.");
 
-		throw new GptApiFailedException("GPT API 4회 재시도 최종 실패: " + e.getMessage(), e);
+		// gpt-5.4 → gpt-5.2로 모델 교체
+		String fallbackRequestBody = requestBody.replace("gpt-5.4", "gpt-5.2");
+
+		try {
+			long startTime = System.currentTimeMillis();
+
+			ResponseEntity<String> responseEntity = restClient.post()
+				.uri("/responses")
+				.body(fallbackRequestBody)
+				.retrieve()
+				.toEntity(String.class);
+
+			long duration = System.currentTimeMillis() - startTime;
+			log.info("✅ [Fallback] gpt-5.2 응답 수신 완료 (소요시간: {}ms)", duration);
+
+			return responseEntity.getBody();
+
+		} catch (Exception fallbackError) {
+			log.error("[Fallback] gpt-5.2도 실패. 최종 포기. Error: {}", fallbackError.getMessage());
+			throw new GptApiFailedException("GPT API 최종 실패 (5.4 4회 + 5.2 1회): " + fallbackError.getMessage(), fallbackError);
+		}
 	}
 }

@@ -344,11 +344,10 @@ public class ManseCalculationService {
 			if (lunarCandidates.size() == 1) {
 				baseManse = lunarCandidates.get(0);
 			} else {
-				if (leapMonth == null) {
-					throw new IllegalArgumentException(
-						"윤달 여부(leapMonth)가 필요합니다. 음력 생일이 평달/윤달 모두 존재합니다: " + birthday);
-				}
-				baseManse = manseRepository.findByLunarDateAndLeapMonth(birthday, leapMonth)
+				// leapMonth가 null이면 평달(false)로 기본 처리
+				Boolean resolvedLeapMonth = (leapMonth != null) ? leapMonth : false;
+				log.info("윤달 여부 결정: leapMonth={} -> resolvedLeapMonth={}", leapMonth, resolvedLeapMonth);
+				baseManse = manseRepository.findByLunarDateAndLeapMonth(birthday, resolvedLeapMonth)
 					.orElseThrow(() -> new IllegalArgumentException(
 						"음력 날짜와 윤달 여부에 맞는 만세력 데이터를 찾을 수 없습니다."));
 			}
