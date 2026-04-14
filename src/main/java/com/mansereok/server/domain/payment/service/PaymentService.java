@@ -203,7 +203,7 @@ public class PaymentService {
 			throw new PaymentException("결제 금액이 일치하지 않습니다.");
 		}
 
-		// ✅ [핵심 수정] 포트원 상태가 PAID라면 즉시 DB 업데이트
+		// 포트원 상태가 PAID라면 즉시 DB 업데이트
 		PaymentStatus paymentStatus = PaymentStatus.fromPortOneStatus(paymentResponse.getStatus());
 
 		if (paymentStatus == PaymentStatus.PAID) {
