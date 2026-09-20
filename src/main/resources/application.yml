@@ -117,6 +117,9 @@ payment:
   webhook:
     url: ${PAYMENT_WEBHOOK_URL:https://api/namedsaju.com/api/payment/webhook}  # 포트원 웹훅 URL
   test-mode: ${PAYMENT_TEST_MODE:true}  # 테스트 모드 여부
+  free-event:
+    # 가격이 0원이 아니지만 이벤트로 무료 제공하는 SubCategory id 목록 (쉼표 구분). 비우면 가격 0원 상품만 무료.
+    sub-category-ids: ${PAYMENT_FREE_EVENT_SUB_CATEGORY_IDS:}
 
 # 상품 가격 설정 (원화)
 product:

@@ -52,6 +52,11 @@ public class ManseryeokController {
 	) {
 		log.info("만세력 해석 요청 username: " + username);
 
+		// 0. 결제 검증: 본인의 결제 완료 건만 해석에 쓸 수 있다
+		// TODO: paymentId 의 상품(subCategoryId)이 경로의 subcategoryId 와 일치하는지도 검사해야 하지만,
+		//       프론트 흐름 확인이 필요해 이번에는 소유권·결제 상태만 본다.
+		paymentService.verifyPaidOwnership(request.getPaymentId(), username);
+
 		// 1. 상태 변경 (공통)
 		resultService.updateStatusToProcessing(request.getPaymentId());
 
@@ -102,6 +107,11 @@ public class ManseryeokController {
 	) {
 		ManseCompatibilityAnalysisRequest.PersonInfo person1 = request.getPerson1();
 		ManseCompatibilityAnalysisRequest.PersonInfo person2 = request.getPerson2();
+
+		// 결제 검증: 본인의 결제 완료 건만 해석에 쓸 수 있다
+		// TODO: paymentId 의 상품(subCategoryId)이 경로의 subcategoryId 와 일치하는지도 검사해야 하지만,
+		//       프론트 흐름 확인이 필요해 이번에는 소유권·결제 상태만 본다.
+		paymentService.verifyPaidOwnership(request.getPaymentId(), username);
 
 		resultService.updateCompatibilityStatusToProcessing(request.getPaymentId());
 
