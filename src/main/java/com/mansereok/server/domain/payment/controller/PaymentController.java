@@ -2,26 +2,21 @@ package com.mansereok.server.domain.payment.controller;
 
 import com.mansereok.server.domain.order.dto.request.OrderCreateRequest;
 import com.mansereok.server.domain.order.dto.response.OrderCreateResponse;
+import com.mansereok.server.domain.order.dto.response.OrderResponse;
 import com.mansereok.server.domain.order.entity.Order;
-import com.mansereok.server.domain.order.repository.OrderRepository;
 import com.mansereok.server.domain.payment.dto.request.PaymentCancelRequest;
 import com.mansereok.server.domain.payment.dto.request.PaymentCompleteRequest;
 import com.mansereok.server.domain.payment.dto.response.PaymentResponseDto;
+import com.mansereok.server.domain.payment.service.PaymentQueryService;
 import com.mansereok.server.domain.payment.service.PaymentService;
-import com.mansereok.server.domain.user.entity.User;
-import com.mansereok.server.domain.user.service.UserService;
 import io.portone.sdk.server.errors.WebhookVerificationException;
 import io.portone.sdk.server.webhook.WebhookVerifier;
-import jakarta.persistence.EntityNotFoundException;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.access.AccessDeniedException;
-import org.springframework.security.core.Authentication;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
-import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -35,8 +30,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class PaymentController {
 
 	private final PaymentService paymentService;
-	private final OrderRepository orderRepository;
-	private final UserService userService;
+	private final PaymentQueryService paymentQueryService;
 
 	@Value("${portone.webhook.secret}")
 	private String webhookSecret;
@@ -49,22 +43,15 @@ public class PaymentController {
 		@RequestBody OrderCreateRequest request,
 		@AuthenticationPrincipal String username
 	) {
-
-		Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-		log.info("Username: {}", username);
-		log.info("Authorities: {}", auth.getAuthorities());
-		log.info("Is Authenticated: {}", auth.isAuthenticated());
-
 		OrderCreateResponse response = paymentService.createOrder(username, request);
 		return ResponseEntity.ok(response);
 	}
 
 	// 결제 완료 API (결제 후 검증)
 	@PostMapping("/api/payment/complete")
-	public ResponseEntity<?> completePayment(@RequestBody PaymentCompleteRequest request) {
+	public ResponseEntity<OrderResponse> completePayment(@RequestBody PaymentCompleteRequest request) {
 		Order order = paymentService.completePayment(request);
-		log.info("Order: {}", order);
-		return ResponseEntity.ok(order);
+		return ResponseEntity.ok(OrderResponse.from(order));
 	}
 
 	@PostMapping("/api/payment/redeem-free")
@@ -112,42 +99,30 @@ public class PaymentController {
 	}
 
 	@GetMapping("/api/payment/orders/{orderId}")
-	public ResponseEntity<?> getOrder(
+	public ResponseEntity<OrderResponse> getOrder(
 		@PathVariable Long orderId,
 		@AuthenticationPrincipal String username
 	) {
-		Order order = orderRepository.findById(orderId)
-			.orElseThrow(
-				() -> new EntityNotFoundException("주문을 찾을 수 없습니다."));
-		return ResponseEntity.ok(order);
+		Order order = paymentQueryService.getOwnedOrder(orderId, username);
+		return ResponseEntity.ok(OrderResponse.from(order));
 	}
 
 	@GetMapping("/api/payments/me")
 	public ResponseEntity<List<PaymentResponseDto>> getPayments(
 		@AuthenticationPrincipal String username
 	) {
-		List<PaymentResponseDto> responses = paymentService.getPayments(username);
+		List<PaymentResponseDto> responses = paymentQueryService.getPayments(username);
 		return ResponseEntity.ok(responses);
 	}
 
 	@GetMapping("/api/orders/by-payment/{paymentId}")
-	public ResponseEntity<?> getOrderByPaymentId(
+	public ResponseEntity<OrderResponse> getOrderByPaymentId(
 		@PathVariable Long paymentId,
 		@AuthenticationPrincipal String username
 	) {
 		log.info("Payment ID로 Order 조회 요청: username={}, paymentId={}", username, paymentId);
-		Order order = orderRepository.findByPaymentPkId(paymentId)
-			.orElseThrow(() -> new EntityNotFoundException(
-				"결제 ID에 해당하는 주문을 찾을 수 없습니다."));
-
-		User currentUser = userService.findByUsername(username);
-
-		if (!order.getUserId().equals(currentUser.getId())) {
-			log.warn("권한 없는 주문 조회 시도: 요청자={}, 주문 소유자={}",
-				currentUser.getId(), order.getUserId());
-			throw new AccessDeniedException("본인의 주문만 조회할 수 있습니다.");
-		}
-		return ResponseEntity.ok(order);
+		Order order = paymentQueryService.getOwnedOrderByPaymentPkId(paymentId, username);
+		return ResponseEntity.ok(OrderResponse.from(order));
 	}
 
 	@PostMapping("/api/payment/cancel")
