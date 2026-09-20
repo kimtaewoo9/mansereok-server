@@ -1,6 +1,7 @@
 package com.mansereok.server.domain.payment.entity;
 
 import com.mansereok.server.global.exception.OrderStateException;
+import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
@@ -26,7 +27,12 @@ public class Payment {
 	@Id
 	@GeneratedValue(strategy = GenerationType.IDENTITY)
 	private Long id;
-	private String impUid; // 포트원 고유 거래 번호 // impUid 로 ..
+	/**
+	 * 포트원 고유 거래 번호(paymentId). 결제 한 건이 주문 두 건에 붙지 못하도록 UNIQUE 다.
+	 * DB(payments.imp_uid)에는 이미 UNIQUE 가 있고, 이 선언은 엔티티가 그 제약을 알게 한다.
+	 */
+	@Column(unique = true, nullable = false)
+	private String impUid;
 
 	private String merchantUid;
 	private Long orderId;
