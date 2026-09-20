@@ -1,6 +1,7 @@
 package com.mansereok.server.domain.payment.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
@@ -44,6 +45,7 @@ import com.mansereok.server.domain.user.entity.User;
 import com.mansereok.server.domain.user.repository.UserRepository;
 import com.mansereok.server.global.exception.OrderStateException;
 import com.mansereok.server.global.exception.PaymentException;
+import com.mansereok.server.global.exception.PortOneUnavailableException;
 import java.time.LocalDate;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
@@ -55,6 +57,7 @@ import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.dao.DataAccessResourceFailureException;
+import org.springframework.http.converter.json.Jackson2ObjectMapperBuilder;
 import org.springframework.test.util.ReflectionTestUtils;
 
 @ExtendWith(MockitoExtension.class)
@@ -70,8 +73,14 @@ class PaymentServiceTest {
 	private static final String MERCHANT_UID = "order_test_001";
 	private static final String PAYMENT_ID = "pay_test_001";
 	private static final int PRICE = 10000;
+	private static final String CUSTOM_DATA = "{\"merchantUid\":\"" + MERCHANT_UID
+		+ "\",\"subCategoryId\":1}";
 
 	private PaymentService paymentService;
+
+	// 웹훅 본문과 customData 파싱을 실제로 검증하도록 mock 이 아닌 진짜 ObjectMapper 를 쓴다.
+	// Spring Boot 자동 구성과 같이 FAIL_ON_UNKNOWN_PROPERTIES 가 꺼진 매퍼다.
+	private final ObjectMapper objectMapper = Jackson2ObjectMapperBuilder.json().build();
 
 	@Mock
 	private DiscordNotificationService discordNotificationService;
@@ -87,8 +96,6 @@ class PaymentServiceTest {
 	private ResultRepository resultRepository;
 	@Mock
 	private CompatibilityResultRepository compatibilityResultRepository;
-	@Mock
-	private ObjectMapper objectMapper;
 	@Mock
 	private UserRepository userRepository;
 	@Mock
@@ -169,6 +176,17 @@ class PaymentServiceTest {
 		amount.setTotal(total);
 		response.setAmount(amount);
 		return response;
+	}
+
+	private PortOnePaymentResponse portOneResponseWithCustomData(String status, long total) {
+		PortOnePaymentResponse response = portOneResponse(status, total);
+		response.setCustomData(CUSTOM_DATA);
+		return response;
+	}
+
+	private static String webhookBody(String status) {
+		return "{\"tx_id\":\"tx_1\",\"payment_id\":\"" + PAYMENT_ID + "\",\"status\":\"" + status
+			+ "\",\"timestamp\":\"2026-01-01T00:00:00Z\"}";
 	}
 
 	private void givenOrderSaveReturnsArgument() {
@@ -782,6 +800,168 @@ class PaymentServiceTest {
 			.isInstanceOf(PaymentException.class)
 			.hasMessage("사용자를 찾을 수 없습니다.");
 		verify(paymentRepository, never()).findById(any());
+	}
+
+	// ===== processWebhook =====
+
+	@Test
+	@DisplayName("Paid 웹훅은 포트원 재조회 뒤 주문을 PAID 로 확정하고 Payment 저장과 초기 Result 생성, Discord 알림을 한다")
+	void processWebhook_paid_finalizesOrder() {
+		// given
+		Order order = createOrder(OrderStatus.PENDING, "WELCOME10", null);
+		given(portOneClient.getPayment(PAYMENT_ID)).willReturn(
+			portOneResponseWithCustomData("PAID", PRICE));
+		given(orderRepository.findByMerchantUidWithLock(MERCHANT_UID)).willReturn(
+			Optional.of(order));
+		given(paymentRepository.findByImpUid(PAYMENT_ID)).willReturn(Optional.empty());
+		givenOrderSaveReturnsArgument();
+		givenPaymentSaveAssignsId();
+		SubCategory subCategory = mockSubCategory();
+		given(userRepository.findById(USER_ID)).willReturn(Optional.of(createUser()));
+		given(subCategoryRepository.findById(SUB_CATEGORY_ID)).willReturn(
+			Optional.of(subCategory));
+
+		// when
+		paymentService.processWebhook(webhookBody("Paid"));
+
+		// then
+		assertThat(order.getStatus()).isEqualTo(OrderStatus.PAID);
+		assertThat(order.getPaymentId()).isEqualTo(PAYMENT_ID);
+		assertThat(order.getPaymentPkId()).isEqualTo(PAYMENT_PK_ID);
+
+		ArgumentCaptor<Payment> paymentCaptor = ArgumentCaptor.forClass(Payment.class);
+		verify(paymentRepository).save(paymentCaptor.capture());
+		Payment savedPayment = paymentCaptor.getValue();
+		assertThat(savedPayment.getImpUid()).isEqualTo(PAYMENT_ID);
+		assertThat(savedPayment.getMerchantUid()).isEqualTo(MERCHANT_UID);
+		assertThat(savedPayment.getAmount()).isEqualTo((long) PRICE);
+		assertThat(savedPayment.getStatus()).isEqualTo(PaymentStatus.PAID);
+
+		verify(resultService).createInitialResult(savedPayment, order);
+		verify(discordNotificationService).sendPaymentCompletedNotification(
+			BUYER_NAME, BUYER_EMAIL, (long) PRICE, "인생 총운", order.getPaidAt(), "WELCOME10",
+			PRICE);
+	}
+
+	@Test
+	@DisplayName("Ready 웹훅은 결제 완료 이벤트가 아니므로 포트원 조회와 주문 조회 없이 무시한다")
+	void processWebhook_ready_ignored() {
+		// when
+		paymentService.processWebhook(webhookBody("Ready"));
+
+		// then
+		verifyNoInteractions(portOneClient, orderRepository, paymentRepository, resultService,
+			discordNotificationService);
+	}
+
+	@Test
+	@DisplayName("금액 불일치 웹훅은 예외 없이 정상 반환하고 주문을 FAILED 로 저장하며 Payment 와 Result 는 만들지 않는다")
+	void processWebhook_amountMismatch_marksFailedAndReturns() {
+		// given
+		Order order = createOrder(OrderStatus.PENDING, null, null);
+		given(portOneClient.getPayment(PAYMENT_ID)).willReturn(
+			portOneResponseWithCustomData("PAID", PRICE - 9900));
+		given(orderRepository.findByMerchantUidWithLock(MERCHANT_UID)).willReturn(
+			Optional.of(order));
+		given(paymentRepository.findByImpUid(PAYMENT_ID)).willReturn(Optional.empty());
+		givenOrderSaveReturnsArgument();
+
+		// when
+		assertThatCode(() -> paymentService.processWebhook(webhookBody("Paid")))
+			.doesNotThrowAnyException();
+
+		// then
+		assertThat(order.getStatus()).isEqualTo(OrderStatus.FAILED);
+		ArgumentCaptor<Order> orderCaptor = ArgumentCaptor.forClass(Order.class);
+		verify(orderRepository).save(orderCaptor.capture());
+		assertThat(orderCaptor.getValue().getStatus()).isEqualTo(OrderStatus.FAILED);
+		verify(paymentRepository, never()).save(any(Payment.class));
+		verifyNoInteractions(resultService, discordNotificationService);
+	}
+
+	@Test
+	@DisplayName("이미 PAID 인 주문에 같은 웹훅이 다시 오면 아무것도 저장하지 않고 정상 반환한다")
+	void processWebhook_alreadyPaid_ignored() {
+		// given
+		Order order = createOrder(OrderStatus.PAID, null, null);
+		given(portOneClient.getPayment(PAYMENT_ID)).willReturn(
+			portOneResponseWithCustomData("PAID", PRICE));
+		given(orderRepository.findByMerchantUidWithLock(MERCHANT_UID)).willReturn(
+			Optional.of(order));
+
+		// when
+		assertThatCode(() -> paymentService.processWebhook(webhookBody("Paid")))
+			.doesNotThrowAnyException();
+
+		// then
+		assertThat(order.getStatus()).isEqualTo(OrderStatus.PAID);
+		verify(orderRepository, never()).save(any(Order.class));
+		verifyNoInteractions(paymentRepository, resultService, discordNotificationService);
+	}
+
+	@Test
+	@DisplayName("포트원 일시 장애(PortOneUnavailableException)는 감싸지 않고 그대로 전파되며 주문은 조회하지 않는다")
+	void processWebhook_portOneUnavailable_propagates() {
+		// given
+		given(portOneClient.getPayment(PAYMENT_ID)).willThrow(
+			new PortOneUnavailableException("결제 정보를 조회하는 중 일시적인 오류가 발생했습니다."));
+
+		// when & then
+		assertThatThrownBy(() -> paymentService.processWebhook(webhookBody("Paid")))
+			.isInstanceOf(PortOneUnavailableException.class)
+			.hasMessage("결제 정보를 조회하는 중 일시적인 오류가 발생했습니다.");
+
+		verifyNoInteractions(orderRepository, paymentRepository, resultService);
+	}
+
+	@Test
+	@DisplayName("웹훅 본문이 JSON 이 아니면 '웹훅 페이로드 파싱 실패' PaymentException 이 나고 포트원은 호출하지 않는다")
+	void processWebhook_malformedBody_throwsPaymentException() {
+		assertThatThrownBy(() -> paymentService.processWebhook("not-json"))
+			.isInstanceOf(PaymentException.class)
+			.hasMessage("웹훅 페이로드 파싱 실패");
+
+		verifyNoInteractions(portOneClient, orderRepository);
+	}
+
+	@Test
+	@DisplayName("customData 의 merchantUid 로 주문을 찾지 못하면 '주문을 찾을 수 없습니다.' PaymentException 이 난다")
+	void processWebhook_orderNotFound_throwsPaymentException() {
+		// given
+		given(portOneClient.getPayment(PAYMENT_ID)).willReturn(
+			portOneResponseWithCustomData("PAID", PRICE));
+		given(orderRepository.findByMerchantUidWithLock(MERCHANT_UID)).willReturn(
+			Optional.empty());
+
+		// when & then
+		assertThatThrownBy(() -> paymentService.processWebhook(webhookBody("Paid")))
+			.isInstanceOf(PaymentException.class)
+			.hasMessage("주문을 찾을 수 없습니다.");
+
+		verifyNoInteractions(paymentRepository, resultService);
+	}
+
+	@Test
+	@DisplayName("포트원 재조회 상태가 FAILED 면 예외 없이 주문을 FAILED 로 저장하고 Payment 는 만들지 않는다")
+	void processWebhook_portOneFailedStatus_marksFailedAndReturns() {
+		// given
+		Order order = createOrder(OrderStatus.PENDING, null, null);
+		given(portOneClient.getPayment(PAYMENT_ID)).willReturn(
+			portOneResponseWithCustomData("FAILED", PRICE));
+		given(orderRepository.findByMerchantUidWithLock(MERCHANT_UID)).willReturn(
+			Optional.of(order));
+		given(paymentRepository.findByImpUid(PAYMENT_ID)).willReturn(Optional.empty());
+		givenOrderSaveReturnsArgument();
+
+		// when
+		assertThatCode(() -> paymentService.processWebhook(webhookBody("Paid")))
+			.doesNotThrowAnyException();
+
+		// then
+		assertThat(order.getStatus()).isEqualTo(OrderStatus.FAILED);
+		verify(orderRepository).save(order);
+		verify(paymentRepository, never()).save(any(Payment.class));
+		verifyNoInteractions(resultService, discordNotificationService);
 	}
 
 	// ===== cancelPayment =====
