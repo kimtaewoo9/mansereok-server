@@ -24,4 +24,6 @@ public interface CompatibilityResultRepository extends JpaRepository<Compatibili
 	void updateOgImageUrl(@Param("id") Long id, @Param("ogImageUrl") String ogImageUrl);
 
 	void deleteAllByUserId(Long userId);
+
+	List<CompatibilityResult> findByPaymentIdIn(List<Long> paymentIds);
 }

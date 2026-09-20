@@ -7,11 +7,13 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 
-import com.mansereok.server.domain.order.entity.Order;
-import com.mansereok.server.domain.order.entity.OrderStatus;
+import com.mansereok.server.domain.interpret.entity.CompatibilityResult;
 import com.mansereok.server.domain.interpret.entity.Result;
 import com.mansereok.server.domain.interpret.entity.ResultStatus;
+import com.mansereok.server.domain.interpret.repository.CompatibilityResultRepository;
 import com.mansereok.server.domain.interpret.repository.ResultRepository;
+import com.mansereok.server.domain.order.entity.Order;
+import com.mansereok.server.domain.order.entity.OrderStatus;
 import com.mansereok.server.domain.order.repository.OrderRepository;
 import com.mansereok.server.domain.payment.dto.response.PaymentResponseDto;
 import com.mansereok.server.domain.payment.entity.Payment;
@@ -53,6 +55,8 @@ class PaymentQueryServiceTest {
 	private PaymentRepository paymentRepository;
 	@Mock
 	private ResultRepository resultRepository;
+	@Mock
+	private CompatibilityResultRepository compatibilityResultRepository;
 
 	// ===== 픽스처 =====
 
@@ -233,6 +237,58 @@ class PaymentQueryServiceTest {
 	}
 
 	@Test
+	@DisplayName("getPayments: 궁합 상품의 CompatibilityResult 상태도 합쳐서 붙이므로 isRefundable 판정이 가능하다")
+	void getPayments_mergesCompatibilityResultStatus() {
+		// given: 1L 은 일반 사주(Result), 2L 은 궁합(CompatibilityResult), 3L 은 결과 없음
+		given(userRepository.findByUsername(USERNAME)).willReturn(Optional.of(user()));
+		Payment p1 = paymentWithId(1L, "imp_001");
+		Payment p2 = paymentWithId(2L, "imp_002");
+		Payment p3 = paymentWithId(3L, "imp_003");
+		given(paymentRepository.findAllByUserIdOrderByCreatedAtDesc(USER_ID))
+			.willReturn(List.of(p1, p2, p3));
+		Result r1 = Result.createInitial(USER_ID, 1L, "상품");
+		r1.setStatus(ResultStatus.PROCESSING);
+		given(resultRepository.findByPaymentIdIn(List.of(1L, 2L, 3L))).willReturn(List.of(r1));
+		CompatibilityResult c2 = CompatibilityResult.createInitial(USER_ID, 2L, "궁합");
+		given(compatibilityResultRepository.findByPaymentIdIn(List.of(1L, 2L, 3L)))
+			.willReturn(List.of(c2));
+
+		// when
+		List<PaymentResponseDto> dtos = paymentQueryService.getPayments(USERNAME);
+
+		// then
+		assertThat(dtos).hasSize(3);
+		assertThat(dtos.get(0).getResultStatus()).isEqualTo(ResultStatus.PROCESSING);
+		assertThat(dtos.get(0).isRefundable()).isFalse();
+		assertThat(dtos.get(1).getResultStatus()).isEqualTo(ResultStatus.INPUT_REQUIRED);
+		assertThat(dtos.get(1).isRefundable()).isTrue();
+		assertThat(dtos.get(2).getResultStatus()).isNull();
+		assertThat(dtos.get(2).isRefundable()).isFalse();
+	}
+
+	@Test
+	@DisplayName("getPayments: CANCEL_REQUESTED 결제는 INPUT_REQUIRED 여도 isRefundable 이 false 다")
+	void getPayments_cancelRequestedPayment_isNotRefundable() {
+		// given
+		given(userRepository.findByUsername(USERNAME)).willReturn(Optional.of(user()));
+		Payment payment = paymentWithId(1L, "imp_001");
+		ReflectionTestUtils.setField(payment, "status", PaymentStatus.CANCEL_REQUESTED);
+		given(paymentRepository.findAllByUserIdOrderByCreatedAtDesc(USER_ID))
+			.willReturn(List.of(payment));
+		given(resultRepository.findByPaymentIdIn(List.of(1L)))
+			.willReturn(List.of(Result.createInitial(USER_ID, 1L, "상품")));
+
+		// when
+		List<PaymentResponseDto> dtos = paymentQueryService.getPayments(USERNAME);
+
+		// then
+		assertThat(dtos).hasSize(1);
+		assertThat(dtos.get(0).getStatus()).isEqualTo("CANCEL_REQUESTED");
+		assertThat(dtos.get(0).getResultStatus()).isEqualTo(ResultStatus.INPUT_REQUIRED);
+		assertThat(dtos.get(0).isRefundable()).isFalse();
+	}
+
+	@Test
 	@DisplayName("getPayments: 사용자를 찾을 수 없으면 IllegalArgumentException 을 던진다")
 	void getPayments_userMissing_throwsIllegalArgument() {
 		// given
@@ -242,7 +298,7 @@ class PaymentQueryServiceTest {
 		assertThatThrownBy(() -> paymentQueryService.getPayments(USERNAME))
 			.isInstanceOf(IllegalArgumentException.class)
 			.hasMessage("사용자를 찾을 수 없습니다.");
-		verifyNoInteractions(paymentRepository, resultRepository);
+		verifyNoInteractions(paymentRepository, resultRepository, compatibilityResultRepository);
 	}
 
 	@Test
