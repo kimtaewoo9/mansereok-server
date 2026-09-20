@@ -13,14 +13,16 @@ public interface PortOneClient {
 	/**
 	 * 결제 단건 조회 (GET /payments/{paymentId})
 	 *
-	 * @throws com.mansereok.server.global.exception.PaymentException 응답이 비어있거나, 파싱에 실패하거나, HTTP/네트워크 오류가 난 경우
+	 * @throws com.mansereok.server.global.exception.PortOneUnavailableException 네트워크 오류, 타임아웃, 5xx 응답 (재시도 가능)
+	 * @throws com.mansereok.server.global.exception.PaymentException            4xx 응답, 비어있는 응답, 파싱 실패
 	 */
 	PortOnePaymentResponse getPayment(String paymentId);
 
 	/**
 	 * 결제 취소 (POST /payments/{paymentId}/cancel)
 	 *
-	 * @throws com.mansereok.server.global.exception.PaymentException 취소 요청이 실패한 경우
+	 * @throws com.mansereok.server.global.exception.PortOneUnavailableException 네트워크 오류, 타임아웃, 5xx 응답 (재시도 가능)
+	 * @throws com.mansereok.server.global.exception.PaymentException            4xx 응답 등 그 외 실패
 	 */
 	void cancelPayment(String paymentId, String reason);
 }

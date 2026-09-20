@@ -54,6 +54,7 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.test.util.ReflectionTestUtils;
 
 @ExtendWith(MockitoExtension.class)
@@ -327,6 +328,26 @@ class PaymentServiceTest {
 		verify(orderRepository, never()).save(any(Order.class));
 		verify(discountCodeService, never()).incrementUsage(any());
 		verifyNoInteractions(couponService, paymentRepository, resultService);
+	}
+
+	@Test
+	@DisplayName("주문 저장 중 DB 장애(DataAccessException)는 PaymentException 으로 감싸지 않고 그대로 전파된다")
+	void createOrder_dbFailure_propagatesOriginalException() {
+		// given
+		given(userRepository.findByUsername(USERNAME)).willReturn(Optional.of(createUser()));
+		SubCategory subCategory = mockSubCategory();
+		given(subCategoryRepository.findById(SUB_CATEGORY_ID)).willReturn(
+			Optional.of(subCategory));
+		given(orderRepository.save(any(Order.class)))
+			.willThrow(new DataAccessResourceFailureException("connection pool exhausted"));
+
+		OrderCreateRequest request = new OrderCreateRequest();
+		request.setSubCategoryId(SUB_CATEGORY_ID);
+
+		// when & then
+		assertThatThrownBy(() -> paymentService.createOrder(USERNAME, request))
+			.isInstanceOf(DataAccessResourceFailureException.class)
+			.isNotInstanceOf(PaymentException.class);
 	}
 
 	// ===== completePayment =====

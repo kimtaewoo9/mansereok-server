@@ -100,57 +100,48 @@ public class PaymentService {
 
 		Integer originalAmount = subCategory.getPrice(); // 1. 원본 금액 .
 
-		try {
-			DiscountResolution discount = resolveDiscount(user, subCategory, request);
-			int finalAmount = discount.finalAmount();
+		// 2. 쿠폰/할인 코드 검증. 실패(PaymentException)는 GlobalExceptionHandler 가 400 으로,
+		//    DB 장애 같은 예상 못 한 예외는 500 으로 응답하므로 여기서 다시 감싸지 않는다.
+		DiscountResolution discount = resolveDiscount(user, subCategory, request);
+		int finalAmount = discount.finalAmount();
 
-			// 0원 주문은 결제창을 띄울 수 없고 무료 발급 절차(redeemFreeProduct)가 따로 있으므로
-			// 여기서는 만들지 않는다. 할인 코드 락은 트랜잭션 롤백으로 함께 풀린다.
-			if (finalAmount <= 0) {
-				throw new PaymentException("0원 주문은 무료 결제 API(/api/payment/redeem-free)를 이용해주세요.");
-			}
-
-			String merchantUid = merchantUidGenerator.forOrder();
-
-			// 3. 주문서 생성
-			Order savedOrder = orderRepository.save(
-				Order.create(
-					merchantUid,
-					user.getId(),
-					subCategory.getId(),
-					originalAmount,
-					finalAmount,
-					discount.appliedCode(),
-					discount.couponId(),
-					OrderStatus.PENDING,
-					user.getName(),
-					user.getEmail()
-				)
-			);
-
-			// 4. 사용 횟수 증가 (주문 생성 트랜잭션 내에서 즉시 처리)
-			consumeDiscount(discount);
-
-			log.info("주문 생성 완료 (트랜잭션 커밋): orderId={}, merchantUid={}, amount={}",
-				savedOrder.getId(), merchantUid, finalAmount);
-
-			// 5. 프론트에 최종 결제액과 주문번호 전달
-			return new OrderCreateResponse(
-				savedOrder.getId(),
-				merchantUid,
-				finalAmount, // 프론트가 결제할 최종 금액
-				subCategory.getTitle()
-			);
-
-		} catch (PaymentException e) {
-			// 할인 코드 검증 실패 (만료, 횟수 초과 등)
-			log.warn("할인/쿠폰 처리 실패: {}", e.getMessage());
-			throw e; // 400 Bad Request로 프론트에 전달
-		} catch (Exception e) {
-			// 기타 DB 오류 등
-			log.error("주문 생성 중 심각한 오류 발생: {}", e.getMessage(), e);
-			throw new PaymentException("주문 생성 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.");
+		// 0원 주문은 결제창을 띄울 수 없고 무료 발급 절차(redeemFreeProduct)가 따로 있으므로
+		// 여기서는 만들지 않는다. 할인 코드 락은 트랜잭션 롤백으로 함께 풀린다.
+		if (finalAmount <= 0) {
+			throw new PaymentException("0원 주문은 무료 결제 API(/api/payment/redeem-free)를 이용해주세요.");
 		}
+
+		String merchantUid = merchantUidGenerator.forOrder();
+
+		// 3. 주문서 생성
+		Order savedOrder = orderRepository.save(
+			Order.create(
+				merchantUid,
+				user.getId(),
+				subCategory.getId(),
+				originalAmount,
+				finalAmount,
+				discount.appliedCode(),
+				discount.couponId(),
+				OrderStatus.PENDING,
+				user.getName(),
+				user.getEmail()
+			)
+		);
+
+		// 4. 사용 횟수 증가 (주문 생성 트랜잭션 내에서 즉시 처리)
+		consumeDiscount(discount);
+
+		log.info("주문 생성 완료 (트랜잭션 커밋): orderId={}, merchantUid={}, amount={}",
+			savedOrder.getId(), merchantUid, finalAmount);
+
+		// 5. 프론트에 최종 결제액과 주문번호 전달
+		return new OrderCreateResponse(
+			savedOrder.getId(),
+			merchantUid,
+			finalAmount, // 프론트가 결제할 최종 금액
+			subCategory.getTitle()
+		);
 	}
 
 	// 2단계. 결제 상태 조회 ..

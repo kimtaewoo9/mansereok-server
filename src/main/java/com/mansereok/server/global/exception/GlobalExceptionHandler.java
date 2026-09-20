@@ -192,6 +192,22 @@ public class GlobalExceptionHandler {
 	}
 
 	/**
+	 * [503 Service Unavailable] 포트원 API 일시 장애(네트워크 오류, 타임아웃, 5xx). 재시도로 해결될 수 있는
+	 * 실패이며, 웹훅 엔드포인트가 5xx 를 돌려주면 포트원이 같은 웹훅을 재전송한다.
+	 */
+	@ExceptionHandler(PortOneUnavailableException.class)
+	public ResponseEntity<ErrorResponse> handlePortOneUnavailableException(
+		PortOneUnavailableException e) {
+		log.error("포트원 API 일시 장애: {}", e.getMessage(), e);
+		ErrorResponse response = ErrorResponse.of(
+			HttpStatus.SERVICE_UNAVAILABLE.value(),
+			"PORTONE_UNAVAILABLE",
+			e.getMessage()
+		);
+		return new ResponseEntity<>(response, HttpStatus.SERVICE_UNAVAILABLE);
+	}
+
+	/**
 	 * [500 Internal Server Error] 처리되지 않은 모든 서버 내부 오류 RuntimeException 포함하여 모든 예외를 마지막에 처리
 	 */
 	@ExceptionHandler(Exception.class)

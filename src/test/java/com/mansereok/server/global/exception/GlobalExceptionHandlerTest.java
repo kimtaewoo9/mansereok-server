@@ -74,6 +74,23 @@ class GlobalExceptionHandlerTest {
 	}
 
 	@Test
+	@DisplayName("PortOneUnavailableException 은 503 과 PORTONE_UNAVAILABLE 로 응답한다")
+	void portOneUnavailableException_mapsTo503() {
+		// when
+		ResponseEntity<ErrorResponse> response = handler.handlePortOneUnavailableException(
+			new PortOneUnavailableException("결제 정보를 조회하는 중 일시적인 오류가 발생했습니다.",
+				new RuntimeException("Read timed out")));
+
+		// then
+		assertThat(response.getStatusCode()).isEqualTo(HttpStatus.SERVICE_UNAVAILABLE);
+		assertThat(response.getBody()).isNotNull();
+		assertThat(response.getBody().getStatus()).isEqualTo(503);
+		assertThat(response.getBody().getErrorCode()).isEqualTo("PORTONE_UNAVAILABLE");
+		assertThat(response.getBody().getMessage())
+			.isEqualTo("결제 정보를 조회하는 중 일시적인 오류가 발생했습니다.");
+	}
+
+	@Test
 	@DisplayName("EntityNotFoundException 은 404 와 NOT_FOUND 로 응답한다")
 	void entityNotFoundException_mapsTo404() {
 		// when
