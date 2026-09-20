@@ -98,6 +98,8 @@ class PaymentServiceTest {
 	private PortOneClient portOneClient;
 	@Mock
 	private OrderDiscountRestorer orderDiscountRestorer;
+	@Mock
+	private FreeProductPolicy freeProductPolicy;
 
 	@BeforeEach
 	void setUp() {
@@ -119,7 +121,9 @@ class PaymentServiceTest {
 			couponService,
 			portOneClient,
 			paidOrderFinalizer,
-			orderDiscountRestorer
+			orderDiscountRestorer,
+			freeProductPolicy,
+			new MerchantUidGenerator() // 접두사·형식 단언을 위해 실제 인스턴스를 쓴다
 		);
 	}
 
@@ -296,6 +300,33 @@ class PaymentServiceTest {
 
 		verify(couponService).useCoupon(couponId);
 		verifyNoInteractions(discountCodeService);
+	}
+
+	@Test
+	@DisplayName("100% 할인으로 최종 금액이 0원이면 주문을 만들지 않고 무료 결제 API 안내 메시지의 PaymentException 이 난다")
+	void createOrder_zeroFinalAmount_throwsAndSavesNothing() {
+		// given
+		given(userRepository.findByUsername(USERNAME)).willReturn(Optional.of(createUser()));
+		SubCategory subCategory = mockSubCategory();
+		given(subCategoryRepository.findById(SUB_CATEGORY_ID)).willReturn(
+			Optional.of(subCategory));
+		DiscountCode discountCode = mock(DiscountCode.class);
+		given(discountCodeService.validateAndCalculateDiscountForPayment("FREE100", PRICE,
+			SUB_CATEGORY_ID))
+			.willReturn(new DiscountValidationResult(0, "FREE100", discountCode));
+
+		OrderCreateRequest request = new OrderCreateRequest();
+		request.setSubCategoryId(SUB_CATEGORY_ID);
+		request.setDiscountCode("FREE100");
+
+		// when & then
+		assertThatThrownBy(() -> paymentService.createOrder(USERNAME, request))
+			.isInstanceOf(PaymentException.class)
+			.hasMessage("0원 주문은 무료 결제 API(/api/payment/redeem-free)를 이용해주세요.");
+
+		verify(orderRepository, never()).save(any(Order.class));
+		verify(discountCodeService, never()).incrementUsage(any());
+		verifyNoInteractions(couponService, paymentRepository, resultService);
 	}
 
 	// ===== completePayment =====
@@ -534,10 +565,68 @@ class PaymentServiceTest {
 		verifyNoInteractions(resultService, discordNotificationService);
 	}
 
+	@Test
+	@DisplayName("couponId 로 무료 상품을 받으면 쿠폰 검증과 useCoupon 을 거치고 주문에 couponId 가 기록되며 할인 코드 서비스는 호출하지 않는다")
+	void redeemFreeProduct_withCouponId_validatesAndUsesCoupon() {
+		// given
+		Long couponId = 7L;
+		given(userRepository.findByUsername(USERNAME)).willReturn(Optional.of(createUser()));
+		SubCategory subCategory = mockSubCategory();
+		given(subCategoryRepository.findById(SUB_CATEGORY_ID)).willReturn(
+			Optional.of(subCategory));
+		given(couponService.validateAndCalculateCoupon(couponId, USER_ID, PRICE))
+			.willReturn(new DiscountValidationResult(0, "무료 쿠폰", null));
+		givenOrderSaveAssignsId();
+		givenPaymentSaveAssignsId();
+
+		OrderCreateRequest request = new OrderCreateRequest();
+		request.setSubCategoryId(SUB_CATEGORY_ID);
+		request.setCouponId(couponId);
+
+		// when
+		OrderCreateResponse response = paymentService.redeemFreeProduct(USERNAME, request);
+
+		// then
+		ArgumentCaptor<Order> orderCaptor = ArgumentCaptor.forClass(Order.class);
+		verify(orderRepository, atLeastOnce()).save(orderCaptor.capture());
+		Order savedOrder = orderCaptor.getValue();
+		assertThat(savedOrder.getStatus()).isEqualTo(OrderStatus.PAID);
+		assertThat(savedOrder.getAmount()).isZero();
+		assertThat(savedOrder.getCouponId()).isEqualTo(couponId);
+		assertThat(savedOrder.getAppliedDiscountCode()).isEqualTo("무료 쿠폰");
+		assertThat(savedOrder.getMerchantUid()).startsWith("free_");
+
+		verify(couponService).useCoupon(couponId);
+		verifyNoInteractions(discountCodeService);
+		verify(resultService).createInitialResult(any(Payment.class), any(Order.class));
+		assertThat(response.getAmount()).isZero();
+	}
+
 	// ===== createFreeOrder =====
 
 	@Test
-	@DisplayName("무료 이벤트 주문은 원가 0원의 PAID 주문과 pay_free_ 접두사의 0원 Payment 가 저장되고 Result 가 생성되며 Discord 알림은 보내지 않는다")
+	@DisplayName("무료 판정을 통과하지 못한 유료 상품은 PaymentException 이 나고 주문·Payment·Result 는 만들어지지 않는다")
+	void createFreeOrder_paidProduct_throwsAndSavesNothing() {
+		// given
+		given(userRepository.findByUsername(USERNAME)).willReturn(Optional.of(createUser()));
+		SubCategory subCategory = mock(SubCategory.class);
+		given(subCategoryRepository.findById(SUB_CATEGORY_ID)).willReturn(
+			Optional.of(subCategory));
+		given(freeProductPolicy.isFree(subCategory)).willReturn(false);
+
+		// when & then
+		assertThatThrownBy(() -> paymentService.createFreeOrder(USERNAME, SUB_CATEGORY_ID))
+			.isInstanceOf(PaymentException.class)
+			.hasMessage("무료로 제공되는 상품이 아닙니다.");
+
+		verify(orderRepository, never()).save(any(Order.class));
+		verify(paymentRepository, never()).save(any(Payment.class));
+		verifyNoInteractions(resultService, discordNotificationService, discountCodeService,
+			couponService);
+	}
+
+	@Test
+	@DisplayName("무료 이벤트 주문은 원가 0원의 PAID 주문과 free_ 접두사의 0원 Payment 가 저장되고 Result 가 생성되며 Discord 알림은 보내지 않는다")
 	void createFreeOrder_savesPaidOrderAndZeroPaymentAndCreatesResult() {
 		// given
 		given(userRepository.findByUsername(USERNAME)).willReturn(Optional.of(createUser()));
@@ -546,6 +635,7 @@ class PaymentServiceTest {
 		given(subCategory.getId()).willReturn(SUB_CATEGORY_ID);
 		given(subCategoryRepository.findById(SUB_CATEGORY_ID)).willReturn(
 			Optional.of(subCategory));
+		given(freeProductPolicy.isFree(subCategory)).willReturn(true);
 		givenOrderSaveAssignsId();
 		givenPaymentSaveAssignsId();
 
@@ -564,14 +654,14 @@ class PaymentServiceTest {
 		assertThat(savedOrder.getCouponId()).isNull();
 		assertThat(savedOrder.getMerchantUid()).startsWith("free_");
 		assertThat(savedOrder.getPaidAt()).isNotNull();
-		assertThat(savedOrder.getPaymentId()).isEqualTo("pay_free_" + savedOrder.getMerchantUid());
+		assertThat(savedOrder.getPaymentId()).isEqualTo("free_" + savedOrder.getMerchantUid());
 		assertThat(savedOrder.getPaymentPkId()).isEqualTo(PAYMENT_PK_ID);
 
 		ArgumentCaptor<Payment> paymentCaptor = ArgumentCaptor.forClass(Payment.class);
 		verify(paymentRepository).save(paymentCaptor.capture());
 		Payment savedPayment = paymentCaptor.getValue();
 		assertThat(returned).isSameAs(savedPayment);
-		assertThat(savedPayment.getImpUid()).isEqualTo("pay_free_" + savedOrder.getMerchantUid());
+		assertThat(savedPayment.getImpUid()).isEqualTo("free_" + savedOrder.getMerchantUid());
 		assertThat(savedPayment.getMerchantUid()).isEqualTo(savedOrder.getMerchantUid());
 		assertThat(savedPayment.getAmount()).isZero();
 		assertThat(savedPayment.getStatus()).isEqualTo(PaymentStatus.PAID);
@@ -585,6 +675,66 @@ class PaymentServiceTest {
 		// (c) Discord 알림 없음, 할인/쿠폰/포트원 호출 없음
 		verifyNoInteractions(discordNotificationService, discountCodeService, couponService,
 			portOneClient);
+	}
+
+	// ===== verifyPaidOwnership =====
+
+	@Test
+	@DisplayName("본인의 PAID 결제면 verifyPaidOwnership 은 예외 없이 통과한다")
+	void verifyPaidOwnership_ownPaidPayment_passes() {
+		// given
+		given(userRepository.findByUsername(USERNAME)).willReturn(Optional.of(createUser()));
+		given(paymentRepository.findById(PAYMENT_PK_ID)).willReturn(
+			Optional.of(createPaidPayment()));
+
+		// when & then
+		paymentService.verifyPaidOwnership(PAYMENT_PK_ID, USERNAME);
+	}
+
+	@Test
+	@DisplayName("결제가 없으면 '유효한 결제 정보가 아닙니다.' PaymentException 이 난다")
+	void verifyPaidOwnership_paymentNotFound_throws() {
+		// given
+		given(userRepository.findByUsername(USERNAME)).willReturn(Optional.of(createUser()));
+		given(paymentRepository.findById(PAYMENT_PK_ID)).willReturn(Optional.empty());
+
+		// when & then
+		assertThatThrownBy(() -> paymentService.verifyPaidOwnership(PAYMENT_PK_ID, USERNAME))
+			.isInstanceOf(PaymentException.class)
+			.hasMessage("유효한 결제 정보가 아닙니다.");
+	}
+
+	@Test
+	@DisplayName("결제 상태가 PAID 가 아니면 같은 메시지의 PaymentException 이 난다")
+	void verifyPaidOwnership_notPaid_throws() {
+		// given
+		given(userRepository.findByUsername(USERNAME)).willReturn(Optional.of(createUser()));
+		Payment payment = Payment.create(PAYMENT_ID, MERCHANT_UID, (long) PRICE,
+			PaymentStatus.CANCELLED, ORDER_ID, USER_ID, SUB_CATEGORY_ID);
+		ReflectionTestUtils.setField(payment, "id", PAYMENT_PK_ID);
+		given(paymentRepository.findById(PAYMENT_PK_ID)).willReturn(Optional.of(payment));
+
+		// when & then
+		assertThatThrownBy(() -> paymentService.verifyPaidOwnership(PAYMENT_PK_ID, USERNAME))
+			.isInstanceOf(PaymentException.class)
+			.hasMessage("유효한 결제 정보가 아닙니다.");
+	}
+
+	@Test
+	@DisplayName("다른 사용자의 결제면 존재 여부를 드러내지 않는 같은 메시지의 PaymentException 이 난다")
+	void verifyPaidOwnership_otherUsersPayment_throws() {
+		// given
+		given(userRepository.findByUsername(USERNAME)).willReturn(Optional.of(createUser()));
+		Long otherUserId = 999L;
+		Payment payment = Payment.create(PAYMENT_ID, MERCHANT_UID, (long) PRICE,
+			PaymentStatus.PAID, ORDER_ID, otherUserId, SUB_CATEGORY_ID);
+		ReflectionTestUtils.setField(payment, "id", PAYMENT_PK_ID);
+		given(paymentRepository.findById(PAYMENT_PK_ID)).willReturn(Optional.of(payment));
+
+		// when & then
+		assertThatThrownBy(() -> paymentService.verifyPaidOwnership(PAYMENT_PK_ID, USERNAME))
+			.isInstanceOf(PaymentException.class)
+			.hasMessage("유효한 결제 정보가 아닙니다.");
 	}
 
 	// ===== cancelPayment =====

@@ -35,7 +35,6 @@ import com.mansereok.server.global.exception.PaymentException;
 import jakarta.persistence.EntityNotFoundException;
 import java.time.LocalDateTime;
 import java.util.Objects;
-import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -46,6 +45,9 @@ import org.springframework.transaction.annotation.Transactional;
 @Transactional
 @Slf4j
 public class PaymentService {
+
+	/** 무료 결제의 impUid 접두사. 포트원 paymentId 가 없어서 merchantUid 앞에 붙여 대신한다. */
+	private static final String FREE_PAYMENT_ID_PREFIX = "free_";
 
 	private final DiscordNotificationService discordNotificationService;
 
@@ -70,6 +72,27 @@ public class PaymentService {
 
 	private final OrderDiscountRestorer orderDiscountRestorer;
 
+	private final FreeProductPolicy freeProductPolicy;
+
+	private final MerchantUidGenerator merchantUidGenerator;
+
+	/**
+	 * 쿠폰/할인코드 분기의 결과. 사용 확정(consumeDiscount)에 필요한 정보를 함께 담는다.
+	 *
+	 * @param finalAmount        할인 적용 후 금액
+	 * @param appliedCode        주문에 기록할 코드(쿠폰명 또는 할인 코드), 없으면 null
+	 * @param couponId           쿠폰을 쓴 경우 그 id, 아니면 null
+	 * @param discountCodeEntity 할인 코드를 쓴 경우 그 엔티티, 아니면 null
+	 */
+	private record DiscountResolution(
+		int finalAmount,
+		String appliedCode,
+		Long couponId,
+		DiscountCode discountCodeEntity
+	) {
+
+	}
+
 	// 1단계: 주문 생성 (결제 전)
 	public OrderCreateResponse createOrder(String username, OrderCreateRequest request) {
 		User user = userRepository.findByUsername(username)
@@ -81,41 +104,16 @@ public class PaymentService {
 		Integer originalAmount = subCategory.getPrice(); // 1. 원본 금액 .
 
 		try {
-			DiscountValidationResult validationResult;
-			Long usedCouponId = null; // 나중에 사용 처리를 위해 저장
+			DiscountResolution discount = resolveDiscount(user, subCategory, request);
+			int finalAmount = discount.finalAmount();
 
-			// A. 쿠폰을 선택한 경우 (우선순위 높음)
-			if (request.getCouponId() != null) {
-				// 새 CouponService 호출
-				validationResult = couponService.validateAndCalculateCoupon(
-					request.getCouponId(),
-					user.getId(),
-					originalAmount
-				);
-				usedCouponId = request.getCouponId();
-			}
-			// B. 할인 코드를 직접 입력한 경우 (기존 로직)
-			else if (request.getDiscountCode() != null && !request.getDiscountCode().isBlank()) {
-				validationResult = discountCodeService.validateAndCalculateDiscountForPayment(
-					request.getDiscountCode(),
-					originalAmount,
-					request.getSubCategoryId()
-				);
-			}
-			// C. 아무것도 안 쓴 경우
-			else {
-				validationResult = new DiscountValidationResult(originalAmount, null, null);
+			// 0원 주문은 결제창을 띄울 수 없고 무료 발급 절차(redeemFreeProduct)가 따로 있으므로
+			// 여기서는 만들지 않는다. 할인 코드 락은 트랜잭션 롤백으로 함께 풀린다.
+			if (finalAmount <= 0) {
+				throw new PaymentException("0원 주문은 무료 결제 API(/api/payment/redeem-free)를 이용해주세요.");
 			}
 
-			Integer finalAmount = validationResult.getFinalAmount();
-			String appliedCode = validationResult.getAppliedCode(); // 쿠폰명 or 할인코드
-
-			// 할인 코드를 쓴 경우에만 값이 있고, 쿠폰을 쓴 경우엔 null임
-			DiscountCode discountCodeEntity = validationResult.getDiscountCodeEntity();
-
-			String merchantUid =
-				"order_" + System.currentTimeMillis() + "_" + UUID.randomUUID().toString()
-					.substring(0, 8);
+			String merchantUid = merchantUidGenerator.forOrder();
 
 			// 3. 주문서 생성
 			Order savedOrder = orderRepository.save(
@@ -125,8 +123,8 @@ public class PaymentService {
 					subCategory.getId(),
 					originalAmount,
 					finalAmount,
-					appliedCode,
-					usedCouponId, // ✅ 여기에 위에서 저장해둔 usedCouponId 변수를 넘깁니다!
+					discount.appliedCode(),
+					discount.couponId(),
 					OrderStatus.PENDING,
 					user.getName(),
 					user.getEmail()
@@ -134,16 +132,7 @@ public class PaymentService {
 			);
 
 			// 4. 사용 횟수 증가 (주문 생성 트랜잭션 내에서 즉시 처리)
-			// [중요] 쿠폰 사용 처리
-			if (usedCouponId != null) {
-				couponService.useCoupon(usedCouponId);
-				log.info("쿠폰 사용 처리 완료: couponId={}", usedCouponId);
-			}
-			// 기존 할인 코드 사용 처리
-			else if (discountCodeEntity != null) {
-				discountCodeService.incrementUsage(discountCodeEntity);
-				log.info("할인 코드 사용 횟수 증가 완료: {}", appliedCode);
-			}
+			consumeDiscount(discount);
 
 			log.info("주문 생성 완료 (트랜잭션 커밋): orderId={}, merchantUid={}, amount={}",
 				savedOrder.getId(), merchantUid, finalAmount);
@@ -240,45 +229,39 @@ public class PaymentService {
 			.orElseThrow(() -> new PaymentException("존재하지 않는 상품입니다."));
 		Integer originalAmount = subCategory.getPrice();
 
-		// 3. 할인 코드 재검증
-		DiscountValidationResult validationResult = discountCodeService.validateAndCalculateDiscountForPayment(
-			request.getDiscountCode(),
-			originalAmount,
-			request.getSubCategoryId()
-		);
+		// 3. 쿠폰/할인 코드 재검증 (createOrder 와 같은 규칙)
+		DiscountResolution discount = resolveDiscount(user, subCategory, request);
 
 		// 4. 0원 할인 검증
-		if (validationResult.getFinalAmount() != 0) {
-			log.warn("0원 결제 시도 실패: 최종 금액이 0원이 아닙니다. ({}원)", validationResult.getFinalAmount());
+		if (discount.finalAmount() != 0) {
+			log.warn("0원 결제 시도 실패: 최종 금액이 0원이 아닙니다. ({}원)", discount.finalAmount());
 			throw new PaymentException("유효한 100% 할인 코드가 아닙니다.");
 		}
 
 		// 5. 0원짜리 Order, Payment, Result 동시 생성 (하나의 트랜잭션)
 
 		// 5-1. Order 생성 (상태: PAID)
-		String merchantUid =
-			"free_" + System.currentTimeMillis() + "_" + UUID.randomUUID().toString()
-				.substring(0, 8);
+		String merchantUid = merchantUidGenerator.forFree();
 		Order order = Order.create(
 			merchantUid,
 			user.getId(),
 			subCategory.getId(),
 			originalAmount,
 			0, // finalAmount = 0
-			request.getDiscountCode(),
-			null,
+			discount.appliedCode(),
+			discount.couponId(),
 			OrderStatus.PENDING, // PAID 전이는 finalizePaid 의 markPaid 가 담당한다
 			user.getName(),
 			user.getEmail()
 		);
 
 		// 5-2. 주문 PAID 확정, 0원 Payment 저장, 연관관계 연결, 초기 Result 생성
-		String paymentId = "free_" + merchantUid; // 포트원 paymentId 가 없으니 merchantUid 로 대신한다.
+		String paymentId = FREE_PAYMENT_ID_PREFIX + merchantUid; // 포트원 paymentId 가 없으니 merchantUid 로 대신한다.
 		Payment savedPayment = paidOrderFinalizer.finalizePaid(order, paymentId, 0L,
 			LocalDateTime.now());
 
-		// 5-3. 할인 코드 사용 횟수 증가
-		discountCodeService.incrementUsage(validationResult.getDiscountCodeEntity());
+		// 5-3. 쿠폰 또는 할인 코드 사용 확정
+		consumeDiscount(discount);
 
 		log.info("0원 결제(무료 제공) 처리 완료: paymentId(PK)={}, orderId={}", savedPayment.getId(),
 			order.getId());
@@ -300,9 +283,14 @@ public class PaymentService {
 		SubCategory subCategory = subCategoryRepository.findById(subCategoryId)
 			.orElseThrow(() -> new PaymentException("존재하지 않는 상품입니다."));
 
-		String merchantUid =
-			"free_" + System.currentTimeMillis() + "_" + UUID.randomUUID().toString()
-				.substring(0, 8);
+		// 무료 판정을 통과한 상품만 0원 PAID 로 발급한다 (유료 상품의 무료 발급 차단)
+		if (!freeProductPolicy.isFree(subCategory)) {
+			log.warn("유료 상품 무료 발급 시도 차단: username={}, subCategoryId={}", username,
+				subCategoryId);
+			throw new PaymentException("무료로 제공되는 상품이 아닙니다.");
+		}
+
+		String merchantUid = merchantUidGenerator.forFree();
 
 		// 1. Order 생성 (finalizePaid 에서 PAID 로 전이)
 		Order order = Order.create(
@@ -319,13 +307,37 @@ public class PaymentService {
 		);
 
 		// 2. 주문 PAID 확정, 0원 Payment 저장, 연관관계 연결, 초기 Result 생성
-		String paymentId = "pay_free_" + merchantUid;
+		String paymentId = FREE_PAYMENT_ID_PREFIX + merchantUid; // redeemFreeProduct 와 같은 규칙
 		Payment savedPayment = paidOrderFinalizer.finalizePaid(order, paymentId, 0L,
 			LocalDateTime.now());
 
 		log.info("무료 사주 주문 생성 완료: orderId={}, paymentId={}", order.getId(),
 			savedPayment.getId());
 		return savedPayment;
+	}
+
+	/**
+	 * 해석 요청에 실린 paymentId(PK) 가 요청자 본인의 결제 완료 건인지 확인한다.
+	 *
+	 * <p>존재하지 않음 · 미결제 · 타인 소유를 모두 같은 메시지로 거부해 paymentId 열거로 상태를
+	 * 알아낼 수 없게 한다.
+	 */
+	@Transactional(readOnly = true)
+	public void verifyPaidOwnership(Long paymentPkId, String username) {
+		User user = userRepository.findByUsername(username)
+			.orElseThrow(() -> new PaymentException("사용자를 찾을 수 없습니다."));
+
+		Payment payment = paymentPkId == null ? null
+			: paymentRepository.findById(paymentPkId).orElse(null);
+
+		if (payment == null
+			|| payment.getStatus() != PaymentStatus.PAID
+			|| !Objects.equals(payment.getUserId(), user.getId())) {
+			log.warn("유효하지 않은 결제로 해석 요청: username={}, paymentPkId={}, exists={}, status={}",
+				username, paymentPkId, payment != null,
+				payment == null ? null : payment.getStatus());
+			throw new PaymentException("유효한 결제 정보가 아닙니다.");
+		}
 	}
 
 	public void processWebhook(String body) {
@@ -546,6 +558,53 @@ public class PaymentService {
 		orderDiscountRestorer.restore(order);
 
 		log.info("사용자 환불 완료: username={}, paymentId={}, reason={}", username, paymentId, reason);
+	}
+
+	/**
+	 * 쿠폰/할인 코드 분기. 쿠폰이 우선이고, 없으면 할인 코드, 둘 다 없으면 원가 그대로다.
+	 * 검증만 하고 사용 확정은 {@link #consumeDiscount(DiscountResolution)} 가 한다.
+	 */
+	private DiscountResolution resolveDiscount(User user, SubCategory subCategory,
+		OrderCreateRequest request) {
+		int originalAmount = subCategory.getPrice();
+
+		// A. 쿠폰을 선택한 경우 (우선순위 높음)
+		if (request.getCouponId() != null) {
+			DiscountValidationResult result = couponService.validateAndCalculateCoupon(
+				request.getCouponId(),
+				user.getId(),
+				originalAmount
+			);
+			return new DiscountResolution(result.getFinalAmount(), result.getAppliedCode(),
+				request.getCouponId(), null);
+		}
+
+		// B. 할인 코드를 직접 입력한 경우
+		if (request.getDiscountCode() != null && !request.getDiscountCode().isBlank()) {
+			DiscountValidationResult result = discountCodeService.validateAndCalculateDiscountForPayment(
+				request.getDiscountCode(),
+				originalAmount,
+				request.getSubCategoryId()
+			);
+			return new DiscountResolution(result.getFinalAmount(), result.getAppliedCode(), null,
+				result.getDiscountCodeEntity());
+		}
+
+		// C. 아무것도 안 쓴 경우
+		return new DiscountResolution(originalAmount, null, null, null);
+	}
+
+	/**
+	 * 검증을 통과한 쿠폰/할인 코드의 사용을 확정한다. 주문 생성과 같은 트랜잭션 안에서 호출한다.
+	 */
+	private void consumeDiscount(DiscountResolution discount) {
+		if (discount.couponId() != null) {
+			couponService.useCoupon(discount.couponId());
+			log.info("쿠폰 사용 처리 완료: couponId={}", discount.couponId());
+		} else if (discount.discountCodeEntity() != null) {
+			discountCodeService.incrementUsage(discount.discountCodeEntity());
+			log.info("할인 코드 사용 횟수 증가 완료: {}", discount.appliedCode());
+		}
 	}
 
 	/**
