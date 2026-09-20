@@ -15,10 +15,8 @@ import com.mansereok.server.domain.order.entity.OrderStatus;
 import com.mansereok.server.domain.order.repository.OrderRepository;
 import com.mansereok.server.domain.order.service.OrderDiscountRestorer;
 import com.mansereok.server.domain.payment.client.PortOneClient;
-import com.mansereok.server.domain.payment.dto.request.PaymentCompleteRequest;
 import com.mansereok.server.domain.payment.dto.response.PortOnePaymentResponse;
 import com.mansereok.server.domain.payment.dto.response.PortoneWebhookDto;
-import com.mansereok.server.domain.payment.dto.response.WebhookCustomData;
 import com.mansereok.server.domain.payment.entity.Payment;
 import com.mansereok.server.domain.payment.entity.PaymentStatus;
 import com.mansereok.server.domain.payment.repository.PaymentRepository;
@@ -32,7 +30,6 @@ import java.util.Objects;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -57,6 +54,8 @@ public class PaymentService {
 	private final PortOneClient portOneClient;
 
 	private final PaidOrderFinalizer paidOrderFinalizer;
+
+	private final PaymentVerifier paymentVerifier;
 
 	private final OrderDiscountRestorer orderDiscountRestorer;
 
@@ -133,123 +132,6 @@ public class PaymentService {
 			finalAmount, // 프론트가 결제할 최종 금액
 			subCategory.getTitle()
 		);
-	}
-
-	/**
-	 * 2단계. 결제 완료 검증. 클라이언트가 보낸 paymentId 와 merchantUid 를 그대로 믿지 않는다.
-	 *
-	 * <p>순서: 요청자 조회 → 주문 잠금 → 소유자 대조(403) → PAID 멱등 반환 → 결제 중복 선검사 → 포트원 조회
-	 * → customData 의 merchantUid 대조(400) → 금액 검증 → 확정.
-	 *
-	 * @throws AccessDeniedException 요청자가 주문 소유자가 아닐 때 (403)
-	 * @throws PaymentException      주문 없음 · 결제 중복 · 주문 번호 불일치 · 금액 불일치 (400)
-	 */
-	@Transactional  // readOnly 제거!
-	public Order completePayment(String username, PaymentCompleteRequest request) {
-		log.info("결제 완료 요청 및 검증: username={}, paymentId={}, merchantUid={}",
-			username, request.getPaymentId(), request.getMerchantUid());
-
-		User user = userRepository.findByUsername(username)
-			.orElseThrow(() -> new PaymentException("사용자를 찾을 수 없습니다."));
-
-		// 비관적 락으로 주문 조회
-		Order order = orderRepository.findByMerchantUidWithLock(request.getMerchantUid())
-			.orElseThrow(() -> new PaymentException("주문을 찾을 수 없습니다."));
-
-		// 소유자 대조. 멱등 반환보다 먼저 해서 타인의 PAID 주문 정보도 새지 않게 한다.
-		assertOrderOwnedBy(order, user);
-
-		// 멱등성 보장: 이미 처리된 주문이면 바로 반환
-		if (order.getStatus() == OrderStatus.PAID) {
-			log.info("이미 처리된 주문입니다. orderId={}", order.getId());
-			return order;
-		}
-
-		if (paymentRepository.findByImpUid(request.getPaymentId()).isPresent()) {
-			log.warn("이미 존재하는 결제입니다: paymentId={}", request.getPaymentId());
-			throw new PaymentException("이미 처리된 결제입니다.");
-		}
-
-		// 포트원 API 조회를 통한 2차 검증 ..
-		PortOnePaymentResponse paymentResponse = portOneClient.getPayment(
-			request.getPaymentId());
-
-		// 결제와 주문의 결합 검증: 포트원에 기록된 주문 번호가 잠근 주문과 같아야 한다
-		assertCustomDataMatchesOrder(order, request.getPaymentId(), paymentResponse);
-
-		// 금액 검증
-		if (!Objects.equals(paymentResponse.getAmount().getTotal(),
-			order.getAmount().longValue())) {
-			throw new PaymentException("결제 금액이 일치하지 않습니다.");
-		}
-
-		// 포트원 상태가 PAID라면 즉시 DB 업데이트. 모르는 상태는 "아직 완료되지 않음" 으로 보고 주문을 그대로 돌려준다.
-		Optional<PaymentStatus> paymentStatus = PaymentStatus.fromPortOneStatus(
-			paymentResponse.getStatus());
-		if (paymentStatus.isEmpty()) {
-			log.warn("알 수 없는 포트원 결제 상태라 미완료로 취급합니다: orderId={}, paymentId={}, rawStatus={}",
-				order.getId(), request.getPaymentId(), paymentResponse.getStatus());
-			return order;
-		}
-
-		if (paymentStatus.get() == PaymentStatus.PAID) {
-			log.info("검증 완료. 주문 상태를 PAID로 변경합니다.");
-
-			// 주문 PAID 확정, Payment 저장, 연관관계 연결, 초기 Result 생성, 완료 이벤트 발행(알림은 커밋 뒤 리스너)
-			paidOrderFinalizer.finalizePaid(
-				order,
-				request.getPaymentId(),
-				paymentResponse.getAmount().getTotal(),
-				LocalDateTime.now()
-			);
-
-			log.info("completePayment에서 결제 처리 완료: orderId={}, paymentId={}",
-				order.getId(), request.getPaymentId());
-
-			return order;  // 이제 PAID 상태로 반환
-		}
-
-		// PAID가 아닌 경우
-		log.warn("결제가 아직 완료되지 않았습니다: status={}", paymentStatus.get());
-		return order;
-	}
-
-	/**
-	 * 주문 소유자와 요청자를 대조한다. 탈퇴 처리로 userId 가 null 인 주문은 누구의 것도 아니므로 거부한다.
-	 */
-	private void assertOrderOwnedBy(Order order, User user) {
-		if (order.getUserId() == null || !Objects.equals(order.getUserId(), user.getId())) {
-			log.warn("권한 없는 결제 완료 시도: 요청자={}, 주문 소유자={}, orderId={}",
-				user.getId(), order.getUserId(), order.getId());
-			throw new AccessDeniedException("본인의 주문만 결제 완료 처리할 수 있습니다.");
-		}
-	}
-
-	/**
-	 * 포트원 응답 customData 의 merchantUid 를 잠근 주문의 merchantUid(요청값이 아니라 DB 값)와 대조한다.
-	 * 결제 한 건이 다른 주문에 붙는 것을 막는다.
-	 *
-	 * <p>customData 가 비어 있으면 하위 호환을 위해 warn 로그만 남기고 통과한다(customData 를 싣지 않는
-	 * 예전 클라이언트·수동 결제). 형식이 어긋난 customData 는 {@link WebhookCustomData#from} 의
-	 * PaymentException 이 그대로 전파된다.
-	 *
-	 * @throws PaymentException customData 의 merchantUid 가 주문의 merchantUid 와 다른 경우
-	 */
-	private void assertCustomDataMatchesOrder(Order order, String paymentId,
-		PortOnePaymentResponse paymentResponse) {
-		String customData = paymentResponse.getCustomData();
-		if (customData == null || customData.isBlank()) {
-			log.warn("포트원 응답에 customData 가 없어 주문 번호 대조를 건너뜁니다: orderId={}, paymentId={}",
-				order.getId(), paymentId);
-			return;
-		}
-
-		String paidMerchantUid = WebhookCustomData.from(customData, objectMapper).merchantUid();
-		if (!Objects.equals(paidMerchantUid, order.getMerchantUid())) {
-			log.warn("결제 정보의 주문 번호 불일치: orderId={}, orderMerchantUid={}, customDataMerchantUid={}, paymentId={}",
-				order.getId(), order.getMerchantUid(), paidMerchantUid, paymentId);
-			throw new PaymentException("결제 정보의 주문 번호가 일치하지 않습니다.");
-		}
 	}
 
 	@Transactional
@@ -403,8 +285,7 @@ public class PaymentService {
 
 		// 웹훅 본문은 신뢰하지 않고 포트원 API 로 재조회한다
 		PortOnePaymentResponse paymentResponse = portOneClient.getPayment(paymentId);
-		String merchantUid = WebhookCustomData.from(paymentResponse.getCustomData(), objectMapper)
-			.merchantUid();
+		String merchantUid = paymentVerifier.merchantUidFromCustomData(paymentResponse);
 
 		Optional<Order> unprocessed = lockUnprocessedOrder(merchantUid, paymentId);
 		if (unprocessed.isEmpty()) {
@@ -458,12 +339,11 @@ public class PaymentService {
 	 * 포트원 결제 금액과 주문 금액을 비교한다. 불일치는 최종 실패이므로 주문을 FAILED 로 기록하고 false 를 돌려준다.
 	 */
 	private boolean verifyWebhookAmount(Order order, PortOnePaymentResponse paymentResponse) {
-		Long paidTotal = paymentResponse.getAmount().getTotal();
-		if (Objects.equals(paidTotal, order.getAmount().longValue())) {
+		if (paymentVerifier.amountMatches(order, paymentResponse)) {
 			return true;
 		}
 		log.error("웹훅 금액 불일치: orderId={}, expected={}, actual={}",
-			order.getId(), order.getAmount(), paidTotal);
+			order.getId(), order.getAmount(), paymentResponse.getAmount().getTotal());
 		markOrderFailed(order);
 		return false;
 	}
@@ -481,11 +361,9 @@ public class PaymentService {
 	 */
 	private void confirmByPortOneStatus(Order order, String paymentId,
 		PortOnePaymentResponse paymentResponse) {
-		Optional<PaymentStatus> paymentStatus = PaymentStatus.fromPortOneStatus(
-			paymentResponse.getStatus());
+		Optional<PaymentStatus> paymentStatus = paymentVerifier.resolveStatus(order, paymentId,
+			paymentResponse);
 		if (paymentStatus.isEmpty()) {
-			log.warn("알 수 없는 포트원 결제 상태라 미완료로 취급합니다: orderId={}, paymentId={}, rawStatus={}",
-				order.getId(), paymentId, paymentResponse.getStatus());
 			return;
 		}
 
