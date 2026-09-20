@@ -40,7 +40,7 @@ public class OrderExpirationScheduler {
 		for (Order order : staleOrders) {
 			try {
 				// 1. 주문 상태 만료로 변경
-				order.setStatus(OrderStatus.EXPIRED);
+				order.markExpired();
 
 				// 2. 쿠폰 복구
 				if (order.getCouponId() != null) {
