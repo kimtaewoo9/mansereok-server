@@ -1,11 +1,13 @@
 package com.mansereok.server.domain.notification.service;
 
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.HashMap;
 import java.util.Map;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.web.client.RestTemplateBuilder;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -28,10 +30,21 @@ public class DiscordNotificationService {
 	@Value("${discord.webhook.interpretation-request-url}")
 	private String interpretationRequestWebhookUrl;
 
-	private final RestTemplate restTemplate = new RestTemplate();
+	private final RestTemplate restTemplate;
 
 	private static final DateTimeFormatter dateTimeFormatter =
 		DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+
+	/**
+	 * 연결 3초·읽기 5초 타임아웃을 둔 RestTemplate 을 만든다. 예전의 {@code new RestTemplate()} 은 타임아웃이
+	 * 없어 Discord 가 응답하지 않으면 호출 스레드가 무한 대기했다.
+	 */
+	public DiscordNotificationService(RestTemplateBuilder restTemplateBuilder) {
+		this.restTemplate = restTemplateBuilder
+			.connectTimeout(Duration.ofSeconds(3))
+			.readTimeout(Duration.ofSeconds(5))
+			.build();
+	}
 
 	public void sendUserCreatedNotification(String userName, String email, Long userId,
 		String signupType, LocalDateTime createdAt) {
