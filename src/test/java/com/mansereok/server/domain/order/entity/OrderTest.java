@@ -56,7 +56,7 @@ class OrderTest {
 		assertThatThrownBy(() -> order.markPaid("pay_second", PAID_AT))
 			.isInstanceOf(OrderStateException.class)
 			.isInstanceOf(PaymentException.class)
-			.hasMessageContaining("PAID");
+			.hasMessageContaining("PAID 에서 PAID 로");
 
 		assertThat(order.getStatus()).isEqualTo(OrderStatus.PAID);
 		assertThat(order.getPaymentId()).isEqualTo("pay_first");

@@ -42,8 +42,9 @@ public enum OrderStatus {
 
 	/**
 	 * 현재 상태에서 next 로의 전이가 허용되는지 돌려준다. 같은 상태로의 전이(PAID→PAID 등)는 불허다.
+	 * 표에 없는 상태(새 상수가 추가됐는데 표에 빠진 경우)는 모두 불허로 본다.
 	 */
 	public boolean canTransitionTo(OrderStatus next) {
-		return TRANSITIONS.get(this).contains(next);
+		return TRANSITIONS.getOrDefault(this, EnumSet.noneOf(OrderStatus.class)).contains(next);
 	}
 }
