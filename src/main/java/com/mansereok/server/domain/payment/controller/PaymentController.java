@@ -11,6 +11,7 @@ import com.mansereok.server.domain.payment.service.PaymentQueryService;
 import com.mansereok.server.domain.payment.service.PaymentService;
 import io.portone.sdk.server.errors.WebhookVerificationException;
 import io.portone.sdk.server.webhook.WebhookVerifier;
+import jakarta.validation.Valid;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -40,7 +41,7 @@ public class PaymentController {
 	 */
 	@PostMapping("/api/payment/orders")
 	public ResponseEntity<?> createOrder(
-		@RequestBody OrderCreateRequest request,
+		@Valid @RequestBody OrderCreateRequest request,
 		@AuthenticationPrincipal String username
 	) {
 		OrderCreateResponse response = paymentService.createOrder(username, request);
@@ -49,14 +50,16 @@ public class PaymentController {
 
 	// 결제 완료 API (결제 후 검증)
 	@PostMapping("/api/payment/complete")
-	public ResponseEntity<OrderResponse> completePayment(@RequestBody PaymentCompleteRequest request) {
+	public ResponseEntity<OrderResponse> completePayment(
+		@Valid @RequestBody PaymentCompleteRequest request
+	) {
 		Order order = paymentService.completePayment(request);
 		return ResponseEntity.ok(OrderResponse.from(order));
 	}
 
 	@PostMapping("/api/payment/redeem-free")
 	public ResponseEntity<?> redeemFreeProduct(
-		@RequestBody OrderCreateRequest request,
+		@Valid @RequestBody OrderCreateRequest request,
 		@AuthenticationPrincipal String username
 	) {
 		log.info("0원 결제 요청: username={}", username);
@@ -127,7 +130,7 @@ public class PaymentController {
 
 	@PostMapping("/api/payment/cancel")
 	public ResponseEntity<?> cancelPayment(
-		@RequestBody PaymentCancelRequest request,
+		@Valid @RequestBody PaymentCancelRequest request,
 		@AuthenticationPrincipal String username
 	) {
 		paymentService.cancelPayment(username, request.getPaymentId(), request.getReason());
