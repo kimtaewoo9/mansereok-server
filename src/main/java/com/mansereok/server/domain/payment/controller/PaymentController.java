@@ -11,7 +11,8 @@ import com.mansereok.server.domain.payment.dto.response.PaymentResponseDto;
 import com.mansereok.server.domain.payment.service.PaymentConfirmService;
 import com.mansereok.server.domain.payment.service.PaymentQueryService;
 import com.mansereok.server.domain.payment.service.PaymentRefundService;
-import com.mansereok.server.domain.payment.service.PaymentService;
+import com.mansereok.server.domain.payment.service.PaymentOrderService;
+import com.mansereok.server.domain.payment.service.PaymentWebhookService;
 import io.portone.sdk.server.errors.WebhookVerificationException;
 import jakarta.validation.Valid;
 import java.util.List;
@@ -31,7 +32,8 @@ import org.springframework.web.bind.annotation.RestController;
 @Slf4j
 public class PaymentController {
 
-	private final PaymentService paymentService;
+	private final PaymentOrderService paymentOrderService;
+	private final PaymentWebhookService paymentWebhookService;
 	private final PaymentConfirmService paymentConfirmService;
 	private final PaymentQueryService paymentQueryService;
 	private final PaymentRefundService paymentRefundService;
@@ -45,7 +47,7 @@ public class PaymentController {
 		@Valid @RequestBody OrderCreateRequest request,
 		@AuthenticationPrincipal String username
 	) {
-		OrderCreateResponse response = paymentService.createOrder(username, request);
+		OrderCreateResponse response = paymentOrderService.createOrder(username, request);
 		return ResponseEntity.ok(response);
 	}
 
@@ -65,7 +67,7 @@ public class PaymentController {
 		@AuthenticationPrincipal String username
 	) {
 		log.info("0원 결제 요청: username={}", username);
-		OrderCreateResponse response = paymentService.redeemFreeProduct(username, request);
+		OrderCreateResponse response = paymentOrderService.redeemFreeProduct(username, request);
 		return ResponseEntity.ok(response);
 	}
 
@@ -85,7 +87,7 @@ public class PaymentController {
 			// 본문·서명·타임스탬프는 로그에 남기지 않는다 (본문에 구매자 정보가 실린다). 검증 실패는 핸들러가 warn 으로 남긴다.
 			webhookVerifier.verify(body, webhookId, webhookSignature, webhookTimestamp);
 
-			paymentService.processWebhook(body);
+			paymentWebhookService.processWebhook(body);
 
 			return ResponseEntity.ok().build();
 
