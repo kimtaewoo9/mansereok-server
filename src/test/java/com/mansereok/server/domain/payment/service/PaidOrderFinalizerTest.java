@@ -1,11 +1,15 @@
 package com.mansereok.server.domain.payment.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.BDDMockito.willThrow;
 import static org.mockito.Mockito.inOrder;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 
 import com.mansereok.server.domain.interpret.service.ResultService;
 import com.mansereok.server.domain.order.entity.Order;
@@ -14,6 +18,7 @@ import com.mansereok.server.domain.order.repository.OrderRepository;
 import com.mansereok.server.domain.payment.entity.Payment;
 import com.mansereok.server.domain.payment.entity.PaymentStatus;
 import com.mansereok.server.domain.payment.repository.PaymentRepository;
+import com.mansereok.server.global.exception.PaymentException;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -26,6 +31,7 @@ import org.mockito.InOrder;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.test.util.ReflectionTestUtils;
 
 @ExtendWith(MockitoExtension.class)
@@ -66,7 +72,8 @@ class PaidOrderFinalizerTest {
 			statusAtOrderSave.add(saved.getStatus());
 			return saved;
 		});
-		given(paymentRepository.save(any(Payment.class))).willAnswer(invocation -> {
+		// UNIQUE 위반 테스트가 이 stub 을 willThrow 로 덮어쓰므로 strict stubs 에 걸리지 않도록 lenient 로 둔다.
+		lenient().when(paymentRepository.save(any(Payment.class))).thenAnswer(invocation -> {
 			Payment saved = invocation.getArgument(0);
 			ReflectionTestUtils.setField(saved, "id", PAYMENT_PK_ID);
 			return saved;
@@ -135,5 +142,25 @@ class PaidOrderFinalizerTest {
 		inOrder.verify(orderRepository).save(order);
 		inOrder.verify(resultService).createInitialResult(savedPayment, order);
 		inOrder.verifyNoMoreInteractions();
+	}
+
+	@Test
+	@DisplayName("Payment 저장에서 imp_uid UNIQUE 위반(DataIntegrityViolationException)이 나면 '이미 처리된 결제입니다.' PaymentException 으로 바꿔 던지고 연관관계 연결과 Result 생성은 하지 않는다")
+	void finalizePaid_duplicateImpUid_translatesToPaymentException() {
+		// given
+		willThrow(new DataIntegrityViolationException(
+			"Duplicate entry 'pay_test_001' for key 'payments.imp_uid'"))
+			.given(paymentRepository).save(any(Payment.class));
+
+		// when & then
+		assertThatThrownBy(() -> paidOrderFinalizer.finalizePaid(order, PAYMENT_ID, AMOUNT, PAID_AT))
+			.isInstanceOf(PaymentException.class)
+			.hasMessage("이미 처리된 결제입니다.")
+			.hasCauseInstanceOf(DataIntegrityViolationException.class);
+
+		// 주문 PAID 저장(1회)까지는 진행됐지만 연관관계 연결 저장과 Result 생성은 없다
+		verify(orderRepository, times(1)).save(order);
+		assertThat(order.getPaymentPkId()).isNull();
+		verifyNoInteractions(resultService);
 	}
 }
