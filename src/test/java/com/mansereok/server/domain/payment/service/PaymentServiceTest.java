@@ -6,6 +6,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.willThrow;
 import static org.mockito.Mockito.atLeastOnce;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -104,10 +105,11 @@ class PaymentServiceTest {
 
 	private SubCategory mockSubCategory() {
 		// protected 생성자 대응. stub 이 들어있으므로 다른 given(...) 의 인자 안에서 호출하면 안 된다.
+		// 공용 픽스처라 호출 경로가 바뀌어도 strict stubs 에 걸리지 않도록 lenient 로 둔다.
 		SubCategory subCategory = mock(SubCategory.class);
-		given(subCategory.getPrice()).willReturn(PRICE);
-		given(subCategory.getId()).willReturn(SUB_CATEGORY_ID);
-		given(subCategory.getTitle()).willReturn("인생 총운");
+		lenient().when(subCategory.getPrice()).thenReturn(PRICE);
+		lenient().when(subCategory.getId()).thenReturn(SUB_CATEGORY_ID);
+		lenient().when(subCategory.getTitle()).thenReturn("인생 총운");
 		return subCategory;
 	}
 

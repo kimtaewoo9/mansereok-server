@@ -21,7 +21,7 @@ public record PortOneProperties(
 	public static final int DEFAULT_READ_TIMEOUT_MS = 10000;
 
 	public PortOneProperties {
-		if (secret == null) {
+		if (secret == null || secret.isBlank()) {
 			throw new IllegalArgumentException("portone.api.secret 설정이 필요합니다.");
 		}
 		if (baseUrl == null || baseUrl.isBlank()) {

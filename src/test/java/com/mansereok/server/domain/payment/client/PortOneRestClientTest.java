@@ -48,6 +48,16 @@ class PortOneRestClientTest {
 	}
 
 	@Test
+	@DisplayName("운영용 생성자는 타임아웃이 설정된 전용 RestClient 를 예외 없이 만든다")
+	void productionConstructor_buildsClientWithTimeouts() {
+		PortOneProperties properties = new PortOneProperties(SECRET, BASE_URL, 1500, 2500);
+
+		assertThatCode(() -> new PortOneRestClient(RestClient.builder(), properties,
+			Jackson2ObjectMapperBuilder.json().build()))
+			.doesNotThrowAnyException();
+	}
+
+	@Test
 	@DisplayName("결제 조회는 GET /payments/{id} 에 인증·Accept 헤더를 보내고 status, amount.total, customData 를 파싱한다")
 	void getPayment_sendsExpectedRequestAndParsesResponse() {
 		// given

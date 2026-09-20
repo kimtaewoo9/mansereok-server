@@ -4,12 +4,14 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mansereok.server.domain.payment.dto.response.PortOnePaymentResponse;
 import com.mansereok.server.global.exception.PaymentException;
+import java.time.Duration;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.http.client.ClientHttpRequestFactoryBuilder;
+import org.springframework.boot.http.client.ClientHttpRequestFactorySettings;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.client.ClientHttpRequestFactory;
-import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 
@@ -29,8 +31,9 @@ public class PortOneRestClient implements PortOneClient {
 	@Autowired
 	public PortOneRestClient(RestClient.Builder builder, PortOneProperties properties,
 		ObjectMapper objectMapper) {
-		// 주입받은 빌더를 변형하지 않도록 복제한 뒤, 타임아웃이 설정된 전용 RestClient 를 만든다.
-		this(builder.clone().requestFactory(createRequestFactory(properties)).build(),
+		// RestClient.Builder 빈은 prototype 스코프라 이 인스턴스는 다른 곳과 공유되지 않는다.
+		// 타임아웃만 설정한 전용 RestClient 를 만든다.
+		this(builder.requestFactory(createRequestFactory(properties)).build(),
 			properties, objectMapper);
 	}
 
@@ -45,10 +48,11 @@ public class PortOneRestClient implements PortOneClient {
 	}
 
 	private static ClientHttpRequestFactory createRequestFactory(PortOneProperties properties) {
-		SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
-		factory.setConnectTimeout(properties.connectTimeoutMs());
-		factory.setReadTimeout(properties.readTimeoutMs());
-		return factory;
+		// 클래스패스에서 감지되는 클라이언트(기본 JDK HttpClient)를 그대로 쓰고 타임아웃만 덧붙인다.
+		return ClientHttpRequestFactoryBuilder.detect().build(
+			ClientHttpRequestFactorySettings.defaults()
+				.withConnectTimeout(Duration.ofMillis(properties.connectTimeoutMs()))
+				.withReadTimeout(Duration.ofMillis(properties.readTimeoutMs())));
 	}
 
 	@Override

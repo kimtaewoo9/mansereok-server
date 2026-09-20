@@ -22,9 +22,11 @@ class PortOnePropertiesTest {
 	}
 
 	@Test
-	@DisplayName("secret 이 없으면 생성에 실패한다 (기동 시 fail-fast)")
+	@DisplayName("secret 이 없거나 비어 있으면 생성에 실패한다 (기동 시 fail-fast)")
 	void secret_isRequired() {
 		assertThatThrownBy(() -> new PortOneProperties(null, null, null, null))
+			.isInstanceOf(IllegalArgumentException.class);
+		assertThatThrownBy(() -> new PortOneProperties("   ", null, null, null))
 			.isInstanceOf(IllegalArgumentException.class);
 	}
 
