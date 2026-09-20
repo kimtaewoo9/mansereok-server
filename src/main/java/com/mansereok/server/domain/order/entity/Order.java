@@ -106,6 +106,9 @@ public class Order {
 
 	/**
 	 * 주문을 만료로 표시한다. PENDING, VIRTUAL_ACCOUNT_ISSUED 에서만 허용된다.
+	 *
+	 * <p>만료 스케줄러는 경합 방지를 위해 {@code OrderRepository.updateStatusIf} 의 조건부 UPDATE 를 쓰므로
+	 * 이 메서드를 거치지 않는다. 만료 허용 상태를 바꿀 때는 {@link OrderStatus} 전이 표와 그 UPDATE 조건을 함께 고친다.
 	 */
 	public void markExpired() {
 		transitionTo(OrderStatus.EXPIRED);

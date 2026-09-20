@@ -38,4 +38,16 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
 	Optional<Order> findByMerchantUidWithLock(@Param("merchantUid") String merchantUid);
 
 	List<Order> findAllByStatusAndCreatedAtBefore(OrderStatus status, LocalDateTime cutoff);
+
+	/**
+	 * 현재 상태가 expected 일 때만 next 로 바꾼다. 영향 행 수(0 또는 1)로 경합 여부를 판단한다.
+	 * 벌크 UPDATE 뒤 영속성 컨텍스트가 비워지므로 이후 조회는 DB 의 최신 값을 읽는다.
+	 *
+	 * <p>엔티티의 상태 전이 메서드({@code Order.markExpired} 등)를 거치지 않으므로, 전이 규칙을 바꿀 때는
+	 * {@link OrderStatus} 전이 표와 호출 측의 expected/next 조합을 함께 맞춘다.
+	 */
+	@Modifying(clearAutomatically = true, flushAutomatically = true)
+	@Query("UPDATE Order o SET o.status = :next WHERE o.id = :id AND o.status = :expected")
+	int updateStatusIf(@Param("id") Long id, @Param("expected") OrderStatus expected,
+		@Param("next") OrderStatus next);
 }
