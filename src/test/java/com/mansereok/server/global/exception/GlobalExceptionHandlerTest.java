@@ -2,7 +2,6 @@ package com.mansereok.server.global.exception;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.mansereok.server.domain.payment.controller.PaymentController;
 import io.portone.sdk.server.errors.WebhookVerificationException;
 import jakarta.persistence.EntityNotFoundException;
 import java.lang.reflect.Method;
@@ -13,10 +12,18 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.web.bind.MissingRequestHeaderException;
+import org.springframework.web.bind.annotation.RequestHeader;
 
 class GlobalExceptionHandlerTest {
 
 	private final GlobalExceptionHandler handler = new GlobalExceptionHandler();
+
+	/**
+	 * MissingRequestHeaderException 생성용 더미 메서드. 실제 컨트롤러 시그니처에 테스트가 묶이지 않도록 둔다.
+	 */
+	@SuppressWarnings("unused")
+	private void dummy(@RequestHeader("webhook-signature") String signature) {
+	}
 
 	@Test
 	@DisplayName("웹훅 서명 검증 실패는 401 과 WEBHOOK_SIGNATURE_INVALID 로 응답한다")
@@ -38,10 +45,9 @@ class GlobalExceptionHandlerTest {
 	@DisplayName("필수 요청 헤더 누락은 400 과 MISSING_HEADER 로 응답하고 헤더 이름을 알려준다")
 	void missingRequestHeaderException_mapsTo400() throws Exception {
 		// given
-		Method method = PaymentController.class.getMethod("handleWebhook",
-			String.class, String.class, String.class, String.class);
+		Method method = GlobalExceptionHandlerTest.class.getDeclaredMethod("dummy", String.class);
 		MissingRequestHeaderException e = new MissingRequestHeaderException("webhook-signature",
-			MethodParameter.forExecutable(method, 3));
+			MethodParameter.forExecutable(method, 0));
 
 		// when
 		ResponseEntity<ErrorResponse> response = handler.handleMissingRequestHeaderException(e);
