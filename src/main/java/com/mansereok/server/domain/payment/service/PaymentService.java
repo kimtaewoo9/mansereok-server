@@ -175,10 +175,16 @@ public class PaymentService {
 			throw new PaymentException("결제 금액이 일치하지 않습니다.");
 		}
 
-		// 포트원 상태가 PAID라면 즉시 DB 업데이트
-		PaymentStatus paymentStatus = PaymentStatus.fromPortOneStatus(paymentResponse.getStatus());
+		// 포트원 상태가 PAID라면 즉시 DB 업데이트. 모르는 상태는 "아직 완료되지 않음" 으로 보고 주문을 그대로 돌려준다.
+		Optional<PaymentStatus> paymentStatus = PaymentStatus.fromPortOneStatus(
+			paymentResponse.getStatus());
+		if (paymentStatus.isEmpty()) {
+			log.warn("알 수 없는 포트원 결제 상태라 미완료로 취급합니다: orderId={}, paymentId={}, rawStatus={}",
+				order.getId(), request.getPaymentId(), paymentResponse.getStatus());
+			return order;
+		}
 
-		if (paymentStatus == PaymentStatus.PAID) {
+		if (paymentStatus.get() == PaymentStatus.PAID) {
 			log.info("검증 완료. 주문 상태를 PAID로 변경합니다.");
 
 			// 1. 주문 PAID 확정, Payment 저장, 연관관계 연결, 초기 Result 생성
@@ -199,7 +205,7 @@ public class PaymentService {
 		}
 
 		// PAID가 아닌 경우
-		log.warn("결제가 아직 완료되지 않았습니다: status={}", paymentStatus);
+		log.warn("결제가 아직 완료되지 않았습니다: status={}", paymentStatus.get());
 		return order;
 	}
 
@@ -418,13 +424,20 @@ public class PaymentService {
 	}
 
 	/**
-	 * 포트원 재조회 상태로 주문을 확정한다. PAID 면 결제 확정, 그 외는 최종 실패로 FAILED 기록.
+	 * 포트원 재조회 상태로 주문을 확정한다. PAID 면 결제 확정, 알려진 비PAID 상태는 최종 실패로 FAILED 기록,
+	 * 모르는 상태는 "아직 완료되지 않음" 으로 보고 주문을 건드리지 않는다.
 	 */
 	private void confirmByPortOneStatus(Order order, String paymentId,
 		PortOnePaymentResponse paymentResponse) {
-		PaymentStatus paymentStatus = PaymentStatus.fromPortOneStatus(paymentResponse.getStatus());
+		Optional<PaymentStatus> paymentStatus = PaymentStatus.fromPortOneStatus(
+			paymentResponse.getStatus());
+		if (paymentStatus.isEmpty()) {
+			log.warn("알 수 없는 포트원 결제 상태라 미완료로 취급합니다: orderId={}, paymentId={}, rawStatus={}",
+				order.getId(), paymentId, paymentResponse.getStatus());
+			return;
+		}
 
-		if (paymentStatus != PaymentStatus.PAID) {
+		if (paymentStatus.get() != PaymentStatus.PAID) {
 			log.error("웹훅 결제 실패 상태: orderId={}, paymentId={}, status={}",
 				order.getId(), paymentId, paymentResponse.getStatus());
 			markOrderFailed(order);

@@ -465,6 +465,55 @@ class PaymentServiceTest {
 	}
 
 	@Test
+	@DisplayName("포트원이 모르는 상태 문자열을 돌려주면 주문을 PENDING 그대로 반환하고 Payment 는 저장하지 않는다")
+	void completePayment_unknownStatus_returnsOrderUnchanged() {
+		// given
+		Order order = createOrder(OrderStatus.PENDING, null, null);
+		given(orderRepository.findByMerchantUidWithLock(MERCHANT_UID)).willReturn(
+			Optional.of(order));
+		given(paymentRepository.findByImpUid(PAYMENT_ID)).willReturn(Optional.empty());
+		given(portOneClient.getPayment(PAYMENT_ID)).willReturn(
+			portOneResponse("SOMETHING_NEW", PRICE));
+
+		PaymentCompleteRequest request = new PaymentCompleteRequest();
+		request.setPaymentId(PAYMENT_ID);
+		request.setMerchantUid(MERCHANT_UID);
+
+		// when
+		Order result = paymentService.completePayment(request);
+
+		// then
+		assertThat(result).isSameAs(order);
+		assertThat(result.getStatus()).isEqualTo(OrderStatus.PENDING);
+		verify(orderRepository, never()).save(any(Order.class));
+		verify(paymentRepository, never()).save(any(Payment.class));
+		verifyNoInteractions(resultService, discordNotificationService);
+	}
+
+	@Test
+	@DisplayName("포트원 상태가 PAY_PENDING 이면 READY 로 매핑돼 주문을 PENDING 그대로 반환한다")
+	void completePayment_payPending_returnsOrderUnchanged() {
+		// given
+		Order order = createOrder(OrderStatus.PENDING, null, null);
+		given(orderRepository.findByMerchantUidWithLock(MERCHANT_UID)).willReturn(
+			Optional.of(order));
+		given(paymentRepository.findByImpUid(PAYMENT_ID)).willReturn(Optional.empty());
+		given(portOneClient.getPayment(PAYMENT_ID)).willReturn(
+			portOneResponse("PAY_PENDING", PRICE));
+
+		PaymentCompleteRequest request = new PaymentCompleteRequest();
+		request.setPaymentId(PAYMENT_ID);
+		request.setMerchantUid(MERCHANT_UID);
+
+		// when
+		Order result = paymentService.completePayment(request);
+
+		// then
+		assertThat(result.getStatus()).isEqualTo(OrderStatus.PENDING);
+		verify(paymentRepository, never()).save(any(Payment.class));
+	}
+
+	@Test
 	@DisplayName("이미 PAID 인 주문은 포트원을 조회하지 않고 그대로 반환한다")
 	void completePayment_alreadyPaid_returnsOrderWithoutCallingPortOne() {
 		// given
@@ -962,6 +1011,49 @@ class PaymentServiceTest {
 		verify(orderRepository).save(order);
 		verify(paymentRepository, never()).save(any(Payment.class));
 		verifyNoInteractions(resultService, discordNotificationService);
+	}
+
+	@Test
+	@DisplayName("포트원 재조회 상태를 모르면 예외 없이 정상 반환하고 주문은 PENDING 그대로 두며 아무것도 저장하지 않는다")
+	void processWebhook_unknownStatus_leavesOrderPending() {
+		// given
+		Order order = createOrder(OrderStatus.PENDING, null, null);
+		given(portOneClient.getPayment(PAYMENT_ID)).willReturn(
+			portOneResponseWithCustomData("SOMETHING_NEW", PRICE));
+		given(orderRepository.findByMerchantUidWithLock(MERCHANT_UID)).willReturn(
+			Optional.of(order));
+		given(paymentRepository.findByImpUid(PAYMENT_ID)).willReturn(Optional.empty());
+
+		// when
+		assertThatCode(() -> paymentService.processWebhook(webhookBody("Paid")))
+			.doesNotThrowAnyException();
+
+		// then
+		assertThat(order.getStatus()).isEqualTo(OrderStatus.PENDING);
+		verify(orderRepository, never()).save(any(Order.class));
+		verify(paymentRepository, never()).save(any(Payment.class));
+		verifyNoInteractions(resultService, discordNotificationService);
+	}
+
+	@Test
+	@DisplayName("포트원 재조회 상태가 PARTIAL_CANCELLED 면 CANCELLED 로 매핑돼 주문을 FAILED 로 기록한다")
+	void processWebhook_partialCancelled_marksFailed() {
+		// given
+		Order order = createOrder(OrderStatus.PENDING, null, null);
+		given(portOneClient.getPayment(PAYMENT_ID)).willReturn(
+			portOneResponseWithCustomData("PARTIAL_CANCELLED", PRICE));
+		given(orderRepository.findByMerchantUidWithLock(MERCHANT_UID)).willReturn(
+			Optional.of(order));
+		given(paymentRepository.findByImpUid(PAYMENT_ID)).willReturn(Optional.empty());
+		givenOrderSaveReturnsArgument();
+
+		// when
+		assertThatCode(() -> paymentService.processWebhook(webhookBody("Paid")))
+			.doesNotThrowAnyException();
+
+		// then
+		assertThat(order.getStatus()).isEqualTo(OrderStatus.FAILED);
+		verify(paymentRepository, never()).save(any(Payment.class));
 	}
 
 	// ===== cancelPayment =====

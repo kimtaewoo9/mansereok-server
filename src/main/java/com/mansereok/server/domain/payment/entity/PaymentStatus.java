@@ -1,5 +1,7 @@
 package com.mansereok.server.domain.payment.entity;
 
+import java.util.Locale;
+import java.util.Optional;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 
@@ -15,13 +17,29 @@ public enum PaymentStatus {
 	private final String portOneStatus;
 	private final String description;
 
-	public static PaymentStatus fromPortOneStatus(String status) {
-		for (PaymentStatus paymentStatus : values()) {
-			if (paymentStatus.getPortOneStatus().equalsIgnoreCase(status)) {
-				return paymentStatus;
-			}
+	/**
+	 * 포트원 V2 결제 조회 API 의 status 문자열을 도메인 상태로 매핑한다 (대소문자 무시).
+	 *
+	 * <ul>
+	 *   <li>PAID, READY, VIRTUAL_ACCOUNT_ISSUED, FAILED, CANCELLED → 같은 이름의 상수</li>
+	 *   <li>PAY_PENDING → READY (승인 대기, 아직 완료 아님)</li>
+	 *   <li>PARTIAL_CANCELLED → CANCELLED</li>
+	 * </ul>
+	 *
+	 * <p>모르는 값과 null 은 실패로 접지 않고 빈 Optional 을 돌려준다. 호출자는 "아직 완료되지 않음" 으로
+	 * 다뤄야 하며, 주문을 FAILED 로 바꾸거나 예외를 던지면 안 된다.
+	 */
+	public static Optional<PaymentStatus> fromPortOneStatus(String status) {
+		if (status == null) {
+			return Optional.empty();
 		}
-		// 기본값은 실패 또는 처리 불가 상태로 설정할 수 있습니다.
-		return FAILED;
+		return switch (status.trim().toUpperCase(Locale.ROOT)) {
+			case "PAID" -> Optional.of(PAID);
+			case "READY", "PAY_PENDING" -> Optional.of(READY);
+			case "VIRTUAL_ACCOUNT_ISSUED" -> Optional.of(VIRTUAL_ACCOUNT_ISSUED);
+			case "FAILED" -> Optional.of(FAILED);
+			case "CANCELLED", "PARTIAL_CANCELLED" -> Optional.of(CANCELLED);
+			default -> Optional.empty();
+		};
 	}
 }
