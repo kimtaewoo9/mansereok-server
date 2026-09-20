@@ -8,6 +8,8 @@ import com.mansereok.server.domain.product.entity.SubCategory;
 import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 
 class FreeProductPolicyTest {
 
@@ -57,5 +59,39 @@ class FreeProductPolicyTest {
 		assertThat(properties.subCategoryIds()).isEmpty();
 		assertThat(new FreeProductPolicy(properties).isFree(subCategory(1L, 10000))).isFalse();
 		assertThat(new FreeProductPolicy(properties).isFree(subCategory(1L, 0))).isTrue();
+	}
+
+	@Test
+	@DisplayName("payment.free-event.sub-category-ids 키가 subCategoryIds 로 relaxed 바인딩된다")
+	void binding_kebabKey_bindsToList() {
+		new ApplicationContextRunner()
+			.withUserConfiguration(TestConfig.class)
+			.withPropertyValues("payment.free-event.sub-category-ids=19,101")
+			.run(context -> {
+				assertThat(context).hasSingleBean(FreeEventProperties.class);
+				assertThat(context.getBean(FreeEventProperties.class).subCategoryIds())
+					.containsExactly(19L, 101L);
+			});
+	}
+
+	@Test
+	@DisplayName("키가 아예 없거나 빈 값이면 Spring 바인딩 결과도 빈 목록이다")
+	void binding_missingOrEmptyKey_becomesEmptyList() {
+		new ApplicationContextRunner()
+			.withUserConfiguration(TestConfig.class)
+			.run(context -> assertThat(context.getBean(FreeEventProperties.class).subCategoryIds())
+				.isEmpty());
+
+		// yml 에 ${ENV:} 형태로 두었을 때처럼 빈 문자열이 들어와도 빈 목록이어야 한다
+		new ApplicationContextRunner()
+			.withUserConfiguration(TestConfig.class)
+			.withPropertyValues("payment.free-event.sub-category-ids=")
+			.run(context -> assertThat(context.getBean(FreeEventProperties.class).subCategoryIds())
+				.isEmpty());
+	}
+
+	@EnableConfigurationProperties(FreeEventProperties.class)
+	static class TestConfig {
+
 	}
 }

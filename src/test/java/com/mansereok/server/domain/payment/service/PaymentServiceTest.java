@@ -737,6 +737,32 @@ class PaymentServiceTest {
 			.hasMessage("유효한 결제 정보가 아닙니다.");
 	}
 
+	@Test
+	@DisplayName("paymentId 가 null 이면 결제를 조회하지 않고 같은 메시지의 PaymentException 이 난다")
+	void verifyPaidOwnership_nullPaymentId_throwsWithoutLookup() {
+		// given
+		given(userRepository.findByUsername(USERNAME)).willReturn(Optional.of(createUser()));
+
+		// when & then
+		assertThatThrownBy(() -> paymentService.verifyPaidOwnership(null, USERNAME))
+			.isInstanceOf(PaymentException.class)
+			.hasMessage("유효한 결제 정보가 아닙니다.");
+		verify(paymentRepository, never()).findById(any());
+	}
+
+	@Test
+	@DisplayName("사용자를 찾을 수 없으면 결제를 조회하지 않고 PaymentException 이 난다")
+	void verifyPaidOwnership_userNotFound_throwsWithoutLookup() {
+		// given
+		given(userRepository.findByUsername(USERNAME)).willReturn(Optional.empty());
+
+		// when & then
+		assertThatThrownBy(() -> paymentService.verifyPaidOwnership(PAYMENT_PK_ID, USERNAME))
+			.isInstanceOf(PaymentException.class)
+			.hasMessage("사용자를 찾을 수 없습니다.");
+		verify(paymentRepository, never()).findById(any());
+	}
+
 	// ===== cancelPayment =====
 
 	@Test

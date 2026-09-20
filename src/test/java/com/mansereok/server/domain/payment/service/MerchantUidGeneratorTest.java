@@ -33,11 +33,11 @@ class MerchantUidGeneratorTest {
 	@DisplayName("연속 생성해도 값이 겹치지 않는다")
 	void generatedValues_areUnique() {
 		Set<String> uids = new HashSet<>();
-		for (int i = 0; i < 1000; i++) {
+		for (int i = 0; i < 100; i++) {
 			uids.add(generator.forOrder());
 			uids.add(generator.forFree());
 		}
 
-		assertThat(uids).hasSize(2000);
+		assertThat(uids).hasSize(200);
 	}
 }

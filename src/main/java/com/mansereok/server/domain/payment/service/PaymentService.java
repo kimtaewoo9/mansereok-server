@@ -46,9 +46,6 @@ import org.springframework.transaction.annotation.Transactional;
 @Slf4j
 public class PaymentService {
 
-	/** 무료 결제의 impUid 접두사. 포트원 paymentId 가 없어서 merchantUid 앞에 붙여 대신한다. */
-	private static final String FREE_PAYMENT_ID_PREFIX = "free_";
-
 	private final DiscordNotificationService discordNotificationService;
 
 	private final OrderRepository orderRepository;
@@ -256,7 +253,7 @@ public class PaymentService {
 		);
 
 		// 5-2. 주문 PAID 확정, 0원 Payment 저장, 연관관계 연결, 초기 Result 생성
-		String paymentId = FREE_PAYMENT_ID_PREFIX + merchantUid; // 포트원 paymentId 가 없으니 merchantUid 로 대신한다.
+		String paymentId = MerchantUidGenerator.FREE_PREFIX + merchantUid; // 포트원 paymentId 가 없으니 merchantUid 로 대신한다.
 		Payment savedPayment = paidOrderFinalizer.finalizePaid(order, paymentId, 0L,
 			LocalDateTime.now());
 
@@ -307,7 +304,7 @@ public class PaymentService {
 		);
 
 		// 2. 주문 PAID 확정, 0원 Payment 저장, 연관관계 연결, 초기 Result 생성
-		String paymentId = FREE_PAYMENT_ID_PREFIX + merchantUid; // redeemFreeProduct 와 같은 규칙
+		String paymentId = MerchantUidGenerator.FREE_PREFIX + merchantUid; // redeemFreeProduct 와 같은 규칙
 		Payment savedPayment = paidOrderFinalizer.finalizePaid(order, paymentId, 0L,
 			LocalDateTime.now());
 
@@ -513,7 +510,7 @@ public class PaymentService {
 		}
 
 		// ✅ 추가: 무료 결제(0원) 환불 시도 원천 차단
-		if (payment.getAmount() == 0 || payment.getImpUid().startsWith("free_")) {
+		if (payment.getAmount() == 0 || payment.getImpUid().startsWith(MerchantUidGenerator.FREE_PREFIX)) {
 			throw new PaymentException("무료 이벤트 결제는 환불/취소 대상이 아닙니다.");
 		}
 
