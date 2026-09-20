@@ -37,6 +37,7 @@ import java.util.Objects;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -144,15 +145,29 @@ public class PaymentService {
 		);
 	}
 
-	// 2단계. 결제 상태 조회 ..
+	/**
+	 * 2단계. 결제 완료 검증. 클라이언트가 보낸 paymentId 와 merchantUid 를 그대로 믿지 않는다.
+	 *
+	 * <p>순서: 요청자 조회 → 주문 잠금 → 소유자 대조(403) → PAID 멱등 반환 → 결제 중복 선검사 → 포트원 조회
+	 * → customData 의 merchantUid 대조(400) → 금액 검증 → 확정.
+	 *
+	 * @throws AccessDeniedException 요청자가 주문 소유자가 아닐 때 (403)
+	 * @throws PaymentException      주문 없음 · 결제 중복 · 주문 번호 불일치 · 금액 불일치 (400)
+	 */
 	@Transactional  // readOnly 제거!
-	public Order completePayment(PaymentCompleteRequest request) {
-		log.info("결제 완료 요청 및 검증: paymentId={}, merchantUid={}",
-			request.getPaymentId(), request.getMerchantUid());
+	public Order completePayment(String username, PaymentCompleteRequest request) {
+		log.info("결제 완료 요청 및 검증: username={}, paymentId={}, merchantUid={}",
+			username, request.getPaymentId(), request.getMerchantUid());
+
+		User user = userRepository.findByUsername(username)
+			.orElseThrow(() -> new PaymentException("사용자를 찾을 수 없습니다."));
 
 		// 비관적 락으로 주문 조회
 		Order order = orderRepository.findByMerchantUidWithLock(request.getMerchantUid())
 			.orElseThrow(() -> new PaymentException("주문을 찾을 수 없습니다."));
+
+		// 소유자 대조. 멱등 반환보다 먼저 해서 타인의 PAID 주문 정보도 새지 않게 한다.
+		assertOrderOwnedBy(order, user);
 
 		// 멱등성 보장: 이미 처리된 주문이면 바로 반환
 		if (order.getStatus() == OrderStatus.PAID) {
@@ -168,6 +183,9 @@ public class PaymentService {
 		// 포트원 API 조회를 통한 2차 검증 ..
 		PortOnePaymentResponse paymentResponse = portOneClient.getPayment(
 			request.getPaymentId());
+
+		// 결제와 주문의 결합 검증: 포트원에 기록된 주문 번호가 잠근 주문과 같아야 한다
+		assertCustomDataMatchesOrder(order, request.getPaymentId(), paymentResponse);
 
 		// 금액 검증
 		if (!Objects.equals(paymentResponse.getAmount().getTotal(),
@@ -207,6 +225,44 @@ public class PaymentService {
 		// PAID가 아닌 경우
 		log.warn("결제가 아직 완료되지 않았습니다: status={}", paymentStatus.get());
 		return order;
+	}
+
+	/**
+	 * 주문 소유자와 요청자를 대조한다. 탈퇴 처리로 userId 가 null 인 주문은 누구의 것도 아니므로 거부한다.
+	 */
+	private void assertOrderOwnedBy(Order order, User user) {
+		if (order.getUserId() == null || !Objects.equals(order.getUserId(), user.getId())) {
+			log.warn("권한 없는 결제 완료 시도: 요청자={}, 주문 소유자={}, orderId={}",
+				user.getId(), order.getUserId(), order.getId());
+			throw new AccessDeniedException("본인의 주문만 결제 완료 처리할 수 있습니다.");
+		}
+	}
+
+	/**
+	 * 포트원 응답 customData 의 merchantUid 를 잠근 주문의 merchantUid(요청값이 아니라 DB 값)와 대조한다.
+	 * 결제 한 건이 다른 주문에 붙는 것을 막는다.
+	 *
+	 * <p>customData 가 비어 있으면 하위 호환을 위해 warn 로그만 남기고 통과한다(customData 를 싣지 않는
+	 * 예전 클라이언트·수동 결제). 형식이 어긋난 customData 는 {@link WebhookCustomData#from} 의
+	 * PaymentException 이 그대로 전파된다.
+	 *
+	 * @throws PaymentException customData 의 merchantUid 가 주문의 merchantUid 와 다른 경우
+	 */
+	private void assertCustomDataMatchesOrder(Order order, String paymentId,
+		PortOnePaymentResponse paymentResponse) {
+		String customData = paymentResponse.getCustomData();
+		if (customData == null || customData.isBlank()) {
+			log.warn("포트원 응답에 customData 가 없어 주문 번호 대조를 건너뜁니다: orderId={}, paymentId={}",
+				order.getId(), paymentId);
+			return;
+		}
+
+		String paidMerchantUid = WebhookCustomData.from(customData, objectMapper).merchantUid();
+		if (!Objects.equals(paidMerchantUid, order.getMerchantUid())) {
+			log.warn("결제 정보의 주문 번호 불일치: orderId={}, orderMerchantUid={}, customDataMerchantUid={}, paymentId={}",
+				order.getId(), order.getMerchantUid(), paidMerchantUid, paymentId);
+			throw new PaymentException("결제 정보의 주문 번호가 일치하지 않습니다.");
+		}
 	}
 
 	@Transactional
