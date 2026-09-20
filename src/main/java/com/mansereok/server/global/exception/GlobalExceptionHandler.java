@@ -1,5 +1,6 @@
 package com.mansereok.server.global.exception;
 
+import io.portone.sdk.server.errors.WebhookVerificationException;
 import io.swagger.v3.oas.annotations.Hidden;
 import jakarta.persistence.EntityNotFoundException;
 import java.util.HashMap;
@@ -12,6 +13,7 @@ import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.core.AuthenticationException;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.MissingRequestHeaderException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.client.HttpStatusCodeException;
@@ -41,6 +43,21 @@ public class GlobalExceptionHandler {
 			"VALIDATION_ERROR",
 			"입력값 검증에 실패했습니다.",
 			errors
+		);
+		return new ResponseEntity<>(response, HttpStatus.BAD_REQUEST);
+	}
+
+	/**
+	 * [400 Bad Request] 필수 요청 헤더 누락 (@RequestHeader)
+	 */
+	@ExceptionHandler(MissingRequestHeaderException.class)
+	public ResponseEntity<ErrorResponse> handleMissingRequestHeaderException(
+		MissingRequestHeaderException e) {
+		log.warn("필수 헤더 누락: {}", e.getHeaderName());
+		ErrorResponse response = ErrorResponse.of(
+			HttpStatus.BAD_REQUEST.value(),
+			"MISSING_HEADER",
+			e.getHeaderName() + " 헤더가 필요합니다."
 		);
 		return new ResponseEntity<>(response, HttpStatus.BAD_REQUEST);
 	}
@@ -112,6 +129,22 @@ public class GlobalExceptionHandler {
 			HttpStatus.UNAUTHORIZED.value(),
 			"INVALID_REFRESH_TOKEN",
 			e.getMessage()
+		);
+		return new ResponseEntity<>(response, HttpStatus.UNAUTHORIZED);
+	}
+
+	/**
+	 * [401 Unauthorized] 포트원 웹훅 서명 검증 실패. 위조 요청이거나 시크릿 설정 오류이므로 서버 오류가 아니라
+	 * 인증 실패로 분류하고 스택 없이 warn 만 남긴다.
+	 */
+	@ExceptionHandler(WebhookVerificationException.class)
+	public ResponseEntity<ErrorResponse> handleWebhookVerificationException(
+		WebhookVerificationException e) {
+		log.warn("웹훅 서명 검증 실패: {}", e.getMessage());
+		ErrorResponse response = ErrorResponse.of(
+			HttpStatus.UNAUTHORIZED.value(),
+			"WEBHOOK_SIGNATURE_INVALID",
+			"웹훅 서명 검증에 실패했습니다."
 		);
 		return new ResponseEntity<>(response, HttpStatus.UNAUTHORIZED);
 	}
