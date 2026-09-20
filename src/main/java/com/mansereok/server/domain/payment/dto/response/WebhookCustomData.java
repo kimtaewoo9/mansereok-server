@@ -4,6 +4,8 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mansereok.server.global.exception.PaymentException;
+import java.util.ArrayList;
+import java.util.List;
 import lombok.extern.slf4j.Slf4j;
 
 /**
@@ -34,7 +36,8 @@ public record WebhookCustomData(String merchantUid) {
 		try {
 			json = objectMapper.readTree(customData);
 		} catch (JsonProcessingException e) {
-			log.error("customData 문자열 JSON 파싱 실패! customData: {}", customData, e);
+			// customData 는 프론트가 임의 필드를 실을 수 있는 자유 형식이라 원문 대신 길이만 남긴다
+			log.error("customData 문자열 JSON 파싱 실패! length={}", customData.length(), e);
 			throw new PaymentException("결제 API 응답의 customData 파싱 중 오류 발생");
 		}
 
@@ -42,13 +45,20 @@ public record WebhookCustomData(String merchantUid) {
 		String merchantUid = merchantUidNode == null || merchantUidNode.isNull()
 			? null : merchantUidNode.asText();
 		if (merchantUid == null || merchantUid.isBlank()) {
-			log.error("customData JSON 안에 'merchantUid' 필드가 없거나 비어있습니다! customData: {}. "
+			log.error("customData JSON 안에 'merchantUid' 필드가 없거나 비어있습니다! fields={}. "
 				+ "프론트엔드 customData 형식을 확인하세요. 예: { \"merchantUid\": \"order_...\", ... }",
-				customData);
+				fieldNames(json));
 			throw new PaymentException(
 				"결제 API 응답의 customData에서 유효한 주문 번호(merchantUid)를 추출할 수 없습니다.");
 		}
 
 		return new WebhookCustomData(merchantUid);
+	}
+
+	/** 값은 빼고 필드 이름만 이어 붙인다. 디버깅에는 어떤 키가 왔는지로 충분하다. */
+	private static String fieldNames(JsonNode json) {
+		List<String> names = new ArrayList<>();
+		json.fieldNames().forEachRemaining(names::add);
+		return names.isEmpty() ? "(none)" : String.join(",", names);
 	}
 }

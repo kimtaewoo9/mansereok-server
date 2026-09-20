@@ -1,11 +1,13 @@
 package com.mansereok.server.domain.notification.service;
 
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.HashMap;
 import java.util.Map;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.web.client.RestTemplateBuilder;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -19,7 +21,17 @@ public class SlackNotificationService {
 	@Value("${slack.webhook.url}")
 	private String webhookUrl;
 
-	private final RestTemplate restTemplate = new RestTemplate();
+	private final RestTemplate restTemplate;
+
+	/**
+	 * 연결 3초·읽기 5초 타임아웃을 둔 RestTemplate 을 만든다. (DiscordNotificationService 와 같은 이유)
+	 */
+	public SlackNotificationService(RestTemplateBuilder restTemplateBuilder) {
+		this.restTemplate = restTemplateBuilder
+			.connectTimeout(Duration.ofSeconds(3))
+			.readTimeout(Duration.ofSeconds(5))
+			.build();
+	}
 
 	/**
 	 * Slack으로 신규 회원 가입 알림을 전송합니다.

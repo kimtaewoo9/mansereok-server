@@ -14,13 +14,11 @@ import java.time.LocalDateTime;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
-import lombok.ToString;
 import lombok.extern.slf4j.Slf4j;
 
 @Table(name = "orders")
 @Entity
 @Getter
-@ToString
 @Slf4j
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class Order {
