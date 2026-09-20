@@ -18,6 +18,7 @@ import java.util.Optional;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.support.TransactionTemplate;
 
 /**
@@ -32,7 +33,11 @@ import org.springframework.transaction.support.TransactionTemplate;
  * </ol>
  *
  * <p>클래스 수준 {@code @Transactional} 을 쓰지 않고 {@link TransactionTemplate} 으로 경계를 명시한다. 같은 빈 안의
- * 메서드 호출은 프록시를 타지 않아 {@code @Transactional} 로는 단계를 나눌 수 없기 때문이다.
+ * 메서드 호출은 프록시를 타지 않아 {@code @Transactional} 로는 단계를 나눌 수 없기 때문이다. 전파 속성은
+ * {@code REQUIRES_NEW} 로 고정해, 바깥 트랜잭션 안에서 호출되더라도 세 단계가 한 트랜잭션으로 합쳐지지 않게 한다.
+ *
+ * <p>잠금 순서는 A·B 모두 결제 행 → 주문 행이다. 순서가 다르면 포트원 취소 직후 도착한 두 번째 환불 요청과
+ * 데드락이 날 수 있고, B 가 희생되면 포트원 환불은 끝났는데 DB 는 CANCEL_REQUESTED 로 남는다.
  */
 @Service
 @Slf4j
@@ -62,6 +67,8 @@ public class PaymentRefundService {
 		this.orderDiscountRestorer = orderDiscountRestorer;
 		this.portOneClient = portOneClient;
 		this.transactionTemplate = new TransactionTemplate(transactionManager);
+		// 바깥 트랜잭션에 합류하면 A 의 CANCEL_REQUESTED 커밋이 포트원 호출 전에 일어나지 않고 B 실패 시 A 까지 롤백된다.
+		this.transactionTemplate.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
 	}
 
 	/**
@@ -87,7 +94,7 @@ public class PaymentRefundService {
 
 		// (3) 트랜잭션 B: DB 확정. 실패하면 CANCEL_REQUESTED 로 남겨 수동 확인 대상으로 둔다.
 		try {
-			transactionTemplate.executeWithoutResult(status -> finalizeCancelled(paymentPkId));
+			transactionTemplate.executeWithoutResult(status -> finalizeCancelled(impUid));
 		} catch (RuntimeException e) {
 			log.error("포트원 취소는 성공했지만 DB 확정에 실패해 CANCEL_REQUESTED 로 남습니다. 수동 확인 필요: "
 				+ "username={}, impUid={}, paymentPkId={}", username, impUid, paymentPkId, e);
@@ -102,7 +109,7 @@ public class PaymentRefundService {
 	 *
 	 * <p>결제 행을 먼저 잠그는 이유는 뒤진 동시 요청이 앞선 커밋(CANCEL_REQUESTED)을 읽게 하기 위해서다. 주문 행을
 	 * 먼저 잠그면 그 전에 읽어 둔 Payment 가 영속성 컨텍스트에 남아 PAID 로 보인다. 잠금 순서(결제 → 주문)는
-	 * 결제 완료 경로(주문만 잠금)와 충돌하지 않는다.
+	 * 결제 완료 경로(주문만 잠금)와 충돌하지 않으며, B 도 같은 순서로 잠근다.
 	 *
 	 * @return 취소 요청을 기록한 Payment 의 PK
 	 */
@@ -183,9 +190,13 @@ public class PaymentRefundService {
 
 	/**
 	 * 트랜잭션 B. 포트원 취소가 끝난 뒤 DB 를 확정한다. A 에서 검증을 마쳤으므로 여기서는 재조회와 전이만 한다.
+	 *
+	 * <p>A 와 같은 순서(결제 → 주문)로 잠근다. 결제 행을 잠그지 않고 주문 행만 잠그면, 그 사이 들어온 두 번째 환불
+	 * 요청의 A(결제 잠금 후 주문 대기)와 여기서의 payments UPDATE(결제 잠금 대기)가 서로를 기다려 데드락이 된다.
+	 * OSIV 환경에서 {@code findById} 는 영속성 컨텍스트에서 바로 돌려줘 결제 행을 전혀 잠그지 않으므로 잠금 조회를 쓴다.
 	 */
-	private void finalizeCancelled(Long paymentPkId) {
-		Payment payment = paymentRepository.findById(paymentPkId)
+	private void finalizeCancelled(String impUid) {
+		Payment payment = paymentRepository.findByImpUidWithLock(impUid)
 			.orElseThrow(() -> new PaymentException("결제 정보를 찾을 수 없습니다."));
 		Order order = orderRepository.findByMerchantUidWithLock(payment.getMerchantUid())
 			.orElseThrow(() -> new PaymentException("주문 정보를 찾을 수 없습니다."));
@@ -197,7 +208,7 @@ public class PaymentRefundService {
 		order.markCancelled();
 
 		// 3. 초기 Result 삭제 (정보 입력 전이므로 삭제). 일반 사주·궁합 중 존재하는 쪽을 지운다.
-		resultService.deleteInitialResult(paymentPkId);
+		resultService.deleteInitialResult(payment.getId());
 
 		// 4. 쿠폰 또는 할인 코드 복구 (규칙은 OrderDiscountRestorer 가 소유)
 		orderDiscountRestorer.restore(order);

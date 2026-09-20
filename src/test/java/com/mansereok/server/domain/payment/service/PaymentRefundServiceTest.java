@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.willThrow;
 import static org.mockito.Mockito.inOrder;
@@ -123,7 +124,7 @@ class PaymentRefundServiceTest {
 		given(userRepository.findByUsername(USERNAME)).willReturn(Optional.of(user(USER_ID)));
 	}
 
-	/** 트랜잭션 A 의 잠금 조회와 B·C 의 재조회가 모두 같은 인스턴스를 돌려주도록 stub 한다. */
+	/** 트랜잭션 A·B 의 잠금 조회가 같은 인스턴스를 돌려주도록 stub 한다. C 는 findById 를 쓰므로 필요한 테스트에서 따로 stub 한다. */
 	private void givenLockedPaymentAndOrder(Payment payment, Order order) {
 		given(paymentRepository.findByImpUidWithLock(PAYMENT_ID)).willReturn(Optional.of(payment));
 		given(orderRepository.findByMerchantUidWithLock(MERCHANT_UID)).willReturn(
@@ -140,7 +141,6 @@ class PaymentRefundServiceTest {
 		Payment payment = spy(paidPayment());
 		Order order = spy(order(OrderStatus.PAID, 100L));
 		givenLockedPaymentAndOrder(payment, order);
-		given(paymentRepository.findById(PAYMENT_PK_ID)).willReturn(Optional.of(payment));
 		given(resultService.findStatusByPaymentId(PAYMENT_PK_ID)).willReturn(
 			Optional.of(ResultStatus.INPUT_REQUIRED));
 
@@ -148,14 +148,18 @@ class PaymentRefundServiceTest {
 		paymentRefundService.cancel(USERNAME, PAYMENT_ID, REASON);
 
 		// then
-		InOrder inOrder = inOrder(payment, transactionManager, portOneClient, order, resultService,
-			orderDiscountRestorer);
-		// A: 취소 요청 기록 후 커밋
+		InOrder inOrder = inOrder(payment, paymentRepository, orderRepository, transactionManager,
+			portOneClient, order, resultService, orderDiscountRestorer);
+		// A: 결제 → 주문 순서로 잠근 뒤 취소 요청 기록 후 커밋
+		inOrder.verify(paymentRepository).findByImpUidWithLock(PAYMENT_ID);
+		inOrder.verify(orderRepository).findByMerchantUidWithLock(MERCHANT_UID);
 		inOrder.verify(payment).markCancelRequested();
 		inOrder.verify(transactionManager).commit(any(TransactionStatus.class));
 		// 트랜잭션 밖: 포트원 취소
 		inOrder.verify(portOneClient).cancelPayment(PAYMENT_ID, REASON);
-		// B: 확정
+		// B: A 와 같은 순서(결제 → 주문)로 잠근 뒤 확정
+		inOrder.verify(paymentRepository).findByImpUidWithLock(PAYMENT_ID);
+		inOrder.verify(orderRepository).findByMerchantUidWithLock(MERCHANT_UID);
 		inOrder.verify(payment).markCancelled();
 		inOrder.verify(order).markCancelled();
 		inOrder.verify(resultService).deleteInitialResult(PAYMENT_PK_ID);
@@ -167,6 +171,31 @@ class PaymentRefundServiceTest {
 		verify(transactionManager, times(2)).commit(any(TransactionStatus.class));
 		verify(transactionManager, never()).rollback(any(TransactionStatus.class));
 		verify(payment, never()).revertCancelRequest();
+		// B 는 잠금 없는 findById 로 결제를 읽지 않는다 (OSIV 에서는 잠금을 전혀 잡지 않으므로)
+		verify(paymentRepository, never()).findById(anyLong());
+		verify(paymentRepository, times(2)).findByImpUidWithLock(PAYMENT_ID);
+		verify(orderRepository, times(2)).findByMerchantUidWithLock(MERCHANT_UID);
+	}
+
+	@Test
+	@DisplayName("세 트랜잭션 모두 REQUIRES_NEW 로 시작해 바깥 트랜잭션에 합류하지 않는다")
+	void cancel_everyTransactionStartsWithRequiresNew() {
+		// given
+		givenRequester();
+		Payment payment = paidPayment();
+		Order order = order(OrderStatus.PAID, null);
+		givenLockedPaymentAndOrder(payment, order);
+		given(resultService.findStatusByPaymentId(PAYMENT_PK_ID)).willReturn(
+			Optional.of(ResultStatus.INPUT_REQUIRED));
+
+		// when
+		paymentRefundService.cancel(USERNAME, PAYMENT_ID, REASON);
+
+		// then: A·B 두 트랜잭션 모두 REQUIRES_NEW 정의로 시작한다
+		verify(transactionManager, times(2)).getTransaction(argThat(definition ->
+			definition.getPropagationBehavior() == TransactionDefinition.PROPAGATION_REQUIRES_NEW));
+		verify(transactionManager, never()).getTransaction(argThat(definition ->
+			definition.getPropagationBehavior() != TransactionDefinition.PROPAGATION_REQUIRES_NEW));
 	}
 
 	// ===== (b) 포트원 실패 =====
@@ -207,6 +236,40 @@ class PaymentRefundServiceTest {
 	}
 
 	@Test
+	@DisplayName("포트원 실패 뒤 되돌리기(C)까지 실패하면 C 의 예외를 삼키고 원래 포트원 예외를 던지며 확정 단계는 시작되지 않는다")
+	void cancel_portOneFailsAndRevertFails_rethrowsOriginalAndLeavesCancelRequested() {
+		// given
+		givenRequester();
+		Payment payment = spy(paidPayment());
+		Order order = order(OrderStatus.PAID, null);
+		givenLockedPaymentAndOrder(payment, order);
+		given(resultService.findStatusByPaymentId(PAYMENT_PK_ID)).willReturn(
+			Optional.of(ResultStatus.INPUT_REQUIRED));
+		willThrow(new PortOneUnavailableException("포트원 응답 없음"))
+			.given(portOneClient).cancelPayment(PAYMENT_ID, REASON);
+		// C 의 재조회가 DB 장애로 실패한다
+		given(paymentRepository.findById(PAYMENT_PK_ID))
+			.willThrow(new DataAccessResourceFailureException("db down"));
+
+		// when & then: 호출자가 받는 예외는 C 의 예외가 아니라 원래 포트원 예외다
+		assertThatThrownBy(() -> paymentRefundService.cancel(USERNAME, PAYMENT_ID, REASON))
+			.isInstanceOf(PortOneUnavailableException.class)
+			.hasMessage("포트원 응답 없음");
+
+		// A 는 커밋됐고 C 는 롤백됐다. B 는 시작되지 않는다 (getTransaction = A + C 2회)
+		verify(transactionManager, times(1)).commit(any(TransactionStatus.class));
+		verify(transactionManager, times(1)).rollback(any(TransactionStatus.class));
+		verify(transactionManager, times(2)).getTransaction(any(TransactionDefinition.class));
+		verify(payment, never()).revertCancelRequest();
+		verify(payment, never()).markCancelled();
+		verify(resultService, never()).deleteInitialResult(anyLong());
+		verifyNoInteractions(orderDiscountRestorer);
+		// 메모리상 결제는 A 가 기록한 CANCEL_REQUESTED 그대로 남아 수동 확인 대상이 된다
+		assertThat(payment.getStatus()).isEqualTo(PaymentStatus.CANCEL_REQUESTED);
+		assertThat(order.getStatus()).isEqualTo(OrderStatus.PAID);
+	}
+
+	@Test
 	@DisplayName("포트원 취소 성공 뒤 DB 확정이 실패하면 CANCEL_REQUESTED 로 남긴 채 예외를 전파하고 PAID 로 되돌리지 않는다")
 	void cancel_finalizeFails_leavesCancelRequestedForManualCheck() {
 		// given
@@ -214,7 +277,6 @@ class PaymentRefundServiceTest {
 		Payment payment = spy(paidPayment());
 		Order order = order(OrderStatus.PAID, null);
 		givenLockedPaymentAndOrder(payment, order);
-		given(paymentRepository.findById(PAYMENT_PK_ID)).willReturn(Optional.of(payment));
 		given(resultService.findStatusByPaymentId(PAYMENT_PK_ID)).willReturn(
 			Optional.of(ResultStatus.INPUT_REQUIRED));
 		willThrow(new DataAccessResourceFailureException("connection lost"))
@@ -318,7 +380,6 @@ class PaymentRefundServiceTest {
 		Payment payment = paidPayment();
 		Order order = order(OrderStatus.PAID, null);
 		givenLockedPaymentAndOrder(payment, order);
-		given(paymentRepository.findById(PAYMENT_PK_ID)).willReturn(Optional.of(payment));
 		given(resultService.findStatusByPaymentId(PAYMENT_PK_ID)).willReturn(
 			Optional.of(ResultStatus.INPUT_REQUIRED));
 
