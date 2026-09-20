@@ -31,6 +31,8 @@ class PortOneRestClientTest {
 
 	private static final String SECRET = "test-portone-secret";
 	private static final String BASE_URL = "https://api.portone.io";
+	private static final PortOneProperties.Webhook WEBHOOK =
+		new PortOneProperties.Webhook("test-webhook-secret");
 	private static final String PAYMENT_ID = "pay_test_001";
 	private static final String PAYMENT_URL = BASE_URL + "/payments/" + PAYMENT_ID;
 	private static final String CANCEL_URL = PAYMENT_URL + "/cancel";
@@ -43,7 +45,7 @@ class PortOneRestClientTest {
 		RestClient.Builder builder = RestClient.builder();
 		server = MockRestServiceServer.bindTo(builder).build();
 
-		PortOneProperties properties = new PortOneProperties(SECRET, BASE_URL, null, null);
+		PortOneProperties properties = new PortOneProperties(SECRET, BASE_URL, null, null, WEBHOOK);
 		// Spring Boot 가 자동 구성하는 ObjectMapper 와 같이 FAIL_ON_UNKNOWN_PROPERTIES 가 꺼진 매퍼를 쓴다.
 		// (PortOnePaymentResponse.Amount 에는 ignoreUnknown 설정이 없어 plain ObjectMapper 로는 실제 응답 파싱이 실패한다)
 		client = new PortOneRestClient(builder.build(), properties,
@@ -53,7 +55,7 @@ class PortOneRestClientTest {
 	@Test
 	@DisplayName("운영용 생성자는 타임아웃이 설정된 전용 RestClient 를 예외 없이 만든다")
 	void productionConstructor_buildsClientWithTimeouts() {
-		PortOneProperties properties = new PortOneProperties(SECRET, BASE_URL, 1500, 2500);
+		PortOneProperties properties = new PortOneProperties(SECRET, BASE_URL, 1500, 2500, WEBHOOK);
 
 		assertThatCode(() -> new PortOneRestClient(RestClient.builder(), properties,
 			Jackson2ObjectMapperBuilder.json().build()))
