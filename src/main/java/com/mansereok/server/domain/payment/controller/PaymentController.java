@@ -7,6 +7,7 @@ import com.mansereok.server.domain.order.entity.Order;
 import com.mansereok.server.domain.payment.dto.request.PaymentCancelRequest;
 import com.mansereok.server.domain.payment.dto.request.PaymentCompleteRequest;
 import com.mansereok.server.domain.payment.dto.response.PaymentResponseDto;
+import com.mansereok.server.domain.payment.service.PaymentConfirmService;
 import com.mansereok.server.domain.payment.service.PaymentQueryService;
 import com.mansereok.server.domain.payment.service.PaymentRefundService;
 import com.mansereok.server.domain.payment.service.PaymentService;
@@ -32,6 +33,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class PaymentController {
 
 	private final PaymentService paymentService;
+	private final PaymentConfirmService paymentConfirmService;
 	private final PaymentQueryService paymentQueryService;
 	private final PaymentRefundService paymentRefundService;
 
@@ -56,7 +58,7 @@ public class PaymentController {
 		@Valid @RequestBody PaymentCompleteRequest request,
 		@AuthenticationPrincipal String username
 	) {
-		Order order = paymentService.completePayment(username, request);
+		Order order = paymentConfirmService.complete(username, request);
 		return ResponseEntity.ok(OrderResponse.from(order));
 	}
 
