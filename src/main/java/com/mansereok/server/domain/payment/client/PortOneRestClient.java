@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mansereok.server.domain.payment.dto.response.PortOnePaymentResponse;
 import com.mansereok.server.global.exception.PaymentException;
+import com.mansereok.server.global.exception.PortOneUnavailableException;
 import java.time.Duration;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -13,12 +14,19 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.client.ClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
+import org.springframework.web.client.HttpServerErrorException;
+import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestClient;
+import org.springframework.web.client.RestClientException;
 
 /**
  * 포트원 V2 REST API 를 호출하는 {@link PortOneClient} 구현체.
  * <p>
  * 공용 RestClient 빈과는 별도로, 연결/읽기 타임아웃이 설정된 전용 RestClient 를 만들어 사용한다.
+ * <p>
+ * 예외 분류: 네트워크 오류·타임아웃({@link ResourceAccessException})과 5xx({@link HttpServerErrorException})는
+ * 재시도 가능한 일시 장애로 보고 {@link PortOneUnavailableException}(503)을, 4xx 와 응답 파싱 실패는
+ * {@link PaymentException}(400)을 던진다.
  */
 @Slf4j
 @Component
@@ -66,7 +74,10 @@ public class PortOneRestClient implements PortOneClient {
 				.accept(MediaType.APPLICATION_JSON)
 				.retrieve()
 				.body(String.class);
-		} catch (Exception e) {
+		} catch (ResourceAccessException | HttpServerErrorException e) {
+			log.error("PortOne API 일시 장애(네트워크/타임아웃/5xx): paymentId={}", paymentId, e);
+			throw new PortOneUnavailableException("결제 정보를 조회하는 중 일시적인 오류가 발생했습니다.", e);
+		} catch (RestClientException e) {
 			log.error("PortOne API 호출 실패: paymentId={}", paymentId, e);
 			throw new PaymentException("결제 정보를 조회하는 중 오류가 발생했습니다.");
 		}
@@ -106,7 +117,10 @@ public class PortOneRestClient implements PortOneClient {
 				.body(new CancelRequest(reason))
 				.retrieve()
 				.toBodilessEntity();
-		} catch (Exception e) {
+		} catch (ResourceAccessException | HttpServerErrorException e) {
+			log.error("포트원 결제 취소 API 일시 장애(네트워크/타임아웃/5xx): paymentId={}", paymentId, e);
+			throw new PortOneUnavailableException("결제 취소 연동 중 일시적인 오류가 발생했습니다.", e);
+		} catch (RestClientException e) {
 			log.error("포트원 결제 취소 API 호출 실패: paymentId={}", paymentId, e);
 			throw new PaymentException("결제 취소 연동 중 오류가 발생했습니다: " + e.getMessage());
 		}

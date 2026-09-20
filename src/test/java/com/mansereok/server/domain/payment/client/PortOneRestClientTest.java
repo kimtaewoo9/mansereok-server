@@ -9,11 +9,14 @@ import static org.springframework.test.web.client.match.MockRestRequestMatchers.
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.method;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withBadRequest;
+import static org.springframework.test.web.client.response.MockRestResponseCreators.withException;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withServerError;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
 import com.mansereok.server.domain.payment.dto.response.PortOnePaymentResponse;
 import com.mansereok.server.global.exception.PaymentException;
+import com.mansereok.server.global.exception.PortOneUnavailableException;
+import java.net.SocketTimeoutException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -114,14 +117,41 @@ class PortOneRestClientTest {
 	}
 
 	@Test
-	@DisplayName("응답이 500 이면 '조회 중 오류' 메시지의 PaymentException 을 던진다")
-	void getPayment_serverError_throwsFetchFailureMessage() {
+	@DisplayName("응답이 500 이면 재시도 가능한 PortOneUnavailableException 을 던진다")
+	void getPayment_serverError_throwsPortOneUnavailable() {
 		server.expect(requestTo(PAYMENT_URL))
 			.andExpect(method(HttpMethod.GET))
 			.andRespond(withServerError());
 
 		assertThatThrownBy(() -> client.getPayment(PAYMENT_ID))
+			.isInstanceOf(PortOneUnavailableException.class)
+			.hasMessage("결제 정보를 조회하는 중 일시적인 오류가 발생했습니다.");
+		server.verify();
+	}
+
+	@Test
+	@DisplayName("네트워크 오류나 타임아웃(ResourceAccessException)이면 PortOneUnavailableException 을 던진다")
+	void getPayment_timeout_throwsPortOneUnavailable() {
+		server.expect(requestTo(PAYMENT_URL))
+			.andExpect(method(HttpMethod.GET))
+			.andRespond(withException(new SocketTimeoutException("Read timed out")));
+
+		assertThatThrownBy(() -> client.getPayment(PAYMENT_ID))
+			.isInstanceOf(PortOneUnavailableException.class)
+			.hasCauseInstanceOf(org.springframework.web.client.ResourceAccessException.class);
+		server.verify();
+	}
+
+	@Test
+	@DisplayName("응답이 4xx 이면 기존처럼 '조회 중 오류' 메시지의 PaymentException 을 던진다")
+	void getPayment_clientError_throwsPaymentException() {
+		server.expect(requestTo(PAYMENT_URL))
+			.andExpect(method(HttpMethod.GET))
+			.andRespond(withBadRequest());
+
+		assertThatThrownBy(() -> client.getPayment(PAYMENT_ID))
 			.isInstanceOf(PaymentException.class)
+			.isNotInstanceOf(PortOneUnavailableException.class)
 			.hasMessage("결제 정보를 조회하는 중 오류가 발생했습니다.");
 		server.verify();
 	}
@@ -152,6 +182,19 @@ class PortOneRestClientTest {
 
 		assertThatCode(() -> client.cancelPayment(PAYMENT_ID, null))
 			.doesNotThrowAnyException();
+		server.verify();
+	}
+
+	@Test
+	@DisplayName("취소 응답이 5xx 이면 PortOneUnavailableException 을 던진다")
+	void cancelPayment_serverError_throwsPortOneUnavailable() {
+		server.expect(requestTo(CANCEL_URL))
+			.andExpect(method(HttpMethod.POST))
+			.andRespond(withServerError());
+
+		assertThatThrownBy(() -> client.cancelPayment(PAYMENT_ID, "단순 변심"))
+			.isInstanceOf(PortOneUnavailableException.class)
+			.hasMessage("결제 취소 연동 중 일시적인 오류가 발생했습니다.");
 		server.verify();
 	}
 

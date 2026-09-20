@@ -2,7 +2,6 @@ package com.mansereok.server.domain.payment.service;
 
 
 import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mansereok.server.domain.coupon.service.CouponService;
 import com.mansereok.server.domain.discount.entity.DiscountCode;
@@ -24,6 +23,7 @@ import com.mansereok.server.domain.payment.client.PortOneClient;
 import com.mansereok.server.domain.payment.dto.request.PaymentCompleteRequest;
 import com.mansereok.server.domain.payment.dto.response.PortOnePaymentResponse;
 import com.mansereok.server.domain.payment.dto.response.PortoneWebhookDto;
+import com.mansereok.server.domain.payment.dto.response.WebhookCustomData;
 import com.mansereok.server.domain.payment.entity.Payment;
 import com.mansereok.server.domain.payment.entity.PaymentStatus;
 import com.mansereok.server.domain.payment.repository.PaymentRepository;
@@ -32,9 +32,9 @@ import com.mansereok.server.domain.product.repository.SubCategoryRepository;
 import com.mansereok.server.domain.user.entity.User;
 import com.mansereok.server.domain.user.repository.UserRepository;
 import com.mansereok.server.global.exception.PaymentException;
-import jakarta.persistence.EntityNotFoundException;
 import java.time.LocalDateTime;
 import java.util.Objects;
+import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -100,57 +100,48 @@ public class PaymentService {
 
 		Integer originalAmount = subCategory.getPrice(); // 1. 원본 금액 .
 
-		try {
-			DiscountResolution discount = resolveDiscount(user, subCategory, request);
-			int finalAmount = discount.finalAmount();
+		// 2. 쿠폰/할인 코드 검증. 실패(PaymentException)는 GlobalExceptionHandler 가 400 으로,
+		//    DB 장애 같은 예상 못 한 예외는 500 으로 응답하므로 여기서 다시 감싸지 않는다.
+		DiscountResolution discount = resolveDiscount(user, subCategory, request);
+		int finalAmount = discount.finalAmount();
 
-			// 0원 주문은 결제창을 띄울 수 없고 무료 발급 절차(redeemFreeProduct)가 따로 있으므로
-			// 여기서는 만들지 않는다. 할인 코드 락은 트랜잭션 롤백으로 함께 풀린다.
-			if (finalAmount <= 0) {
-				throw new PaymentException("0원 주문은 무료 결제 API(/api/payment/redeem-free)를 이용해주세요.");
-			}
-
-			String merchantUid = merchantUidGenerator.forOrder();
-
-			// 3. 주문서 생성
-			Order savedOrder = orderRepository.save(
-				Order.create(
-					merchantUid,
-					user.getId(),
-					subCategory.getId(),
-					originalAmount,
-					finalAmount,
-					discount.appliedCode(),
-					discount.couponId(),
-					OrderStatus.PENDING,
-					user.getName(),
-					user.getEmail()
-				)
-			);
-
-			// 4. 사용 횟수 증가 (주문 생성 트랜잭션 내에서 즉시 처리)
-			consumeDiscount(discount);
-
-			log.info("주문 생성 완료 (트랜잭션 커밋): orderId={}, merchantUid={}, amount={}",
-				savedOrder.getId(), merchantUid, finalAmount);
-
-			// 5. 프론트에 최종 결제액과 주문번호 전달
-			return new OrderCreateResponse(
-				savedOrder.getId(),
-				merchantUid,
-				finalAmount, // 프론트가 결제할 최종 금액
-				subCategory.getTitle()
-			);
-
-		} catch (PaymentException e) {
-			// 할인 코드 검증 실패 (만료, 횟수 초과 등)
-			log.warn("할인/쿠폰 처리 실패: {}", e.getMessage());
-			throw e; // 400 Bad Request로 프론트에 전달
-		} catch (Exception e) {
-			// 기타 DB 오류 등
-			log.error("주문 생성 중 심각한 오류 발생: {}", e.getMessage(), e);
-			throw new PaymentException("주문 생성 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.");
+		// 0원 주문은 결제창을 띄울 수 없고 무료 발급 절차(redeemFreeProduct)가 따로 있으므로
+		// 여기서는 만들지 않는다. 할인 코드 락은 트랜잭션 롤백으로 함께 풀린다.
+		if (finalAmount <= 0) {
+			throw new PaymentException("0원 주문은 무료 결제 API(/api/payment/redeem-free)를 이용해주세요.");
 		}
+
+		String merchantUid = merchantUidGenerator.forOrder();
+
+		// 3. 주문서 생성
+		Order savedOrder = orderRepository.save(
+			Order.create(
+				merchantUid,
+				user.getId(),
+				subCategory.getId(),
+				originalAmount,
+				finalAmount,
+				discount.appliedCode(),
+				discount.couponId(),
+				OrderStatus.PENDING,
+				user.getName(),
+				user.getEmail()
+			)
+		);
+
+		// 4. 사용 횟수 증가 (주문 생성 트랜잭션 내에서 즉시 처리)
+		consumeDiscount(discount);
+
+		log.info("주문 생성 완료 (트랜잭션 커밋): orderId={}, merchantUid={}, amount={}",
+			savedOrder.getId(), merchantUid, finalAmount);
+
+		// 5. 프론트에 최종 결제액과 주문번호 전달
+		return new OrderCreateResponse(
+			savedOrder.getId(),
+			merchantUid,
+			finalAmount, // 프론트가 결제할 최종 금액
+			subCategory.getTitle()
+		);
 	}
 
 	// 2단계. 결제 상태 조회 ..
@@ -184,10 +175,16 @@ public class PaymentService {
 			throw new PaymentException("결제 금액이 일치하지 않습니다.");
 		}
 
-		// 포트원 상태가 PAID라면 즉시 DB 업데이트
-		PaymentStatus paymentStatus = PaymentStatus.fromPortOneStatus(paymentResponse.getStatus());
+		// 포트원 상태가 PAID라면 즉시 DB 업데이트. 모르는 상태는 "아직 완료되지 않음" 으로 보고 주문을 그대로 돌려준다.
+		Optional<PaymentStatus> paymentStatus = PaymentStatus.fromPortOneStatus(
+			paymentResponse.getStatus());
+		if (paymentStatus.isEmpty()) {
+			log.warn("알 수 없는 포트원 결제 상태라 미완료로 취급합니다: orderId={}, paymentId={}, rawStatus={}",
+				order.getId(), request.getPaymentId(), paymentResponse.getStatus());
+			return order;
+		}
 
-		if (paymentStatus == PaymentStatus.PAID) {
+		if (paymentStatus.get() == PaymentStatus.PAID) {
 			log.info("검증 완료. 주문 상태를 PAID로 변경합니다.");
 
 			// 1. 주문 PAID 확정, Payment 저장, 연관관계 연결, 초기 Result 생성
@@ -208,7 +205,7 @@ public class PaymentService {
 		}
 
 		// PAID가 아닌 경우
-		log.warn("결제가 아직 완료되지 않았습니다: status={}", paymentStatus);
+		log.warn("결제가 아직 완료되지 않았습니다: status={}", paymentStatus.get());
 		return order;
 	}
 
@@ -337,156 +334,164 @@ public class PaymentService {
 		}
 	}
 
+	/**
+	 * 포트원 웹훅 처리. 서명 검증은 컨트롤러가 마친 뒤 호출한다.
+	 *
+	 * <p>순서: 페이로드 파싱 → Paid 이벤트 필터 → 포트원 재조회 → 주문 잠금과 멱등 검사 → 금액 검증 → 확정.
+	 *
+	 * <p>금액 불일치와 결제 실패 상태는 재전송으로 해결되지 않는 최종 실패라서 예외 없이 주문을 FAILED 로 기록하고
+	 * 정상 반환한다. 예외를 던지면 같은 트랜잭션의 FAILED 저장이 롤백되고 포트원이 재시도를 반복하므로, 정상 반환으로
+	 * FAILED 를 커밋하고 포트원에는 200 을 돌려준다. 포트원 일시 장애(PortOneUnavailableException, 503)와
+	 * DB 장애(500)는 그대로 전파해 포트원이 재시도하게 둔다.
+	 *
+	 * <p>트랜잭션은 클래스 수준 {@code @Transactional} 에 참여한다. 주문 잠금부터 FAILED 저장·할인 복구까지
+	 * 한 트랜잭션이다.
+	 */
 	public void processWebhook(String body) {
-		String merchantUidFromCustomData = null;
-		try {
-			log.info("=== 웹훅 원본 페이로드 ===");
-			log.info("body: {}", body);
+		PortoneWebhookDto webhook = parseWebhookBody(body);
+		String paymentId = webhook.getPaymentId();
+		log.info("웹훅 수신: status={}, paymentId={}", webhook.getStatus(), paymentId);
 
-			PortoneWebhookDto webhook = objectMapper.readValue(body, PortoneWebhookDto.class);
-
-			log.info("웹훅 수신: status={}, paymentId={}",
-				webhook.getStatus(), webhook.getPaymentId());
-
-			String paymentId = webhook.getPaymentId();
-			String status = webhook.getStatus();
-			String merchantUid = webhook.getMerchantUid();
-
-			log.info("webhook.getStatus(): {}", webhook.getStatus());
-			log.info("webhook.getPaymentId(): {}", webhook.getPaymentId());
-			log.info("webhook.getMerchantUid(): {}", webhook.getMerchantUid());
-
-			// Ready 상태는 결제 완료가 아님 (가상계좌 발급, 결제 시작 등)
-			if (!"Paid".equals(status)) {
-				log.info("결제 완료 이벤트가 아님: status={}", status);
-				return;
-			}
-
-			// ✅ 포트원 API 호출 전에 로그
-			log.info("포트원 API 호출 시작: paymentId={}", paymentId);
-
-			// 포트원에 결제 됐는지 재확인함
-			PortOnePaymentResponse paymentResponse = portOneClient.getPayment(paymentId);
-
-			log.info("포트원 API 호출 완료");
-			log.info("PortOnePaymentResponse: " + paymentResponse);
-
-			String customDataString = paymentResponse.getCustomData();
-			if (customDataString == null || customDataString.isBlank()) {
-				log.error("PortOne API 응답(paymentId:{})에 customData가 비어있습니다!", paymentId);
-				throw new PaymentException("결제 API 응답에서 customData를 찾을 수 없어 주문 번호를 알 수 없습니다.");
-			}
-
-			log.info("customData 원본: '{}'", customDataString);
-
-			if (customDataString.isBlank()) {
-				log.error("customData가 비어있음!");
-				throw new PaymentException("customData 없음");
-			}
-
-			try {
-				// customData 문자열을 JSON 객체로 파싱
-				JsonNode customDataJson = objectMapper.readTree(customDataString);
-
-				log.info("JSON 파싱 완료: {}", customDataJson);
-
-				// ✅ merchantUid 추출 전에 로그
-				log.info("merchantUid 추출 시작");
-				if (customDataJson.has("merchantUid")) {
-					merchantUidFromCustomData = customDataJson.get("merchantUid").asText();
-					log.info("customData에서 merchantUid 추출 성공: {}", merchantUidFromCustomData);
-				}
-
-				// 추출한 merchantUid 검증
-				if (merchantUidFromCustomData == null || merchantUidFromCustomData.isBlank()) {
-					log.error("customData JSON 안에 'merchantUid' 필드가 없거나 비어있습니다! customData: {}",
-						customDataString);
-					log.error(
-						"프론트엔드 customData 형식을 확인하세요. 예: { \"merchantUid\": \"order_...\", ... }");
-					throw new PaymentException(
-						"결제 API 응답의 customData에서 유효한 주문 번호(merchantUid)를 추출할 수 없습니다.");
-				}
-
-			} catch (JsonProcessingException e) {
-				log.error("customData 문자열 JSON 파싱 실패! customData: {}", customDataString, e);
-				log.error("프론트엔드에서 customData를 올바른 JSON 문자열 형태로 전달했는지 확인하세요.");
-				throw new PaymentException("결제 API 응답의 customData 파싱 중 오류 발생");
-			}
-
-			// ✅ 비관적 락으로 주문 조회
-			log.info("추출한 merchantUid '{}'로 주문을 조회합니다...", merchantUidFromCustomData);
-			Order order = orderRepository.findByMerchantUidWithLock(merchantUidFromCustomData)
-				.orElseThrow(EntityNotFoundException::new);
-			log.info("주문 조회 성공: orderId={}, currentStatus={}", order.getId(), order.getStatus());
-
-			// ✅ 멱등성 체크
-			if (order.getStatus() == OrderStatus.PAID) {
-				log.info("이미 처리된 주문: merchantUid={}", merchantUid);
-				return;
-			}
-
-			if (paymentRepository.findByImpUid(paymentId).isPresent()) {
-				log.warn("이미 존재하는 결제입니다: paymentId={}", paymentId);
-				return;
-			}
-
-			// 2. 금액 검증
-			if (!Objects.equals(paymentResponse.getAmount().getTotal(),
-				order.getAmount().longValue())) {
-				log.error("웹훅 금액 불일치: expected={}, actual={}",
-					order.getAmount(), paymentResponse.getAmount().getTotal());
-				// FAILED 로 갈 수 없는 상태(EXPIRED 등)면 상태는 두고 원래 예외만 던진다
-				if (order.getStatus().canTransitionTo(OrderStatus.FAILED)) {
-					order.markFailed();
-					orderRepository.save(order);
-				}
-				throw new PaymentException("결제 금액이 일치하지 않습니다.");
-			}
-
-			PaymentStatus paymentStatus = PaymentStatus.fromPortOneStatus(
-				paymentResponse.getStatus());
-
-			if (paymentStatus == PaymentStatus.PAID) {
-				// 주문 PAID 확정, Payment 저장, 연관관계 연결, 초기 Result 생성
-				Payment savedPayment = paidOrderFinalizer.finalizePaid(
-					order,
-					paymentId,
-					paymentResponse.getAmount().getTotal(),
-					LocalDateTime.now()
-				);
-				log.info("웹훅으로 결제 완료 처리: orderId={}, paymentId={}",
-					order.getId(), paymentId);
-
-				// 할인 코드 써서 결제했다면, 로그 남기기.
-				if (order.getAppliedDiscountCode() != null &&
-					!order.getAppliedDiscountCode().isEmpty()) {
-
-					int discountAmount = order.getOriginalAmount() - order.getAmount();
-					double discountRate =
-						(discountAmount / (double) order.getOriginalAmount()) * 100;
-
-					log.info("주문 ID: {}", order.getId());
-					log.info("사용한 할인 코드: {}", order.getAppliedDiscountCode());
-					log.info("할인액: {}원 ({}% 할인)", discountAmount,
-						String.format("%.1f", discountRate));
-				}
-
-				notifyPaymentCompleted(order, savedPayment);
-
-				processOrder(order);
-			} else {
-				log.error("웹훅 결제 실패: paymentId={}, status={}", paymentId, paymentStatus);
-				// FAILED 로 갈 수 없는 상태(EXPIRED 등)면 상태는 두고 원래 예외만 던진다
-				if (order.getStatus().canTransitionTo(OrderStatus.FAILED)) {
-					order.markFailed();
-					orderRepository.save(order);
-				}
-				throw new PaymentException("결제 실패 상태입니다.");
-			}
-		} catch (Exception e) {
-			log.error("웹훅 처리 중 에러", e);
-			throw new PaymentException("웹훅 처리 실패: " + e.getMessage());
+		// Ready 상태는 결제 완료가 아님 (가상계좌 발급, 결제 시작 등)
+		if (!"Paid".equals(webhook.getStatus())) {
+			log.info("결제 완료 이벤트가 아님: status={}, paymentId={}", webhook.getStatus(), paymentId);
+			return;
 		}
+
+		// 웹훅 본문은 신뢰하지 않고 포트원 API 로 재조회한다
+		PortOnePaymentResponse paymentResponse = portOneClient.getPayment(paymentId);
+		String merchantUid = WebhookCustomData.from(paymentResponse.getCustomData(), objectMapper)
+			.merchantUid();
+
+		Optional<Order> unprocessed = lockUnprocessedOrder(merchantUid, paymentId);
+		if (unprocessed.isEmpty()) {
+			return;
+		}
+		Order order = unprocessed.get();
+
+		if (!verifyWebhookAmount(order, paymentResponse)) {
+			return;
+		}
+
+		confirmByPortOneStatus(order, paymentId, paymentResponse);
+	}
+
+	private PortoneWebhookDto parseWebhookBody(String body) {
+		try {
+			return objectMapper.readValue(body, PortoneWebhookDto.class);
+		} catch (JsonProcessingException e) {
+			log.error("웹훅 페이로드 파싱 실패", e);
+			throw new PaymentException("웹훅 페이로드 파싱 실패");
+		}
+	}
+
+	/**
+	 * 주문을 비관적 락으로 조회하고 멱등 검사를 한다. 이미 처리된 주문(PAID 이거나 같은 paymentId 의 Payment 가
+	 * 있음)이면 빈 Optional 을 돌려준다.
+	 *
+	 * @throws PaymentException merchantUid 에 해당하는 주문이 없는 경우
+	 */
+	private Optional<Order> lockUnprocessedOrder(String merchantUid, String paymentId) {
+		Order order = orderRepository.findByMerchantUidWithLock(merchantUid)
+			.orElseThrow(() -> {
+				log.error("웹훅 주문 조회 실패: merchantUid={}, paymentId={}", merchantUid, paymentId);
+				return new PaymentException("주문을 찾을 수 없습니다.");
+			});
+
+		if (order.getStatus() == OrderStatus.PAID) {
+			log.info("이미 처리된 주문: orderId={}, merchantUid={}", order.getId(), merchantUid);
+			return Optional.empty();
+		}
+
+		if (paymentRepository.findByImpUid(paymentId).isPresent()) {
+			log.warn("이미 존재하는 결제입니다: paymentId={}", paymentId);
+			return Optional.empty();
+		}
+
+		return Optional.of(order);
+	}
+
+	/**
+	 * 포트원 결제 금액과 주문 금액을 비교한다. 불일치는 최종 실패이므로 주문을 FAILED 로 기록하고 false 를 돌려준다.
+	 */
+	private boolean verifyWebhookAmount(Order order, PortOnePaymentResponse paymentResponse) {
+		Long paidTotal = paymentResponse.getAmount().getTotal();
+		if (Objects.equals(paidTotal, order.getAmount().longValue())) {
+			return true;
+		}
+		log.error("웹훅 금액 불일치: orderId={}, expected={}, actual={}",
+			order.getId(), order.getAmount(), paidTotal);
+		markOrderFailed(order);
+		return false;
+	}
+
+	/**
+	 * 포트원 재조회 상태로 주문을 확정한다.
+	 *
+	 * <ul>
+	 *   <li>PAID → 결제 확정</li>
+	 *   <li>READY, VIRTUAL_ACCOUNT_ISSUED → 진행 중이므로 "아직 완료되지 않음" 으로 보고 주문을 건드리지 않는다.
+	 *       Paid 웹훅과 조회 API 반영 사이의 지연 같은 일시 상태를 종단 상태 FAILED 로 굳히지 않기 위해서다.</li>
+	 *   <li>FAILED, CANCELLED → 최종 실패로 FAILED 기록</li>
+	 *   <li>모르는 상태 → "아직 완료되지 않음" 으로 보고 주문을 건드리지 않는다</li>
+	 * </ul>
+	 */
+	private void confirmByPortOneStatus(Order order, String paymentId,
+		PortOnePaymentResponse paymentResponse) {
+		Optional<PaymentStatus> paymentStatus = PaymentStatus.fromPortOneStatus(
+			paymentResponse.getStatus());
+		if (paymentStatus.isEmpty()) {
+			log.warn("알 수 없는 포트원 결제 상태라 미완료로 취급합니다: orderId={}, paymentId={}, rawStatus={}",
+				order.getId(), paymentId, paymentResponse.getStatus());
+			return;
+		}
+
+		PaymentStatus resolved = paymentStatus.get();
+		if (resolved == PaymentStatus.READY || resolved == PaymentStatus.VIRTUAL_ACCOUNT_ISSUED) {
+			log.warn("결제가 아직 완료되지 않았습니다: orderId={}, paymentId={}, status={}",
+				order.getId(), paymentId, resolved);
+			return;
+		}
+
+		if (resolved != PaymentStatus.PAID) { // FAILED, CANCELLED
+			log.error("웹훅 결제 실패 상태: orderId={}, paymentId={}, status={}",
+				order.getId(), paymentId, paymentResponse.getStatus());
+			markOrderFailed(order);
+			return;
+		}
+
+		// 주문 PAID 확정, Payment 저장, 연관관계 연결, 초기 Result 생성
+		Payment savedPayment = paidOrderFinalizer.finalizePaid(
+			order,
+			paymentId,
+			paymentResponse.getAmount().getTotal(),
+			LocalDateTime.now()
+		);
+		log.info("웹훅으로 결제 완료 처리: orderId={}, paymentId={}, discountCode={}, amount={}/{}",
+			order.getId(), paymentId, order.getAppliedDiscountCode(), order.getAmount(),
+			order.getOriginalAmount());
+
+		notifyPaymentCompleted(order, savedPayment);
+	}
+
+	/**
+	 * 주문을 FAILED 로 기록하고 쓴 쿠폰·할인코드를 복구한다. FAILED 로 갈 수 없는 상태(EXPIRED 등)면 상태는
+	 * 그대로 두고 복구도 하지 않는다(만료 경로가 이미 복구했다).
+	 *
+	 * <p>예외를 던지지 않으므로 호출자의 트랜잭션이 커밋되며 FAILED 가 실제로 저장된다. FAILED 는 종단 상태라
+	 * 만료 스케줄러(PENDING 만 조회)가 다시 다루지 않으므로, 환불·만료와 같은 규칙으로 여기서 바로 복구한다.
+	 */
+	private void markOrderFailed(Order order) {
+		if (!order.getStatus().canTransitionTo(OrderStatus.FAILED)) {
+			log.warn("FAILED 로 전이할 수 없는 주문 상태라 그대로 둡니다: orderId={}, status={}",
+				order.getId(), order.getStatus());
+			return;
+		}
+		order.markFailed();
+		orderRepository.save(order);
+		orderDiscountRestorer.restore(order); // 환불·만료와 같은 규칙, 같은 트랜잭션에 참여
+		log.info("주문을 FAILED 로 기록: orderId={}, merchantUid={}", order.getId(),
+			order.getMerchantUid());
 	}
 
 	// ... 기존 메서드들 ...
@@ -632,14 +637,5 @@ public class PaymentService {
 			// 알림 실패가 결제 처리에 영향을 주지 않도록 try-catch로 감쌉니다.
 			log.error("Discord 결제 알림 전송 중 오류 (무시됨)", e);
 		}
-	}
-
-	private void processOrder(Order order) {
-		// TODO: 실제 비즈니스 로직 구현
-		// - 이메일 발송
-		// - 해석 정보 전달 등등 ..
-
-		log.info("주문 처리 완료: orderId	={}, subCategoryId={}",
-			order.getId(), order.getSubCategoryId());
 	}
 }
