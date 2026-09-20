@@ -19,6 +19,7 @@ import com.mansereok.server.domain.order.dto.response.OrderCreateResponse;
 import com.mansereok.server.domain.order.entity.Order;
 import com.mansereok.server.domain.order.entity.OrderStatus;
 import com.mansereok.server.domain.order.repository.OrderRepository;
+import com.mansereok.server.domain.order.service.OrderDiscountRestorer;
 import com.mansereok.server.domain.payment.client.PortOneClient;
 import com.mansereok.server.domain.payment.dto.request.PaymentCompleteRequest;
 import com.mansereok.server.domain.payment.dto.response.PaymentResponseDto;
@@ -70,6 +71,8 @@ public class PaymentService {
 	private final PortOneClient portOneClient;
 
 	private final PaidOrderFinalizer paidOrderFinalizer;
+
+	private final OrderDiscountRestorer orderDiscountRestorer;
 
 	// 1단계: 주문 생성 (결제 전)
 	public OrderCreateResponse createOrder(String username, OrderCreateRequest request) {
@@ -573,16 +576,8 @@ public class PaymentService {
 		// 8-3. Result 삭제 (정보 입력 전이므로 삭제)
 		resultRepository.delete(result);
 
-		if (order.getCouponId() != null) {
-			// 쿠폰을 사용했던 주문이라면 쿠폰 복구
-			couponService.restoreCoupon(order.getCouponId());
-			log.info("환불로 인한 쿠폰 복구 완료: couponId={}", order.getCouponId());
-		} else if (order.getAppliedDiscountCode() != null && !order.getAppliedDiscountCode()
-			.isBlank()) {
-			// 할인 코드를 사용했던 주문이라면 사용 횟수 복구
-			discountCodeService.restoreDiscountUsage(order.getAppliedDiscountCode());
-			log.info("환불로 인한 할인 코드 횟수 복구 완료: code={}", order.getAppliedDiscountCode());
-		}
+		// 8-4. 쿠폰 또는 할인 코드 복구 (규칙은 OrderDiscountRestorer 가 소유)
+		orderDiscountRestorer.restore(order);
 
 		log.info("사용자 환불 완료: username={}, paymentId={}, reason={}", username, paymentId, reason);
 	}
