@@ -28,7 +28,7 @@ import org.springframework.transaction.annotation.Transactional;
  * 결제·주문 조회 전용 서비스.
  *
  * <p>주문 단건 조회는 반드시 요청자 소유권을 검사한다. 같은 규칙(userId 가 null 인 주문 거부 + 요청자 id 대조)을
- * 결제 완료 경로의 {@code PaymentService.assertOrderOwnedBy} 도 쓰므로, 이 클래스의
+ * 결제 완료 경로의 {@code PaymentConfirmService.assertOrderOwnedBy} 도 쓰므로, 이 클래스의
  * {@link #assertOwnedBy(Order, User)} 판정을 바꿀 때는 두 곳을 함께 고친다.
  */
 @Slf4j

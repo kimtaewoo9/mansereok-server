@@ -27,7 +27,7 @@ import org.springframework.transaction.annotation.Transactional;
  * <p>상태 전이 가드는 Order.markPaid 가 담당한다(허용되지 않는 상태면 OrderStateException). 호출자는
  * 멱등성 검사와 금액 검증을 마친 뒤 호출해야 한다.
  *
- * <p>기본 전파(REQUIRED)의 @Transactional 을 둔다. 호출자(PaymentService·PaymentConfirmService)의 트랜잭션이
+ * <p>기본 전파(REQUIRED)의 @Transactional 을 둔다. 호출자(PaymentOrderService·PaymentWebhookService·PaymentConfirmService)의 트랜잭션이
  * 있으면 그대로 참여하고, 없더라도 "주문 PAID + Payment + Result" 가 하나의 트랜잭션으로 묶이도록 스스로 보장한다.
  *
  * <p>마지막에 {@link PaymentCompletedEvent} 를 발행한다. Discord 알림 리스너가 커밋 뒤(AFTER_COMMIT) 비동기로 받으므로
