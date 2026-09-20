@@ -8,7 +8,6 @@ import com.mansereok.server.domain.discount.entity.DiscountCode;
 import com.mansereok.server.domain.discount.service.DiscountCodeService;
 import com.mansereok.server.domain.discount.service.DiscountCodeService.DiscountValidationResult;
 import com.mansereok.server.domain.interpret.service.ResultService;
-import com.mansereok.server.domain.notification.service.DiscordNotificationService;
 import com.mansereok.server.domain.order.dto.request.OrderCreateRequest;
 import com.mansereok.server.domain.order.dto.response.OrderCreateResponse;
 import com.mansereok.server.domain.order.entity.Order;
@@ -42,8 +41,6 @@ import org.springframework.transaction.annotation.Transactional;
 @Transactional
 @Slf4j
 public class PaymentService {
-
-	private final DiscordNotificationService discordNotificationService;
 
 	private final OrderRepository orderRepository;
 	private final SubCategoryRepository subCategoryRepository;
@@ -198,16 +195,13 @@ public class PaymentService {
 		if (paymentStatus.get() == PaymentStatus.PAID) {
 			log.info("검증 완료. 주문 상태를 PAID로 변경합니다.");
 
-			// 1. 주문 PAID 확정, Payment 저장, 연관관계 연결, 초기 Result 생성
-			Payment savedPayment = paidOrderFinalizer.finalizePaid(
+			// 주문 PAID 확정, Payment 저장, 연관관계 연결, 초기 Result 생성, 완료 이벤트 발행(알림은 커밋 뒤 리스너)
+			paidOrderFinalizer.finalizePaid(
 				order,
 				request.getPaymentId(),
 				paymentResponse.getAmount().getTotal(),
 				LocalDateTime.now()
 			);
-
-			// 2. Discord 알림 (선택사항)
-			notifyPaymentCompleted(order, savedPayment);
 
 			log.info("completePayment에서 결제 처리 완료: orderId={}, paymentId={}",
 				order.getId(), request.getPaymentId());
@@ -509,8 +503,8 @@ public class PaymentService {
 			return;
 		}
 
-		// 주문 PAID 확정, Payment 저장, 연관관계 연결, 초기 Result 생성
-		Payment savedPayment = paidOrderFinalizer.finalizePaid(
+		// 주문 PAID 확정, Payment 저장, 연관관계 연결, 초기 Result 생성, 완료 이벤트 발행(알림은 커밋 뒤 리스너)
+		paidOrderFinalizer.finalizePaid(
 			order,
 			paymentId,
 			paymentResponse.getAmount().getTotal(),
@@ -519,8 +513,6 @@ public class PaymentService {
 		log.info("웹훅으로 결제 완료 처리: orderId={}, paymentId={}, discountCode={}, amount={}/{}",
 			order.getId(), paymentId, order.getAppliedDiscountCode(), order.getAmount(),
 			order.getOriginalAmount());
-
-		notifyPaymentCompleted(order, savedPayment);
 	}
 
 	/**
@@ -587,36 +579,6 @@ public class PaymentService {
 		} else if (discount.discountCodeEntity() != null) {
 			discountCodeService.incrementUsage(discount.discountCodeEntity());
 			log.info("할인 코드 사용 횟수 증가 완료: {}", discount.appliedCode());
-		}
-	}
-
-	/**
-	 * 결제 완료 Discord 알림. 알림 실패가 결제 처리에 영향을 주지 않도록 예외를 삼킨다.
-	 */
-	private void notifyPaymentCompleted(Order order, Payment payment) {
-		try {
-			User user = userRepository.findById(order.getUserId()).orElse(null);
-			SubCategory subCategory = subCategoryRepository.findById(order.getSubCategoryId())
-				.orElse(null);
-
-			if (user != null && subCategory != null) {
-				discordNotificationService.sendPaymentCompletedNotification(
-					user.getName(),
-					user.getEmail(),
-					payment.getAmount(),
-					subCategory.getTitle(),
-					order.getPaidAt(),
-					order.getAppliedDiscountCode(),
-					order.getOriginalAmount()
-				);
-			} else {
-				log.warn(
-					"Discord 결제 알림 및 사주 결과 생성 완료 이메일 전송 실패: 사용자(ID:{}) 또는 상품(ID:{}) 정보를 찾을 수 없습니다.",
-					order.getUserId(), order.getSubCategoryId());
-			}
-		} catch (Exception e) {
-			// 알림 실패가 결제 처리에 영향을 주지 않도록 try-catch로 감쌉니다.
-			log.error("Discord 결제 알림 전송 중 오류 (무시됨)", e);
 		}
 	}
 }

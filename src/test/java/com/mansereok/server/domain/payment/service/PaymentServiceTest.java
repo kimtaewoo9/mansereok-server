@@ -22,7 +22,6 @@ import com.mansereok.server.domain.discount.entity.DiscountCode;
 import com.mansereok.server.domain.discount.service.DiscountCodeService;
 import com.mansereok.server.domain.discount.service.DiscountCodeService.DiscountValidationResult;
 import com.mansereok.server.domain.interpret.service.ResultService;
-import com.mansereok.server.domain.notification.service.DiscordNotificationService;
 import com.mansereok.server.domain.order.dto.request.OrderCreateRequest;
 import com.mansereok.server.domain.order.dto.response.OrderCreateResponse;
 import com.mansereok.server.domain.order.entity.Order;
@@ -34,6 +33,7 @@ import com.mansereok.server.domain.payment.dto.request.PaymentCompleteRequest;
 import com.mansereok.server.domain.payment.dto.response.PortOnePaymentResponse;
 import com.mansereok.server.domain.payment.entity.Payment;
 import com.mansereok.server.domain.payment.entity.PaymentStatus;
+import com.mansereok.server.domain.payment.event.PaymentCompletedEvent;
 import com.mansereok.server.domain.payment.repository.PaymentRepository;
 import com.mansereok.server.domain.product.entity.SubCategory;
 import com.mansereok.server.domain.product.repository.SubCategoryRepository;
@@ -59,6 +59,7 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.converter.json.Jackson2ObjectMapperBuilder;
@@ -89,8 +90,6 @@ class PaymentServiceTest {
 	private final ObjectMapper objectMapper = Jackson2ObjectMapperBuilder.json().build();
 
 	@Mock
-	private DiscordNotificationService discordNotificationService;
-	@Mock
 	private OrderRepository orderRepository;
 	@Mock
 	private SubCategoryRepository subCategoryRepository;
@@ -110,15 +109,16 @@ class PaymentServiceTest {
 	private OrderDiscountRestorer orderDiscountRestorer;
 	@Mock
 	private FreeProductPolicy freeProductPolicy;
+	@Mock
+	private ApplicationEventPublisher eventPublisher;
 
 	@BeforeEach
 	void setUp() {
 		// completePayment 등이 "주문이 PAID 가 되고 Payment 와 Result 가 만들어진다"를 계속 검증하도록
 		// PaidOrderFinalizer 는 mock 하지 않고 mock 리포지토리로 만든 실제 인스턴스를 넘긴다.
 		PaidOrderFinalizer paidOrderFinalizer = new PaidOrderFinalizer(orderRepository,
-			paymentRepository, resultService);
+			paymentRepository, resultService, eventPublisher);
 		paymentService = new PaymentService(
-			discordNotificationService,
 			orderRepository,
 			subCategoryRepository,
 			paymentRepository,
@@ -423,8 +423,8 @@ class PaymentServiceTest {
 	}
 
 	@Test
-	@DisplayName("결제 완료 시 사용자와 상품 정보로 Discord 알림이 주문의 금액, 시각, 할인 정보와 함께 전송된다")
-	void completePayment_paid_sendsDiscordNotificationWithOrderDetails() {
+	@DisplayName("결제 완료 시 Discord 알림을 직접 보내지 않고 PaymentCompletedEvent(orderId, paymentPkId, amount) 를 발행한다")
+	void completePayment_paid_publishesPaymentCompletedEvent() {
 		// given
 		Order order = createOrder(OrderStatus.PENDING, "WELCOME10", null);
 		givenRequester();
@@ -434,22 +434,17 @@ class PaymentServiceTest {
 		given(portOneClient.getPayment(PAYMENT_ID)).willReturn(portOneResponse("PAID", PRICE));
 		givenOrderSaveReturnsArgument();
 		givenPaymentSaveAssignsId();
-		SubCategory subCategory = mockSubCategory(); // stub 이 든 헬퍼는 given(...) 인자 밖에서 먼저 만든다
-		given(userRepository.findById(USER_ID)).willReturn(Optional.of(createUser()));
-		given(subCategoryRepository.findById(SUB_CATEGORY_ID)).willReturn(
-			Optional.of(subCategory));
 
 		PaymentCompleteRequest request = new PaymentCompleteRequest();
 		request.setPaymentId(PAYMENT_ID);
 		request.setMerchantUid(MERCHANT_UID);
 
 		// when
-		Order result = paymentService.completePayment(USERNAME, request);
+		paymentService.completePayment(USERNAME, request);
 
-		// then
-		verify(discordNotificationService).sendPaymentCompletedNotification(
-			BUYER_NAME, BUYER_EMAIL, (long) PRICE, "인생 총운", result.getPaidAt(),
-			"WELCOME10", PRICE);
+		// then: 알림은 커밋 뒤 리스너가 담당하므로 여기서는 이벤트 발행만 확인한다
+		verify(eventPublisher).publishEvent(
+			new PaymentCompletedEvent(ORDER_ID, PAYMENT_PK_ID, (long) PRICE));
 	}
 
 	@Test
@@ -503,7 +498,7 @@ class PaymentServiceTest {
 		assertThat(result.getStatus()).isEqualTo(OrderStatus.PENDING);
 		verify(orderRepository, never()).save(any(Order.class));
 		verify(paymentRepository, never()).save(any(Payment.class));
-		verifyNoInteractions(resultService, discordNotificationService);
+		verifyNoInteractions(resultService, eventPublisher);
 	}
 
 	@Test
@@ -575,7 +570,7 @@ class PaymentServiceTest {
 		assertThat(order.getStatus()).isEqualTo(OrderStatus.CANCELLED);
 		assertThat(order.getPaymentId()).isNull();
 		verify(paymentRepository, never()).save(any(Payment.class));
-		verifyNoInteractions(resultService, discordNotificationService);
+		verifyNoInteractions(resultService, eventPublisher);
 	}
 
 	@Test
@@ -597,7 +592,7 @@ class PaymentServiceTest {
 
 		assertThat(order.getStatus()).isEqualTo(OrderStatus.PENDING);
 		verifyNoInteractions(portOneClient, paymentRepository, resultService,
-			discordNotificationService);
+			eventPublisher);
 		verify(orderRepository, never()).save(any(Order.class));
 	}
 
@@ -680,7 +675,7 @@ class PaymentServiceTest {
 		assertThat(order.getPaymentId()).isNull();
 		verify(paymentRepository, never()).save(any(Payment.class));
 		verify(orderRepository, never()).save(any(Order.class));
-		verifyNoInteractions(resultService, discordNotificationService);
+		verifyNoInteractions(resultService, eventPublisher);
 	}
 
 	@Test
@@ -788,14 +783,14 @@ class PaymentServiceTest {
 			.isInstanceOf(PaymentException.class)
 			.hasMessage("이미 처리된 결제입니다.");
 
-		verifyNoInteractions(resultService, discordNotificationService);
+		verifyNoInteractions(resultService, eventPublisher);
 	}
 
 
 	// ===== redeemFreeProduct =====
 
 	@Test
-	@DisplayName("100% 할인 코드로 무료 상품을 받으면 PAID 주문과 0원 Payment 가 저장되고 Result 가 생성되며 Discord 알림은 보내지 않는다")
+	@DisplayName("100% 할인 코드로 무료 상품을 받으면 PAID 주문과 0원 Payment 가 저장되고 Result 가 생성되며 완료 이벤트는 amount 0 으로 발행된다")
 	void redeemFreeProduct_savesPaidOrderAndZeroPaymentAndCreatesResult() {
 		// given
 		given(userRepository.findByUsername(USERNAME)).willReturn(Optional.of(createUser()));
@@ -849,8 +844,9 @@ class PaymentServiceTest {
 		// 할인 코드 사용 횟수 증가
 		verify(discountCodeService).incrementUsage(discountCode);
 
-		// (c) Discord 알림 없음, 포트원 호출 없음
-		verifyNoInteractions(discordNotificationService, portOneClient);
+		// (c) 포트원 호출 없음. 완료 이벤트는 amount 0 으로 발행되고 알림 리스너가 0원이면 보내지 않는다
+		verifyNoInteractions(portOneClient);
+		verify(eventPublisher).publishEvent(new PaymentCompletedEvent(ORDER_ID, PAYMENT_PK_ID, 0L));
 
 		assertThat(response.getOrderId()).isEqualTo(ORDER_ID);
 		assertThat(response.getMerchantUid()).isEqualTo(savedOrder.getMerchantUid());
@@ -883,7 +879,7 @@ class PaymentServiceTest {
 		verify(orderRepository, never()).save(any(Order.class));
 		verify(paymentRepository, never()).save(any(Payment.class));
 		verify(discountCodeService, never()).incrementUsage(any());
-		verifyNoInteractions(resultService, discordNotificationService);
+		verifyNoInteractions(resultService, eventPublisher);
 	}
 
 	@Test
@@ -942,12 +938,12 @@ class PaymentServiceTest {
 
 		verify(orderRepository, never()).save(any(Order.class));
 		verify(paymentRepository, never()).save(any(Payment.class));
-		verifyNoInteractions(resultService, discordNotificationService, discountCodeService,
+		verifyNoInteractions(resultService, eventPublisher, discountCodeService,
 			couponService);
 	}
 
 	@Test
-	@DisplayName("무료 이벤트 주문은 원가 0원의 PAID 주문과 free_ 접두사의 0원 Payment 가 저장되고 Result 가 생성되며 Discord 알림은 보내지 않는다")
+	@DisplayName("무료 이벤트 주문은 원가 0원의 PAID 주문과 free_ 접두사의 0원 Payment 가 저장되고 Result 가 생성되며 완료 이벤트는 amount 0 으로 발행된다")
 	void createFreeOrder_savesPaidOrderAndZeroPaymentAndCreatesResult() {
 		// given
 		given(userRepository.findByUsername(USERNAME)).willReturn(Optional.of(createUser()));
@@ -993,9 +989,9 @@ class PaymentServiceTest {
 		// (b) Result 생성
 		verify(resultService).createInitialResult(savedPayment, savedOrder);
 
-		// (c) Discord 알림 없음, 할인/쿠폰/포트원 호출 없음
-		verifyNoInteractions(discordNotificationService, discountCodeService, couponService,
-			portOneClient);
+		// (c) 할인/쿠폰/포트원 호출 없음. 완료 이벤트는 amount 0 으로 발행되고 알림 리스너가 0원이면 보내지 않는다
+		verifyNoInteractions(discountCodeService, couponService, portOneClient);
+		verify(eventPublisher).publishEvent(new PaymentCompletedEvent(ORDER_ID, PAYMENT_PK_ID, 0L));
 	}
 
 	// ===== verifyPaidOwnership =====
@@ -1087,7 +1083,7 @@ class PaymentServiceTest {
 	// ===== processWebhook =====
 
 	@Test
-	@DisplayName("Paid 웹훅은 포트원 재조회 뒤 주문을 PAID 로 확정하고 Payment 저장과 초기 Result 생성, Discord 알림을 한다")
+	@DisplayName("Paid 웹훅은 포트원 재조회 뒤 주문을 PAID 로 확정하고 Payment 저장과 초기 Result 생성을 하며, Discord 알림 대신 PaymentCompletedEvent 를 발행한다")
 	void processWebhook_paid_finalizesOrder() {
 		// given
 		Order order = createOrder(OrderStatus.PENDING, "WELCOME10", null);
@@ -1098,10 +1094,6 @@ class PaymentServiceTest {
 		given(paymentRepository.findByImpUid(PAYMENT_ID)).willReturn(Optional.empty());
 		givenOrderSaveReturnsArgument();
 		givenPaymentSaveAssignsId();
-		SubCategory subCategory = mockSubCategory();
-		given(userRepository.findById(USER_ID)).willReturn(Optional.of(createUser()));
-		given(subCategoryRepository.findById(SUB_CATEGORY_ID)).willReturn(
-			Optional.of(subCategory));
 
 		// when
 		paymentService.processWebhook(webhookBody("Paid"));
@@ -1120,9 +1112,9 @@ class PaymentServiceTest {
 		assertThat(savedPayment.getStatus()).isEqualTo(PaymentStatus.PAID);
 
 		verify(resultService).createInitialResult(savedPayment, order);
-		verify(discordNotificationService).sendPaymentCompletedNotification(
-			BUYER_NAME, BUYER_EMAIL, (long) PRICE, "인생 총운", order.getPaidAt(), "WELCOME10",
-			PRICE);
+		// 알림은 커밋 뒤 리스너가 담당하므로 여기서는 이벤트 발행만 확인한다
+		verify(eventPublisher).publishEvent(
+			new PaymentCompletedEvent(ORDER_ID, PAYMENT_PK_ID, (long) PRICE));
 	}
 
 	@Test
@@ -1133,7 +1125,7 @@ class PaymentServiceTest {
 
 		// then
 		verifyNoInteractions(portOneClient, orderRepository, paymentRepository, resultService,
-			discordNotificationService);
+			eventPublisher);
 	}
 
 	@Test
@@ -1159,7 +1151,7 @@ class PaymentServiceTest {
 		assertThat(orderCaptor.getValue().getStatus()).isEqualTo(OrderStatus.FAILED);
 		verify(orderDiscountRestorer).restore(order);
 		verify(paymentRepository, never()).save(any(Payment.class));
-		verifyNoInteractions(resultService, discordNotificationService);
+		verifyNoInteractions(resultService, eventPublisher);
 	}
 
 	@Test
@@ -1181,7 +1173,7 @@ class PaymentServiceTest {
 		assertThat(order.getStatus()).isEqualTo(OrderStatus.EXPIRED);
 		verify(orderRepository, never()).save(any(Order.class));
 		verify(paymentRepository, never()).save(any(Payment.class));
-		verifyNoInteractions(orderDiscountRestorer, resultService, discordNotificationService);
+		verifyNoInteractions(orderDiscountRestorer, resultService, eventPublisher);
 	}
 
 	@Test
@@ -1202,7 +1194,7 @@ class PaymentServiceTest {
 		assertThat(order.getStatus()).isEqualTo(OrderStatus.PAID);
 		verify(orderRepository, never()).save(any(Order.class));
 		verifyNoInteractions(paymentRepository, orderDiscountRestorer, resultService,
-			discordNotificationService);
+			eventPublisher);
 	}
 
 	@Test
@@ -1269,7 +1261,7 @@ class PaymentServiceTest {
 		inOrder.verify(orderRepository).save(order);
 		inOrder.verify(orderDiscountRestorer).restore(order);
 		verify(paymentRepository, never()).save(any(Payment.class));
-		verifyNoInteractions(resultService, discordNotificationService);
+		verifyNoInteractions(resultService, eventPublisher);
 	}
 
 	@ParameterizedTest(name = "재조회 상태 {0}")
@@ -1292,7 +1284,7 @@ class PaymentServiceTest {
 		assertThat(order.getStatus()).isEqualTo(OrderStatus.PENDING);
 		verify(orderRepository, never()).save(any(Order.class));
 		verify(paymentRepository, never()).save(any(Payment.class));
-		verifyNoInteractions(orderDiscountRestorer, resultService, discordNotificationService);
+		verifyNoInteractions(orderDiscountRestorer, resultService, eventPublisher);
 	}
 
 	@Test
@@ -1314,7 +1306,7 @@ class PaymentServiceTest {
 		assertThat(order.getStatus()).isEqualTo(OrderStatus.PENDING);
 		verify(orderRepository, never()).save(any(Order.class));
 		verify(paymentRepository, never()).save(any(Payment.class));
-		verifyNoInteractions(orderDiscountRestorer, resultService, discordNotificationService);
+		verifyNoInteractions(orderDiscountRestorer, resultService, eventPublisher);
 	}
 
 	@Test
