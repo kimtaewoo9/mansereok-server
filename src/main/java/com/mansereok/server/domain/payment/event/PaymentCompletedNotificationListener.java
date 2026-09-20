@@ -19,12 +19,13 @@ import org.springframework.transaction.event.TransactionalEventListener;
 /**
  * 결제 완료 Discord 알림. 결제 확정 트랜잭션이 커밋된 뒤 별도 스레드에서 보낸다.
  *
- * <p>예전에는 completePayment·processWebhook 이 주문 행 락과 DB 커넥션을 쥔 채 Discord 웹훅을 동기로 불렀다(M6).
+ * <p>예전에는 completePayment·processWebhook 이 주문 행 락과 DB 커넥션을 쥔 채 Discord 웹훅을 동기로 불렀다.
  * {@code AFTER_COMMIT} 이라 롤백된 결제에는 알림이 가지 않고, {@code @Async} 라 알림 지연·실패가 응답 시간에
  * 영향을 주지 않는다. 실패는 error 로그로 삼킨다.
  *
- * <p>실행 스레드는 AsyncConfig 의 기본 풀 {@code threadPoolTaskExecutor} 다. 이벤트에는 식별자만 실려 오므로
- * 주문·결제·사용자·상품을 여기서 다시 읽는다(각 조회는 리포지토리의 읽기 전용 트랜잭션).
+ * <p>실행 스레드는 AsyncConfig 의 알림 전용 풀 {@code notificationTaskExecutor} 다. 기본 풀은 포화 시 예외를 던지고
+ * 그 예외가 커밋 스레드(결제 완료 API 호출자)로 전파되므로, 거부 대신 호출 스레드에서 실행하는 전용 풀을 쓴다.
+ * 이벤트에는 식별자만 실려 오므로 주문·결제·사용자·상품을 여기서 다시 읽는다(각 조회는 리포지토리의 읽기 전용 트랜잭션).
  */
 @Component
 @RequiredArgsConstructor
@@ -37,7 +38,7 @@ public class PaymentCompletedNotificationListener {
 	private final SubCategoryRepository subCategoryRepository;
 	private final DiscordNotificationService discordNotificationService;
 
-	@Async("threadPoolTaskExecutor")
+	@Async("notificationTaskExecutor")
 	@TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
 	public void on(PaymentCompletedEvent event) {
 		// 무료 경로(0원)는 전에도 알림이 없었다

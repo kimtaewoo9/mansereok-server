@@ -374,6 +374,29 @@ class PaymentConfirmServiceTest {
 		verifyNoInteractions(eventPublisher);
 	}
 
+	@ParameterizedTest(name = "포트원 상태 {0}")
+	@ValueSource(strings = {"FAILED", "CANCELLED"})
+	@DisplayName("포트원 상태가 실패·취소면 주문을 FAILED 로 바꾸지 않고 PENDING 그대로 돌려준다 (웹훅과 달리 markOrderFailed 를 타지 않는다)")
+	void complete_failedOrCancelledStatus_returnsOrderUnchanged(String status) {
+		// given
+		Order order = createOrder(OrderStatus.PENDING);
+		givenRequester();
+		givenLockedOrder(order);
+		givenNoDuplicatePayment();
+		givenPortOneReturns(portOneResponse(status, PRICE));
+
+		// when
+		Order result = paymentConfirmService.complete(USERNAME, completeRequest());
+
+		// then
+		assertThat(result).isSameAs(order);
+		assertThat(result.getStatus()).isEqualTo(OrderStatus.PENDING);
+		verify(orderRepository, never()).save(any(Order.class));
+		verify(paymentRepository, never()).save(any(Payment.class));
+		verifyNoInteractions(resultService, eventPublisher);
+		verify(transactionManager).commit(any(TransactionStatus.class));
+	}
+
 	@Test
 	@DisplayName("이미 PAID 인 주문은 포트원 응답과 무관하게 그대로 반환하고 중복 검사·저장을 하지 않는다")
 	void complete_alreadyPaid_returnsOrderWithoutSaving() {

@@ -21,7 +21,7 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
 /**
- * 결제 완료 API 의 확정 절차. 포트원 조회를 트랜잭션(주문 행 락) 밖으로 빼고, 잠금 구간에는 DB 작업만 남긴다(M6).
+ * 결제 완료 API 의 확정 절차. 포트원 조회를 트랜잭션(주문 행 락) 밖으로 빼고, 잠금 구간에는 DB 작업만 남긴다.
  *
  * <ol>
  *   <li>트랜잭션 밖: 포트원 결제 조회. 타임아웃 없는 외부 호출이 행 락과 DB 커넥션 점유 시간이 되지 않게 한다.</li>

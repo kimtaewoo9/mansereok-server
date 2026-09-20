@@ -26,6 +26,10 @@ import com.mansereok.server.domain.product.repository.SubCategoryRepository;
 import com.mansereok.server.domain.user.entity.Gender;
 import com.mansereok.server.domain.user.entity.User;
 import com.mansereok.server.domain.user.repository.UserRepository;
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import java.lang.reflect.Method;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -37,6 +41,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.transaction.event.TransactionPhase;
@@ -154,10 +159,22 @@ class PaymentCompletedNotificationListenerTest {
 		SubCategory subCategory = subCategory();
 		given(subCategoryRepository.findById(SUB_CATEGORY_ID)).willReturn(
 			Optional.of(subCategory));
+		Logger logger = (Logger) LoggerFactory.getLogger(PaymentCompletedNotificationListener.class);
+		ListAppender<ILoggingEvent> appender = new ListAppender<>();
+		appender.start();
+		logger.addAppender(appender);
 
-		// when & then
-		assertThatCode(() -> listener.on(event(AMOUNT))).doesNotThrowAnyException();
-		verifyNoInteractions(discordNotificationService);
+		try {
+			// when & then
+			assertThatCode(() -> listener.on(event(AMOUNT))).doesNotThrowAnyException();
+			verifyNoInteractions(discordNotificationService);
+			assertThat(appender.list).anySatisfy(logEvent -> {
+				assertThat(logEvent.getLevel()).isEqualTo(Level.WARN);
+				assertThat(logEvent.getFormattedMessage()).contains("사용자(ID:" + USER_ID + ")");
+			});
+		} finally {
+			logger.detachAppender(appender);
+		}
 	}
 
 	@Test
@@ -250,7 +267,7 @@ class PaymentCompletedNotificationListenerTest {
 	}
 
 	@Test
-	@DisplayName("리스너 메서드는 커밋 뒤(AFTER_COMMIT) 비동기(threadPoolTaskExecutor)로 실행되도록 선언돼 있다")
+	@DisplayName("리스너 메서드는 커밋 뒤(AFTER_COMMIT) 비동기(notificationTaskExecutor)로 실행되도록 선언돼 있다")
 	void on_isDeclaredAsAsyncAfterCommitListener() throws NoSuchMethodException {
 		// when
 		Method method = PaymentCompletedNotificationListener.class.getMethod("on",
@@ -263,6 +280,6 @@ class PaymentCompletedNotificationListenerTest {
 		assertThat(txListener).isNotNull();
 		assertThat(txListener.phase()).isEqualTo(TransactionPhase.AFTER_COMMIT);
 		assertThat(async).isNotNull();
-		assertThat(async.value()).isEqualTo("threadPoolTaskExecutor");
+		assertThat(async.value()).isEqualTo("notificationTaskExecutor");
 	}
 }
