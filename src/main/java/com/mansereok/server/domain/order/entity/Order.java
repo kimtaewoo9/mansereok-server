@@ -1,6 +1,7 @@
 package com.mansereok.server.domain.order.entity;
 
 
+import com.mansereok.server.global.exception.OrderStateException;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
@@ -13,14 +14,14 @@ import java.time.LocalDateTime;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
-import lombok.Setter;
 import lombok.ToString;
+import lombok.extern.slf4j.Slf4j;
 
 @Table(name = "orders")
 @Entity
 @Getter
-@Setter
 @ToString
+@Slf4j
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class Order {
 
@@ -77,15 +78,53 @@ public class Order {
 	}
 
 	/**
-	 * 주문을 결제 완료 상태로 표시한다. 상태 전이 가드는 두지 않는다(호출자가 검증한다).
+	 * 주문을 결제 완료 상태로 표시한다.
+	 *
+	 * <p>PENDING, VIRTUAL_ACCOUNT_ISSUED, EXPIRED 에서만 허용된다. EXPIRED 에서의 전이는 만료 직후 결제가
+	 * 완료되는 경합을 위해 허용하되 warn 로그를 남긴다. 이미 PAID 이거나 CANCELLED, FAILED 이면
+	 * OrderStateException 을 던진다.
 	 *
 	 * @param paymentId 결제 식별자(Payment.impUid 와 같은 값)
 	 * @param paidAt    결제 시각
 	 */
 	public void markPaid(String paymentId, LocalDateTime paidAt) {
-		this.status = OrderStatus.PAID;
+		if (this.status == OrderStatus.EXPIRED) {
+			log.warn("만료된 주문이 결제 완료로 전이됩니다. orderId={}, merchantUid={}, paymentId={}",
+				this.id, this.merchantUid, paymentId);
+		}
+		transitionTo(OrderStatus.PAID);
 		this.paymentId = paymentId;
 		this.paidAt = paidAt;
+	}
+
+	/**
+	 * 주문을 결제 실패로 표시한다. PENDING, VIRTUAL_ACCOUNT_ISSUED 에서만 허용된다.
+	 */
+	public void markFailed() {
+		transitionTo(OrderStatus.FAILED);
+	}
+
+	/**
+	 * 주문을 만료로 표시한다. PENDING, VIRTUAL_ACCOUNT_ISSUED 에서만 허용된다.
+	 */
+	public void markExpired() {
+		transitionTo(OrderStatus.EXPIRED);
+	}
+
+	/**
+	 * 주문을 취소로 표시한다. PAID 에서만 허용된다.
+	 */
+	public void markCancelled() {
+		transitionTo(OrderStatus.CANCELLED);
+	}
+
+	private void transitionTo(OrderStatus next) {
+		if (!this.status.canTransitionTo(next)) {
+			throw new OrderStateException(
+				String.format("주문 상태를 %s 에서 %s 로 바꿀 수 없습니다. orderId=%s, merchantUid=%s",
+					this.status, next, this.id, this.merchantUid));
+		}
+		this.status = next;
 	}
 
 	/**

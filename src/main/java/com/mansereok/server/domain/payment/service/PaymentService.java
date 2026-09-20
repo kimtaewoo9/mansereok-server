@@ -427,7 +427,7 @@ public class PaymentService {
 				order.getAmount().longValue())) {
 				log.error("웹훅 금액 불일치: expected={}, actual={}",
 					order.getAmount(), paymentResponse.getAmount().getTotal());
-				order.setStatus(OrderStatus.FAILED);
+				order.markFailed();
 				orderRepository.save(order);
 				throw new PaymentException("결제 금액이 일치하지 않습니다.");
 			}
@@ -465,7 +465,7 @@ public class PaymentService {
 				processOrder(order);
 			} else {
 				log.error("웹훅 결제 실패: paymentId={}, status={}", paymentId, paymentStatus);
-				order.setStatus(OrderStatus.FAILED);
+				order.markFailed();
 				orderRepository.save(order);
 				throw new PaymentException("결제 실패 상태입니다.");
 			}
@@ -547,14 +547,13 @@ public class PaymentService {
 		portOneClient.cancelPayment(payment.getImpUid(), reason);
 
 		// 7. DB 상태 업데이트
-		// 7-1. Payment 상태 변경
-		// Payment 엔티티에 setStatus가 없다면 추가하거나 updateStatus 메서드 필요
-		payment.updateStatus(PaymentStatus.CANCELLED);
+		// 7-1. Payment 상태 변경 (PAID 에서만 허용)
+		payment.markCancelled();
 
 		// 7-2. Order 상태 변경
 		Order order = orderRepository.findById(payment.getOrderId())
 			.orElseThrow(() -> new PaymentException("주문 정보를 찾을 수 없습니다."));
-		order.setStatus(OrderStatus.CANCELLED);
+		order.markCancelled();
 
 		// 7-3. Result 삭제 (정보 입력 전이므로 삭제)
 		resultRepository.delete(result);

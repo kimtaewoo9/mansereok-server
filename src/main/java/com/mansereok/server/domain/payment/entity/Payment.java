@@ -1,5 +1,6 @@
 package com.mansereok.server.domain.payment.entity;
 
+import com.mansereok.server.global.exception.OrderStateException;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
@@ -53,7 +54,15 @@ public class Payment {
 		return payment;
 	}
 
-	public void updateStatus(PaymentStatus status) {
-		this.status = status;
+	/**
+	 * 결제를 취소 상태로 표시한다. PAID 에서만 허용되고, 아니면 OrderStateException 을 던진다.
+	 */
+	public void markCancelled() {
+		if (this.status != PaymentStatus.PAID) {
+			throw new OrderStateException(
+				String.format("결제 상태가 PAID 가 아니라 취소할 수 없습니다. 현재 상태=%s, impUid=%s",
+					this.status, this.impUid));
+		}
+		this.status = PaymentStatus.CANCELLED;
 	}
 }
