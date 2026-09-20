@@ -267,7 +267,7 @@ public class DiscordNotificationService {
 				restTemplate.postForEntity(signupWebhookUrl2, request, String.class);
 			}
 
-			log.info("Discord 회원 탈퇴 알림 전송 완료: email={}", email);
+			log.info("Discord 회원 탈퇴 알림 전송 완료: userName={}", userName);
 
 		} catch (Exception e) {
 			log.error("Discord 회원 탈퇴 알림 전송 실패", e);
