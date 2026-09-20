@@ -35,7 +35,7 @@ class OrderTest {
 	}
 
 	@Test
-	@DisplayName("markPaid 는 상태 전이 가드 없이 이미 PAID 인 주문에도 값을 덮어쓴다")
+	@DisplayName("[가드 도입 전 임시 특성화] markPaid 는 이미 PAID 인 주문에도 값을 덮어쓴다 (전이 가드 PR 에서 예외로 뒤집는다)")
 	void markPaid_overwritesWithoutGuard() {
 		// given
 		Order order = pendingOrder();

@@ -9,6 +9,7 @@ import com.mansereok.server.domain.payment.repository.PaymentRepository;
 import java.time.LocalDateTime;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Transactional;
 
 /**
  * 주문을 PAID 로 확정하는 공통 절차.
@@ -18,11 +19,12 @@ import org.springframework.stereotype.Component;
  *
  * <p>상태 전이 가드는 두지 않는다. 호출자가 멱등성 검사와 금액 검증을 마친 뒤 호출해야 한다.
  *
- * <p>별도 @Transactional 을 붙이지 않는다. 호출자(PaymentService 의 @Transactional)의 트랜잭션에
- * 그대로 참여하며, 붙이더라도 기본 전파(REQUIRED)로 같은 트랜잭션에 참여한다.
+ * <p>기본 전파(REQUIRED)의 @Transactional 을 둔다. 호출자(PaymentService)의 트랜잭션이 있으면 그대로
+ * 참여하고, 없더라도 "주문 PAID + Payment + Result" 가 하나의 트랜잭션으로 묶이도록 스스로 보장한다.
  */
 @Component
 @RequiredArgsConstructor
+@Transactional
 public class PaidOrderFinalizer {
 
 	private final OrderRepository orderRepository;

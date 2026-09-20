@@ -268,7 +268,7 @@ public class PaymentService {
 			0, // finalAmount = 0
 			request.getDiscountCode(),
 			null,
-			OrderStatus.PAID,
+			OrderStatus.PENDING, // PAID 전이는 finalizePaid 의 markPaid 가 담당한다
 			user.getName(),
 			user.getEmail()
 		);
@@ -305,7 +305,7 @@ public class PaymentService {
 			"free_" + System.currentTimeMillis() + "_" + UUID.randomUUID().toString()
 				.substring(0, 8);
 
-		// 1. Order 생성 (PAID 상태)
+		// 1. Order 생성 (finalizePaid 에서 PAID 로 전이)
 		Order order = Order.create(
 			merchantUid,
 			user.getId(),
@@ -314,7 +314,7 @@ public class PaymentService {
 			0,  // 결제 금액 0원
 			"EVENT_FREE", // 무료 이벤트 표기,
 			null,
-			OrderStatus.PAID,
+			OrderStatus.PENDING, // PAID 전이는 finalizePaid 의 markPaid 가 담당한다
 			user.getName(),
 			user.getEmail()
 		);

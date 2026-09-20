@@ -333,6 +333,35 @@ class PaymentServiceTest {
 	}
 
 	@Test
+	@DisplayName("결제 완료 시 사용자와 상품 정보로 Discord 알림이 주문의 금액, 시각, 할인 정보와 함께 전송된다")
+	void completePayment_paid_sendsDiscordNotificationWithOrderDetails() {
+		// given
+		Order order = createOrder(OrderStatus.PENDING, "WELCOME10", null);
+		given(orderRepository.findByMerchantUidWithLock(MERCHANT_UID)).willReturn(
+			Optional.of(order));
+		given(paymentRepository.findByImpUid(PAYMENT_ID)).willReturn(Optional.empty());
+		given(portOneClient.getPayment(PAYMENT_ID)).willReturn(portOneResponse("PAID", PRICE));
+		givenOrderSaveReturnsArgument();
+		givenPaymentSaveAssignsId();
+		SubCategory subCategory = mockSubCategory(); // stub 이 든 헬퍼는 given(...) 인자 밖에서 먼저 만든다
+		given(userRepository.findById(USER_ID)).willReturn(Optional.of(createUser()));
+		given(subCategoryRepository.findById(SUB_CATEGORY_ID)).willReturn(
+			Optional.of(subCategory));
+
+		PaymentCompleteRequest request = new PaymentCompleteRequest();
+		request.setPaymentId(PAYMENT_ID);
+		request.setMerchantUid(MERCHANT_UID);
+
+		// when
+		Order result = paymentService.completePayment(request);
+
+		// then
+		verify(discordNotificationService).sendPaymentCompletedNotification(
+			BUYER_NAME, BUYER_EMAIL, (long) PRICE, "인생 총운", result.getPaidAt(),
+			"WELCOME10", PRICE);
+	}
+
+	@Test
 	@DisplayName("포트원 결제 금액이 주문 금액과 다르면 PaymentException 이 나고 Payment 는 저장되지 않는다")
 	void completePayment_amountMismatch_throwsAndDoesNotSavePayment() {
 		// given
