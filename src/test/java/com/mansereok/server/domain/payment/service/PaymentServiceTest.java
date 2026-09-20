@@ -43,11 +43,11 @@ import com.mansereok.server.domain.user.repository.UserRepository;
 import com.mansereok.server.global.exception.PaymentException;
 import java.time.LocalDate;
 import java.util.Optional;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -66,7 +66,6 @@ class PaymentServiceTest {
 	private static final String PAYMENT_ID = "pay_test_001";
 	private static final int PRICE = 10000;
 
-	@InjectMocks
 	private PaymentService paymentService;
 
 	@Mock
@@ -93,6 +92,29 @@ class PaymentServiceTest {
 	private CouponService couponService;
 	@Mock
 	private PortOneClient portOneClient;
+
+	@BeforeEach
+	void setUp() {
+		// completePayment 등이 "주문이 PAID 가 되고 Payment 와 Result 가 만들어진다"를 계속 검증하도록
+		// PaidOrderFinalizer 는 mock 하지 않고 mock 리포지토리로 만든 실제 인스턴스를 넘긴다.
+		PaidOrderFinalizer paidOrderFinalizer = new PaidOrderFinalizer(orderRepository,
+			paymentRepository, resultService);
+		paymentService = new PaymentService(
+			discordNotificationService,
+			orderRepository,
+			subCategoryRepository,
+			paymentRepository,
+			discountCodeService,
+			resultRepository,
+			compatibilityResultRepository,
+			objectMapper,
+			userRepository,
+			resultService,
+			couponService,
+			portOneClient,
+			paidOrderFinalizer
+		);
+	}
 
 	// ===== 테스트 픽스처 =====
 
@@ -140,6 +162,25 @@ class PaymentServiceTest {
 	private void givenOrderSaveReturnsArgument() {
 		given(orderRepository.save(any(Order.class))).willAnswer(
 			invocation -> invocation.getArgument(0));
+	}
+
+	/** 새 주문(id 없음)이 저장되면 ORDER_ID 를 부여해 DB 의 IDENTITY 채번을 흉내 낸다. */
+	private void givenOrderSaveAssignsId() {
+		given(orderRepository.save(any(Order.class))).willAnswer(invocation -> {
+			Order order = invocation.getArgument(0);
+			if (order.getId() == null) {
+				ReflectionTestUtils.setField(order, "id", ORDER_ID);
+			}
+			return order;
+		});
+	}
+
+	private void givenPaymentSaveAssignsId() {
+		given(paymentRepository.save(any(Payment.class))).willAnswer(invocation -> {
+			Payment payment = invocation.getArgument(0);
+			ReflectionTestUtils.setField(payment, "id", PAYMENT_PK_ID);
+			return payment;
+		});
 	}
 
 	// ===== createOrder =====
@@ -262,11 +303,7 @@ class PaymentServiceTest {
 		given(paymentRepository.findByImpUid(PAYMENT_ID)).willReturn(Optional.empty());
 		given(portOneClient.getPayment(PAYMENT_ID)).willReturn(portOneResponse("PAID", PRICE));
 		givenOrderSaveReturnsArgument();
-		given(paymentRepository.save(any(Payment.class))).willAnswer(invocation -> {
-			Payment payment = invocation.getArgument(0);
-			ReflectionTestUtils.setField(payment, "id", PAYMENT_PK_ID);
-			return payment;
-		});
+		givenPaymentSaveAssignsId();
 
 		PaymentCompleteRequest request = new PaymentCompleteRequest();
 		request.setPaymentId(PAYMENT_ID);
@@ -340,6 +377,153 @@ class PaymentServiceTest {
 		assertThat(result).isSameAs(order);
 		assertThat(result.getStatus()).isEqualTo(OrderStatus.PAID);
 		verifyNoInteractions(portOneClient, paymentRepository, resultService);
+	}
+
+	// ===== redeemFreeProduct =====
+
+	@Test
+	@DisplayName("100% 할인 코드로 무료 상품을 받으면 PAID 주문과 0원 Payment 가 저장되고 Result 가 생성되며 Discord 알림은 보내지 않는다")
+	void redeemFreeProduct_savesPaidOrderAndZeroPaymentAndCreatesResult() {
+		// given
+		given(userRepository.findByUsername(USERNAME)).willReturn(Optional.of(createUser()));
+		SubCategory subCategory = mockSubCategory();
+		given(subCategoryRepository.findById(SUB_CATEGORY_ID)).willReturn(
+			Optional.of(subCategory));
+		DiscountCode discountCode = mock(DiscountCode.class);
+		given(discountCodeService.validateAndCalculateDiscountForPayment("FREE100", PRICE,
+			SUB_CATEGORY_ID))
+			.willReturn(new DiscountValidationResult(0, "FREE100", discountCode));
+		givenOrderSaveAssignsId();
+		givenPaymentSaveAssignsId();
+
+		OrderCreateRequest request = new OrderCreateRequest();
+		request.setSubCategoryId(SUB_CATEGORY_ID);
+		request.setDiscountCode("FREE100");
+
+		// when
+		OrderCreateResponse response = paymentService.redeemFreeProduct(USERNAME, request);
+
+		// then
+		// (a) PAID 주문과 0원 Payment 저장
+		ArgumentCaptor<Order> orderCaptor = ArgumentCaptor.forClass(Order.class);
+		verify(orderRepository, atLeastOnce()).save(orderCaptor.capture());
+		Order savedOrder = orderCaptor.getValue();
+		assertThat(savedOrder.getStatus()).isEqualTo(OrderStatus.PAID);
+		assertThat(savedOrder.getOriginalAmount()).isEqualTo(PRICE);
+		assertThat(savedOrder.getAmount()).isZero();
+		assertThat(savedOrder.getAppliedDiscountCode()).isEqualTo("FREE100");
+		assertThat(savedOrder.getMerchantUid()).startsWith("free_");
+		assertThat(savedOrder.getPaidAt()).isNotNull();
+		assertThat(savedOrder.getPaymentId()).isEqualTo("free_" + savedOrder.getMerchantUid());
+		assertThat(savedOrder.getPaymentPkId()).isEqualTo(PAYMENT_PK_ID);
+		assertThat(savedOrder.getBuyerName()).isEqualTo(BUYER_NAME);
+		assertThat(savedOrder.getBuyerEmail()).isEqualTo(BUYER_EMAIL);
+
+		ArgumentCaptor<Payment> paymentCaptor = ArgumentCaptor.forClass(Payment.class);
+		verify(paymentRepository).save(paymentCaptor.capture());
+		Payment savedPayment = paymentCaptor.getValue();
+		assertThat(savedPayment.getImpUid()).isEqualTo("free_" + savedOrder.getMerchantUid());
+		assertThat(savedPayment.getMerchantUid()).isEqualTo(savedOrder.getMerchantUid());
+		assertThat(savedPayment.getAmount()).isZero();
+		assertThat(savedPayment.getStatus()).isEqualTo(PaymentStatus.PAID);
+		assertThat(savedPayment.getOrderId()).isEqualTo(ORDER_ID);
+		assertThat(savedPayment.getUserId()).isEqualTo(USER_ID);
+		assertThat(savedPayment.getSubCategoryId()).isEqualTo(SUB_CATEGORY_ID);
+
+		// (b) Result 생성
+		verify(resultService).createInitialResult(savedPayment, savedOrder);
+
+		// 할인 코드 사용 횟수 증가
+		verify(discountCodeService).incrementUsage(discountCode);
+
+		// (c) Discord 알림 없음, 포트원 호출 없음
+		verifyNoInteractions(discordNotificationService, portOneClient);
+
+		assertThat(response.getOrderId()).isEqualTo(ORDER_ID);
+		assertThat(response.getMerchantUid()).isEqualTo(savedOrder.getMerchantUid());
+		assertThat(response.getAmount()).isZero();
+		assertThat(response.getProductName()).isEqualTo("인생 총운");
+	}
+
+	@Test
+	@DisplayName("할인 후 금액이 0원이 아니면 PaymentException 이 나고 주문·Payment·Result 는 만들어지지 않는다")
+	void redeemFreeProduct_nonZeroAmount_throwsAndSavesNothing() {
+		// given
+		given(userRepository.findByUsername(USERNAME)).willReturn(Optional.of(createUser()));
+		SubCategory subCategory = mock(SubCategory.class);
+		given(subCategory.getPrice()).willReturn(PRICE);
+		given(subCategoryRepository.findById(SUB_CATEGORY_ID)).willReturn(
+			Optional.of(subCategory));
+		given(discountCodeService.validateAndCalculateDiscountForPayment("SALE10", PRICE,
+			SUB_CATEGORY_ID))
+			.willReturn(new DiscountValidationResult(9000, "SALE10", mock(DiscountCode.class)));
+
+		OrderCreateRequest request = new OrderCreateRequest();
+		request.setSubCategoryId(SUB_CATEGORY_ID);
+		request.setDiscountCode("SALE10");
+
+		// when & then
+		assertThatThrownBy(() -> paymentService.redeemFreeProduct(USERNAME, request))
+			.isInstanceOf(PaymentException.class)
+			.hasMessage("유효한 100% 할인 코드가 아닙니다.");
+
+		verify(orderRepository, never()).save(any(Order.class));
+		verify(paymentRepository, never()).save(any(Payment.class));
+		verify(discountCodeService, never()).incrementUsage(any());
+		verifyNoInteractions(resultService, discordNotificationService);
+	}
+
+	// ===== createFreeOrder =====
+
+	@Test
+	@DisplayName("무료 이벤트 주문은 원가 0원의 PAID 주문과 pay_free_ 접두사의 0원 Payment 가 저장되고 Result 가 생성되며 Discord 알림은 보내지 않는다")
+	void createFreeOrder_savesPaidOrderAndZeroPaymentAndCreatesResult() {
+		// given
+		given(userRepository.findByUsername(USERNAME)).willReturn(Optional.of(createUser()));
+		// createFreeOrder 는 상품의 id 만 쓰므로 strict stubs 를 위해 getId 만 stub 한다
+		SubCategory subCategory = mock(SubCategory.class);
+		given(subCategory.getId()).willReturn(SUB_CATEGORY_ID);
+		given(subCategoryRepository.findById(SUB_CATEGORY_ID)).willReturn(
+			Optional.of(subCategory));
+		givenOrderSaveAssignsId();
+		givenPaymentSaveAssignsId();
+
+		// when
+		Payment returned = paymentService.createFreeOrder(USERNAME, SUB_CATEGORY_ID);
+
+		// then
+		// (a) PAID 주문과 0원 Payment 저장
+		ArgumentCaptor<Order> orderCaptor = ArgumentCaptor.forClass(Order.class);
+		verify(orderRepository, atLeastOnce()).save(orderCaptor.capture());
+		Order savedOrder = orderCaptor.getValue();
+		assertThat(savedOrder.getStatus()).isEqualTo(OrderStatus.PAID);
+		assertThat(savedOrder.getOriginalAmount()).isZero();
+		assertThat(savedOrder.getAmount()).isZero();
+		assertThat(savedOrder.getAppliedDiscountCode()).isEqualTo("EVENT_FREE");
+		assertThat(savedOrder.getCouponId()).isNull();
+		assertThat(savedOrder.getMerchantUid()).startsWith("free_");
+		assertThat(savedOrder.getPaidAt()).isNotNull();
+		assertThat(savedOrder.getPaymentId()).isEqualTo("pay_free_" + savedOrder.getMerchantUid());
+		assertThat(savedOrder.getPaymentPkId()).isEqualTo(PAYMENT_PK_ID);
+
+		ArgumentCaptor<Payment> paymentCaptor = ArgumentCaptor.forClass(Payment.class);
+		verify(paymentRepository).save(paymentCaptor.capture());
+		Payment savedPayment = paymentCaptor.getValue();
+		assertThat(returned).isSameAs(savedPayment);
+		assertThat(savedPayment.getImpUid()).isEqualTo("pay_free_" + savedOrder.getMerchantUid());
+		assertThat(savedPayment.getMerchantUid()).isEqualTo(savedOrder.getMerchantUid());
+		assertThat(savedPayment.getAmount()).isZero();
+		assertThat(savedPayment.getStatus()).isEqualTo(PaymentStatus.PAID);
+		assertThat(savedPayment.getOrderId()).isEqualTo(ORDER_ID);
+		assertThat(savedPayment.getUserId()).isEqualTo(USER_ID);
+		assertThat(savedPayment.getSubCategoryId()).isEqualTo(SUB_CATEGORY_ID);
+
+		// (b) Result 생성
+		verify(resultService).createInitialResult(savedPayment, savedOrder);
+
+		// (c) Discord 알림 없음, 할인/쿠폰/포트원 호출 없음
+		verifyNoInteractions(discordNotificationService, discountCodeService, couponService,
+			portOneClient);
 	}
 
 	// ===== cancelPayment =====
