@@ -10,6 +10,8 @@ import com.mansereok.server.global.exception.PaymentException;
 import java.time.LocalDateTime;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.hibernate.exception.ConstraintViolationException;
+import org.hibernate.exception.ConstraintViolationException.ConstraintKind;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
@@ -82,14 +84,31 @@ public class PaidOrderFinalizer {
 	 * (다른 merchantUid 로 동시에 온 요청 등) imp_uid UNIQUE 위반이 나는데, 이는 "이미 처리된 결제" 이므로
 	 * 500 이 아니라 선검사와 같은 PaymentException(400) 으로 바꿔 던진다. 예외를 다시 던지므로 트랜잭션은
 	 * 그대로 롤백된다.
+	 *
+	 * <p>Spring 은 Hibernate 의 제약 위반을 종류 구분 없이 DataIntegrityViolationException 으로 번역하므로,
+	 * 원인이 UNIQUE 위반({@link ConstraintKind#UNIQUE})일 때만 변환하고 NOT NULL·FK·길이 초과 같은 다른
+	 * 무결성 위반은 원인과 무관한 "중복" 메시지가 나가지 않도록 그대로 던진다(500, 웹훅은 재시도).
 	 */
 	private Payment savePayment(Payment payment) {
 		try {
 			return paymentRepository.save(payment);
 		} catch (DataIntegrityViolationException e) {
+			if (!isUniqueConstraintViolation(e)) {
+				throw e;
+			}
 			log.warn("이미 존재하는 결제라 저장하지 못했습니다(UNIQUE 위반): paymentId={}, orderId={}",
 				payment.getImpUid(), payment.getOrderId(), e);
 			throw new PaymentException("이미 처리된 결제입니다.", e);
 		}
+	}
+
+	/** 원인 체인에서 Hibernate 의 제약 위반 예외를 찾아 그 종류가 UNIQUE 인지 확인한다. */
+	private static boolean isUniqueConstraintViolation(DataIntegrityViolationException e) {
+		for (Throwable cause = e.getCause(); cause != null && cause != cause.getCause(); cause = cause.getCause()) {
+			if (cause instanceof ConstraintViolationException violation) {
+				return violation.getKind() == ConstraintKind.UNIQUE;
+			}
+		}
+		return false;
 	}
 }

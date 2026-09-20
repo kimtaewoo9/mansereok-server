@@ -47,8 +47,11 @@ import com.mansereok.server.domain.user.repository.UserRepository;
 import com.mansereok.server.global.exception.OrderStateException;
 import com.mansereok.server.global.exception.PaymentException;
 import com.mansereok.server.global.exception.PortOneUnavailableException;
+import java.sql.SQLIntegrityConstraintViolationException;
 import java.time.LocalDate;
 import java.util.Optional;
+import org.hibernate.exception.ConstraintViolationException;
+import org.hibernate.exception.ConstraintViolationException.ConstraintKind;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -780,8 +783,13 @@ class PaymentServiceTest {
 		given(paymentRepository.findByImpUid(PAYMENT_ID)).willReturn(Optional.empty());
 		given(portOneClient.getPayment(PAYMENT_ID)).willReturn(portOneResponse("PAID", PRICE));
 		givenOrderSaveReturnsArgument();
+		// Spring 이 Hibernate 의 UNIQUE 위반을 번역한 모양 그대로(cause = ConstraintViolationException(UNIQUE))
 		given(paymentRepository.save(any(Payment.class))).willThrow(
-			new DataIntegrityViolationException("Duplicate entry 'pay_test_001' for key 'imp_uid'"));
+			new DataIntegrityViolationException("could not execute statement",
+				new ConstraintViolationException("could not execute statement",
+					new SQLIntegrityConstraintViolationException(
+						"Duplicate entry 'pay_test_001' for key 'payments.imp_uid'", "23000", 1062),
+					"insert into payments ...", ConstraintKind.UNIQUE, "payments.imp_uid")));
 
 		PaymentCompleteRequest request = completeRequest();
 
