@@ -52,6 +52,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InOrder;
 import org.mockito.Mock;
@@ -904,10 +906,10 @@ class PaymentServiceTest {
 	}
 
 	@Test
-	@DisplayName("금액 불일치 웹훅은 예외 없이 정상 반환하고 주문을 FAILED 로 저장하며 Payment 와 Result 는 만들지 않는다")
+	@DisplayName("금액 불일치 웹훅은 예외 없이 정상 반환하고 주문을 FAILED 로 저장한 뒤 할인을 복구하며 Payment 와 Result 는 만들지 않는다")
 	void processWebhook_amountMismatch_marksFailedAndReturns() {
 		// given
-		Order order = createOrder(OrderStatus.PENDING, null, null);
+		Order order = createOrder(OrderStatus.PENDING, null, 7L);
 		given(portOneClient.getPayment(PAYMENT_ID)).willReturn(
 			portOneResponseWithCustomData("PAID", PRICE - 9900));
 		given(orderRepository.findByMerchantUidWithLock(MERCHANT_UID)).willReturn(
@@ -924,8 +926,31 @@ class PaymentServiceTest {
 		ArgumentCaptor<Order> orderCaptor = ArgumentCaptor.forClass(Order.class);
 		verify(orderRepository).save(orderCaptor.capture());
 		assertThat(orderCaptor.getValue().getStatus()).isEqualTo(OrderStatus.FAILED);
+		verify(orderDiscountRestorer).restore(order);
 		verify(paymentRepository, never()).save(any(Payment.class));
 		verifyNoInteractions(resultService, discordNotificationService);
+	}
+
+	@Test
+	@DisplayName("FAILED 로 전이할 수 없는 EXPIRED 주문에 금액 불일치 웹훅이 오면 상태를 그대로 두고 저장·복구 없이 정상 반환한다")
+	void processWebhook_expiredOrderAmountMismatch_leavesStatusAndReturns() {
+		// given
+		Order order = createOrder(OrderStatus.EXPIRED, "WELCOME10", null);
+		given(portOneClient.getPayment(PAYMENT_ID)).willReturn(
+			portOneResponseWithCustomData("PAID", PRICE - 1));
+		given(orderRepository.findByMerchantUidWithLock(MERCHANT_UID)).willReturn(
+			Optional.of(order));
+		given(paymentRepository.findByImpUid(PAYMENT_ID)).willReturn(Optional.empty());
+
+		// when
+		assertThatCode(() -> paymentService.processWebhook(webhookBody("Paid")))
+			.doesNotThrowAnyException();
+
+		// then
+		assertThat(order.getStatus()).isEqualTo(OrderStatus.EXPIRED);
+		verify(orderRepository, never()).save(any(Order.class));
+		verify(paymentRepository, never()).save(any(Payment.class));
+		verifyNoInteractions(orderDiscountRestorer, resultService, discordNotificationService);
 	}
 
 	@Test
@@ -945,7 +970,8 @@ class PaymentServiceTest {
 		// then
 		assertThat(order.getStatus()).isEqualTo(OrderStatus.PAID);
 		verify(orderRepository, never()).save(any(Order.class));
-		verifyNoInteractions(paymentRepository, resultService, discordNotificationService);
+		verifyNoInteractions(paymentRepository, orderDiscountRestorer, resultService,
+			discordNotificationService);
 	}
 
 	@Test
@@ -991,10 +1017,10 @@ class PaymentServiceTest {
 	}
 
 	@Test
-	@DisplayName("포트원 재조회 상태가 FAILED 면 예외 없이 주문을 FAILED 로 저장하고 Payment 는 만들지 않는다")
+	@DisplayName("포트원 재조회 상태가 FAILED 면 예외 없이 주문을 FAILED 로 저장하고 할인을 복구하며 Payment 는 만들지 않는다")
 	void processWebhook_portOneFailedStatus_marksFailedAndReturns() {
 		// given
-		Order order = createOrder(OrderStatus.PENDING, null, null);
+		Order order = createOrder(OrderStatus.PENDING, "WELCOME10", null);
 		given(portOneClient.getPayment(PAYMENT_ID)).willReturn(
 			portOneResponseWithCustomData("FAILED", PRICE));
 		given(orderRepository.findByMerchantUidWithLock(MERCHANT_UID)).willReturn(
@@ -1008,9 +1034,34 @@ class PaymentServiceTest {
 
 		// then
 		assertThat(order.getStatus()).isEqualTo(OrderStatus.FAILED);
-		verify(orderRepository).save(order);
+		InOrder inOrder = inOrder(orderRepository, orderDiscountRestorer);
+		inOrder.verify(orderRepository).save(order);
+		inOrder.verify(orderDiscountRestorer).restore(order);
 		verify(paymentRepository, never()).save(any(Payment.class));
 		verifyNoInteractions(resultService, discordNotificationService);
+	}
+
+	@ParameterizedTest(name = "재조회 상태 {0}")
+	@ValueSource(strings = {"READY", "PAY_PENDING", "VIRTUAL_ACCOUNT_ISSUED"})
+	@DisplayName("포트원 재조회 상태가 진행 중(READY·PAY_PENDING·VIRTUAL_ACCOUNT_ISSUED)이면 FAILED 로 굳히지 않고 주문을 그대로 둔 채 정상 반환한다")
+	void processWebhook_inProgressStatus_leavesOrderPending(String rawStatus) {
+		// given
+		Order order = createOrder(OrderStatus.PENDING, "WELCOME10", null);
+		given(portOneClient.getPayment(PAYMENT_ID)).willReturn(
+			portOneResponseWithCustomData(rawStatus, PRICE));
+		given(orderRepository.findByMerchantUidWithLock(MERCHANT_UID)).willReturn(
+			Optional.of(order));
+		given(paymentRepository.findByImpUid(PAYMENT_ID)).willReturn(Optional.empty());
+
+		// when
+		assertThatCode(() -> paymentService.processWebhook(webhookBody("Paid")))
+			.doesNotThrowAnyException();
+
+		// then
+		assertThat(order.getStatus()).isEqualTo(OrderStatus.PENDING);
+		verify(orderRepository, never()).save(any(Order.class));
+		verify(paymentRepository, never()).save(any(Payment.class));
+		verifyNoInteractions(orderDiscountRestorer, resultService, discordNotificationService);
 	}
 
 	@Test
@@ -1032,11 +1083,11 @@ class PaymentServiceTest {
 		assertThat(order.getStatus()).isEqualTo(OrderStatus.PENDING);
 		verify(orderRepository, never()).save(any(Order.class));
 		verify(paymentRepository, never()).save(any(Payment.class));
-		verifyNoInteractions(resultService, discordNotificationService);
+		verifyNoInteractions(orderDiscountRestorer, resultService, discordNotificationService);
 	}
 
 	@Test
-	@DisplayName("포트원 재조회 상태가 PARTIAL_CANCELLED 면 CANCELLED 로 매핑돼 주문을 FAILED 로 기록한다")
+	@DisplayName("포트원 재조회 상태가 PARTIAL_CANCELLED 면 CANCELLED 로 매핑돼 주문을 FAILED 로 기록하고 할인을 복구한다")
 	void processWebhook_partialCancelled_marksFailed() {
 		// given
 		Order order = createOrder(OrderStatus.PENDING, null, null);
@@ -1053,6 +1104,7 @@ class PaymentServiceTest {
 
 		// then
 		assertThat(order.getStatus()).isEqualTo(OrderStatus.FAILED);
+		verify(orderDiscountRestorer).restore(order);
 		verify(paymentRepository, never()).save(any(Payment.class));
 	}
 

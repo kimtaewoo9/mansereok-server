@@ -4,8 +4,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mansereok.server.global.exception.PaymentException;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import lombok.extern.slf4j.Slf4j;
 
 /**
  * 포트원 결제 조회 응답의 customData 에 프론트가 실어 보낸 값.
@@ -15,9 +14,8 @@ import org.slf4j.LoggerFactory;
  *
  * @param merchantUid 주문 번호. 비어 있지 않음이 보장된다.
  */
+@Slf4j
 public record WebhookCustomData(String merchantUid) {
-
-	private static final Logger log = LoggerFactory.getLogger(WebhookCustomData.class);
 
 	private static final String MERCHANT_UID_FIELD = "merchantUid";
 

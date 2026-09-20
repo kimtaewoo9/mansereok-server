@@ -8,17 +8,17 @@ import lombok.RequiredArgsConstructor;
 @Getter
 @RequiredArgsConstructor
 public enum PaymentStatus {
-	PAID("PAID", "결제완료"),
-	VIRTUAL_ACCOUNT_ISSUED("VIRTUAL_ACCOUNT_ISSUED", "가상계좌 발급"),
-	FAILED("FAILED", "결제실패"),
-	CANCELLED("CANCELLED", "결제취소"),
-	READY("READY", "미결제"); // 결제 진행중 .
+	PAID("결제완료"),
+	VIRTUAL_ACCOUNT_ISSUED("가상계좌 발급"),
+	FAILED("결제실패"),
+	CANCELLED("결제취소"),
+	READY("미결제"); // 결제 진행중 .
 
-	private final String portOneStatus;
 	private final String description;
 
 	/**
-	 * 포트원 V2 결제 조회 API 의 status 문자열을 도메인 상태로 매핑한다 (대소문자 무시).
+	 * 포트원 V2 결제 조회 API 의 status 문자열을 도메인 상태로 매핑한다 (대소문자 무시). 매핑의 단일 소스는
+	 * 이 switch 다.
 	 *
 	 * <ul>
 	 *   <li>PAID, READY, VIRTUAL_ACCOUNT_ISSUED, FAILED, CANCELLED → 같은 이름의 상수</li>

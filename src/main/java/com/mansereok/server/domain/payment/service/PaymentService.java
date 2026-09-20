@@ -343,8 +343,10 @@ public class PaymentService {
 	 * 정상 반환한다. 예외를 던지면 같은 트랜잭션의 FAILED 저장이 롤백되고 포트원이 재시도를 반복하므로, 정상 반환으로
 	 * FAILED 를 커밋하고 포트원에는 200 을 돌려준다. 포트원 일시 장애(PortOneUnavailableException, 503)와
 	 * DB 장애(500)는 그대로 전파해 포트원이 재시도하게 둔다.
+	 *
+	 * <p>트랜잭션은 클래스 수준 {@code @Transactional} 에 참여한다. 주문 잠금부터 FAILED 저장·할인 복구까지
+	 * 한 트랜잭션이다.
 	 */
-	@Transactional
 	public void processWebhook(String body) {
 		PortoneWebhookDto webhook = parseWebhookBody(body);
 		String paymentId = webhook.getPaymentId();
@@ -424,8 +426,15 @@ public class PaymentService {
 	}
 
 	/**
-	 * 포트원 재조회 상태로 주문을 확정한다. PAID 면 결제 확정, 알려진 비PAID 상태는 최종 실패로 FAILED 기록,
-	 * 모르는 상태는 "아직 완료되지 않음" 으로 보고 주문을 건드리지 않는다.
+	 * 포트원 재조회 상태로 주문을 확정한다.
+	 *
+	 * <ul>
+	 *   <li>PAID → 결제 확정</li>
+	 *   <li>READY, VIRTUAL_ACCOUNT_ISSUED → 진행 중이므로 "아직 완료되지 않음" 으로 보고 주문을 건드리지 않는다.
+	 *       Paid 웹훅과 조회 API 반영 사이의 지연 같은 일시 상태를 종단 상태 FAILED 로 굳히지 않기 위해서다.</li>
+	 *   <li>FAILED, CANCELLED → 최종 실패로 FAILED 기록</li>
+	 *   <li>모르는 상태 → "아직 완료되지 않음" 으로 보고 주문을 건드리지 않는다</li>
+	 * </ul>
 	 */
 	private void confirmByPortOneStatus(Order order, String paymentId,
 		PortOnePaymentResponse paymentResponse) {
@@ -437,7 +446,14 @@ public class PaymentService {
 			return;
 		}
 
-		if (paymentStatus.get() != PaymentStatus.PAID) {
+		PaymentStatus resolved = paymentStatus.get();
+		if (resolved == PaymentStatus.READY || resolved == PaymentStatus.VIRTUAL_ACCOUNT_ISSUED) {
+			log.warn("결제가 아직 완료되지 않았습니다: orderId={}, paymentId={}, status={}",
+				order.getId(), paymentId, resolved);
+			return;
+		}
+
+		if (resolved != PaymentStatus.PAID) { // FAILED, CANCELLED
 			log.error("웹훅 결제 실패 상태: orderId={}, paymentId={}, status={}",
 				order.getId(), paymentId, paymentResponse.getStatus());
 			markOrderFailed(order);
@@ -459,8 +475,11 @@ public class PaymentService {
 	}
 
 	/**
-	 * 주문을 FAILED 로 기록한다. FAILED 로 갈 수 없는 상태(EXPIRED 등)면 상태는 그대로 둔다.
-	 * 예외를 던지지 않으므로 호출자의 트랜잭션이 커밋되며 FAILED 가 실제로 저장된다.
+	 * 주문을 FAILED 로 기록하고 쓴 쿠폰·할인코드를 복구한다. FAILED 로 갈 수 없는 상태(EXPIRED 등)면 상태는
+	 * 그대로 두고 복구도 하지 않는다(만료 경로가 이미 복구했다).
+	 *
+	 * <p>예외를 던지지 않으므로 호출자의 트랜잭션이 커밋되며 FAILED 가 실제로 저장된다. FAILED 는 종단 상태라
+	 * 만료 스케줄러(PENDING 만 조회)가 다시 다루지 않으므로, 환불·만료와 같은 규칙으로 여기서 바로 복구한다.
 	 */
 	private void markOrderFailed(Order order) {
 		if (!order.getStatus().canTransitionTo(OrderStatus.FAILED)) {
@@ -470,6 +489,7 @@ public class PaymentService {
 		}
 		order.markFailed();
 		orderRepository.save(order);
+		orderDiscountRestorer.restore(order); // 환불·만료와 같은 규칙, 같은 트랜잭션에 참여
 		log.info("주문을 FAILED 로 기록: orderId={}, merchantUid={}", order.getId(),
 			order.getMerchantUid());
 	}
