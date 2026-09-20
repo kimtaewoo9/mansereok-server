@@ -11,7 +11,7 @@ import org.springframework.stereotype.Component;
  * 주문에 적용된 할인(쿠폰 또는 할인코드)을 되돌리는 규칙의 단일 소유자.
  *
  * <p>규칙은 "쿠폰이 있으면 쿠폰, 아니면 할인코드, 아니면 없음" 이고, EVENT_FREE 같은 시스템 코드는
- * 복구 대상이 아니다. 환불(PaymentService.cancelPayment)과 만료(OrderExpirationService)가
+ * 복구 대상이 아니다. 환불(PaymentRefundService)과 만료(OrderExpirationService)가
  * 같은 규칙을 쓰도록 여기로 모았다.
  */
 @Component

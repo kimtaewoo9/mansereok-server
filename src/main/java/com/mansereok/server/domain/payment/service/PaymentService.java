@@ -7,10 +7,6 @@ import com.mansereok.server.domain.coupon.service.CouponService;
 import com.mansereok.server.domain.discount.entity.DiscountCode;
 import com.mansereok.server.domain.discount.service.DiscountCodeService;
 import com.mansereok.server.domain.discount.service.DiscountCodeService.DiscountValidationResult;
-import com.mansereok.server.domain.interpret.entity.Result;
-import com.mansereok.server.domain.interpret.entity.ResultStatus;
-import com.mansereok.server.domain.interpret.repository.CompatibilityResultRepository;
-import com.mansereok.server.domain.interpret.repository.ResultRepository;
 import com.mansereok.server.domain.interpret.service.ResultService;
 import com.mansereok.server.domain.notification.service.DiscordNotificationService;
 import com.mansereok.server.domain.order.dto.request.OrderCreateRequest;
@@ -53,9 +49,6 @@ public class PaymentService {
 	private final SubCategoryRepository subCategoryRepository;
 	private final PaymentRepository paymentRepository;
 	private final DiscountCodeService discountCodeService;
-
-	private final ResultRepository resultRepository;
-	private final CompatibilityResultRepository compatibilityResultRepository;
 
 	private final ObjectMapper objectMapper;
 	private final UserRepository userRepository;
@@ -548,74 +541,6 @@ public class PaymentService {
 		orderDiscountRestorer.restore(order); // 환불·만료와 같은 규칙, 같은 트랜잭션에 참여
 		log.info("주문을 FAILED 로 기록: orderId={}, merchantUid={}", order.getId(),
 			order.getMerchantUid());
-	}
-
-	// ... 기존 메서드들 ...
-
-	/**
-	 * 사용자 직접 환불 처리 (ResultStatus가 INPUT_REQUIRED 일 때만 가능)
-	 */
-	@Transactional
-	public void cancelPayment(String username, String paymentId, String reason) {
-		// 1. 사용자 조회
-		User user = userRepository.findByUsername(username)
-			.orElseThrow(() -> new PaymentException("사용자를 찾을 수 없습니다."));
-
-		// 2. 결제 정보 조회 (impUid로 조회)
-		Payment payment = paymentRepository.findByImpUid(paymentId)
-			.orElseThrow(() -> new PaymentException("결제 정보를 찾을 수 없습니다."));
-
-		// 3. 권한 확인 (본인의 결제인지)
-		if (!payment.getUserId().equals(user.getId())) {
-			throw new PaymentException("본인의 결제 건만 취소할 수 있습니다.");
-		}
-
-		// ✅ 추가: 무료 결제(0원) 환불 시도 원천 차단
-		if (payment.getAmount() == 0 || payment.getImpUid().startsWith(MerchantUidGenerator.FREE_PREFIX)) {
-			throw new PaymentException("무료 이벤트 결제는 환불/취소 대상이 아닙니다.");
-		}
-
-		// 4. 이미 취소된 건인지 확인
-		if (payment.getStatus() == PaymentStatus.CANCELLED) {
-			throw new PaymentException("이미 취소된 결제입니다.");
-		}
-
-		// 5. Result 상태 검증 (핵심: 사주 정보를 입력하기 전인가?)
-		Result result = resultRepository.findByPaymentId(payment.getId())
-			.orElseThrow(() -> new PaymentException("해당 결제에 대한 결과 정보를 찾을 수 없습니다."));
-
-		if (result.getStatus() != ResultStatus.INPUT_REQUIRED) {
-			throw new PaymentException("이미 사주 해석이 진행되었거나 완료된 건은 환불할 수 없습니다.");
-		}
-
-		// 6. 상태 전이 사전 검사. 포트원 환불은 되돌릴 수 없으므로 markCancelled 가 던질 상황이면
-		//    외부 호출 전에 먼저 거른다.
-		if (payment.getStatus() != PaymentStatus.PAID) {
-			throw new PaymentException("결제 완료 상태가 아니라 취소할 수 없습니다.");
-		}
-		Order order = orderRepository.findById(payment.getOrderId())
-			.orElseThrow(() -> new PaymentException("주문 정보를 찾을 수 없습니다."));
-		if (!order.getStatus().canTransitionTo(OrderStatus.CANCELLED)) {
-			throw new PaymentException("취소할 수 없는 주문 상태입니다.");
-		}
-
-		// 7. 포트원 API로 결제 취소 요청
-		portOneClient.cancelPayment(payment.getImpUid(), reason);
-
-		// 8. DB 상태 업데이트
-		// 8-1. Payment 상태 변경 (PAID 에서만 허용)
-		payment.markCancelled();
-
-		// 8-2. Order 상태 변경
-		order.markCancelled();
-
-		// 8-3. Result 삭제 (정보 입력 전이므로 삭제)
-		resultRepository.delete(result);
-
-		// 8-4. 쿠폰 또는 할인 코드 복구 (규칙은 OrderDiscountRestorer 가 소유)
-		orderDiscountRestorer.restore(order);
-
-		log.info("사용자 환불 완료: username={}, paymentId={}, reason={}", username, paymentId, reason);
 	}
 
 	/**
