@@ -194,7 +194,22 @@ final class PromptSections {
 			""");
 	}
 
-	static void appendSajuJsonResponseFormat(StringBuilder prompt, String name) {
+	/**
+	 * 라우팅에 쓸 상품 id 를 int 로 좁힌다. Long 을 그대로 intValue() 로 자르면 int 범위를 벗어난 값이
+	 * 조용히 다른 상품으로 잘려 들어가므로, null 과 범위 초과를 먼저 걸러 낸다.
+	 *
+	 * @throws IllegalArgumentException subcategoryId 가 null 이거나 int 범위를 벗어난 경우
+	 */
+	static int requireRoutableSubcategoryId(Long subcategoryId) {
+		if (subcategoryId == null
+			|| subcategoryId < Integer.MIN_VALUE
+			|| subcategoryId > Integer.MAX_VALUE) {
+			throw new IllegalArgumentException("지원하지 않는 카테고리입니다: " + subcategoryId);
+		}
+		return subcategoryId.intValue();
+	}
+
+	static void appendSajuJsonResponseFormat(StringBuilder prompt) {
 		prompt.append("""
 
 
@@ -222,8 +237,7 @@ final class PromptSections {
 	/**
 	 * [신규] 궁합 분석 프롬프트에 공통적으로 추가될 JSON 요청 꼬리
 	 */
-	static void appendCompatibilityJsonResponseFormat(StringBuilder prompt, String person1Name,
-		String person2Name) {
+	static void appendCompatibilityJsonResponseFormat(StringBuilder prompt) {
 		prompt.append("""
 
 

@@ -41,6 +41,26 @@ class CompatibilityPromptFactoryTest {
 			.hasMessageContaining("지원하지 않는 카테고리입니다");
 	}
 
+	@ParameterizedTest(name = "int 범위를 벗어난 상품 {0} 은 다른 상품으로 잘리지 않고 예외가 된다")
+	@ValueSource(longs = {4294967306L, -4294967286L})
+	void rejectsSubcategoryOutOfIntRange(long subcategoryId) {
+		CompatibilityPromptContext context = context();
+
+		assertThatThrownBy(() -> factory.create(subcategoryId, context))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessageContaining("지원하지 않는 카테고리입니다");
+	}
+
+	@Test
+	@DisplayName("subcategoryId 가 null 이면 IllegalArgumentException 을 던진다")
+	void rejectsNullSubcategory() {
+		CompatibilityPromptContext context = context();
+
+		assertThatThrownBy(() -> factory.create(null, context))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessageContaining("지원하지 않는 카테고리입니다");
+	}
+
 	@Test
 	@DisplayName("두 사람의 이름과 작품명을 모두 사용자 입력 구획 하나에 담는다")
 	void declaresBothPeopleInOneUserInputSection() {

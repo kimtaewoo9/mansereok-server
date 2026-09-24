@@ -99,7 +99,7 @@ final class CharacterPrompts {
 
 			""");
 
-		PromptSections.appendSajuJsonResponseFormat(prompt, name);
+		PromptSections.appendSajuJsonResponseFormat(prompt);
 
 		return prompt.toString();
 	}
@@ -192,7 +192,7 @@ final class CharacterPrompts {
 
 			""");
 
-		PromptSections.appendSajuJsonResponseFormat(prompt, name);
+		PromptSections.appendSajuJsonResponseFormat(prompt);
 
 		return prompt.toString();
 	}
@@ -293,7 +293,7 @@ final class CharacterPrompts {
 
 			""");
 
-		PromptSections.appendSajuJsonResponseFormat(prompt, name);
+		PromptSections.appendSajuJsonResponseFormat(prompt);
 		return prompt.toString();
 	}
 }

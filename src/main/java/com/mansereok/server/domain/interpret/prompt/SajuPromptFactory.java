@@ -16,17 +16,18 @@ public class SajuPromptFactory {
 	/**
 	 * 유료 사주 상품 프롬프트.
 	 *
-	 * @throws IllegalArgumentException 지원하지 않는 subcategoryId 인 경우
+	 * @throws IllegalArgumentException 지원하지 않거나 null 인 subcategoryId 인 경우
 	 */
 	public String create(Long subcategoryId, PromptContext context) {
+		int categoryId = PromptSections.requireRoutableSubcategoryId(subcategoryId);
 		PromptContext sanitized = context.sanitized();
 		String name = sanitized.name();
 		String sourceTitle = sanitized.sourceTitle();
 		ManseryeokCalculationResponse response = sanitized.response();
 
-		String analysisPrompt = subcategoryId == 9
+		String analysisPrompt = categoryId == 9
 			? CharacterPrompts.createCharacterSajuPrompt(name, response, sourceTitle)
-			: switch (subcategoryId.intValue()) {
+			: switch (categoryId) {
 				case 1 -> LifeAndPersonalityPrompts.createLifeOverallPrompt(name, response);
 				case 2 -> LifeAndPersonalityPrompts.createPersonalityAnalysisPrompt(name, response);
 				case 3 -> CareerPrompts.createCareerAptitudePrompt(name, response);
@@ -51,14 +52,15 @@ public class SajuPromptFactory {
 	/**
 	 * 무료 운세 상품 프롬프트. 작품명을 쓰지 않으므로 사용자 입력 구획에 이름만 선언한다.
 	 *
-	 * @throws IllegalArgumentException 지원하지 않는 subcategoryId 인 경우
+	 * @throws IllegalArgumentException 지원하지 않거나 null 인 subcategoryId 인 경우
 	 */
 	public String createFree(Long subcategoryId, PromptContext context) {
+		int categoryId = PromptSections.requireRoutableSubcategoryId(subcategoryId);
 		PromptContext sanitized = context.sanitized();
 		String name = sanitized.name();
 		ManseryeokCalculationResponse response = sanitized.response();
 
-		String analysisPrompt = switch (subcategoryId.intValue()) {
+		String analysisPrompt = switch (categoryId) {
 			case 101 -> FreeFortunePrompts.create2026ChangesPrompt(name, response);
 			case 102 -> FreeFortunePrompts.create2026KeywordPrompt(name, response);
 			case 103 -> FreeFortunePrompts.createFlirtingPrompt(name, response);

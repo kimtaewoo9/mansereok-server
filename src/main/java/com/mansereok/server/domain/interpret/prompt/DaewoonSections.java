@@ -179,7 +179,13 @@ final class DaewoonSections {
 			prompt.append("""
 				[대운 고정값] 기준연도=%d, 현재대운=%s(%s), 구간=%d~%d세, 시작연도=%d
 				"""
-				.formatted(referenceYear, currentDaewoonKor, currentDaewoonChi, currentStartAge, currentStartAge + 9, currentStartYear));
+				.formatted(
+					referenceYear,
+					currentDaewoonKor,
+					currentDaewoonChi,
+					currentStartAge,
+					currentStartAge + 9,
+					currentStartYear));
 		}
 	}
 

@@ -16,6 +16,34 @@ final class SajuElementSections {
 	private SajuElementSections() {
 	}
 
+	/**
+	 * 기둥 글자의 한글 표기. 글자가 없으면 기존 출력과 같게 "?" 를 쓴다.
+	 */
+	static String koreanOrUnknown(PillarElement pillar) {
+		return pillar != null ? pillar.getKorean() : "?";
+	}
+
+	/**
+	 * 값이 없을 때 "?" 로 대체한다. 프롬프트에서 빈칸 대신 쓰던 표기를 한 곳으로 모은 것이다.
+	 */
+	static String orUnknown(String value) {
+		return value != null ? value : "?";
+	}
+
+	/**
+	 * 기둥의 12운성. 기둥이나 값이 없으면 기존 출력과 같게 "-" 를 쓴다.
+	 */
+	static String unseongOrDash(PillarElement pillar) {
+		return pillar != null && pillar.getUnseong() != null ? pillar.getUnseong() : "-";
+	}
+
+	/**
+	 * 값이 없을 때 "-" 로 대체한다. 12운성·12신살처럼 줄표를 쓰던 자리에 쓴다.
+	 */
+	static String orDash(String value) {
+		return value != null ? value : "-";
+	}
+
 	static void appendJijangganDetail(StringBuilder prompt, String pillarName,
 		PillarElement pillar) {
 		if (pillar == null || pillar.getJijanggan() == null) {
@@ -33,7 +61,7 @@ final class SajuElementSections {
 			jijangganElements.add(String.format("%s%s(%s,%d%%)",
 				jijanggan.getFirst().getKorean(),
 				jijanggan.getFirst().getFiveCircle(),
-				jijanggan.getFirst().getTenStar() != null ? jijanggan.getFirst().getTenStar() : "?",
+				orUnknown(jijanggan.getFirst().getTenStar()),
 				// ⭐ 십성 추가
 				jijanggan.getFirst().getRate()));
 		}
@@ -49,7 +77,7 @@ final class SajuElementSections {
 			jijangganElements.add(String.format("%s%s(%s,%d%%)",
 				jijanggan.getThird().getKorean(),
 				jijanggan.getThird().getFiveCircle(),
-				jijanggan.getThird().getTenStar() != null ? jijanggan.getThird().getTenStar() : "?",
+				orUnknown(jijanggan.getThird().getTenStar()),
 				// ⭐ 십성 추가
 				jijanggan.getThird().getRate()));
 		}
@@ -68,23 +96,23 @@ final class SajuElementSections {
 
 		if (ji.getFirst() != null) {
 			elements.add(String.format("%s%s(%s,%d%%)",
-				ji.getFirst().getKorean() != null ? ji.getFirst().getKorean() : "?",
-				ji.getFirst().getFiveCircle() != null ? ji.getFirst().getFiveCircle() : "?",
-				ji.getFirst().getTenStar() != null ? ji.getFirst().getTenStar() : "?",
+				orUnknown(ji.getFirst().getKorean()),
+				orUnknown(ji.getFirst().getFiveCircle()),
+				orUnknown(ji.getFirst().getTenStar()),
 				ji.getFirst().getRate() != null ? ji.getFirst().getRate() : 0));
 		}
 		if (ji.getSecond() != null) {
 			elements.add(String.format("%s%s(%s,%d%%)",
-				ji.getSecond().getKorean() != null ? ji.getSecond().getKorean() : "?",
-				ji.getSecond().getFiveCircle() != null ? ji.getSecond().getFiveCircle() : "?",
-				ji.getSecond().getTenStar() != null ? ji.getSecond().getTenStar() : "?",
+				orUnknown(ji.getSecond().getKorean()),
+				orUnknown(ji.getSecond().getFiveCircle()),
+				orUnknown(ji.getSecond().getTenStar()),
 				ji.getSecond().getRate() != null ? ji.getSecond().getRate() : 0));
 		}
 		if (ji.getThird() != null) {
 			elements.add(String.format("%s%s(%s,%d%%)",
-				ji.getThird().getKorean() != null ? ji.getThird().getKorean() : "?",
-				ji.getThird().getFiveCircle() != null ? ji.getThird().getFiveCircle() : "?",
-				ji.getThird().getTenStar() != null ? ji.getThird().getTenStar() : "?",
+				orUnknown(ji.getThird().getKorean()),
+				orUnknown(ji.getThird().getFiveCircle()),
+				orUnknown(ji.getThird().getTenStar()),
 				ji.getThird().getRate() != null ? ji.getThird().getRate() : 0));
 		}
 

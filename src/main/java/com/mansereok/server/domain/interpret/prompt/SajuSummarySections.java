@@ -38,7 +38,12 @@ final class SajuSummarySections {
 			이름: '%s' | %s | %s %s | 현재 %d년
 
 			"""
-			.formatted(name, "MALE".equalsIgnoreCase(input.getGender()) ? "남성" : "여성", input.getSolarDate(), input.getSolarTime(), referenceYear));
+			.formatted(
+				name,
+				"MALE".equalsIgnoreCase(input.getGender()) ? "남성" : "여성",
+				input.getSolarDate(),
+				input.getSolarTime(),
+				referenceYear));
 
 		// ===== 2. 사주팔자 =====
 		prompt.append("""
@@ -46,7 +51,15 @@ final class SajuSummarySections {
 			년주: %s%s | 월주: %s%s | 일주: %s%s (일간) | 시주: %s%s
 
 			"""
-			.formatted(saju.getYearSky() != null ? saju.getYearSky().getKorean() : "?", saju.getYearGround() != null ? saju.getYearGround().getKorean() : "?", saju.getMonthSky() != null ? saju.getMonthSky().getKorean() : "?", saju.getMonthGround() != null ? saju.getMonthGround().getKorean() : "?", saju.getDaySky() != null ? saju.getDaySky().getKorean() : "?", saju.getDayGround() != null ? saju.getDayGround().getKorean() : "?", saju.getTimeSky() != null ? saju.getTimeSky().getKorean() : "?", saju.getTimeGround() != null ? saju.getTimeGround().getKorean() : "?"));
+			.formatted(
+				SajuElementSections.koreanOrUnknown(saju.getYearSky()),
+				SajuElementSections.koreanOrUnknown(saju.getYearGround()),
+				SajuElementSections.koreanOrUnknown(saju.getMonthSky()),
+				SajuElementSections.koreanOrUnknown(saju.getMonthGround()),
+				SajuElementSections.koreanOrUnknown(saju.getDaySky()),
+				SajuElementSections.koreanOrUnknown(saju.getDayGround()),
+				SajuElementSections.koreanOrUnknown(saju.getTimeSky()),
+				SajuElementSections.koreanOrUnknown(saju.getTimeGround())));
 
 		// ===== 3. 일간 정보 =====
 		prompt.append("""
@@ -57,7 +70,10 @@ final class SajuSummarySections {
 				%s%s (%s) - 본질적 성향의 뿌리
 
 				"""
-				.formatted(saju.getDaySky().getKorean() != null ? saju.getDaySky().getKorean() : "?", saju.getDaySky().getFiveCircle() != null ? saju.getDaySky().getFiveCircle() : "?", saju.getDaySky().getTenStar() != null ? saju.getDaySky().getTenStar() : "?"));
+				.formatted(
+					SajuElementSections.orUnknown(saju.getDaySky().getKorean()),
+					SajuElementSections.orUnknown(saju.getDaySky().getFiveCircle()),
+					SajuElementSections.orUnknown(saju.getDaySky().getTenStar())));
 		} else {
 			prompt.append("""
 				일간 정보 없음
@@ -96,11 +112,11 @@ final class SajuSummarySections {
 			년:%s 월:%s 일:%s 시:%s
 
 			"""
-			.formatted(saju.getYearGround() != null && saju.getYearGround().getUnseong() != null
-				? saju.getYearGround().getUnseong() : "-", saju.getMonthGround() != null && saju.getMonthGround().getUnseong() != null
-				? saju.getMonthGround().getUnseong() : "-", saju.getDayGround() != null && saju.getDayGround().getUnseong() != null
-				? saju.getDayGround().getUnseong() : "-", saju.getTimeGround() != null && saju.getTimeGround().getUnseong() != null
-				? saju.getTimeGround().getUnseong() : "-"));
+			.formatted(
+				SajuElementSections.unseongOrDash(saju.getYearGround()),
+				SajuElementSections.unseongOrDash(saju.getMonthGround()),
+				SajuElementSections.unseongOrDash(saju.getDayGround()),
+				SajuElementSections.unseongOrDash(saju.getTimeGround())));
 
 		// ===== 7. 지장간 =====
 		prompt.append("""
@@ -146,7 +162,10 @@ final class SajuSummarySections {
 				시작:%d~%d세 | 방향:%s (출생시간 미입력 추정)
 				※ 정확한 출생시간 입력 시 대운 시작 나이를 확정할 수 있습니다.
 				"""
-				.formatted(saju.getBigFortuneNumberMin(), saju.getBigFortuneNumberMax(), DaewoonSections.getDaewoonDirection(saju, input.getGender())));
+				.formatted(
+					saju.getBigFortuneNumberMin(),
+					saju.getBigFortuneNumberMax(),
+					DaewoonSections.getDaewoonDirection(saju, input.getGender())));
 		} else {
 			prompt.append("""
 				대운 정보 없음

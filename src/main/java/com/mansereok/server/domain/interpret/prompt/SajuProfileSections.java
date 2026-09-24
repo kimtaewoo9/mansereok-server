@@ -44,7 +44,12 @@ final class SajuProfileSections {
 			이름: '%s' | %s | %s %s | 현재 %d년
 
 			"""
-			.formatted(name, "MALE".equalsIgnoreCase(input.getGender()) ? "남성" : "여성", input.getSolarDate(), input.getSolarTime(), targetYear));
+			.formatted(
+				name,
+				"MALE".equalsIgnoreCase(input.getGender()) ? "남성" : "여성",
+				input.getSolarDate(),
+				input.getSolarTime(),
+				targetYear));
 
 		// 2. 사주 팔자
 		prompt.append("""
@@ -52,7 +57,15 @@ final class SajuProfileSections {
 			년주: %s%s | 월주: %s%s | 일주: %s%s (일간) | 시주: %s%s
 
 			"""
-			.formatted(saju.getYearSky().getKorean(), saju.getYearGround().getKorean(), saju.getMonthSky().getKorean(), saju.getMonthGround().getKorean(), saju.getDaySky().getKorean(), saju.getDayGround().getKorean(), saju.getTimeSky() != null ? saju.getTimeSky().getKorean() : "?", saju.getTimeGround() != null ? saju.getTimeGround().getKorean() : "?"));
+			.formatted(
+				saju.getYearSky().getKorean(),
+				saju.getYearGround().getKorean(),
+				saju.getMonthSky().getKorean(),
+				saju.getMonthGround().getKorean(),
+				saju.getDaySky().getKorean(),
+				saju.getDayGround().getKorean(),
+				SajuElementSections.koreanOrUnknown(saju.getTimeSky()),
+				SajuElementSections.koreanOrUnknown(saju.getTimeGround())));
 
 		// 3. 일간 정보
 		prompt.append("""
@@ -86,8 +99,11 @@ final class SajuProfileSections {
 			- 년주: %s | 월주: %s | 일주: %s | 시주: %s
 
 			"""
-			.formatted(saju.getYearGround().getUnseong() != null ? saju.getYearGround().getUnseong() : "-", saju.getMonthGround().getUnseong() != null ? saju.getMonthGround().getUnseong() : "-", saju.getDayGround().getUnseong() != null ? saju.getDayGround().getUnseong() : "-", saju.getTimeGround() != null && saju.getTimeGround().getUnseong() != null ?
-				saju.getTimeGround().getUnseong() : "-"));
+			.formatted(
+				SajuElementSections.orDash(saju.getYearGround().getUnseong()),
+				SajuElementSections.orDash(saju.getMonthGround().getUnseong()),
+				SajuElementSections.orDash(saju.getDayGround().getUnseong()),
+				SajuElementSections.unseongOrDash(saju.getTimeGround())));
 
 		prompt.append("""
 			**지장간 (숨겨진 DNA)**
@@ -126,7 +142,10 @@ final class SajuProfileSections {
 				시작:%d~%d세 | 방향:%s (출생시간 미입력 추정)
 				※ 정확한 출생시간 입력 시 대운 시작 나이를 확정할 수 있습니다.
 				"""
-				.formatted(saju.getBigFortuneNumberMin(), saju.getBigFortuneNumberMax(), DaewoonSections.getDaewoonDirection(saju, input.getGender())));
+				.formatted(
+					saju.getBigFortuneNumberMin(),
+					saju.getBigFortuneNumberMax(),
+					DaewoonSections.getDaewoonDirection(saju, input.getGender())));
 		} else {
 			prompt.append("""
 				대운 정보 없음
@@ -146,14 +165,14 @@ final class SajuProfileSections {
 				""");
 			saju.getMonthlyFortunes().forEach(monthly -> {
 				String monthSky =
-					monthly.getMonthSky() != null ? monthly.getMonthSky().getKorean() : "?";
+					SajuElementSections.koreanOrUnknown(monthly.getMonthSky());
 				String monthGround =
-					monthly.getMonthGround() != null ? monthly.getMonthGround().getKorean() : "?";
+					SajuElementSections.koreanOrUnknown(monthly.getMonthGround());
 				String monthSkyTenStar =
 					monthly.getMonthSky() != null ? monthly.getMonthSky().getTenStar() : "?";
 				String monthGroundTenStar = monthly.getMonthGround() != null
 					? monthly.getMonthGround().getTenStar() : "?";
-				String season = monthly.getSeason() != null ? monthly.getSeason() : "-";
+				String season = SajuElementSections.orDash(monthly.getSeason());
 				String periodStart = formatMonthPeriod(monthly.getPeriodStart());
 				String periodEnd = monthly.getPeriodEnd() != null
 					? formatMonthPeriod(monthly.getPeriodEnd())
@@ -162,7 +181,16 @@ final class SajuProfileSections {
 				prompt.append("""
 					- %d년 %d월(%s): %s%s (천간십성:%s, 지지십성:%s) | 적용구간:%s ~ %s
 					"""
-					.formatted(monthly.getYear(), monthly.getMonth(), season, monthSky, monthGround, monthSkyTenStar, monthGroundTenStar, periodStart, periodEnd));
+					.formatted(
+						monthly.getYear(),
+						monthly.getMonth(),
+						season,
+						monthSky,
+						monthGround,
+						monthSkyTenStar,
+						monthGroundTenStar,
+						periodStart,
+						periodEnd));
 			});
 			prompt.append("\n");
 		}
@@ -211,7 +239,14 @@ final class SajuProfileSections {
 				- 추천 용신: %s (%s)
 				※ 이 용신 정보를 바탕으로 사용자에게 행운의 조언을 해주세요.
 				"""
-				.formatted(saju.getYongsinInfo().getStrength(), saju.getYongsinInfo().getMyScore(), (saju.getYongsinInfo().getTotalScore() - saju.getYongsinInfo().getMyScore()), saju.getYongsinInfo().getAppliedRuleName(), saju.getYongsinInfo().getAppliedRuleCode(), saju.getYongsinInfo().getYongsin(), saju.getYongsinInfo().getDescription()));
+				.formatted(
+					saju.getYongsinInfo().getStrength(),
+					saju.getYongsinInfo().getMyScore(),
+					(saju.getYongsinInfo().getTotalScore() - saju.getYongsinInfo().getMyScore()),
+					saju.getYongsinInfo().getAppliedRuleName(),
+					saju.getYongsinInfo().getAppliedRuleCode(),
+					saju.getYongsinInfo().getYongsin(),
+					saju.getYongsinInfo().getDescription()));
 		}
 		prompt.append("\n");
 	}
@@ -274,7 +309,14 @@ final class SajuProfileSections {
 		prompt.append("""
 			  %s: %s%s (천간:%s/오행:%s, 지지:%s/오행:%s)
 			"""
-			.formatted(label, sky.getChinese() != null ? sky.getChinese() : "?", ground.getChinese() != null ? ground.getChinese() : "?", sky.getTenStar() != null ? sky.getTenStar() : "?", sky.getFiveCircle() != null ? sky.getFiveCircle() : "?", ground.getTenStar() != null ? ground.getTenStar() : "?", ground.getFiveCircle() != null ? ground.getFiveCircle() : "?"));
+			.formatted(
+				label,
+				SajuElementSections.orUnknown(sky.getChinese()),
+				SajuElementSections.orUnknown(ground.getChinese()),
+				SajuElementSections.orUnknown(sky.getTenStar()),
+				SajuElementSections.orUnknown(sky.getFiveCircle()),
+				SajuElementSections.orUnknown(ground.getTenStar()),
+				SajuElementSections.orUnknown(ground.getFiveCircle())));
 	}
 
 	/**
@@ -296,17 +338,27 @@ final class SajuProfileSections {
 		prompt.append("""
 			- **%s (%s)**: %s%s
 			"""
-			.formatted(pillarName, meaning, sky.getKorean() != null ? sky.getKorean() : "?", ground.getKorean() != null ? ground.getKorean() : "?"));
+			.formatted(
+				pillarName,
+				meaning,
+				SajuElementSections.orUnknown(sky.getKorean()),
+				SajuElementSections.orUnknown(ground.getKorean())));
 
 		prompt.append("""
 			  - 천간: %s%s (십성: %s)
 			"""
-			.formatted(sky.getKorean() != null ? sky.getKorean() : "?", sky.getFiveCircle() != null ? sky.getFiveCircle() : "?", sky.getTenStar() != null ? sky.getTenStar() : "?"));
+			.formatted(
+				SajuElementSections.orUnknown(sky.getKorean()),
+				SajuElementSections.orUnknown(sky.getFiveCircle()),
+				SajuElementSections.orUnknown(sky.getTenStar())));
 
 		prompt.append("""
 			  - 지지: %s%s (십성: %s)
 			"""
-			.formatted(ground.getKorean() != null ? ground.getKorean() : "?", ground.getFiveCircle() != null ? ground.getFiveCircle() : "?", ground.getTenStar() != null ? ground.getTenStar() : "?"));
+			.formatted(
+				SajuElementSections.orUnknown(ground.getKorean()),
+				SajuElementSections.orUnknown(ground.getFiveCircle()),
+				SajuElementSections.orUnknown(ground.getTenStar())));
 
 		if (ground.getUnseong() != null) {
 			prompt.append("""
@@ -324,29 +376,31 @@ final class SajuProfileSections {
 				prompt.append("""
 					    - 초기(%d%%): %s%s (십성: %s)
 					"""
-					.formatted(// ⭐ 십성 추가
-					jijanggan.getFirst().getRate() != null ? jijanggan.getFirst().getRate() : 0, jijanggan.getFirst().getKorean() != null ? jijanggan.getFirst().getKorean()
-						: "?", jijanggan.getFirst().getFiveCircle() != null ? jijanggan.getFirst()
-						.getFiveCircle() : "?", jijanggan.getFirst().getTenStar() != null ? jijanggan.getFirst().getTenStar()
-						: "?"));
+					.formatted(
+						// ⭐ 십성 추가 jijanggan.getFirst().getRate() != null ? jijanggan.getFirst().getRate() : 0,
+						SajuElementSections.orUnknown(jijanggan.getFirst().getKorean()),
+						SajuElementSections.orUnknown(jijanggan.getFirst().getFiveCircle()),
+						SajuElementSections.orUnknown(jijanggan.getFirst().getTenStar())));
 			}
 			if (jijanggan.getSecond() != null) {
 				prompt.append("""
 					    - 중기(%d%%): %s%s (십성: %s)
 					"""
-					.formatted(jijanggan.getSecond().getRate() != null ? jijanggan.getSecond().getRate() : 0, jijanggan.getSecond().getKorean() != null ? jijanggan.getSecond().getKorean()
-						: "?", jijanggan.getSecond().getFiveCircle() != null ? jijanggan.getSecond()
-						.getFiveCircle() : "?", jijanggan.getSecond().getTenStar() != null ? jijanggan.getSecond().getTenStar()
-						: "?"));
+					.formatted(
+						jijanggan.getSecond().getRate() != null ? jijanggan.getSecond().getRate() : 0,
+						SajuElementSections.orUnknown(jijanggan.getSecond().getKorean()),
+						SajuElementSections.orUnknown(jijanggan.getSecond().getFiveCircle()),
+						SajuElementSections.orUnknown(jijanggan.getSecond().getTenStar())));
 			}
 			if (jijanggan.getThird() != null) {
 				prompt.append("""
 					    - 말기(%d%%): %s%s (십성: %s)
 					"""
-					.formatted(jijanggan.getThird().getRate() != null ? jijanggan.getThird().getRate() : 0, jijanggan.getThird().getKorean() != null ? jijanggan.getThird().getKorean()
-						: "?", jijanggan.getThird().getFiveCircle() != null ? jijanggan.getThird()
-						.getFiveCircle() : "?", jijanggan.getThird().getTenStar() != null ? jijanggan.getThird().getTenStar()
-						: "?"));
+					.formatted(
+						jijanggan.getThird().getRate() != null ? jijanggan.getThird().getRate() : 0,
+						SajuElementSections.orUnknown(jijanggan.getThird().getKorean()),
+						SajuElementSections.orUnknown(jijanggan.getThird().getFiveCircle()),
+						SajuElementSections.orUnknown(jijanggan.getThird().getTenStar())));
 			}
 		}
 	}

@@ -12,9 +12,10 @@ import org.springframework.stereotype.Component;
 public class CompatibilityPromptFactory {
 
 	/**
-	 * @throws IllegalArgumentException 지원하지 않는 subcategoryId 인 경우
+	 * @throws IllegalArgumentException 지원하지 않거나 null 인 subcategoryId 인 경우
 	 */
 	public String create(Long subcategoryId, CompatibilityPromptContext context) {
+		int categoryId = PromptSections.requireRoutableSubcategoryId(subcategoryId);
 		CompatibilityPromptContext sanitized = context.sanitized();
 		PromptContext person1 = sanitized.person1();
 		PromptContext person2 = sanitized.person2();
@@ -26,10 +27,10 @@ public class CompatibilityPromptFactory {
 		userValues.put("두 번째 사람 작품명", person2.sourceTitle());
 
 		return PromptSections.withSectionBoundary(userValues,
-			createAnalysisPrompt(subcategoryId, person1, person2));
+			createAnalysisPrompt(categoryId, person1, person2));
 	}
 
-	private String createAnalysisPrompt(Long subcategoryId, PromptContext person1,
+	private String createAnalysisPrompt(int subcategoryId, PromptContext person1,
 		PromptContext person2) {
 		String person1Name = person1.name();
 		String person2Name = person2.name();
@@ -47,7 +48,7 @@ public class CompatibilityPromptFactory {
 			);
 		}
 
-		return switch (subcategoryId.intValue()) {
+		return switch (subcategoryId) {
 			case 4, 6 -> CompatibilityPrompts.createLoveStoryPrompt(person1Name, person1Response,
 				person2Name, person2Response);
 			case 7 -> CelebrityCompatibilityPrompts.createIdolCompatibilityPrompt(person1Name,

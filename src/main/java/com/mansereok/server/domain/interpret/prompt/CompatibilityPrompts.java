@@ -151,7 +151,7 @@ final class CompatibilityPrompts {
 			"""
 			.formatted(person1Name, person2Name));
 
-		PromptSections.appendCompatibilityJsonResponseFormat(prompt, person1Name, person2Name);
+		PromptSections.appendCompatibilityJsonResponseFormat(prompt);
 
 		return prompt.toString();
 	}
@@ -247,7 +247,7 @@ final class CompatibilityPrompts {
 			"""
 			.formatted(person1Name, person2Name));
 
-		PromptSections.appendCompatibilityJsonResponseFormat(prompt, person1Name, person2Name);
+		PromptSections.appendCompatibilityJsonResponseFormat(prompt);
 
 		return prompt.toString();
 	}

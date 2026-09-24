@@ -314,7 +314,7 @@ final class ReunionManualSections {
 		// ==========================================
 		// JSON 포맷
 		// ==========================================
-		PromptSections.appendCompatibilityJsonResponseFormat(prompt, person1Name, person2Name);
+		PromptSections.appendCompatibilityJsonResponseFormat(prompt);
 
 		// ==========================================
 		// 최종 체크리스트

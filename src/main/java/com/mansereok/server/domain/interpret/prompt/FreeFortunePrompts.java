@@ -70,7 +70,7 @@ final class FreeFortunePrompts {
 
 			""");
 
-		PromptSections.appendSajuJsonResponseFormat(prompt, name);
+		PromptSections.appendSajuJsonResponseFormat(prompt);
 		return prompt.toString();
 	}
 
@@ -111,7 +111,7 @@ final class FreeFortunePrompts {
 			   - 4문단: 주의할 선택과 마무리 조언
 			""");
 
-		PromptSections.appendSajuJsonResponseFormat(prompt, name);
+		PromptSections.appendSajuJsonResponseFormat(prompt);
 		return prompt.toString();
 	}
 
@@ -175,7 +175,7 @@ final class FreeFortunePrompts {
 
 			""");
 
-		PromptSections.appendSajuJsonResponseFormat(prompt, name);
+		PromptSections.appendSajuJsonResponseFormat(prompt);
 		return prompt.toString();
 	}
 
@@ -259,7 +259,7 @@ final class FreeFortunePrompts {
 			※ 각 후보는 독립 문단으로 작성하고, 한 문단에 여러 후보를 섞지 마세요.
 			""");
 
-		PromptSections.appendSajuJsonResponseFormat(prompt, name);
+		PromptSections.appendSajuJsonResponseFormat(prompt);
 		return prompt.toString();
 	}
 
@@ -453,7 +453,7 @@ final class FreeFortunePrompts {
 
 			""");
 
-		PromptSections.appendSajuJsonResponseFormat(prompt, name);
+		PromptSections.appendSajuJsonResponseFormat(prompt);
 		return prompt.toString();
 	}
 }

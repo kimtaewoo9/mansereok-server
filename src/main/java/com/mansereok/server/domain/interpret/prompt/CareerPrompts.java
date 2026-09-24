@@ -301,8 +301,7 @@ final class CareerPrompts {
 		prompt.append("""
 			조직에서 일하는 것이 더 맞는지, 독립적으로 일하는 것이 더 맞는지 판정
 
-			"""
-			.formatted(name));
+			""");
 
 		prompt.append("""
 			**[판정 기준]**
@@ -479,7 +478,7 @@ final class CareerPrompts {
 
 			""");
 
-		PromptSections.appendSajuJsonResponseFormat(prompt, name);
+		PromptSections.appendSajuJsonResponseFormat(prompt);
 
 		return prompt.toString();
 	}

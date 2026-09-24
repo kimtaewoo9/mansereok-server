@@ -179,7 +179,7 @@ final class FortunePrompts {
 			.formatted(name));
 
 		// JSON 포맷 추가
-		PromptSections.appendSajuJsonResponseFormat(prompt, name);
+		PromptSections.appendSajuJsonResponseFormat(prompt);
 
 		return prompt.toString();
 	}
@@ -288,8 +288,7 @@ final class FortunePrompts {
 			- **심리 변화 묘사**: 사용자의 타고난 기질(일간 성향)과 2026년 기운이 만났을 때 **어떤 내적 갈등이나 각성**이 일어날지 구체적으로 서술하세요.
 			- **주의점 제시**: '절대 기준'에서 발견된 약점(예: 무식상, 충 등)을 바탕으로 **구체적인 주의 사항**을 2~3가지 명확히 짚어주세요.
 
-			"""
-			.formatted(name));
+			""");
 
 		prompt.append("""
 			핵심 확인: 병오년 에너지와 이 사주의 화학반응 · 용신/신강약 반영 · 구체적 행동 키워드 3개.
@@ -447,7 +446,7 @@ final class FortunePrompts {
 			""");
 
 		// ===== [6단계] JSON 포맷 =====
-		PromptSections.appendSajuJsonResponseFormat(prompt, name);
+		PromptSections.appendSajuJsonResponseFormat(prompt);
 
 		return prompt.toString();
 	}

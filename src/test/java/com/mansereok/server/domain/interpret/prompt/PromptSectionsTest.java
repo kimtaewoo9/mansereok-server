@@ -1,6 +1,7 @@
 package com.mansereok.server.domain.interpret.prompt;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.util.LinkedHashMap;
 import java.util.SequencedMap;
@@ -9,6 +10,19 @@ import org.junit.jupiter.api.Test;
 
 @DisplayName("프롬프트 공통 조각")
 class PromptSectionsTest {
+
+	@Test
+	@DisplayName("라우팅용 상품 id 는 int 범위를 벗어나면 잘리지 않고 예외가 된다")
+	void requireRoutableSubcategoryIdRejectsOutOfRange() {
+		assertThat(PromptSections.requireRoutableSubcategoryId(1L)).isEqualTo(1);
+
+		assertThatThrownBy(() -> PromptSections.requireRoutableSubcategoryId(4294967297L))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessageContaining("지원하지 않는 카테고리입니다");
+		assertThatThrownBy(() -> PromptSections.requireRoutableSubcategoryId(null))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessageContaining("지원하지 않는 카테고리입니다");
+	}
 
 	@Test
 	@DisplayName("혜안 페르소나 머리말은 역할 정의와 작성 원칙, 절대 금지를 담는다")
@@ -46,7 +60,7 @@ class PromptSectionsTest {
 	void sajuJsonResponseFormatDescribesBothFields() {
 		StringBuilder prompt = new StringBuilder();
 
-		PromptSections.appendSajuJsonResponseFormat(prompt, "김태우");
+		PromptSections.appendSajuJsonResponseFormat(prompt);
 
 		String text = prompt.toString();
 		assertThat(text).startsWith("\n\n### [최종 출력 형식] ###\n");
@@ -61,7 +75,7 @@ class PromptSectionsTest {
 	void compatibilityJsonResponseFormatDescribesThreeFields() {
 		StringBuilder prompt = new StringBuilder();
 
-		PromptSections.appendCompatibilityJsonResponseFormat(prompt, "김태우", "이은정");
+		PromptSections.appendCompatibilityJsonResponseFormat(prompt);
 
 		String text = prompt.toString();
 		assertThat(text).contains("응답은 score, interpretation, summary 세 필드로 구성됩니다.");

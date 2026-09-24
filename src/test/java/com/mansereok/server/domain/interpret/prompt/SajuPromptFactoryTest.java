@@ -56,6 +56,32 @@ class SajuPromptFactoryTest {
 			.hasMessageContaining("지원하지 않는 카테고리입니다");
 	}
 
+	@ParameterizedTest(name = "int 범위를 벗어난 상품 {0} 은 다른 상품으로 잘리지 않고 예외가 된다")
+	@ValueSource(longs = {4294967297L, 4294967305L, -4294967295L})
+	void rejectsSubcategoryOutOfIntRange(long subcategoryId) {
+		PromptContext context = PromptContext.of("김태우", response, "원피스");
+
+		assertThatThrownBy(() -> factory.create(subcategoryId, context))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessageContaining("지원하지 않는 카테고리입니다");
+		assertThatThrownBy(() -> factory.createFree(subcategoryId, context))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessageContaining("지원하지 않는 카테고리입니다");
+	}
+
+	@Test
+	@DisplayName("subcategoryId 가 null 이면 IllegalArgumentException 을 던진다")
+	void rejectsNullSubcategory() {
+		PromptContext context = PromptContext.of("김태우", response, "원피스");
+
+		assertThatThrownBy(() -> factory.create(null, context))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessageContaining("지원하지 않는 카테고리입니다");
+		assertThatThrownBy(() -> factory.createFree(null, context))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessageContaining("지원하지 않는 카테고리입니다");
+	}
+
 	@Test
 	@DisplayName("작품명을 쓰는 캐릭터 상품만 사용자 입력 구획에 작품명을 선언한다")
 	void declaresSourceTitleOnlyForCharacterProduct() {

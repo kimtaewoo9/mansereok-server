@@ -84,7 +84,10 @@ class PromptBuilderContentTest {
 		assertThat(prompt).contains("블랙핑크의 지수, 배우 박보영, 원피스의 나미");
 		assertThat(prompt).contains("캐릭터 1명은 반드시 애니메이션 캐릭터만 허용");
 		assertThat(prompt).contains("원피스의 나미, 귀멸의 칼날의 탄지로");
-		assertThat(prompt).contains("본문 시작은 반드시 2~4문장으로 작성");
+		// 옮겨 오기 전 ManseInterpretationServicePromptTest 에서 이 줄이 실패하고 있었다. 원인은 성별 조건이 아니라
+		// 문장 수 문구다. 실제 프롬프트는 "4문장정도"이고 단언만 "2~4문장"으로 낡아 있었다.
+		// 프롬프트 문구 변경은 이 PR 범위 밖이라(내용 동결) 단언을 현재 문구에 맞춘다.
+		assertThat(prompt).contains("본문 시작은 반드시 4문장정도로 작성");
 		assertThat(prompt).contains("님의 사주 핵심 성향을 간단히 설명");
 		assertThat(prompt).contains("추천 파트의 첫 문장은 반드시 아래 형식으로 시작");
 		assertThat(prompt).contains(

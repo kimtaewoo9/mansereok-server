@@ -93,7 +93,12 @@ final class SajuKeywordSections {
 				- 사주 강약 판정: %s (내 세력 %.1f vs 남의 세력 %.1f)
 				- 용신 판단 규칙: %s (%s)
 				"""
-				.formatted(saju.getYongsinInfo().getStrength(), saju.getYongsinInfo().getMyScore(), (saju.getYongsinInfo().getTotalScore() - saju.getYongsinInfo().getMyScore()), saju.getYongsinInfo().getAppliedRuleName(), saju.getYongsinInfo().getAppliedRuleCode()));
+				.formatted(
+					saju.getYongsinInfo().getStrength(),
+					saju.getYongsinInfo().getMyScore(),
+					(saju.getYongsinInfo().getTotalScore() - saju.getYongsinInfo().getMyScore()),
+					saju.getYongsinInfo().getAppliedRuleName(),
+					saju.getYongsinInfo().getAppliedRuleCode()));
 
 			// AI에게 '신강/신약'에 따른 처세술 힌트 제공
 			if (saju.getYongsinInfo().getMyScore() >= saju.getYongsinInfo().getTotalScore() / 2) {
