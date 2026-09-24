@@ -105,9 +105,16 @@ class OpenAiPropertiesTest {
 	}
 
 	@Test
-	@DisplayName("openai.api.key 가 없으면 컨텍스트 기동이 실패한다")
+	@DisplayName("openai.api.key 가 없으면 key 필수 IllegalArgumentException 으로 기동이 실패한다")
 	void contextFailsWithoutKey() {
-		runner.run(context -> assertThat(context).hasFailed());
+		runner.run(context -> {
+			assertThat(context).hasFailed();
+			// hasFailed() 만 보면 전혀 다른 이유로 깨져도 초록이라, 원인 타입과 메시지까지 고정한다.
+			assertThat(context).getFailure()
+				.rootCause()
+				.isInstanceOf(IllegalArgumentException.class)
+				.hasMessageContaining("openai.api.key");
+		});
 	}
 
 	@Configuration

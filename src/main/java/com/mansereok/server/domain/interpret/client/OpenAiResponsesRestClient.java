@@ -48,8 +48,9 @@ public class OpenAiResponsesRestClient implements OpenAiResponsesClient {
 	 * 재시도 한 번의 대기 상한. Retry-After 를 그대로 믿으면 상대 서버가 보낸 값(예: 3600)이
 	 * gptTaskExecutor 스레드 점유 시간을 정하게 된다. 우리 스레드를 얼마나 묶을지는 우리가 정한다.
 	 * 지수 백오프에도 같은 상한을 씌워 maxAttempts 를 키웠을 때의 폭주를 함께 막는다.
+	 * 테스트가 이 상한을 매직값으로 베껴 두지 않도록 package-private 으로 열어 둔다.
 	 */
-	private static final long MAX_RETRY_DELAY_MS = 30_000L;
+	static final long MAX_RETRY_DELAY_MS = 30_000L;
 
 	private final RestClient restClient;
 	private final OpenAiProperties properties;
