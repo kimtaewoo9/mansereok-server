@@ -4,6 +4,7 @@ import com.mansereok.server.domain.payment.entity.Payment;
 import com.mansereok.server.domain.payment.entity.PaymentStatus;
 import jakarta.persistence.LockModeType;
 import java.time.LocalDateTime;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -36,6 +37,12 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
 	 * 대사용 상태 조회. 환불 도중 CANCEL_REQUESTED 로 굳은 결제는 언제 만들어졌든 찾아내야 해서 창을 두지 않는다.
 	 */
 	List<Payment> findAllByStatus(PaymentStatus status);
+
+	/**
+	 * 대사용 impUid 조회. 전날 결제되고 대상일에 취소된 건은 창(createdAt) 밖이라, PG 목록에 잡힌 impUid 는
+	 * 창과 별개로 한 번 더 찾아본다.
+	 */
+	List<Payment> findAllByImpUidIn(Collection<String> impUids);
 
 	@Query(
 		value = "SELECT * "

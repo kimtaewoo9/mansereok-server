@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.willThrow;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -29,6 +30,7 @@ import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -133,7 +135,7 @@ class PaymentReconciliationServiceTest {
 		return mismatchesCaptor.getValue();
 	}
 
-	// ===== 창 계산 =====
+	// ===== 창 계산과 창 밖 결제 =====
 
 	@Test
 	@DisplayName("대상 영업일을 KST 하루로 보고 PG 는 Instant 창, DB 는 JVM 시간대 창으로 조회한다")
@@ -147,6 +149,23 @@ class PaymentReconciliationServiceTest {
 		verify(paymentRepository).findAllByCreatedAtGreaterThanEqualAndCreatedAtLessThan(
 			DB_WINDOW_FROM, DB_WINDOW_UNTIL);
 		verify(paymentRepository).findAllByStatus(PaymentStatus.CANCEL_REQUESTED);
+		// PG 목록이 비어 있으면 impUid 조회는 부르지 않는다
+		verify(paymentRepository, never()).findAllByImpUidIn(any());
+	}
+
+	@Test
+	@DisplayName("전날 결제되고 대상일에 취소돼 창 밖 createdAt 으로만 있는 결제는 MISSING_IN_DB 를 내지 않는다")
+	void reconcile_paymentCreatedBeforeWindow_isNotMissingInDb() {
+		givenPgPayments(pgPayment(IMP_UID, "CANCELLED", PRICE));
+		givenDbPayments(); // 창(createdAt) 조회에는 잡히지 않는다
+		given(paymentRepository.findAllByImpUidIn(Set.of(IMP_UID)))
+			.willReturn(List.of(dbPayment(IMP_UID, PaymentStatus.CANCELLED, PRICE)));
+
+		PaymentReconciliationRun run = paymentReconciliationService.reconcile(TARGET_DATE);
+
+		assertThat(savedMismatches()).isEmpty();
+		assertThat(run.getDbPaymentCount()).isEqualTo(1);
+		verifyNoInteractions(discordNotificationService);
 	}
 
 	// ===== 정상 완료 =====

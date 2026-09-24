@@ -109,41 +109,58 @@ public class PaymentReconciliationService {
 		Instant until) {
 		List<PortOnePaymentResponse> pgPayments =
 			portOneClient.listPaymentsChangedBetween(from, until);
-		List<Payment> windowPayments =
-			paymentRepository.findAllByCreatedAtGreaterThanEqualAndCreatedAtLessThan(
-				run.getWindowFrom(), run.getWindowUntil());
+		List<Payment> dbPayments = findDbPayments(run, pgPayments);
 		List<Payment> cancelRequestedPayments =
 			paymentRepository.findAllByStatus(PaymentStatus.CANCEL_REQUESTED);
 
 		Map<String, PgLookup> pgLookups =
-			lookUpDbOnlyPayments(pgPayments, windowPayments, cancelRequestedPayments);
+			lookUpDbOnlyPayments(pgPayments, dbPayments, cancelRequestedPayments);
 		List<PaymentReconciliationMismatch> mismatches = reconciler.reconcile(run.getId(),
-			pgPayments, windowPayments, cancelRequestedPayments, pgLookups, now());
+			pgPayments, dbPayments, cancelRequestedPayments, pgLookups, now());
 
-		saveResult(run, pgPayments.size(), windowPayments.size(), mismatches);
+		int dbPaymentCount =
+			PaymentReconciler.indexDbPayments(dbPayments, cancelRequestedPayments).size();
+		saveResult(run, pgPayments.size(), dbPaymentCount, mismatches);
 		log.info("결제 대사 완료: targetDate={}, pg={}건, db={}건, 불일치={}건", run.getTargetDate(),
-			pgPayments.size(), windowPayments.size(), mismatches.size());
+			pgPayments.size(), dbPaymentCount, mismatches.size());
 
 		notifyMismatches(run, mismatches);
 		return run;
 	}
 
 	/**
-	 * DB 에만 있는 결제를 하나씩 단건 조회한다. 창 밖에서 만들어졌거나 상태가 안 바뀌어 목록에 안 잡혔을 수
-	 * 있어서, 목록에 없다는 것만으로 "PG 에 없음" 이라고 단정하지 않는다. 조회 한 건이 실패해도 그 사실을 값으로
-	 * 담고 대사를 계속한다.
+	 * 대조할 DB 결제. 창(createdAt) 안에 만들어진 결제에, PG 목록에 잡힌 impUid 로 찾은 결제를 더한다.
+	 *
+	 * <p>PG 목록은 상태가 바뀐 시각 기준이라 전날 결제되고 대상일에 취소된 건이 들어 있는데, 이 건은 창 밖이라
+	 * 창 조회만으로는 DB 에 없는 것처럼 보인다. 겹쳐 나온 결제는 뒤에서 impUid 로 한 번만 세진다.
+	 */
+	private List<Payment> findDbPayments(PaymentReconciliationRun run,
+		List<PortOnePaymentResponse> pgPayments) {
+		List<Payment> dbPayments = new ArrayList<>(
+			paymentRepository.findAllByCreatedAtGreaterThanEqualAndCreatedAtLessThan(
+				run.getWindowFrom(), run.getWindowUntil()));
+
+		Set<String> pgImpUids = impUidsOf(pgPayments);
+		if (!pgImpUids.isEmpty()) {
+			dbPayments.addAll(paymentRepository.findAllByImpUidIn(pgImpUids));
+		}
+		return dbPayments;
+	}
+
+	/**
+	 * PG 목록에 없는 DB 결제를 하나씩 단건 조회한다. 목록은 창 안에서 상태가 바뀐 거래만 담고 있어서, 목록에
+	 * 없다는 것만으로 "PG 에 없음" 이라고 단정하지 않는다. 조회 한 건이 실패해도 그 사실을 값으로 담고 대사를
+	 * 계속한다.
 	 */
 	private Map<String, PgLookup> lookUpDbOnlyPayments(List<PortOnePaymentResponse> pgPayments,
-		List<Payment> windowPayments, List<Payment> cancelRequestedPayments) {
-		Set<String> pgImpUids = pgPayments.stream()
-			.map(PortOnePaymentResponse::getId)
-			.collect(Collectors.toSet());
+		List<Payment> dbPayments, List<Payment> cancelRequestedPayments) {
+		Set<String> pgImpUids = impUidsOf(pgPayments);
 
-		List<Payment> dbPayments = new ArrayList<>(windowPayments);
-		dbPayments.addAll(cancelRequestedPayments);
+		List<Payment> candidates = new ArrayList<>(dbPayments);
+		candidates.addAll(cancelRequestedPayments);
 
 		Map<String, PgLookup> pgLookups = new HashMap<>();
-		for (Payment payment : dbPayments) {
+		for (Payment payment : candidates) {
 			String impUid = payment.getImpUid();
 			if (pgImpUids.contains(impUid) || pgLookups.containsKey(impUid)
 				|| PaymentReconciler.isFreePayment(payment)) {
@@ -152,6 +169,12 @@ public class PaymentReconciliationService {
 			pgLookups.put(impUid, lookUp(impUid));
 		}
 		return pgLookups;
+	}
+
+	private Set<String> impUidsOf(List<PortOnePaymentResponse> pgPayments) {
+		return pgPayments.stream()
+			.map(PortOnePaymentResponse::getId)
+			.collect(Collectors.toSet());
 	}
 
 	private PgLookup lookUp(String impUid) {
@@ -188,11 +211,10 @@ public class PaymentReconciliationService {
 	 * 로그만 남기고 원인을 덮지 않는다.
 	 */
 	private void markFailed(PaymentReconciliationRun run, RuntimeException cause) {
+		// 저장이 실패해도 보고에는 실패 사유가 실려야 해서, 상태부터 바꾸고 저장한다.
+		run.fail(messageOf(cause), now());
 		try {
-			transactionTemplate.executeWithoutResult(status -> {
-				run.fail(messageOf(cause), now());
-				runRepository.save(run);
-			});
+			transactionTemplate.executeWithoutResult(status -> runRepository.save(run));
 		} catch (RuntimeException e) {
 			log.error("대사 실패를 기록하지 못했습니다: targetDate={}", run.getTargetDate(), e);
 		}

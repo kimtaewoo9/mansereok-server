@@ -44,6 +44,7 @@ public class PaymentReconciliationRun {
 	private ReconciliationStatus status;
 
 	private int pgPaymentCount;
+	/** 대조한 DB 결제 건수. 무료 결제를 빼고 impUid 로 중복을 걷어낸 수다. */
 	private int dbPaymentCount;
 	private int mismatchCount;
 

@@ -20,8 +20,8 @@ import org.springframework.stereotype.Component;
  * 하나다.
  *
  * <p>PG 쪽 기준은 impUid(포트원 paymentId)다. 양쪽에 다 있으면 금액과 상태를 보고, 한쪽에만 있으면 그 사실
- * 자체가 불일치다. 다만 DB 에만 있는 건은 "창 밖에서 상태가 바뀌어 목록에 안 잡힌 것"일 수 있어, 서비스가 미리
- * 단건 조회한 결과({@link PgLookup})를 받아 판단한다.
+ * 자체가 불일치다. 다만 PG 목록은 창 안에서 상태가 바뀐 거래만 담고 있어서, 목록에 없다고 곧바로 "PG 에 없음"
+ * 은 아니다. 그래서 DB 에만 있는 건은 서비스가 미리 단건 조회한 결과({@link PgLookup})를 받아 판단한다.
  */
 @Component
 public class PaymentReconciler {
@@ -32,20 +32,20 @@ public class PaymentReconciler {
 	/**
 	 * @param runId                    불일치가 속할 대사 실행 id
 	 * @param pgPayments               창 안에서 상태가 바뀐 PG 거래
-	 * @param windowPayments           창 안에 만들어진 DB 결제
+	 * @param dbPayments               대조 대상 DB 결제 (창 안에 만들어진 결제 + PG 목록의 impUid 로 찾은 결제)
 	 * @param cancelRequestedPayments  상태가 CANCEL_REQUESTED 인 DB 결제 (창과 무관)
 	 * @param pgLookups                DB 에만 있는 impUid 의 단건 조회 결과
 	 */
 	public List<PaymentReconciliationMismatch> reconcile(
 		Long runId,
 		List<PortOnePaymentResponse> pgPayments,
-		List<Payment> windowPayments,
+		List<Payment> dbPayments,
 		List<Payment> cancelRequestedPayments,
 		Map<String, PgLookup> pgLookups,
 		LocalDateTime detectedAt
 	) {
 		Map<String, PortOnePaymentResponse> pgByImpUid = indexPgPayments(pgPayments);
-		Map<String, Payment> dbByImpUid = indexDbPayments(windowPayments, cancelRequestedPayments);
+		Map<String, Payment> dbByImpUid = indexDbPayments(dbPayments, cancelRequestedPayments);
 		MismatchCollector collector = new MismatchCollector(runId, detectedAt);
 
 		checkMissingInDb(pgByImpUid, dbByImpUid, collector);
@@ -84,11 +84,14 @@ public class PaymentReconciler {
 		return indexed;
 	}
 
-	/** 창 안의 결제와 CANCEL_REQUESTED 결제는 겹칠 수 있어 impUid 로 합친다. */
-	private Map<String, Payment> indexDbPayments(List<Payment> windowPayments,
+	/**
+	 * 대조 대상 DB 결제를 impUid 로 모은다. 무료 결제는 빼고, 여러 조회에 겹쳐 나온 결제는 한 번만 담는다.
+	 * 대사 서비스가 "대조한 DB 결제 건수" 를 셀 때도 같은 규칙을 써야 해서 밖에서도 부를 수 있게 뒀다.
+	 */
+	public static Map<String, Payment> indexDbPayments(List<Payment> dbPayments,
 		List<Payment> cancelRequestedPayments) {
 		Map<String, Payment> indexed = new LinkedHashMap<>();
-		for (Payment payment : windowPayments) {
+		for (Payment payment : dbPayments) {
 			putUnlessFree(indexed, payment);
 		}
 		for (Payment payment : cancelRequestedPayments) {
@@ -97,7 +100,7 @@ public class PaymentReconciler {
 		return indexed;
 	}
 
-	private void putUnlessFree(Map<String, Payment> indexed, Payment payment) {
+	private static void putUnlessFree(Map<String, Payment> indexed, Payment payment) {
 		if (isFreePayment(payment)) {
 			return;
 		}
@@ -142,6 +145,10 @@ public class PaymentReconciler {
 
 	private void checkAmount(PortOnePaymentResponse pgPayment, Payment dbPayment,
 		MismatchCollector collector) {
+		if (pgPayment == null) {
+			return;
+		}
+
 		Long pgAmount = amountOf(pgPayment);
 		if (pgAmount == null || pgAmount.equals(dbPayment.getAmount())) {
 			return;

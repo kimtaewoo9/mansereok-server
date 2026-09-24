@@ -42,14 +42,14 @@ class PaymentReconcilerTest {
 	}
 
 	private List<PaymentReconciliationMismatch> reconcile(List<PortOnePaymentResponse> pgPayments,
-		List<Payment> windowPayments) {
-		return reconcile(pgPayments, windowPayments, List.of(), Map.of());
+		List<Payment> dbPayments) {
+		return reconcile(pgPayments, dbPayments, List.of(), Map.of());
 	}
 
 	private List<PaymentReconciliationMismatch> reconcile(List<PortOnePaymentResponse> pgPayments,
-		List<Payment> windowPayments, List<Payment> cancelRequestedPayments,
+		List<Payment> dbPayments, List<Payment> cancelRequestedPayments,
 		Map<String, PgLookup> pgLookups) {
-		return reconciler.reconcile(RUN_ID, pgPayments, windowPayments, cancelRequestedPayments,
+		return reconciler.reconcile(RUN_ID, pgPayments, dbPayments, cancelRequestedPayments,
 			pgLookups, DETECTED_AT);
 	}
 
@@ -182,7 +182,7 @@ class PaymentReconcilerTest {
 	}
 
 	@Test
-	@DisplayName("창 조회와 CANCEL_REQUESTED 조회에 같은 결제가 걸려도 같은 타입을 두 번 남기지 않는다")
+	@DisplayName("여러 조회에 같은 결제가 걸려도 같은 타입을 두 번 남기지 않는다")
 	void sameImpUidAndType_isRecordedOnce() {
 		Payment stalePayment = dbPayment(IMP_UID, PaymentStatus.CANCEL_REQUESTED, PRICE);
 
