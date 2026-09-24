@@ -3,6 +3,10 @@ package com.mansereok.server.domain.interpret.prompt;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -59,6 +63,51 @@ class CompatibilityPromptFactoryTest {
 		assertThatThrownBy(() -> factory.create(null, context))
 			.isInstanceOf(IllegalArgumentException.class)
 			.hasMessageContaining("지원하지 않는 카테고리입니다");
+	}
+
+	/**
+	 * 라우팅이 뒤섞이는 변이를 골든 없이도 잡는 장치.
+	 *
+	 * <p>4, 6, 14 는 {@code CompatibilityPrompts.createLoveStoryPrompt} 를 같은 인자로 부르므로
+	 * 프롬프트가 바이트 단위로 같다. 그래서 "모든 상품이 다르다" 가 아니라
+	 * "같은 빌더를 쓰는 묶음 안에서는 같고, 묶음끼리는 다르다" 로 검증한다.
+	 * 새 상품이 기존 빌더를 재사용한다면 이 목록에 같이 넣고, 아니라면 자기 묶음을 만들면 된다.
+	 */
+	private static final List<List<Long>> ROUTING_GROUPS = List.of(
+		List.of(4L, 6L, 14L), // 같은 빌더 · 같은 인자 → 바이트 동일
+		List.of(7L),
+		List.of(8L),
+		List.of(10L),
+		List.of(11L),
+		List.of(15L),
+		List.of(19L));
+
+	@Test
+	@DisplayName("같은 빌더로 가는 4, 6, 14 는 프롬프트가 바이트 단위로 같다")
+	void subcategoriesSharingABuilderProduceTheSamePrompt() {
+		for (List<Long> group : ROUTING_GROUPS) {
+			Long first = group.getFirst();
+			String expected = factory.create(first, context());
+			for (Long id : group) {
+				assertThat(factory.create(id, context()))
+					.as("같은 묶음인 %d 와 %d 의 프롬프트", first, id)
+					.isEqualTo(expected);
+			}
+		}
+	}
+
+	@Test
+	@DisplayName("서로 다른 빌더로 가는 묶음끼리는 프롬프트가 다르다")
+	void differentRoutingGroupsProduceDifferentPrompts() {
+		Map<String, Long> promptToId = new LinkedHashMap<>();
+		for (List<Long> group : ROUTING_GROUPS) {
+			Long id = group.getFirst();
+			Long collided = promptToId.putIfAbsent(factory.create(id, context()), id);
+			assertThat(collided)
+				.as("다른 묶음인 %d 와 %d 의 프롬프트가 같다", collided, id)
+				.isNull();
+		}
+		assertThat(promptToId).hasSameSizeAs(ROUTING_GROUPS);
 	}
 
 	@Test

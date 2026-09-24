@@ -129,6 +129,69 @@ public final class PromptFixtures {
 	}
 
 	/**
+	 * 대운이 역행하는 샘플. person1(남성·년간 양)과 person2(여성·년간 음)는 둘 다 순행이라
+	 * 역행 분기가 골든에 한 번도 잡히지 않았다. 여기서는 남성 + 년간 음으로 역행을 태운다.
+	 *
+	 * <p>월주를 을축(乙丑, 60갑자 1번)으로 잡아 둔 것이 핵심이다. 역행은 월주 인덱스에서 빼 나가므로
+	 * 1 - (i + 1) 이 음수가 되고, 자바 음수 나머지를 보정하는 {@code ((x % 60) + 60) % 60} 경로를
+	 * 반드시 지나간다. 월주를 큰 인덱스로 잡으면 뺄셈 결과가 양수라 그 보정이 실행되지 않는다.
+	 *
+	 * <p>대운 시작 연도를 2000년으로 둬서 기준연도 2026 인 상품(18, 101, 106)에서는
+	 * 대운 구간이 (2026 - 2000) / 10 = 2 로 고정된다. 기준연도가 고정된 상품만 골든으로 떠 두면
+	 * 해가 바뀌어도 이 골든은 흔들리지 않는다.
+	 */
+	public static ManseryeokCalculationResponse personReverseDaewoon() {
+		SajuInfo saju = SajuInfo.builder()
+			.bigFortuneNumber(7)
+			.bigFortuneNumberMin(6)
+			.bigFortuneNumberMax(8)
+			.bigFortuneStartYear(2000)
+			.bigFortuneStartYearMin(1999)
+			.bigFortuneStartYearMax(2001)
+			.seasonStartTime("1993-02-04 10:38")
+			.uncertaintyNotes(List.of())
+			.yearSky(pillar("癸", "계", "수", "정인", "음", "목욕", "다듬어지는 자리",
+				jijanggan("癸", "계", "수", "음", 100, "정인")))
+			.yearGround(pillar("卯", "묘", "목", "겁재", "음", "제왕", "기운이 가장 센 자리",
+				jijanggan("甲", "갑", "목", "양", 30, "비견", "乙", "을", "목", "음", 70, "겁재")))
+			.monthSky(pillar("乙", "을", "목", "겁재", "음", "관대", "자리를 얻는 자리",
+				jijanggan("乙", "을", "목", "음", 100, "겁재")))
+			.monthGround(pillar("丑", "축", "토", "정재", "음", "관대", "자리를 얻는 자리",
+				jijanggan("癸", "계", "수", "음", 30, "정인", "辛", "신", "금", "음", 30, "정관",
+					"己", "기", "토", "음", 40, "정재")))
+			.daySky(pillar("甲", "갑", "목", "비견", "양", "양", "품어지는 자리",
+				jijanggan("甲", "갑", "목", "양", 100, "비견")))
+			.dayGround(pillar("戌", "술", "토", "편재", "양", "양", "품어지는 자리",
+				jijanggan("辛", "신", "금", "음", 30, "정관", "丁", "정", "화", "음", 30, "상관",
+					"戊", "무", "토", "양", 40, "편재")))
+			.timeSky(pillar("丙", "병", "화", "식신", "양", "병", "기운이 꺾이는 자리",
+				jijanggan("丙", "병", "화", "양", 100, "식신")))
+			.timeGround(pillar("寅", "인", "목", "비견", "양", "건록", "자기 힘으로 서는 자리",
+				jijanggan("戊", "무", "토", "양", 30, "편재", "丙", "병", "화", "양", 30, "식신",
+					"甲", "갑", "목", "양", 40, "비견")))
+			.sinsalInfo(sinsal())
+			.hasGoegang(Boolean.FALSE)
+			.hasBaekho(Boolean.FALSE)
+			.gongmang(List.of("申", "酉"))
+			.groundRelations(List.of("월지-일지: 형"))
+			.skyRelations(List.of("년간-시간: 천간충"))
+			.samhap(List.of("인오술 화국"))
+			.yongsinInfo(yongsin())
+			.monthlyFortunes(monthlyFortunes())
+			.build();
+
+		InputInfo input = InputInfo.builder()
+			.solarDate(LocalDate.of(1993, 2, 10))
+			.solarTime(LocalTime.of(8, 20))
+			.gender("MALE")
+			.isLunar(Boolean.FALSE)
+			.timeUnknown(Boolean.FALSE)
+			.build();
+
+		return ManseryeokCalculationResponse.builder().input(input).saju(saju).build();
+	}
+
+	/**
 	 * 값이 비거나 없는 경로를 태우는 샘플. 시간 모름, 여성, 지장간/신살/용신/월운 없음.
 	 * 프롬프트 빌더의 null 분기가 골든에 잡히도록 일부러 비워 둔다.
 	 */

@@ -25,6 +25,26 @@ import org.junit.jupiter.params.provider.MethodSource;
  * <p>시각에 따라 달라지는 값(오늘 날짜, 오늘 일진, 기준 연도)은 골든 파일에 자리표시자로 저장해 두고,
  * 비교 직전에 오늘 값으로 바꿔 넣는다. 실제 프롬프트는 전혀 가공하지 않으므로 자리표시자로 바뀐
  * 값 한 덩어리를 뺀 나머지는 한 글자라도 다르면 실패한다.
+ *
+ * <p><b>유효기간 주의.</b> 대운 구간과 시작연도는 자리표시자가 아니라 숫자 그대로 박혀 있는데,
+ * 기준연도만 자리표시자다. 기준연도가 "오늘의 연도" 인 상품은 해가 바뀌어 대운 구간이 넘어가는 순간
+ * 골든이 깨진다. person1 은 2035년, person2 는 2038년에 대운이 다음 칸으로 넘어가므로
+ * <b>2035년이 되기 전에 골든을 다시 떠야 한다.</b>
+ *
+ * <p>기준연도가 2026 으로 코드에 박혀 있는 상품(18, 101, 102, 106)의 기존 골든은 사정이 더 급하다.
+ * 골든을 뜬 시점이 2026년이라 코드에 박힌 2026 까지 &lt;&lt;THIS_YEAR&gt;&gt; 로 가려졌고,
+ * 이 자리표시자는 "오늘의 연도" 로 펼쳐지므로 <b>2027년 1월 1일에 그 네 상품의 골든이 깨진다.</b>
+ * 이번에 추가한 -reverse 골든은 같은 실수를 되풀이하지 않으려고 그 자리를 2026 그대로 두었다.
+ * 기존 54개를 다시 뜰 때 같은 방식으로 고치면 된다.
+ *
+ * <p>변이(mutation)로 확인한 덮는 범위:
+ * <ul>
+ *   <li>대운 역행 분기 - -reverse 골든이 덮는다. 음수 나머지 보정 {@code (x % 60 + 60) % 60} 의
+ *       60 을 61 로 바꾸면 세 파일이 모두 깨진다.</li>
+ *   <li>궁합 두 번째 사람의 결측 분기 - -edge2 골든이 덮는다.</li>
+ *   <li>오늘 일진은 이 테스트가 프로덕션 함수로 기대값을 만들기 때문에 여기서는 잡히지 않는다.
+ *       손으로 계산한 기대값은 {@link DaewoonSectionsTest} 가 들고 있다.</li>
+ * </ul>
  */
 @DisplayName("프롬프트 골든 테스트")
 class PromptGoldenTest {
@@ -39,6 +59,14 @@ class PromptGoldenTest {
 	private static final CompatibilityPromptFactory COMPATIBILITY_PROMPT_FACTORY =
 		new CompatibilityPromptFactory();
 
+	/**
+	 * 대운 역행 골든을 뜬 상품. 기준연도가 2026 으로 코드에 박혀 있어 해가 바뀌어도 대운 칸이
+	 * 움직이지 않는 상품만 골랐다(18=신년운세, 101=2026 변화, 106=3월 월운).
+	 * 역행 계산 자체는 상품과 무관한 한 곳(DaewoonSections)에서 하므로 27개 전부를 뜰 필요가 없다.
+	 */
+	private static final List<Long> REVERSE_SAJU_IDS = List.of(18L);
+	private static final List<Long> REVERSE_FREE_IDS = List.of(101L, 106L);
+
 	static Stream<org.junit.jupiter.params.provider.Arguments> cases() {
 		Stream.Builder<org.junit.jupiter.params.provider.Arguments> builder = Stream.builder();
 		for (Long id : SAJU_IDS) {
@@ -49,10 +77,18 @@ class PromptGoldenTest {
 			builder.add(org.junit.jupiter.params.provider.Arguments.of("compatibility", id, ""));
 			builder.add(
 				org.junit.jupiter.params.provider.Arguments.of("compatibility", id, "-edge"));
+			builder.add(
+				org.junit.jupiter.params.provider.Arguments.of("compatibility", id, "-edge2"));
 		}
 		for (Long id : FREE_IDS) {
 			builder.add(org.junit.jupiter.params.provider.Arguments.of("free", id, ""));
 			builder.add(org.junit.jupiter.params.provider.Arguments.of("free", id, "-edge"));
+		}
+		for (Long id : REVERSE_SAJU_IDS) {
+			builder.add(org.junit.jupiter.params.provider.Arguments.of("saju", id, "-reverse"));
+		}
+		for (Long id : REVERSE_FREE_IDS) {
+			builder.add(org.junit.jupiter.params.provider.Arguments.of("free", id, "-reverse"));
 		}
 		return builder.build();
 	}
@@ -61,17 +97,31 @@ class PromptGoldenTest {
 	@MethodSource("cases")
 	void promptMatchesGolden(String kind, Long subcategoryId, String variant) {
 		String actual = switch (kind) {
-			case "saju" -> variant.isEmpty()
-				? saju(subcategoryId, "김태우", PromptFixtures.person1(), "원피스")
-				: saju(subcategoryId, "박하늘", PromptFixtures.personEdge(), "");
-			case "compatibility" -> variant.isEmpty()
-				? compatibility(subcategoryId, "김태우", PromptFixtures.person1(), "이은정",
-				PromptFixtures.person2(), "원피스", "귀멸의 칼날")
-				: compatibility(subcategoryId, "박하늘", PromptFixtures.personEdge(), "최서준",
-					PromptFixtures.person2(), "", "");
-			case "free" -> variant.isEmpty()
-				? free(subcategoryId, "김태우", PromptFixtures.person1())
-				: free(subcategoryId, "박하늘", PromptFixtures.personEdge());
+			case "saju" -> switch (variant) {
+				case "" -> saju(subcategoryId, "김태우", PromptFixtures.person1(), "원피스");
+				case "-edge" -> saju(subcategoryId, "박하늘", PromptFixtures.personEdge(), "");
+				case "-reverse" ->
+					saju(subcategoryId, "강민호", PromptFixtures.personReverseDaewoon(), "원피스");
+				default -> throw new IllegalArgumentException("알 수 없는 변이: " + variant);
+			};
+			case "compatibility" -> switch (variant) {
+				case "" -> compatibility(subcategoryId, "김태우", PromptFixtures.person1(), "이은정",
+					PromptFixtures.person2(), "원피스", "귀멸의 칼날");
+				// 첫 번째 사람만 결측
+				case "-edge" -> compatibility(subcategoryId, "박하늘", PromptFixtures.personEdge(),
+					"최서준", PromptFixtures.person2(), "", "");
+				// 두 번째 사람도 결측. 궁합 빌더가 person2 쪽에서 타는 null 분기를 덮는다.
+				case "-edge2" -> compatibility(subcategoryId, "박하늘", PromptFixtures.personEdge(),
+					"최서준", PromptFixtures.personEdge(), "", "");
+				default -> throw new IllegalArgumentException("알 수 없는 변이: " + variant);
+			};
+			case "free" -> switch (variant) {
+				case "" -> free(subcategoryId, "김태우", PromptFixtures.person1());
+				case "-edge" -> free(subcategoryId, "박하늘", PromptFixtures.personEdge());
+				case "-reverse" ->
+					free(subcategoryId, "강민호", PromptFixtures.personReverseDaewoon());
+				default -> throw new IllegalArgumentException("알 수 없는 변이: " + variant);
+			};
 			default -> throw new IllegalArgumentException("알 수 없는 종류: " + kind);
 		};
 
