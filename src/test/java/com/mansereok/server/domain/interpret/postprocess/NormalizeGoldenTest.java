@@ -6,8 +6,12 @@ import com.mansereok.server.domain.interpret.postprocess.NormalizeFixtures.Sampl
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.UncheckedIOException;
+import java.net.URL;
 import java.nio.charset.StandardCharsets;
-import java.util.Map;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.List;
+import java.util.Objects;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -48,13 +52,28 @@ class NormalizeGoldenTest {
 			.isEqualTo(readGolden(name + ".summary.txt"));
 	}
 
-	@DisplayName("골든 파일과 표본은 짝이 맞는다")
+	/**
+	 * 표본과 골든 파일이 정확히 1:2 로 맞물리는지 본다. 표본만 늘리고 골든을 안 뜬 경우와,
+	 * 표본을 지웠는데 골든만 남은 경우를 모두 잡는다.
+	 */
+	@DisplayName("골든 파일과 표본은 빠짐없이 짝이 맞는다")
 	@Test
-	void everySampleHasGolden() {
-		for (Map.Entry<String, Sample> entry : NormalizeFixtures.samples().entrySet()) {
-			assertThat(readGolden(entry.getKey() + ".analysis.txt")).isNotNull();
-			assertThat(readGolden(entry.getKey() + ".summary.txt")).isNotNull();
+	void goldenFilesMatchSamples() throws Exception {
+		URL directory = Objects.requireNonNull(
+			NormalizeGoldenTest.class.getClassLoader().getResource("normalize-golden"),
+			"normalize-golden 디렉터리를 찾을 수 없습니다");
+
+		List<String> actualFiles;
+		try (Stream<Path> files = Files.list(Path.of(directory.toURI()))) {
+			actualFiles = files.map(path -> path.getFileName().toString()).sorted().toList();
 		}
+
+		List<String> expectedFiles = NormalizeFixtures.samples().keySet().stream()
+			.flatMap(name -> Stream.of(name + ".analysis.txt", name + ".summary.txt"))
+			.sorted()
+			.toList();
+
+		assertThat(actualFiles).containsExactlyElementsOf(expectedFiles);
 	}
 
 	private static String readGolden(String fileName) {

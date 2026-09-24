@@ -1,9 +1,11 @@
 package com.mansereok.server.domain.interpret.postprocess;
 
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.regex.Pattern;
 
 /**
  * 사업운(21)·학업운(22)·인생조언(23) 후처리.
@@ -18,23 +20,35 @@ final class BusinessNormalizationRule implements SubcategoryNormalizationRule {
 	private static final int SUMMARY_MAX_CHARS = 280;
 
 	/** 독자가 모르는 용어를 괄호 설명으로 풀어 준다. */
-	private static final Map<String, String> JARGON_EXPANSIONS = new LinkedHashMap<>();
-
-	static {
-		JARGON_EXPANSIONS.put("수국", "수기운 결속 구조");
-		JARGON_EXPANSIONS.put("천간충", "천간 충돌(생각과 실행이 맞부딪히는 구조)");
-		JARGON_EXPANSIONS.put("양인살", "양인살(추진력이 강하지만 과속 시 마찰이 생기기 쉬운 신살)");
-		JARGON_EXPANSIONS.put("공망", "공망(기대와 현실이 어긋나기 쉬운 구간)");
-		JARGON_EXPANSIONS.put("역마살", "역마살(이동과 변화가 많아지는 기운)");
-	}
+	private static final Map<String, String> JARGON_EXPANSIONS = jargonExpansions();
 
 	/** 요청하지 않은 개운법 안내가 들어간 줄. */
-	private static final String FORBIDDEN_ADVICE_LINE_REGEX =
-		"(?m)^.*(행운의 색|개운색|개운법|청색|녹색|동쪽|서쪽|남쪽|북쪽|3과\\s*8|숫자\\s*3|숫자\\s*8).*$\\n?";
+	private static final Pattern FORBIDDEN_ADVICE_LINE = Pattern.compile(
+		"(?m)^.*(행운의 색|개운색|개운법|청색|녹색|동쪽|서쪽|남쪽|북쪽|3과\\s*8|숫자\\s*3|숫자\\s*8).*$\\n?");
 
 	/** 내부 계산값이 그대로 노출된 줄. */
-	private static final String INTERNAL_SCORE_LINE_REGEX =
-		"(?m)^.*(오행 점수|내 세력|남의 세력).*$\\n?";
+	private static final Pattern INTERNAL_SCORE_LINE = Pattern.compile(
+		"(?m)^.*(오행 점수|내 세력|남의 세력).*$\\n?");
+
+	/** {@code 목 3.2} 처럼 오행 옆에 붙은 점수. 숫자는 지우고 "기운" 으로만 남긴다. */
+	private static final Pattern ELEMENT_SCORE = Pattern.compile("(?m)([목화토금수])\\s*\\d+\\.\\d+");
+
+	/** {@code 비겁(比劫)} 의 괄호 한자처럼 독자가 읽지 않는 원문 병기. */
+	private static final Pattern PARENTHESIZED_HANJA = Pattern.compile("\\(\\p{IsHan}+\\)");
+
+	/**
+	 * 치환은 등록 순서대로 이뤄진다. 순서를 바꾸면 결과가 달라지므로 {@link LinkedHashMap} 을 쓰고
+	 * 밖에서 고칠 수 없도록 감싼다.
+	 */
+	private static Map<String, String> jargonExpansions() {
+		Map<String, String> expansions = new LinkedHashMap<>();
+		expansions.put("수국", "수기운 결속 구조");
+		expansions.put("천간충", "천간 충돌(생각과 실행이 맞부딪히는 구조)");
+		expansions.put("양인살", "양인살(추진력이 강하지만 과속 시 마찰이 생기기 쉬운 신살)");
+		expansions.put("공망", "공망(기대와 현실이 어긋나기 쉬운 구간)");
+		expansions.put("역마살", "역마살(이동과 변화가 많아지는 기운)");
+		return Collections.unmodifiableMap(expansions);
+	}
 
 	@Override
 	public String normalizeAnalysis(String text) {
@@ -65,10 +79,10 @@ final class BusinessNormalizationRule implements SubcategoryNormalizationRule {
 
 		normalized = NormalizationSteps.unifyPeriodNotation(normalized);
 		normalized = expandJargonForReadability(normalized);
-		normalized = normalized.replaceAll(FORBIDDEN_ADVICE_LINE_REGEX, "");
-		normalized = normalized.replaceAll(INTERNAL_SCORE_LINE_REGEX, "");
-		normalized = normalized.replaceAll("(?m)([목화토금수])\\s*\\d+\\.\\d+", "$1 기운");
-		return normalized.replaceAll("\\(\\p{IsHan}+\\)", "");
+		normalized = FORBIDDEN_ADVICE_LINE.matcher(normalized).replaceAll("");
+		normalized = INTERNAL_SCORE_LINE.matcher(normalized).replaceAll("");
+		normalized = ELEMENT_SCORE.matcher(normalized).replaceAll("$1 기운");
+		return PARENTHESIZED_HANJA.matcher(normalized).replaceAll("");
 	}
 
 	private static String expandJargonForReadability(String text) {

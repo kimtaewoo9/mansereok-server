@@ -52,8 +52,13 @@ final class NormalizationSteps {
 	/** 빈 줄 없이 이어진 문장 단위 줄바꿈을 한 문단의 줄글로 합친다. */
 	static String mergeSingleLineBreaksWithinParagraph(String text) {
 		return TextBlocks.joinParagraphs(TextBlocks.splitParagraphs(text).stream()
-			.map(block -> block.replaceAll("\\n+", " ").replaceAll("[ \\t]{2,}", " "))
+			.map(NormalizationSteps::mergeLineBreaksIntoSpaces)
 			.toList());
+	}
+
+	private static String mergeLineBreaksIntoSpaces(String block) {
+		String merged = NormalizationPatterns.ONE_OR_MORE_NEWLINES.matcher(block).replaceAll(" ");
+		return NormalizationPatterns.MULTI_SPACE.matcher(merged).replaceAll(" ");
 	}
 
 	/** 빈 줄이 두 줄 이상 이어지면 한 줄로 줄인다. */

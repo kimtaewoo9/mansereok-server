@@ -3,6 +3,8 @@ package com.mansereok.server.domain.interpret.postprocess;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Pattern;
 
 /**
@@ -18,7 +20,18 @@ final class ParagraphSplitter {
 		"다만", "반면", "또한", "그리고", "한편", "특히", "무엇보다", "이때", "여기서", "정리하면",
 		"결론적으로", "요약하면", "반대로");
 
+	/**
+	 * 소제목마다 만드는 "이 앞에서 끊는다" 정규식. 소제목 목록은 상품별로 고정돼 있어 종류가 적으므로
+	 * 한 번 만든 것을 재사용한다.
+	 */
+	private static final Map<String, Pattern> MARKER_BREAKS = new ConcurrentHashMap<>();
+
 	private ParagraphSplitter() {
+	}
+
+	private static Pattern markerBreak(String marker) {
+		return MARKER_BREAKS.computeIfAbsent(marker,
+			key -> Pattern.compile("(?<!\\n\\n)\\s+(?=" + Pattern.quote(key) + ")"));
 	}
 
 	/**
@@ -36,9 +49,7 @@ final class ParagraphSplitter {
 
 		String withMarkerHints = normalized;
 		for (String marker : topicMarkers) {
-			withMarkerHints = withMarkerHints.replaceAll(
-				"(?<!\\n\\n)\\s+(?=" + Pattern.quote(marker) + ")",
-				"\n\n");
+			withMarkerHints = markerBreak(marker).matcher(withMarkerHints).replaceAll("\n\n");
 		}
 		withMarkerHints = NormalizationSteps.collapseBlankLines(withMarkerHints);
 

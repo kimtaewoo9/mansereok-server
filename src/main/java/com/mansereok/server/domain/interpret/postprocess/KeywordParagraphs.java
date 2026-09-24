@@ -16,6 +16,17 @@ final class KeywordParagraphs {
 	/** 맨 앞 줄의 {@code [2026년 상반기 운명 키워드: 균형]} 같은 제목. */
 	private static final Pattern TITLE_LINE = Pattern.compile("^\\s*\\[[^\\]\\n]{1,120}\\]");
 
+	/** 본문에 섞여 나오는 상담 멘트. */
+	private static final Pattern FACE_TO_FACE_PHRASE = Pattern.compile(
+		"직접\\s*대면\\s*상담하듯\\s*핵심만\\s*전해드(?:립니|릴게)다\\.?");
+
+	/** 위 멘트의 짧은 변형. */
+	private static final Pattern CORE_ONLY_PHRASE = Pattern.compile(
+		"핵심만\\s*전해드(?:립니|릴게)다\\.?");
+
+	/** 화면에 드러내지 않는 AI 언급. */
+	private static final Pattern AI_MENTION = Pattern.compile("AI가\\s*분석한\\s*결과");
+
 	private static final List<String> TOPIC_MARKERS =
 		List.of("다만", "특히", "반면", "무엇보다", "결론적으로");
 
@@ -24,10 +35,9 @@ final class KeywordParagraphs {
 
 	/** 본문에 섞인 상담 멘트·AI 언급을 지운다. */
 	static String removeMetaPhrases(String text) {
-		String normalized = text.replaceAll(
-			"직접\\s*대면\\s*상담하듯\\s*핵심만\\s*전해드(?:립니|릴게)다\\.?", "");
-		normalized = normalized.replaceAll("핵심만\\s*전해드(?:립니|릴게)다\\.?", "");
-		return normalized.replaceAll("AI가\\s*분석한\\s*결과", "");
+		String normalized = FACE_TO_FACE_PHRASE.matcher(text).replaceAll("");
+		normalized = CORE_ONLY_PHRASE.matcher(normalized).replaceAll("");
+		return AI_MENTION.matcher(normalized).replaceAll("");
 	}
 
 	/**

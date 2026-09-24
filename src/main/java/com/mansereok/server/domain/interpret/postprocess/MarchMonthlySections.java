@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.regex.Pattern;
 
 /**
  * 3월 월운(106) 전용 손질.
@@ -27,18 +28,35 @@ final class MarchMonthlySections {
 		"3월운 총평"
 	);
 
-	/** 제목 변형을 표준 제목으로 되돌리는 표. 여는 대괄호 형태와 줄머리 형태를 모두 본다. */
-	private static final List<String[]> TITLE_ALIASES = List.of(
-		new String[]{"3월\\s*핵심\\s*키워드", "3월 핵심 키워드"},
-		new String[]{"금전\\s*운", "금전운"},
-		new String[]{"연애\\s*운", "연애운"},
-		new String[]{"학업\\s*운", "학업운"},
-		new String[]{"학업\\s*/\\s*일\\s*운", "학업운"},
-		new String[]{"직장\\s*운", "직장/일운"},
-		new String[]{"직장\\s*/\\s*일\\s*운", "직장/일운"},
-		new String[]{"건강\\s*운", "건강운"},
-		new String[]{"주의할\\s*점과\\s*조언", "주의할 점과 조언"},
-		new String[]{"3월운\\s*총평", "3월운 총평"}
+	/**
+	 * 제목 변형 하나를 표준 제목으로 되돌리는 규칙. 여는 대괄호 형태와 줄머리 형태를 모두 본다.
+	 *
+	 * @param bracketed {@code [금전운]} 처럼 대괄호로 싸인 제목
+	 * @param lineHead  {@code 금전운:} 처럼 줄머리에 놓인 제목
+	 * @param canonical 화면이 기대하는 표준 제목
+	 */
+	private record TitleAlias(Pattern bracketed, Pattern lineHead, String canonical) {
+
+		static TitleAlias of(String titleRegex, String canonical) {
+			return new TitleAlias(
+				Pattern.compile("(?is)\\[\\s*" + titleRegex + "\\s*\\]"),
+				Pattern.compile("(?m)^\\s*" + titleRegex + "\\s*[:：-]?\\s*"),
+				canonical);
+		}
+	}
+
+	/** 제목 변형을 표준 제목으로 되돌리는 표. 적용 순서가 결과를 바꾸므로 순서를 그대로 둔다. */
+	private static final List<TitleAlias> TITLE_ALIASES = List.of(
+		TitleAlias.of("3월\\s*핵심\\s*키워드", "3월 핵심 키워드"),
+		TitleAlias.of("금전\\s*운", "금전운"),
+		TitleAlias.of("연애\\s*운", "연애운"),
+		TitleAlias.of("학업\\s*운", "학업운"),
+		TitleAlias.of("학업\\s*/\\s*일\\s*운", "학업운"),
+		TitleAlias.of("직장\\s*운", "직장/일운"),
+		TitleAlias.of("직장\\s*/\\s*일\\s*운", "직장/일운"),
+		TitleAlias.of("건강\\s*운", "건강운"),
+		TitleAlias.of("주의할\\s*점과\\s*조언", "주의할 점과 조언"),
+		TitleAlias.of("3월운\\s*총평", "3월운 총평")
 	);
 
 	private MarchMonthlySections() {
@@ -56,12 +74,12 @@ final class MarchMonthlySections {
 
 	private static String unifySectionTitles(String text) {
 		String normalized = text;
-		for (String[] alias : TITLE_ALIASES) {
-			normalized = normalized.replaceAll("(?is)\\[\\s*" + alias[0] + "\\s*\\]", alias[1]);
+		for (TitleAlias alias : TITLE_ALIASES) {
+			normalized = alias.bracketed().matcher(normalized).replaceAll(alias.canonical());
 		}
-		for (String[] alias : TITLE_ALIASES) {
-			normalized = normalized.replaceAll("(?m)^\\s*" + alias[0] + "\\s*[:：-]?\\s*",
-				"\n\n" + alias[1] + "\n");
+		for (TitleAlias alias : TITLE_ALIASES) {
+			normalized = alias.lineHead().matcher(normalized)
+				.replaceAll("\n\n" + alias.canonical() + "\n");
 		}
 		return NormalizationSteps.collapseBlankLines(normalized).trim();
 	}
@@ -120,7 +138,7 @@ final class MarchMonthlySections {
 		if (builder.length() > 0) {
 			builder.append(" ");
 		}
-		builder.append(text.replaceAll("\\s+", " ").trim());
+		builder.append(NormalizationPatterns.ANY_WHITESPACE.matcher(text).replaceAll(" ").trim());
 	}
 
 	/** 상한을 넘으면 문장 끝에서 자른다. 문장 끝이 너무 앞이면 상한 위치에서 그냥 자른다. */

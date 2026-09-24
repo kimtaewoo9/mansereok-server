@@ -35,6 +35,15 @@ final class NormalizationPatterns {
 
 	static final Pattern THREE_OR_MORE_NEWLINES = Pattern.compile("\\n{3,}");
 
+	/** 연속된 줄바꿈. 문단 안에서는 한 칸 띄어쓰기로 바꾼다. */
+	static final Pattern ONE_OR_MORE_NEWLINES = Pattern.compile("\\n+");
+
+	/** 두 칸 이상 이어진 공백. */
+	static final Pattern MULTI_SPACE = Pattern.compile("[ \\t]{2,}");
+
+	/** 종류를 가리지 않는 연속 공백(줄바꿈 포함). */
+	static final Pattern ANY_WHITESPACE = Pattern.compile("\\s+");
+
 	private NormalizationPatterns() {
 	}
 }

@@ -27,7 +27,8 @@ final class MoneyLuckNormalizationRule implements SubcategoryNormalizationRule {
 	private static final Pattern ARABIC_OR_CYRILLIC = Pattern.compile(
 		"[\\p{IsArabic}\\p{IsCyrillic}]+");
 
-	private static final Pattern MULTI_SPACE = Pattern.compile("[ \\t]{2,}");
+	/** 줄 끝에 남은 공백. */
+	private static final Pattern TRAILING_SPACE = Pattern.compile("[ \\t]+\\n");
 
 	@Override
 	public String normalizeAnalysis(String text) {
@@ -48,8 +49,8 @@ final class MoneyLuckNormalizationRule implements SubcategoryNormalizationRule {
 		normalized = ARABIC_OR_CYRILLIC.matcher(normalized).replaceAll("");
 
 		normalized = NormalizationSteps.mergeSingleLineBreaksWithinParagraph(normalized);
-		normalized = MULTI_SPACE.matcher(normalized).replaceAll(" ");
-		normalized = normalized.replaceAll("[ \\t]+\\n", "\n");
+		normalized = NormalizationPatterns.MULTI_SPACE.matcher(normalized).replaceAll(" ");
+		normalized = TRAILING_SPACE.matcher(normalized).replaceAll("\n");
 		return NormalizationSteps.collapseBlankLines(normalized).trim();
 	}
 

@@ -51,8 +51,8 @@ enum FreeFortuneStyle {
 	CHEMISTRY(104L) {
 		@Override
 		String applyToAnalysis(String text) {
-			String withoutLabels = text.replaceAll(
-				"\\[(아이돌\\s*추천|배우\\s*추천|캐릭터\\s*추천)\\]\\s*", "");
+			String withoutLabels =
+				ChemistryParagraphs.RECOMMENDATION_LABEL.matcher(text).replaceAll("");
 			return ChemistryParagraphs.ensureParagraphBreaks(withoutLabels);
 		}
 	},
