@@ -419,13 +419,36 @@ class ManseInterpretationServiceFlowTest {
 			assertThat((String) field(request, "fullAnalysis").get("description"))
 				.contains("줄바꿈 두 번")
 				.contains("목록 기호")
-				.contains("대괄호");
+				.contains("마크다운 강조");
 			assertThat((String) field(request, "summary").get("description"))
-				.contains("250자 이내")
-				.contains("마침표");
+				.contains("해요체");
 			// 문자열 길이는 strict 모드 지원 여부가 불확실해 description 으로만 표현한다.
 			assertThat(field(request, "fullAnalysis")).doesNotContainKey("maxLength");
 			assertThat(field(request, "summary")).doesNotContainKey("maxLength");
+		}
+
+		/**
+		 * 이 스키마는 유료 사주 12개와 무료 6개 상품이 함께 쓴다. 상품마다 제목 표기와 summary
+		 * 길이가 달라(20·21·22·23 은 대괄호 제목 금지, summary 280자) 서식 수치를 description 에
+		 * 적으면 프롬프트의 최종 출력 형식 지시와 충돌한다. 그래서 상품 중립을 강제한다.
+		 */
+		@Test
+		@DisplayName("사주 스키마 description 은 상품마다 다른 서식을 못 박지 않는다")
+		void sajuSchemaDescriptionStaysProductNeutral() {
+			givenSajuResponse();
+
+			callInterpret();
+
+			Gpt5Request request = captureRequest();
+			assertThat((String) field(request, "fullAnalysis").get("description"))
+				.as("제목 표기는 프롬프트에 맡긴다")
+				.contains("최종 출력 형식 지시를 따른다")
+				.doesNotContain("대괄호");
+			assertThat((String) field(request, "summary").get("description"))
+				.as("summary 길이와 마침표 규칙은 프롬프트에 맡긴다")
+				.contains("최종 출력 형식 지시를 따른다")
+				.doesNotContain("250자")
+				.doesNotContain("280자");
 		}
 
 		@Test

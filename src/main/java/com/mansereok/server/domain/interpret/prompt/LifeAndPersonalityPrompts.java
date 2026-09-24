@@ -225,11 +225,11 @@ final class LifeAndPersonalityPrompts {
 
 			""");
 
-		PromptSections.appendLongformDepthRule(prompt,
+		PromptSections.appendLongformDepthRule(prompt, new PromptSections.LongformStage(
 			"이 구조가 이 사람의 성격, 감정 패턴, 대처 방식에서 어떻게 드러나는지 구체적으로 묘사한다.",
 			"인생",
 			"이 성향이 실제 삶에서 어떤 패턴, 어떤 장면, 어떤 반복으로 나타났고 나타날지 생생하게 그려준다.",
-			"이런 감정이 올라옵니다");
+			"이런 감정이 올라옵니다"));
 
 		PromptSections.appendLongformPageRule(prompt);
 
@@ -299,7 +299,7 @@ final class LifeAndPersonalityPrompts {
 
 			""");
 
-		PromptSections.appendLongformNarrationStyle(prompt, "");
+		PromptSections.appendLongformNarrationStyle(prompt);
 
 		PromptSections.appendLongformAnalysisData(prompt, name, response);
 

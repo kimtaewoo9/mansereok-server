@@ -2,7 +2,10 @@ package com.mansereok.server.domain.interpret.prompt;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.util.List;
 import java.util.Map;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -12,9 +15,13 @@ import org.junit.jupiter.params.provider.MethodSource;
 /**
  * 프롬프트 길이 회귀 감지용. 상한은 실제 길이보다 넉넉하게(약 1.3배) 잡아 두었다.
  *
- * <p>목적은 "이 길이가 맞다" 를 고정하는 것이 아니라, 공용 조각을 잘못 끼워 같은 블록이 두 번 붙거나
- * 상품 하나가 갑자기 두 배로 불어나는 사고를 잡는 것이다. 문구를 다듬어 길이가 조금 변하는 것은
- * 이 테스트를 건드리지 않는다. 하한은 그 반대로, 블록이 통째로 빠지는 사고를 잡는다.
+ * <p>목적은 "이 길이가 맞다" 를 고정하는 것이 아니라, 상품 하나가 갑자기 두 배로 불어나는 사고를
+ * 잡는 것이다. 문구를 다듬어 길이가 조금 변하는 것은 이 테스트를 건드리지 않는다. 하한은 그 반대로,
+ * 블록이 통째로 빠지는 사고를 잡는다.
+ *
+ * <p>공용 조각을 잘못 끼워 같은 블록이 두 번 붙는 사고는 길이 상한으로는 잡히지 않는다.
+ * 여유가 상품당 1,100~3,300자인데 추출한 조각은 500~700자라서 두 번 붙어도 상한 안에 들어온다.
+ * 그래서 그 사고는 {@link #promptHasNoDuplicateSectionHeader} 가 헤더 중복으로 직접 본다.
  */
 @DisplayName("프롬프트 길이 예산")
 class PromptLengthBudgetTest {
@@ -52,7 +59,50 @@ class PromptLengthBudgetTest {
 	@ParameterizedTest(name = "{0} {1} 프롬프트 길이는 {2}자를 넘지 않는다")
 	@MethodSource("cases")
 	void promptStaysWithinBudget(String kind, Long subcategoryId, int maxLength) {
-		String prompt = switch (kind) {
+		String prompt = build(kind, subcategoryId);
+
+		assertThat(prompt.length())
+			.as("%s %s 프롬프트 길이", kind, subcategoryId)
+			.isBetween(MIN_LENGTH, maxLength);
+	}
+
+	/**
+	 * 같은 공용 조각을 두 번 끼우면 그 조각의 머리말도 두 번 나온다. 길이 상한은 여유가
+	 * 상품당 1,100~3,300자인데 조각은 500~700자라 이 사고를 통과시키므로, 머리말을 직접 센다.
+	 *
+	 * <p>모든 "### " 줄을 세지는 않는다. 궁합 프롬프트는 사람마다 한 번씩
+	 * "### 일간 ###" 같은 데이터 머리말을 정상적으로 두 번 내보내기 때문이다.
+	 * 상품 하나에 한 번만 들어가야 하는 공용 조각의 머리말만 본다.
+	 */
+	private static final List<String> SHARED_BLOCK_HEADERS = List.of(
+		"### 절대 규칙 (최우선) ###",
+		"### 사주 풀이 깊이 규칙 (반드시 지킬 것) ###",
+		"### 분량/페이지 규칙 (가장 중요 — 반드시 지킬 것) ###",
+		"### 이야기 흐름 (제목/번호는 출력하지 말 것) ###",
+		"### 문장 스타일 ###",
+		"### 분석 대상자 데이터 (서버 산출값) ###",
+		"### [최종 출력 형식] ###",
+		"### 최종 출력 형식 ###");
+
+	@ParameterizedTest(name = "{0} {1} 프롬프트에 공용 조각이 두 번 붙지 않는다")
+	@MethodSource("cases")
+	void promptHasNoDuplicatedSharedBlock(String kind, Long subcategoryId, int maxLength) {
+		String prompt = build(kind, subcategoryId);
+
+		Map<String, Long> countByHeader = prompt.lines()
+			.map(String::strip)
+			.filter(SHARED_BLOCK_HEADERS::contains)
+			.collect(Collectors.groupingBy(Function.identity(), Collectors.counting()));
+
+		assertThat(countByHeader)
+			.as("%s %s 프롬프트의 공용 조각 머리말", kind, subcategoryId)
+			.allSatisfy((header, count) -> assertThat(count)
+				.as("머리말 %s", header)
+				.isEqualTo(1L));
+	}
+
+	private static String build(String kind, Long subcategoryId) {
+		return switch (kind) {
 			case "saju" -> SAJU.create(subcategoryId,
 				PromptContext.of("김태우", PromptFixtures.person1(), "원피스"));
 			case "compatibility" -> COMPATIBILITY.create(subcategoryId,
@@ -62,9 +112,5 @@ class PromptLengthBudgetTest {
 				PromptContext.of("김태우", PromptFixtures.person1()));
 			default -> throw new IllegalArgumentException("알 수 없는 종류: " + kind);
 		};
-
-		assertThat(prompt.length())
-			.as("%s %s 프롬프트 길이", kind, subcategoryId)
-			.isBetween(MIN_LENGTH, maxLength);
 	}
 }

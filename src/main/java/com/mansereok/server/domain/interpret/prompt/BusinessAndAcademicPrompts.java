@@ -55,11 +55,11 @@ final class BusinessAndAcademicPrompts {
 
 			""");
 
-		PromptSections.appendLongformDepthRule(prompt,
+		PromptSections.appendLongformDepthRule(prompt, new PromptSections.LongformStage(
 			"이 구조가 이 사람의 성격, 습관, 판단 방식에서 어떻게 드러나는지 구체적으로 묘사한다.",
 			"사업",
 			"이 성향이 사업 현장에서 어떤 패턴, 어떤 장면, 어떤 반복으로 나타나는지 생생하게 그려준다.",
-			"이런 패턴이 반복됩니다");
+			"이런 패턴이 반복됩니다"));
 
 		prompt.append("""
 			❌ 나쁜 예 1: 편인이 두드러져요. 편인은 남들보다 빨리 공부하는 힘입니다. 그래서 기획을 먼저 하세요.
@@ -219,11 +219,11 @@ final class BusinessAndAcademicPrompts {
 
 			""");
 
-		PromptSections.appendLongformDepthRule(prompt,
+		PromptSections.appendLongformDepthRule(prompt, new PromptSections.LongformStage(
 			"이 구조가 이 사람의 성격, 습관, 판단 방식에서 어떻게 드러나는지 구체적으로 묘사한다.",
 			"학업",
 			"이 성향이 공부와 시험 현장에서 어떤 패턴, 어떤 장면, 어떤 반복으로 나타나는지 생생하게 그려준다.",
-			"이런 패턴이 반복됩니다");
+			"이런 패턴이 반복됩니다"));
 
 		prompt.append("""
 			❌ 나쁜 예: 편인이 있어 공부를 잘합니다. 집중해서 공부하세요.
@@ -311,7 +311,7 @@ final class BusinessAndAcademicPrompts {
 
 			""");
 
-		PromptSections.appendLongformNarrationStyle(prompt, "");
+		PromptSections.appendLongformNarrationStyle(prompt);
 
 		PromptSections.appendLongformAnalysisData(prompt, name, response);
 

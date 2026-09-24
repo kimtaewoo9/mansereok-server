@@ -5,6 +5,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.util.LinkedHashMap;
 import java.util.SequencedMap;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -139,8 +141,8 @@ class PromptSectionsTest {
 	void longformDepthRuleFillsStagePerProduct() {
 		StringBuilder prompt = new StringBuilder();
 
-		PromptSections.appendLongformDepthRule(prompt, "성향 설명", "사업", "사업 장면 설명",
-			"이런 패턴이 반복됩니다");
+		PromptSections.appendLongformDepthRule(prompt, new PromptSections.LongformStage(
+			"성향 설명", "사업", "사업 장면 설명", "이런 패턴이 반복됩니다"));
 
 		String text = prompt.toString();
 		assertThat(text).startsWith("### 사주 풀이 깊이 규칙 (반드시 지킬 것) ###\n");
@@ -152,19 +154,52 @@ class PromptSectionsTest {
 	}
 
 	@Test
-	@DisplayName("장문 유료 상품 분량 규칙은 문단 수와 문단 길이가 총 분량과 맞아떨어진다")
-	void longformPageRuleNumbersAreConsistent() {
+	@DisplayName("장문 유료 상품 분량 규칙은 페이지 수와 문단 길이와 총 분량을 숫자로 못 박는다")
+	void longformPageRuleStatesNumbers() {
 		StringBuilder prompt = new StringBuilder();
 
 		PromptSections.appendLongformPageRule(prompt);
 
 		String text = prompt.toString();
 		assertThat(text).contains("fullAnalysis 총 분량은 최소 4000자 이상으로 작성한다.");
-		assertThat(text).contains("총 페이지는 12~16개 흐름으로 구성한다.");
+		assertThat(text).contains("총 페이지는 9~12개 흐름으로 구성한다.");
 		assertThat(text).contains("한 페이지(문단)는 반드시 7~8줄(약 250~350자) 이내로 제한한다.");
-		// 12 x 350 = 4200, 16 x 250 = 4000 이라 두 끝 모두 최소 분량을 넘긴다.
-		assertThat(12 * 350).isGreaterThanOrEqualTo(4000);
-		assertThat(16 * 250).isGreaterThanOrEqualTo(4000);
+	}
+
+	/**
+	 * 세 숫자(총 분량, 페이지 수, 문단 길이)의 관계를 프롬프트 문자열에서 직접 뽑아 확인한다.
+	 * 상수끼리 계산해서 단언하면 프로덕션 문구를 한 글자도 읽지 않아 어떤 회귀도 잡지 못하므로,
+	 * 정규식으로 실제 숫자를 뽑아 온다.
+	 *
+	 * <p>지금은 하단 모서리(9페이지 × 250자 = 2250자)가 최소 4000자에 미치지 않는다. 상단
+	 * (12 × 350 = 4200자)에서만 성립하는 빠듯한 범위이고, 이 PR 은 범위를 건드리지 않기로 했다.
+	 * 그래서 이 테스트는 "상단 모서리는 성립한다" 를 고정해, 페이지 수나 문단 길이를 줄여
+	 * 어느 쪽 끝에서도 성립하지 않게 되는 회귀를 잡는다.
+	 */
+	@Test
+	@DisplayName("장문 유료 상품 분량 규칙은 상단 모서리에서 총 분량을 채울 수 있다")
+	void longformPageRuleUpperBoundReachesMinimumLength() {
+		StringBuilder prompt = new StringBuilder();
+
+		PromptSections.appendLongformPageRule(prompt);
+
+		String text = prompt.toString();
+		int minTotalChars = onlyGroup(text, "총 분량은 최소 (\\d+)자 이상", 1);
+		int maxPages = onlyGroup(text, "총 페이지는 (\\d+)~(\\d+)개", 2);
+		int maxCharsPerPage = onlyGroup(text, "약 (\\d+)~(\\d+)자", 2);
+
+		assertThat(maxPages * maxCharsPerPage)
+			.as("페이지 %d개 × 한 페이지 %d자", maxPages, maxCharsPerPage)
+			.isGreaterThanOrEqualTo(minTotalChars);
+	}
+
+	/** 프롬프트에서 패턴의 group(n) 을 정수로 뽑는다. 패턴이 한 번만 등장하는 것도 함께 확인한다. */
+	private static int onlyGroup(String text, String regex, int group) {
+		Matcher matcher = Pattern.compile(regex).matcher(text);
+		assertThat(matcher.find()).as("패턴을 찾지 못했다: %s", regex).isTrue();
+		int value = Integer.parseInt(matcher.group(group));
+		assertThat(matcher.find()).as("패턴이 두 번 이상 나온다: %s", regex).isFalse();
+		return value;
 	}
 
 	@Test
@@ -173,7 +208,7 @@ class PromptSectionsTest {
 		StringBuilder plain = new StringBuilder();
 		StringBuilder withExtra = new StringBuilder();
 
-		PromptSections.appendLongformNarrationStyle(plain, "");
+		PromptSections.appendLongformNarrationStyle(plain);
 		PromptSections.appendLongformNarrationStyle(withExtra, """
 			추가 줄 하나.
 			""");
