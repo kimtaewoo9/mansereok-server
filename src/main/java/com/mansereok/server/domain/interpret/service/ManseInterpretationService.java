@@ -98,7 +98,11 @@ public class ManseInterpretationService {
 
 	/**
 	 * Structured Outputs 스키마. 출력이 API 레벨에서 이 형태로 강제되므로
-	 * 프롬프트에서 JSON 문법 지시(이스케이프, 코드블록 금지 등)를 제거할 수 있다.
+	 * 프롬프트에서 JSON 문법 지시(필드 구성 설명, 이스케이프, 코드블록 금지 등)를 제거할 수 있다.
+	 *
+	 * <p>문자열 길이는 description 으로만 표현한다. json_schema strict 모드가 maxLength 를
+	 * 받아 주는지 확실하지 않아, 넣었다가 400 이 나는 쪽보다 모델에게 말로 알려 주는 쪽을 택했다.
+	 * 정수 범위(minimum/maximum)는 strict 모드에서 지원되므로 score 에만 걸어 둔다.
 	 */
 	private static final Map<String, Object> SAJU_OUTPUT_FORMAT = Map.of(
 		"type", "json_schema",
@@ -108,9 +112,12 @@ public class ManseInterpretationService {
 			"type", "object",
 			"properties", Map.of(
 				"fullAnalysis", Map.of("type", "string",
-					"description", "상세 분석 전체. 문단 구분은 줄바꿈 두 번."),
+					"description", "사주 상세 분석 본문 전체. 프롬프트가 요청한 분석 항목을 순서대로 모두 담은"
+						+ " 줄글이다. 문단 구분은 줄바꿈 두 번으로만 하고, 목록 기호(-, *, 1.)와"
+						+ " 마크다운 강조(**)는 쓰지 않는다. 제목은 대괄호로 감싼다."),
 				"summary", Map.of("type", "string",
-					"description", "250자 이내 요약. 문장마다 줄바꿈, 마침표 없음.")),
+					"description", "해요체 총평. 공백 포함 250자 이내이며, 한 문장이 끝날 때마다 줄바꿈하고"
+						+ " 문장 끝에 마침표를 찍지 않는다.")),
 			"required", List.of("fullAnalysis", "summary"),
 			"additionalProperties", false));
 
@@ -122,11 +129,16 @@ public class ManseInterpretationService {
 			"type", "object",
 			"properties", Map.of(
 				"score", Map.of("type", "integer",
-					"description", "종합 궁합 점수 (0~100)"),
+					"description", "두 사람의 종합 궁합 점수. 0 이상 100 이하의 정수.",
+					"minimum", 0,
+					"maximum", 100),
 				"interpretation", Map.of("type", "string",
-					"description", "상세 궁합 분석 전체. 문단 구분은 줄바꿈 두 번."),
+					"description", "궁합 상세 분석 본문 전체. 프롬프트가 요청한 분석 항목을 순서대로 모두 담은"
+						+ " 줄글이다. 문단 구분은 줄바꿈 두 번으로만 하고, 목록 기호(-, *, 1.)와"
+						+ " 마크다운 강조(**)는 쓰지 않는다. 제목은 대괄호로 감싼다."),
 				"summary", Map.of("type", "string",
-					"description", "250자 이내 요약. 문장마다 줄바꿈, 마침표 없음.")),
+					"description", "해요체 총평. 공백 포함 250자 이내이며, 한 문장이 끝날 때마다 줄바꿈하고"
+						+ " 문장 끝에 마침표를 찍지 않는다.")),
 			"required", List.of("score", "interpretation", "summary"),
 			"additionalProperties", false));
 

@@ -34,6 +34,7 @@ import com.mansereok.server.domain.user.service.UserService;
 import com.mansereok.server.global.exception.OpenAiIncompleteResponseException;
 import jakarta.persistence.EntityNotFoundException;
 import java.lang.reflect.Method;
+import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -384,6 +385,65 @@ class ManseInterpretationServiceFlowTest {
 			assertThat(request.getInput()).isEqualTo(COMPATIBILITY_PROMPT);
 			assertThat(request.getInstructions()).contains(BASE_INSTRUCTION_MARK);
 			assertThat(request.getInstructions()).doesNotContain(REUNION_INSTRUCTION_MARK);
+		}
+	}
+
+	@Nested
+	@DisplayName("Structured Outputs 스키마")
+	class OutputSchema {
+
+		@SuppressWarnings("unchecked")
+		private static Map<String, Object> properties(Gpt5Request request) {
+			Map<String, Object> format = request.getText().getFormat();
+			assertThat(format).containsEntry("type", "json_schema");
+			assertThat(format).containsEntry("strict", true);
+			Map<String, Object> schema = (Map<String, Object>) format.get("schema");
+			assertThat(schema).containsEntry("additionalProperties", false);
+			return (Map<String, Object>) schema.get("properties");
+		}
+
+		@SuppressWarnings("unchecked")
+		private static Map<String, Object> field(Gpt5Request request, String name) {
+			return (Map<String, Object>) properties(request).get(name);
+		}
+
+		@Test
+		@DisplayName("사주 스키마는 두 필드의 서식 규칙을 description 으로 알려 준다")
+		void sajuSchemaDescribesBothFields() {
+			givenSajuResponse();
+
+			callInterpret();
+
+			Gpt5Request request = captureRequest();
+			assertThat(properties(request)).containsOnlyKeys("fullAnalysis", "summary");
+			assertThat((String) field(request, "fullAnalysis").get("description"))
+				.contains("줄바꿈 두 번")
+				.contains("목록 기호")
+				.contains("대괄호");
+			assertThat((String) field(request, "summary").get("description"))
+				.contains("250자 이내")
+				.contains("마침표");
+			// 문자열 길이는 strict 모드 지원 여부가 불확실해 description 으로만 표현한다.
+			assertThat(field(request, "fullAnalysis")).doesNotContainKey("maxLength");
+			assertThat(field(request, "summary")).doesNotContainKey("maxLength");
+		}
+
+		@Test
+		@DisplayName("궁합 스키마는 score 를 0~100 정수로 가둔다")
+		void compatibilitySchemaBoundsScore() {
+			givenCompatibilityResponse();
+
+			callCompatibility();
+
+			Gpt5Request request = captureRequest();
+			assertThat(properties(request))
+				.containsOnlyKeys("score", "interpretation", "summary");
+			assertThat(field(request, "score"))
+				.containsEntry("type", "integer")
+				.containsEntry("minimum", 0)
+				.containsEntry("maximum", 100);
+			assertThat((String) field(request, "interpretation").get("description"))
+				.contains("줄바꿈 두 번");
 		}
 	}
 
