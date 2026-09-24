@@ -47,6 +47,7 @@ class OpenAiResponsesRestClientTest {
 
 	private static final String URL = "https://api.openai.com/v1/responses";
 	private static final String PROMPT = "당신은 사주 명리학 대가입니다. 임수 일간을 해석하세요.";
+	private static final String SYSTEM_INSTRUCTION = "당신은 30년 경력의 전문 사주명리학자입니다.";
 
 	private MockRestServiceServer server;
 	private RecordingSleeper sleeper;
@@ -85,6 +86,13 @@ class OpenAiResponsesRestClientTest {
 		OpenAiProperties.ModelTier tier = OpenAiProperties.ModelTier.defaultPrimary();
 		return new Gpt5Request(tier.model(), PROMPT, tier.maxOutputTokens(),
 			tier.reasoningEffort(), tier.verbosity(),
+			Map.of("type", "json_schema", "name", "saju"));
+	}
+
+	private Gpt5Request instructedRequest() {
+		OpenAiProperties.ModelTier tier = OpenAiProperties.ModelTier.defaultPrimary();
+		return Gpt5Request.withSystemInstruction(tier.model(), SYSTEM_INSTRUCTION, PROMPT,
+			tier.maxOutputTokens(), tier.reasoningEffort(), tier.verbosity(),
 			Map.of("type", "json_schema", "name", "saju"));
 	}
 
@@ -211,6 +219,36 @@ class OpenAiResponsesRestClientTest {
 		assertThat(result).isEqualTo("fallback 성공");
 		// fallback 은 재시도하지 않으므로 대기는 primary 재시도 사이의 한 번뿐이다.
 		assertThat(sleeper.delays).containsExactly(1_000L);
+		server.verify();
+	}
+
+	@Test
+	@DisplayName("instructions 가 있는 요청은 첫 호출부터 시스템 지시를 input 이 아닌 instructions 로 보낸다")
+	void sendsInstructionsSeparatelyOnFirstCall() {
+		OpenAiResponsesRestClient client = clientWith(TestOpenAiProperties.defaults());
+		server.expect(ExpectedCount.once(), requestTo(URL))
+			.andExpect(jsonPath("$.instructions").value(SYSTEM_INSTRUCTION))
+			.andExpect(jsonPath("$.input").value(PROMPT))
+			.andRespond(withSuccess(completedBody("성공"), MediaType.APPLICATION_JSON));
+
+		assertThat(client.createResponse(instructedRequest())).isEqualTo("성공");
+		server.verify();
+	}
+
+	@Test
+	@DisplayName("fallback 으로 새로 만든 요청도 instructions 의 시스템 지시를 그대로 가져간다")
+	void fallbackRequestKeepsInstructions() {
+		// fallback 은 요청 객체를 새로 만든다. 여기서 instructions 를 흘리면
+		// 재시도 끝에 성공한 호출만 경계 규칙 없이 모델에 닿아 조용히 방어가 뚫린다.
+		OpenAiResponsesRestClient client = clientWith(TestOpenAiProperties.of(2, 1_000L, 2.0));
+		server.expect(ExpectedCount.times(2), requestTo(URL)).andRespond(withServerError());
+		server.expect(ExpectedCount.once(), requestTo(URL))
+			.andExpect(jsonPath("$.model").value("gpt-5.2"))
+			.andExpect(jsonPath("$.instructions").value(SYSTEM_INSTRUCTION))
+			.andExpect(jsonPath("$.input").value(PROMPT))
+			.andRespond(withSuccess(completedBody("fallback 성공"), MediaType.APPLICATION_JSON));
+
+		assertThat(client.createResponse(instructedRequest())).isEqualTo("fallback 성공");
 		server.verify();
 	}
 

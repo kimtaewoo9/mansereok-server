@@ -72,7 +72,7 @@ class CompatibilityAnalysisRequestValidationTest {
 	}
 
 	@Test
-	@DisplayName("이름이 공백이면 person1.name 위반이 잡혀 400 으로 끝난다")
+	@DisplayName("이름이 공백이면 person1.name 위반이 잡힌다")
 	void shouldRejectBlankName() {
 		assertThat(violatedFields(request(person("  "), person("이영희"))))
 			.contains("person1.name");
