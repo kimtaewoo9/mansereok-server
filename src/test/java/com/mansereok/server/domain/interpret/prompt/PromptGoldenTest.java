@@ -3,11 +3,9 @@ package com.mansereok.server.domain.interpret.prompt;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.mansereok.server.domain.interpret.dto.response.ManseryeokCalculationResponse;
-import com.mansereok.server.domain.interpret.service.ManseInterpretationService;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.UncheckedIOException;
-import java.lang.reflect.Method;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.stream.Stream;
@@ -31,8 +29,9 @@ class PromptGoldenTest {
 		19L);
 	private static final List<Long> FREE_IDS = List.of(101L, 102L, 103L, 104L, 105L, 106L);
 
-	private static final ManseInterpretationService SERVICE = new ManseInterpretationService(
-		null, null, null, null, null, null, null, null, null);
+	private static final SajuPromptFactory SAJU_PROMPT_FACTORY = new SajuPromptFactory();
+	private static final CompatibilityPromptFactory COMPATIBILITY_PROMPT_FACTORY =
+		new CompatibilityPromptFactory();
 
 	static Stream<org.junit.jupiter.params.provider.Arguments> cases() {
 		Stream.Builder<org.junit.jupiter.params.provider.Arguments> builder = Stream.builder();
@@ -54,7 +53,7 @@ class PromptGoldenTest {
 
 	@ParameterizedTest(name = "{0} {1}{2} 프롬프트는 골든 파일과 같다")
 	@MethodSource("cases")
-	void promptMatchesGolden(String kind, Long subcategoryId, String variant) throws Exception {
+	void promptMatchesGolden(String kind, Long subcategoryId, String variant) {
 		String actual = switch (kind) {
 			case "saju" -> variant.isEmpty()
 				? saju(subcategoryId, "김태우", PromptFixtures.person1(), "원피스")
@@ -103,33 +102,22 @@ class PromptGoldenTest {
 	}
 
 	private static String saju(Long subcategoryId, String name,
-		ManseryeokCalculationResponse response, String sourceTitle) throws Exception {
-		Method method = ManseInterpretationService.class.getDeclaredMethod(
-			"createPromptBySubcategory", Long.class, String.class,
-			ManseryeokCalculationResponse.class, String.class);
-		method.setAccessible(true);
-		return (String) method.invoke(SERVICE, subcategoryId, name, response, sourceTitle);
+		ManseryeokCalculationResponse response, String sourceTitle) {
+		return SAJU_PROMPT_FACTORY.create(subcategoryId,
+			PromptContext.of(name, response, sourceTitle));
 	}
 
 	private static String compatibility(Long subcategoryId, String person1Name,
 		ManseryeokCalculationResponse person1Response, String person2Name,
 		ManseryeokCalculationResponse person2Response, String person1SourceTitle,
-		String person2SourceTitle) throws Exception {
-		Method method = ManseInterpretationService.class.getDeclaredMethod(
-			"createCompatibilityPromptBySubcategory", Long.class, String.class,
-			ManseryeokCalculationResponse.class, String.class,
-			ManseryeokCalculationResponse.class, String.class, String.class);
-		method.setAccessible(true);
-		return (String) method.invoke(SERVICE, subcategoryId, person1Name, person1Response,
-			person2Name, person2Response, person1SourceTitle, person2SourceTitle);
+		String person2SourceTitle) {
+		return COMPATIBILITY_PROMPT_FACTORY.create(subcategoryId,
+			CompatibilityPromptContext.of(person1Name, person1Response, person1SourceTitle,
+				person2Name, person2Response, person2SourceTitle));
 	}
 
 	private static String free(Long subcategoryId, String name,
-		ManseryeokCalculationResponse response) throws Exception {
-		Method method = ManseInterpretationService.class.getDeclaredMethod(
-			"createFreePromptBySubcategory", Long.class, String.class,
-			ManseryeokCalculationResponse.class);
-		method.setAccessible(true);
-		return (String) method.invoke(SERVICE, subcategoryId, name, response);
+		ManseryeokCalculationResponse response) {
+		return SAJU_PROMPT_FACTORY.createFree(subcategoryId, PromptContext.of(name, response));
 	}
 }
