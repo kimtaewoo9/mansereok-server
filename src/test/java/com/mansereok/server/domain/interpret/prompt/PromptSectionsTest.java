@@ -56,33 +56,41 @@ class PromptSectionsTest {
 	}
 
 	@Test
-	@DisplayName("사주 출력 형식 꼬리는 fullAnalysis 와 summary 작성 규칙을 담는다")
-	void sajuJsonResponseFormatDescribesBothFields() {
+	@DisplayName("사주 출력 형식 꼬리는 스키마가 못 잡는 작성 규칙만 남기고 필드 구성 설명은 지운다")
+	void sajuJsonResponseFormatKeepsOnlyWritingRules() {
 		StringBuilder prompt = new StringBuilder();
 
 		PromptSections.appendSajuJsonResponseFormat(prompt);
 
 		String text = prompt.toString();
 		assertThat(text).startsWith("\n\n### [최종 출력 형식] ###\n");
-		assertThat(text).contains("응답은 fullAnalysis와 summary 두 필드로 구성됩니다. JSON 형식은 시스템이 강제하므로 내용에만 집중하세요.");
 		assertThat(text).contains("--- [fullAnalysis 작성 규칙] ---");
+		assertThat(text).contains("대괄호로 감싸 출력하고");
+		assertThat(text).contains("`**` 강조 기호는 출력하지 않습니다.");
+		assertThat(text).contains("한 문단이 6~7줄을 넘지 않게 끊습니다.");
 		assertThat(text).contains("--- [summary 작성 규칙] ---");
 		assertThat(text).contains("총 250자 이내");
+		assertThat(text).contains("마침표는 찍지 않습니다");
+		// Structured Outputs 가 강제하는 내용이라 프롬프트에서 뺀 문구
+		assertThat(text).doesNotContain("두 필드로 구성됩니다");
+		assertThat(text).doesNotContain("JSON");
 	}
 
 	@Test
-	@DisplayName("궁합 출력 형식 꼬리는 score, interpretation, summary 세 필드를 설명한다")
-	void compatibilityJsonResponseFormatDescribesThreeFields() {
+	@DisplayName("궁합 출력 형식 꼬리는 세 필드의 작성 규칙만 남기고 필드 구성 설명은 지운다")
+	void compatibilityJsonResponseFormatKeepsOnlyWritingRules() {
 		StringBuilder prompt = new StringBuilder();
 
 		PromptSections.appendCompatibilityJsonResponseFormat(prompt);
 
 		String text = prompt.toString();
-		assertThat(text).contains("응답은 score, interpretation, summary 세 필드로 구성됩니다.");
 		assertThat(text).contains("--- [interpretation 작성 규칙] ---");
 		assertThat(text).contains("--- [score] ---");
 		assertThat(text).contains("두 사람의 종합 궁합을 0~100 사이 정수로 담습니다.");
 		assertThat(text).contains("--- [summary 작성 규칙] ---");
+		assertThat(text).contains("총 250자 이내");
+		assertThat(text).doesNotContain("세 필드로 구성됩니다");
+		assertThat(text).doesNotContain("JSON");
 	}
 
 	@Test
@@ -109,6 +117,7 @@ class PromptSectionsTest {
 
 		assertThat(prompt.toString()).contains("summary는 4~5줄로 작성");
 		assertThat(prompt.toString()).contains("summary 총 길이는 280자 이내");
+		assertThat(prompt.toString()).doesNotContain("두 필드로 구성된다");
 	}
 
 	@Test
@@ -122,5 +131,71 @@ class PromptSectionsTest {
 		assertThat(prompt.toString()).contains(
 			"fullAnalysis에는 번호형 라벨(A., 1., 첫째), 대괄호 제목([ ... ]), 목록 기호(-, *)를 쓰지 않는다.");
 		assertThat(prompt.toString()).contains("fullAnalysis 길이는 3800자 이상 4600자 이하를 지킨다.");
+		assertThat(prompt.toString()).doesNotContain("두 필드로 구성된다");
+	}
+
+	@Test
+	@DisplayName("장문 유료 상품 깊이 규칙은 3단 전개를 상품별 무대만 갈아 끼워 만든다")
+	void longformDepthRuleFillsStagePerProduct() {
+		StringBuilder prompt = new StringBuilder();
+
+		PromptSections.appendLongformDepthRule(prompt, "성향 설명", "사업", "사업 장면 설명",
+			"이런 패턴이 반복됩니다");
+
+		String text = prompt.toString();
+		assertThat(text).startsWith("### 사주 풀이 깊이 규칙 (반드시 지킬 것) ###\n");
+		assertThat(text).contains("(1단) 사주 구조:");
+		assertThat(text).contains("(2단) 성향 풀이: 성향 설명");
+		assertThat(text).contains("(3단) 사업 장면: 사업 장면 설명");
+		assertThat(text).contains("이런 일이 벌어집니다/이런 패턴이 반복됩니다 같은 묘사여야 한다.");
+		assertThat(text).contains("누구에게나 맞는 말은 금지다.");
+	}
+
+	@Test
+	@DisplayName("장문 유료 상품 분량 규칙은 문단 수와 문단 길이가 총 분량과 맞아떨어진다")
+	void longformPageRuleNumbersAreConsistent() {
+		StringBuilder prompt = new StringBuilder();
+
+		PromptSections.appendLongformPageRule(prompt);
+
+		String text = prompt.toString();
+		assertThat(text).contains("fullAnalysis 총 분량은 최소 4000자 이상으로 작성한다.");
+		assertThat(text).contains("총 페이지는 12~16개 흐름으로 구성한다.");
+		assertThat(text).contains("한 페이지(문단)는 반드시 7~8줄(약 250~350자) 이내로 제한한다.");
+		// 12 x 350 = 4200, 16 x 250 = 4000 이라 두 끝 모두 최소 분량을 넘긴다.
+		assertThat(12 * 350).isGreaterThanOrEqualTo(4000);
+		assertThat(16 * 250).isGreaterThanOrEqualTo(4000);
+	}
+
+	@Test
+	@DisplayName("장문 유료 상품 문장 스타일은 사업운만 가운데 두 줄을 더 끼운다")
+	void longformNarrationStyleTakesExtraLines() {
+		StringBuilder plain = new StringBuilder();
+		StringBuilder withExtra = new StringBuilder();
+
+		PromptSections.appendLongformNarrationStyle(plain, "");
+		PromptSections.appendLongformNarrationStyle(withExtra, """
+			추가 줄 하나.
+			""");
+
+		assertThat(plain.toString()).contains("### 문장 스타일 ###");
+		assertThat(plain.toString()).doesNotContain("추가 줄 하나.");
+		assertThat(withExtra.toString()).contains("추가 줄 하나.");
+		assertThat(withExtra.toString()).endsWith("해요체를 기본으로 하되, 핵심 판단은 합니다체로 무게를 준다.\n\n");
+	}
+
+	@Test
+	@DisplayName("장문 유료 상품 용어 정책은 사주 용어 풀이 규칙과 데이터 밖 추측 금지를 담는다")
+	void longformTermPolicyHasTermAndFactRules() {
+		StringBuilder prompt = new StringBuilder();
+
+		PromptSections.appendLongformTermPolicy(prompt);
+
+		String text = prompt.toString();
+		assertThat(text).startsWith("### 절대 규칙 (최우선) ###\n");
+		assertThat(text).contains("[용어 정책 — 단 하나의 규칙]");
+		assertThat(text).contains("처음 등장할 때 반드시 쉬운 풀이를 한 문장 붙이고");
+		assertThat(text).contains("입력 데이터만 사용한다.");
+		assertThat(text).doesNotContain("입력 JSON");
 	}
 }

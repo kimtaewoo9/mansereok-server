@@ -23,7 +23,7 @@ class PromptBuilderContentTest {
 
 		assertThat(prompt).isNotNull();
 		assertThat(prompt).contains("fullAnalysis 총 분량은 최소 4000자 이상으로 작성한다.");
-		assertThat(prompt).contains("페이지 분리는 반드시 줄바꿈 두 번(\\\\n\\\\n)으로만 한다.");
+		assertThat(prompt).contains("페이지 분리는 반드시 줄바꿈 두 번으로만 한다.");
 		assertThat(prompt).contains("### 문체 기준 (골드 스탠다드) ###");
 		assertThat(prompt).contains("### 이야기 흐름 (제목/번호는 출력하지 말 것) ###");
 		assertThat(prompt).contains("### 절대 금지 패턴 ###");
@@ -41,6 +41,11 @@ class PromptBuilderContentTest {
 		assertThat(prompt).doesNotContain("대괄호(`[]`)");
 		assertThat(prompt).doesNotContain("첫 번째 단락 묶음");
 		assertThat(prompt).doesNotContain("fullAnalysis 총 분량은 약 4000자 내외");
+		// Structured Outputs 가 강제하므로 프롬프트에서 뺀 지시들
+		assertThat(prompt).doesNotContain("두 필드로 구성된다");
+		assertThat(prompt).doesNotContain("입력 JSON");
+		// 역슬래시 n 은 JSON 이스케이프 표기다. Structured Outputs 를 쓰므로 프롬프트에 남기지 않는다.
+		assertThat(prompt).doesNotContain("\\n");
 	}
 
 	@Test
@@ -64,7 +69,8 @@ class PromptBuilderContentTest {
 		assertThat(prompt).isNotNull();
 		assertThat(prompt).contains("첫 줄은 [2026년 상반기 운명 키워드: 키워드명] 형식");
 		assertThat(prompt).contains("정확히 4개 문단");
-		assertThat(prompt).contains("줄바꿈 두 번(\\\\n\\\\n)");
+		assertThat(prompt).contains("문단 사이는 반드시 줄바꿈 두 번으로 구분합니다.");
+		assertThat(prompt).doesNotContain("\\n");
 		assertThat(prompt).contains("\"직접 대면 상담하듯 핵심만 전해드립니다\"");
 		assertThat(prompt).contains("번호형 나열(1-1, 첫째, 둘째)");
 		assertThat(prompt).contains("날짜 표기는 2026년 3월처럼 년-월까지만");
@@ -92,7 +98,7 @@ class PromptBuilderContentTest {
 		assertThat(prompt).contains("추천 파트의 첫 문장은 반드시 아래 형식으로 시작");
 		assertThat(prompt).contains(
 			"은정님과 가장 잘 어울리는 아이돌은 [아이돌 이름]님, 배우는 [배우 이름]님, 캐릭터는 [작품명]의 [캐릭터명]입니다.");
-		assertThat(prompt).contains("인물 한 명 설명이 끝날 때마다 줄바꿈 두 번(\\n\\n)");
+		assertThat(prompt).contains("인물 한 명 설명이 끝날 때마다 줄바꿈 두 번으로");
 		assertThat(prompt).contains("한 인물 설명은 3~5문장");
 		assertThat(prompt).contains("[아이돌 추천], [배우 추천], [캐릭터 추천] 같은 대괄호 라벨 금지");
 		assertThat(prompt).contains("도입 문단: 사주 핵심 성향 + 잘 맞는 상대 타입 설명");
