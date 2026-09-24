@@ -174,6 +174,63 @@ public class GlobalExceptionHandler {
 		return new ResponseEntity<>(response, HttpStatus.INTERNAL_SERVER_ERROR);
 	}
 
+	/**
+	 * [503 Service Unavailable] OpenAI 일시 장애 (재시도 + fallback 까지 모두 실패)
+	 */
+	@ExceptionHandler(OpenAiUnavailableException.class)
+	public ResponseEntity<ErrorResponse> handleOpenAiUnavailable(OpenAiUnavailableException e) {
+		log.error("OpenAI 호출 일시 장애: {}", e.getMessage(), e.getCause());
+		ErrorResponse response = ErrorResponse.of(
+			HttpStatus.SERVICE_UNAVAILABLE.value(),
+			"OPENAI_UNAVAILABLE",
+			"사주 해석 서비스에 일시적인 오류가 발생했습니다. 잠시 후 다시 시도해주세요."
+		);
+		return new ResponseEntity<>(response, HttpStatus.SERVICE_UNAVAILABLE);
+	}
+
+	/**
+	 * [400 Bad Request] OpenAI 요청 자체가 잘못됨 (429 를 뺀 4xx). 재시도해도 같은 결과다.
+	 */
+	@ExceptionHandler(OpenAiRequestException.class)
+	public ResponseEntity<ErrorResponse> handleOpenAiRequest(OpenAiRequestException e) {
+		log.error("OpenAI 요청 오류: {}", e.getMessage(), e.getCause());
+		ErrorResponse response = ErrorResponse.of(
+			HttpStatus.BAD_REQUEST.value(),
+			"OPENAI_REQUEST_ERROR",
+			"사주 해석 요청을 처리할 수 없습니다."
+		);
+		return new ResponseEntity<>(response, HttpStatus.BAD_REQUEST);
+	}
+
+	/**
+	 * [502 Bad Gateway] 모델이 응답을 끝내지 못함 (대부분 max_output_tokens 도달)
+	 */
+	@ExceptionHandler(OpenAiIncompleteResponseException.class)
+	public ResponseEntity<ErrorResponse> handleOpenAiIncompleteResponse(
+		OpenAiIncompleteResponseException e) {
+		log.error("OpenAI 미완성 응답 - reason: {}", e.getReason());
+		ErrorResponse response = ErrorResponse.of(
+			HttpStatus.BAD_GATEWAY.value(),
+			"OPENAI_INCOMPLETE_RESPONSE",
+			"사주 해석이 끝까지 생성되지 않았습니다. 잠시 후 다시 시도해주세요."
+		);
+		return new ResponseEntity<>(response, HttpStatus.BAD_GATEWAY);
+	}
+
+	/**
+	 * [502 Bad Gateway] 모델이 응답을 거부함
+	 */
+	@ExceptionHandler(OpenAiRefusalException.class)
+	public ResponseEntity<ErrorResponse> handleOpenAiRefusal(OpenAiRefusalException e) {
+		log.error("OpenAI 응답 거부: {}", e.getMessage());
+		ErrorResponse response = ErrorResponse.of(
+			HttpStatus.BAD_GATEWAY.value(),
+			"OPENAI_REFUSAL",
+			"사주 해석을 생성할 수 없습니다. 입력 내용을 확인해주세요."
+		);
+		return new ResponseEntity<>(response, HttpStatus.BAD_GATEWAY);
+	}
+
 	@ExceptionHandler(GptApiFailedException.class)
 	public ResponseEntity<ErrorResponse> handleGptApiFailed(GptApiFailedException e) {
 		log.error("🚨 외부 API (GPT) 호출 최종 실패: {}", e.getMessage(), e.getCause());

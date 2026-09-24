@@ -5,6 +5,9 @@ import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.mansereok.server.domain.interpret.client.TestOpenAiProperties;
+import com.mansereok.server.domain.interpret.client.OpenAiResponsesClient;
 import com.mansereok.server.domain.interpret.dto.response.ManseryeokCalculationResponse;
 import com.mansereok.server.domain.interpret.dto.response.ManseryeokCalculationResponse.InputInfo;
 import com.mansereok.server.domain.interpret.dto.response.ManseryeokCalculationResponse.MonthlyFortune;
@@ -30,7 +33,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 class ManseInterpretationServicePromptTest {
 
 	@Mock
-	private GptApiRetryService gptApiRetryService;
+	private OpenAiResponsesClient openAiResponsesClient;
 	@Mock
 	private UserService userService;
 	@Mock
@@ -49,9 +52,9 @@ class ManseInterpretationServicePromptTest {
 	@BeforeEach
 	void setUp() {
 		service = new ManseInterpretationService(
-			"test-api-key",
-			"https://api.openai.com",
-			gptApiRetryService,
+			new ObjectMapper(),
+			openAiResponsesClient,
+			TestOpenAiProperties.defaults(),
 			userService,
 			compatibilityResultRepository,
 			ogImageGenerationService,

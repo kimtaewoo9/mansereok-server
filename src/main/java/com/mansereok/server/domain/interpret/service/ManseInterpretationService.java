@@ -1,8 +1,9 @@
 package com.mansereok.server.domain.interpret.service;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.mansereok.server.domain.interpret.client.OpenAiProperties;
+import com.mansereok.server.domain.interpret.client.OpenAiProperties.ModelTier;
+import com.mansereok.server.domain.interpret.client.OpenAiResponsesClient;
 import com.mansereok.server.domain.interpret.dto.request.Gpt5Request;
 import com.mansereok.server.domain.interpret.dto.response.GptCompatibilityResponse;
 import com.mansereok.server.domain.interpret.dto.response.GptSajuResponse;
@@ -18,6 +19,7 @@ import com.mansereok.server.domain.notification.service.DiscordNotificationServi
 import com.mansereok.server.domain.user.entity.User;
 import com.mansereok.server.domain.user.service.EmailService;
 import com.mansereok.server.domain.user.service.UserService;
+import com.mansereok.server.global.exception.OpenAiIncompleteResponseException;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
@@ -30,7 +32,6 @@ import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
@@ -38,9 +39,10 @@ import org.springframework.stereotype.Service;
 @Slf4j
 public class ManseInterpretationService {
 
-	private final ObjectMapper objectMapper = new ObjectMapper();
+	private final ObjectMapper objectMapper;
 
-	private final GptApiRetryService gptApiRetryService;
+	private final OpenAiResponsesClient openAiResponsesClient;
+	private final OpenAiProperties openAiProperties;
 
 	private final UserService userService;
 	private final OgImageGenerationService ogImageGenerationService;
@@ -168,9 +170,10 @@ public class ManseInterpretationService {
 		"3월운 총평"
 	);
 
-	public ManseInterpretationService(@Value("${openai.api.key}") String apiKey,
-		@Value("${openai.api.base-url:https://api.openai.com}") String baseUrl,
-		GptApiRetryService gptApiRetryService,
+	public ManseInterpretationService(
+		ObjectMapper objectMapper,
+		OpenAiResponsesClient openAiResponsesClient,
+		OpenAiProperties openAiProperties,
 		UserService userService,
 		CompatibilityResultRepository compatibilityResultRepository,
 		OgImageGenerationService ogImageGenerationService,
@@ -178,7 +181,9 @@ public class ManseInterpretationService {
 		EmailService emailService,
 		SajuResultService sajuResultService
 	) {
-		this.gptApiRetryService = gptApiRetryService;
+		this.objectMapper = objectMapper;
+		this.openAiResponsesClient = openAiResponsesClient;
+		this.openAiProperties = openAiProperties;
 		this.userService = userService;
 		this.ogImageGenerationService = ogImageGenerationService;
 		this.discordNotificationService = discordNotificationService;
@@ -226,25 +231,21 @@ public class ManseInterpretationService {
 				sourceTitle);
 			String input = GPT5_SYSTEM_INSTRUCTION + userPrompt;
 
-			String requestBody = objectMapper.
-				writeValueAsString(
-					new Gpt5Request(
-						"gpt-5.4",
-						input,
-						32768,
-						"high",
-						"high",
-						SAJU_OUTPUT_FORMAT)
-				);
+			ModelTier tier = openAiProperties.primary();
+			Gpt5Request request = new Gpt5Request(
+				tier.model(),
+				input,
+				tier.maxOutputTokens(),
+				tier.reasoningEffort(),
+				tier.verbosity(),
+				SAJU_OUTPUT_FORMAT
+			);
 
 			log.info("GPT API 호출 시작...");
-			String gptResponse = gptApiRetryService.callGptApiWithRetry(requestBody);
-
-			String rawContent = extractContentFromResponseGpt5(gptResponse);
-			String sanitizedContent = sanitizeGptJsonResponse(rawContent);
+			String outputText = openAiResponsesClient.createResponse(request);
 
 			GptSajuResponse gptData = objectMapper.readValue(
-				sanitizedContent,
+				outputText,
 				GptSajuResponse.class
 			);
 
@@ -277,6 +278,11 @@ public class ManseInterpretationService {
 				log.error("이메일 실패", e);
 			}
 
+		} catch (OpenAiIncompleteResponseException e) {
+			// 토큰 상한 도달은 프롬프트·토큰 설정을 손봐야 한다는 신호라 따로 센다.
+			// @Async 라 예외가 HTTP 응답으로 나가지 않으므로 운영에서는 이 로그로 본다.
+			log.error("해석 미완성 - reason: {}, resultId: {}", e.getReason(), resultId);
+			sajuResultService.rollbackStatus(resultId);
 		} catch (Exception e) {
 			log.error("해석 중 오류 발생: {}", e.getMessage(), e);
 			// 6. [DB] 에러 롤백
@@ -330,21 +336,21 @@ public class ManseInterpretationService {
 						"한 챕터당 최소 **공백 포함 1,000자 이상** 작성해야 합니다.";
 			}
 
-			String requestBody = objectMapper.writeValueAsString(
-				new Gpt5Request(
-					"gpt-5.4",
-					systemInstruction + userPrompt,
-					32768,
-					"high",
-					"high",
-					COMPATIBILITY_OUTPUT_FORMAT)
+			ModelTier tier = openAiProperties.primary();
+			Gpt5Request request = new Gpt5Request(
+				tier.model(),
+				systemInstruction + userPrompt,
+				tier.maxOutputTokens(),
+				tier.reasoningEffort(),
+				tier.verbosity(),
+				COMPATIBILITY_OUTPUT_FORMAT
 			);
 
 			log.info("GPT 궁합 API 호출 시작");
-			String gptResponse = gptApiRetryService.callGptApiWithRetry(requestBody);
+			String outputText = openAiResponsesClient.createResponse(request);
 
 			GptCompatibilityResponse gptData = objectMapper.readValue(
-				sanitizeGptJsonResponse(extractContentFromResponseGpt5(gptResponse)), GptCompatibilityResponse.class);
+				outputText, GptCompatibilityResponse.class);
 
 			// 3. [DB] 결과 저장
 			CompatibilityResult savedResult = sajuResultService.saveCompatibilityFinalResult(
@@ -361,6 +367,10 @@ public class ManseInterpretationService {
 			} catch (Exception e) {
 			}
 
+		} catch (OpenAiIncompleteResponseException e) {
+			// 토큰 상한 도달은 프롬프트·토큰 설정을 손봐야 한다는 신호라 따로 센다.
+			log.error("궁합 해석 미완성 - reason: {}, resultId: {}", e.getReason(), resultId);
+			sajuResultService.rollbackCompatibilityStatus(resultId);
 		} catch (Exception e) {
 			log.error("궁합 분석 오류: {}", e.getMessage(), e);
 			// 5. [DB] 롤백
@@ -392,14 +402,20 @@ public class ManseInterpretationService {
 			}
 
 			String userPrompt = createFreePromptBySubcategory(subcategoryId, name, response);
-			String requestBody = objectMapper.writeValueAsString(
-				new Gpt5Request("gpt-5-mini", GPT5_SYSTEM_INSTRUCTION + userPrompt, 8192, "medium",
-					"medium", SAJU_OUTPUT_FORMAT));
+			ModelTier tier = openAiProperties.light();
+			Gpt5Request request = new Gpt5Request(
+				tier.model(),
+				GPT5_SYSTEM_INSTRUCTION + userPrompt,
+				tier.maxOutputTokens(),
+				tier.reasoningEffort(),
+				tier.verbosity(),
+				SAJU_OUTPUT_FORMAT
+			);
 
-			log.info("GPT-5-mini 호출...");
-			String gptResponse = gptApiRetryService.callGptApiWithRetry(requestBody);
+			log.info("무료 단일 해석 호출... model: {}", tier.model());
+			String outputText = openAiResponsesClient.createResponse(request);
 			GptSajuResponse gptData = objectMapper.readValue(
-				sanitizeGptJsonResponse(extractContentFromResponseGpt5(gptResponse)), GptSajuResponse.class);
+				outputText, GptSajuResponse.class);
 
 			String normalizedFullAnalysis = normalizeAnalysisBySubcategory(subcategoryId,
 				gptData.getFullAnalysis());
@@ -417,6 +433,10 @@ public class ManseInterpretationService {
 				log.error("OG 실패", e);
 			}
 
+		} catch (OpenAiIncompleteResponseException e) {
+			// 토큰 상한 도달은 프롬프트·토큰 설정을 손봐야 한다는 신호라 따로 센다.
+			log.error("무료 해석 미완성 - reason: {}, resultId: {}", e.getReason(), resultId);
+			sajuResultService.rollbackStatus(resultId);
 		} catch (Exception e) {
 			log.error("무료 사주 오류: {}", e.getMessage(), e);
 			// 5. [DB] 롤백
@@ -459,16 +479,24 @@ public class ManseInterpretationService {
 			);
 
 			// 4. GPT 호출
-			String requestBody = objectMapper.writeValueAsString(
-				new Gpt5Request("gpt-5.4", GPT5_SYSTEM_INSTRUCTION + userPrompt, 32768, "high",
-					"high", COMPATIBILITY_OUTPUT_FORMAT)
+			// 무료 궁합은 지금 유료와 같은 primary 티어(gpt-5.4 / 32768 / high)를 쓴다.
+			// 이번 PR 은 호출 계층 분리가 목적이라 동작을 바꾸지 않고 그대로 둔다.
+			// 무료 경로의 비용을 light 티어로 낮출지는 후속 PR 에서 따로 판단한다.
+			ModelTier tier = openAiProperties.primary();
+			Gpt5Request request = new Gpt5Request(
+				tier.model(),
+				GPT5_SYSTEM_INSTRUCTION + userPrompt,
+				tier.maxOutputTokens(),
+				tier.reasoningEffort(),
+				tier.verbosity(),
+				COMPATIBILITY_OUTPUT_FORMAT
 			);
 
 			log.info("GPT 궁합(무료) API 호출 중...");
-			String gptResponse = gptApiRetryService.callGptApiWithRetry(requestBody);
+			String outputText = openAiResponsesClient.createResponse(request);
 
 			GptCompatibilityResponse gptData = objectMapper.readValue(
-				sanitizeGptJsonResponse(extractContentFromResponseGpt5(gptResponse)), GptCompatibilityResponse.class);
+				outputText, GptCompatibilityResponse.class);
 
 			// 5. [DB] 결과 저장
 			CompatibilityResult savedResult = sajuResultService.saveCompatibilityFinalResult(
@@ -478,6 +506,12 @@ public class ManseInterpretationService {
 			// 6. 후처리 (OG이미지 등)
 			ogImageGenerationService.generateAndUploadOgImage(savedResult);
 
+		} catch (OpenAiIncompleteResponseException e) {
+			// 토큰 상한 도달은 프롬프트·토큰 설정을 손봐야 한다는 신호라 따로 센다.
+			log.error("무료 궁합 해석 미완성 - reason: {}, resultId: {}", e.getReason(), resultId);
+			if (resultId != null) {
+				sajuResultService.rollbackCompatibilityStatus(resultId);
+			}
 		} catch (Exception e) {
 			log.error("무료 궁합 분석 오류: {}", e.getMessage(), e);
 			if (resultId != null) {
@@ -5238,104 +5272,6 @@ public class ManseInterpretationService {
 			return "";
 		}
 		return str.substring(0, 1);
-	}
-
-	/**
-	 * GPT 응답 JSON을 정리한다.
-	 * 1) markdown 코드블록(```json ... ```) 제거
-	 * 2) max_tokens에 의해 잘린 JSON 복구 시도
-	 */
-	private String sanitizeGptJsonResponse(String raw) {
-		if (raw == null || raw.trim().isEmpty()) {
-			return raw;
-		}
-
-		String sanitized = raw.trim();
-
-		// 1) markdown 코드블록 제거
-		if (sanitized.startsWith("```")) {
-			sanitized = sanitized.replaceFirst("^```(?:json)?\\s*", "");
-			sanitized = sanitized.replaceFirst("\\s*```$", "");
-			sanitized = sanitized.trim();
-		}
-
-		// 2) 잘린 JSON 복구: fullAnalysis나 summary가 닫히지 않은 경우
-		if (!sanitized.endsWith("}")) {
-			log.warn("GPT 응답 JSON이 잘렸습니다. 복구 시도 중... 길이: {}", sanitized.length());
-
-			// 마지막으로 완전한 키-값 쌍을 찾아서 그 뒤를 정리
-			int lastQuoteIdx = sanitized.lastIndexOf("\"");
-			if (lastQuoteIdx > 0) {
-				// 이스케이프되지 않은 마지막 따옴표 찾기
-				String beforeLastQuote = sanitized.substring(0, lastQuoteIdx);
-				// fullAnalysis 값이 잘린 경우: 따옴표로 닫고 JSON 종료
-				if (sanitized.contains("\"fullAnalysis\"") && !sanitized.contains("\"summary\"")) {
-					// summary 없이 fullAnalysis만 있는 경우
-					sanitized = beforeLastQuote + "\",\n  \"summary\": \"요약을 생성할 수 없습니다.\"\n}";
-					log.info("GPT 응답 복구 완료 (fullAnalysis만 존재, summary 대체)");
-				} else {
-					// 마지막 따옴표 뒤에 } 추가
-					sanitized = sanitized + "\"\n}";
-					log.info("GPT 응답 복구 완료 (닫는 따옴표/중괄호 추가)");
-				}
-			}
-		}
-
-		return sanitized;
-	}
-
-	private String extractContentFromResponseGpt5(String jsonResponse)
-		throws JsonProcessingException {
-
-		if (jsonResponse == null || jsonResponse.trim().isEmpty()) {
-			throw new IllegalArgumentException("GPT 응답이 비어있습니다.");
-		}
-
-		try {
-			JsonNode root = objectMapper.readTree(jsonResponse);
-
-			// 에러 체크
-			if (root.path("error").isObject()) {
-				JsonNode errorNode = root.get("error");
-				String errorMessage = errorNode.path("message").asText("알 수 없는 API 오류");
-				log.error("GPT API 에러: {}", errorMessage);
-				throw new IllegalArgumentException("GPT API 에러: " + errorMessage);
-			}
-
-			// output 배열 체크
-			JsonNode outputNode = root.path("output");
-			if (!outputNode.isArray() || outputNode.isEmpty()) {
-				log.error("응답에 유효한 'output' 배열이 없습니다. JSON: {}", jsonResponse);
-				throw new IllegalArgumentException("GPT 응답 형식이 올바르지 않습니다.");
-			}
-
-			// output 배열에서 message 타입 찾기
-			for (JsonNode outputItem : outputNode) {
-				if ("message".equals(outputItem.path("type").asText())) {
-					JsonNode contentArray = outputItem.path("content");
-					if (contentArray.isArray() && !contentArray.isEmpty()) {
-						// content 배열에서 output_text 타입 찾기
-						for (JsonNode contentItem : contentArray) {
-							if ("output_text".equals(contentItem.path("type").asText())) {
-								JsonNode textNode = contentItem.path("text");
-								if (textNode.isTextual()) {
-									String content = textNode.asText();
-									log.info("✅ GPT 응답 추출 성공 - 길이: {} 문자", content.length());
-									return content; // ← 이게 JSON 문자열
-								}
-							}
-						}
-					}
-				}
-			}
-
-			log.error("GPT 응답에서 'text' 필드를 찾을 수 없습니다. JSON: {}", jsonResponse);
-			throw new IllegalArgumentException("GPT 응답에서 내용 추출 실패.");
-
-		} catch (JsonProcessingException e) {
-			log.error("JSON 파싱 실패: {}", e.getMessage());
-			throw e;
-		}
 	}
 
 	/**
