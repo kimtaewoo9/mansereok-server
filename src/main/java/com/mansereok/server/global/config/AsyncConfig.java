@@ -15,6 +15,9 @@ import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
  * <p>세 풀 모두 포화 시 RejectedExecutionException 을 던진다. @Async 메서드의 제출은
  * 호출 스레드(= 요청 스레드)에서 일어나므로 이 예외는 컨트롤러까지 올라오고,
  * GlobalExceptionHandler 가 503 으로 내려 준다("잠시 후 다시 시도").
+ * 실제로 올라오는 타입은 ThreadPoolTaskExecutor 가 감싼 TaskRejectedException 인데,
+ * RejectedExecutionException 의 하위 타입이라 같은 핸들러가 받는다.
+ * 컨트롤러는 거부를 잡아 PROCESSING 으로 바꿔 둔 결과 상태를 되돌린 뒤 예외를 다시 던진다.
  */
 @Configuration
 @EnableAsync
@@ -86,6 +89,11 @@ public class AsyncConfig {
 		executor.setMaxPoolSize(50);
 		executor.setQueueCapacity(200);
 		executor.setThreadNamePrefix("GptFree-");
+
+		// 이 풀은 무료 단일과 무료 궁합을 함께 받는다. 배포로 잘린 해석의 결과 행이
+		// PROCESSING 에 남지 않도록 유료 풀과 같은 우아한 종료를 건다.
+		executor.setWaitForTasksToCompleteOnShutdown(true);
+		executor.setAwaitTerminationSeconds(120);
 
 		executor.setRejectedExecutionHandler((r, executor1) -> {
 			log.error("🚨 [무료 사주 요청 거부됨] active={}, queue={}",

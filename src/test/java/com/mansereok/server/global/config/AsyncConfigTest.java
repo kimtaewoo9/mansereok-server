@@ -5,12 +5,15 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executor;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.springframework.core.task.TaskRejectedException;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 
 /**
@@ -84,8 +87,43 @@ class AsyncConfigTest {
 		}
 	}
 
+	/**
+	 * 설정값이 아니라 실제로 core 와 큐를 모두 채워 거부까지 가 본다. 제출로 올라오는 타입은
+	 * ThreadPoolTaskExecutor 가 감싼 TaskRejectedException 이고, 이것이
+	 * RejectedExecutionException 의 하위 타입이라야 GlobalExceptionHandler 의 503 매핑이 걸린다.
+	 * 이 PR 의 503 주장이 통째로 그 상속 관계에 얹혀 있으므로 여기서 고정한다.
+	 */
 	@Test
-	@DisplayName("풀이 포화되면 RejectedExecutionException 을 던진다 (컨트롤러에서 503 으로 매핑)")
+	@DisplayName("무료 풀은 core 50 + queue 200 이 실제로 차면 TaskRejectedException 으로 거부한다")
+	void freePoolRejectsWhenActuallySaturated() throws InterruptedException {
+		ThreadPoolTaskExecutor executor = register(asyncConfig.gptFreeTaskExecutor());
+		CountDownLatch block = new CountDownLatch(1);
+		CountDownLatch started = new CountDownLatch(50);
+
+		try {
+			for (int i = 0; i < 50 + 200; i++) {
+				executor.execute(() -> {
+					started.countDown();
+					try {
+						block.await();
+					} catch (InterruptedException e) {
+						Thread.currentThread().interrupt();
+					}
+				});
+			}
+			assertThat(started.await(5, TimeUnit.SECONDS)).isTrue();
+
+			assertThatThrownBy(() -> executor.execute(() -> {
+			}))
+				.isInstanceOf(TaskRejectedException.class)
+				.isInstanceOf(RejectedExecutionException.class);
+		} finally {
+			block.countDown();
+		}
+	}
+
+	@Test
+	@DisplayName("세 풀의 거부 핸들러는 모두 RejectedExecutionException 을 던진다")
 	void rejectsWhenSaturated() {
 		List<ThreadPoolTaskExecutor> executors = List.of(
 			register(asyncConfig.gptTaskExecutor()),

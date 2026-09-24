@@ -1,5 +1,6 @@
 package com.mansereok.server.domain.interpret.service;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.mansereok.server.global.exception.OpenAiIncompleteResponseException;
 import java.util.List;
 import java.util.function.Consumer;
@@ -58,6 +59,10 @@ public class InterpretationPipeline {
 				runQuietly(flowName, step.name(), () -> step.action().accept(saved));
 			}
 
+		} catch (JsonProcessingException e) {
+			// 스키마를 강제해도 파싱이 깨졌다면 응답 형식 쪽 문제라 따로 남긴다.
+			log.error("[{}] GPT 응답 파싱 실패 - resultId: {}", flowName, resultId, e);
+			lifecycle.rollback(resultId);
 		} catch (OpenAiIncompleteResponseException e) {
 			// 토큰 상한 도달은 프롬프트·토큰 설정을 손봐야 한다는 신호라 따로 센다.
 			// @Async 라 예외가 HTTP 응답으로 나가지 않으므로 운영에서는 이 로그로 본다.
@@ -99,11 +104,15 @@ public class InterpretationPipeline {
 		void rollback(Long resultId);
 	}
 
-	/** GPT 호출 단계. 파싱에서 체크 예외가 나오므로 {@code throws Exception} 을 허용한다. */
+	/**
+	 * GPT 호출 단계. 이 단계에서 나올 수 있는 체크 예외는 응답 JSON 파싱의
+	 * {@link JsonProcessingException} 하나뿐이라 {@code throws Exception} 대신 그것만 선언한다.
+	 * 호출자가 무엇을 처리해야 하는지 숨기지 않기 위해서다 (Effective Java 아이템 74).
+	 */
 	@FunctionalInterface
 	public interface GptCall<R> {
 
-		R call() throws Exception;
+		R call() throws JsonProcessingException;
 	}
 
 	/** 결과 저장 뒤의 곁가지 한 개. 이름은 실패 로그에 쓴다. */

@@ -1,5 +1,6 @@
 package com.mansereok.server.domain.interpret.service;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mansereok.server.domain.interpret.client.OpenAiProperties;
 import com.mansereok.server.domain.interpret.client.OpenAiProperties.ModelTier;
@@ -347,7 +348,7 @@ public class ManseInterpretationService {
 		String userPrompt,
 		Map<String, Object> outputFormat,
 		Class<R> responseType
-	) throws Exception {
+	) throws JsonProcessingException {
 		Gpt5Request request = Gpt5Request.withSystemInstruction(
 			tier.model(),
 			systemInstruction,
