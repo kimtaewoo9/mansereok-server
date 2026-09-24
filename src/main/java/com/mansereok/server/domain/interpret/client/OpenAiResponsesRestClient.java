@@ -139,7 +139,7 @@ public class OpenAiResponsesRestClient implements OpenAiResponsesClient {
 	private Gpt5Request withTier(Gpt5Request request, ModelTier tier) {
 		Map<String, Object> outputFormat =
 			request.getText() == null ? null : request.getText().getFormat();
-		return new Gpt5Request(
+		return Gpt5Request.withSystemInstruction(
 			tier.model(),
 			request.getInstructions(),
 			request.getInput(),

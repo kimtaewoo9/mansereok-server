@@ -38,10 +38,21 @@ public class Gpt5Request {
 	}
 
 	/**
-	 * 시스템 지시와 사용자 입력을 분리하는 생성자.
-	 * instructions 에는 서버가 만든 시스템 지시만, input 에는 사용자 프롬프트만 넣는다.
+	 * 시스템 지시와 사용자 입력을 분리해 요청을 만든다.
+	 * instructions 에는 서버가 만든 시스템 지시만, userInput 에는 사용자 프롬프트만 넣는다.
+	 *
+	 * <p>생성자가 아니라 이름 있는 정적 팩터리로 두는 이유는, 앞쪽 String 세 개가 나란히 있는 생성자라
+	 * 두 값을 뒤바꿔 넘겨도 컴파일이 통과하기 때문이다. 그렇게 되면 사용자 프롬프트가 통째로 신뢰 채널인
+	 * instructions 로 올라가 경계가 무너진다. (Effective Java 아이템 1·51)
 	 */
-	public Gpt5Request(String model, String instructions, String input, int maxOutputTokens,
+	public static Gpt5Request withSystemInstruction(String model, String instructions,
+		String userInput, int maxOutputTokens, String effort, String verbosity,
+		Map<String, Object> outputFormat) {
+		return new Gpt5Request(model, instructions, userInput, maxOutputTokens, effort, verbosity,
+			outputFormat);
+	}
+
+	private Gpt5Request(String model, String instructions, String input, int maxOutputTokens,
 		String effort, String verbosity, Map<String, Object> outputFormat) {
 		this.model = model;
 		this.instructions = instructions;

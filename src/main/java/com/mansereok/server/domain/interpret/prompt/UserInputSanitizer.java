@@ -1,6 +1,7 @@
 package com.mansereok.server.domain.interpret.prompt;
 
 import java.util.Map;
+import java.util.SequencedMap;
 import java.util.regex.Pattern;
 
 /**
@@ -38,10 +39,17 @@ public final class UserInputSanitizer {
 	private static final Pattern INVISIBLE = Pattern.compile("[\\p{Cc}\\p{Cf}&&[^\\s]]");
 
 	/**
-	 * 구획 표시 위조 시도. 정확한 표시는 물론, 표시를 새로 만들 수 있는 꺾쇠 연속도 함께 지운다.
+	 * 구획 표시 위조 시도. 시스템 지시가 경계로 지목하는 표시는 모두 지워야 위조를 막을 수 있으므로
+	 * 펜스({@code <<<...>>>})뿐 아니라 대괄호 머리말([사용자 입력], [분석 지시])도 함께 지운다.
+	 *
+	 * <p>꺾쇠는 펜스가 세 겹이므로 3연속부터만 지운다. 2연속까지 지우면
+	 * {@code <<진격의 거인>>} 같은 정상 작품명이 조용히 훼손된다.
 	 */
 	private static final Pattern SECTION_MARKER = Pattern.compile(
-		Pattern.quote(USER_INPUT_BEGIN) + "|" + Pattern.quote(USER_INPUT_END) + "|<{2,}|>{2,}");
+		Pattern.quote(USER_INPUT_BEGIN) + "|" + Pattern.quote(USER_INPUT_END)
+			+ "|" + Pattern.quote(USER_INPUT_SECTION_HEADER)
+			+ "|" + Pattern.quote(ANALYSIS_SECTION_HEADER)
+			+ "|<{3,}|>{3,}");
 
 	private UserInputSanitizer() {
 		throw new AssertionError("인스턴스를 만들 수 없는 유틸리티 클래스입니다.");
@@ -86,8 +94,12 @@ public final class UserInputSanitizer {
 	/**
 	 * 라벨이 붙은 값들을 하나의 [사용자 입력] 구획으로 만든다. null 값은 건너뛴다.
 	 * 값은 이미 정화된 것이어야 한다.
+	 *
+	 * <p>줄 순서는 프롬프트의 일부라 계약이다. 그래서 순서를 보장하지 않는 {@link Map} 이 아니라
+	 * 순서가 타입에 드러나는 {@link SequencedMap} 을 받는다. (Effective Java 아이템 64 의
+	 * "적절한 인터페이스가 있을 때" 에 해당하는 인터페이스가 여기서는 SequencedMap 이다.)
 	 */
-	public static String userInputSection(Map<String, String> labeledValues) {
+	public static String userInputSection(SequencedMap<String, String> labeledValues) {
 		StringBuilder body = new StringBuilder();
 		for (Map.Entry<String, String> entry : labeledValues.entrySet()) {
 			if (entry.getValue() == null) {
@@ -114,7 +126,15 @@ public final class UserInputSanitizer {
 		if (trimmed.length() <= field.maxLength()) {
 			return trimmed;
 		}
-		return trimmed.substring(0, field.maxLength()).trim();
+		// 상한은 @Size 와 같은 기준(코드 유닛)으로 두되, 자르는 위치는 코드 포인트 경계로 맞춘다.
+		// 그냥 substring 하면 이모지 같은 보조 평면 문자의 서로게이트 쌍이 쪼개져
+		// 반쪽짜리 문자가 그대로 프롬프트에 실린다.
+		int end = field.maxLength();
+		if (Character.isHighSurrogate(trimmed.charAt(end - 1))
+			&& Character.isLowSurrogate(trimmed.charAt(end))) {
+			end--;
+		}
+		return trimmed.substring(0, end).trim();
 	}
 
 	/**

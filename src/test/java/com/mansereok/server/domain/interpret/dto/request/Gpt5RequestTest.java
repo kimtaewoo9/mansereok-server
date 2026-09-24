@@ -15,7 +15,7 @@ class Gpt5RequestTest {
 	@Test
 	@DisplayName("instructions 를 넣으면 최상위에 instructions 가 나오고 input 에는 사용자 프롬프트만 담긴다")
 	void shouldSerializeInstructionsAtTopLevel() throws Exception {
-		Gpt5Request request = new Gpt5Request(
+		Gpt5Request request = Gpt5Request.withSystemInstruction(
 			"gpt-5", "너는 사주명리학자다", "[사용자 입력]\n이름: 김태우", 1024, "high", "medium", null);
 
 		JsonNode json = objectMapper.readTree(objectMapper.writeValueAsString(request));
@@ -41,9 +41,9 @@ class Gpt5RequestTest {
 	}
 
 	@Test
-	@DisplayName("instructions 를 명시적으로 null 로 준 생성자도 키를 만들지 않는다")
+	@DisplayName("instructions 를 명시적으로 null 로 준 팩터리도 키를 만들지 않는다")
 	void shouldOmitExplicitNullInstructions() throws Exception {
-		Gpt5Request request = new Gpt5Request(
+		Gpt5Request request = Gpt5Request.withSystemInstruction(
 			"gpt-5", null, "사용자 프롬프트", 1024, "high", "medium", null);
 
 		JsonNode json = objectMapper.readTree(objectMapper.writeValueAsString(request));
