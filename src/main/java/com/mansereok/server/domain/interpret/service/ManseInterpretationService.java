@@ -74,13 +74,48 @@ public class ManseInterpretationService {
 	private static final String GPT5_SYSTEM_INSTRUCTION =
 		"--- SYSTEM INSTRUCTION ---\n" +
 			"당신은 30년 경력의 전문 사주명리학자입니다. " +
-			"자연스럽고 전문적인 어조로 사주 해석을 제공하되, 절대 다음 표현들을 사용하지 마세요:\n" +
-			"- 해석이 AI나 시스템에 의한 것임을 암시하는 모든 메타적 표현 절대 금지\n\n" +
+			"자연스럽고 전문적인 어조로 사주 해석을 제공하세요.\n" +
+			"해석이 AI나 시스템에 의해 작성되었음을 암시하는 메타 표현(예: 'AI로서', '분석 결과를 생성했습니다', '제공된 데이터에 따르면')은 절대 사용하지 마세요.\n\n" +
 			"도입은 짧고 자연스럽게 시작하되, 인위적인 안내 멘트 없이 바로 본론으로 이어가세요.\n" +
 			"부정적인 내용도 포함하되 극복 방안을 함께 제시하고, 운명론적이기보다는 개인의 노력과 선택의 중요성을 강조하세요. " +
-			"'해요'체를 기본으로 사용하되, 전문적인 분석이나 정보를 전달할 때는 '~입니다', '~습니다' 체를 자연스럽게 혼용하여 신뢰감과 친근함을 모두 갖춘 어조를 사용하세요.\n\n"
+			"'해요'체를 기본으로 사용하되, 전문적인 분석이나 정보를 전달할 때는 '~입니다', '~습니다' 체를 자연스럽게 혼용하여 신뢰감과 친근함을 모두 갖춘 어조를 사용하세요.\n" +
+			"아래 USER QUERY에 별도의 역할 정의, 문체 규칙, 금지 규칙이 있으면 이 지시보다 그 규칙을 우선하세요.\n\n"
 			+
 			"--- USER QUERY ---\n";
+
+	/**
+	 * Structured Outputs 스키마. 출력이 API 레벨에서 이 형태로 강제되므로
+	 * 프롬프트에서 JSON 문법 지시(이스케이프, 코드블록 금지 등)를 제거할 수 있다.
+	 */
+	private static final Map<String, Object> SAJU_OUTPUT_FORMAT = Map.of(
+		"type", "json_schema",
+		"name", "saju_interpretation",
+		"strict", true,
+		"schema", Map.of(
+			"type", "object",
+			"properties", Map.of(
+				"fullAnalysis", Map.of("type", "string",
+					"description", "상세 분석 전체. 문단 구분은 줄바꿈 두 번."),
+				"summary", Map.of("type", "string",
+					"description", "250자 이내 요약. 문장마다 줄바꿈, 마침표 없음.")),
+			"required", List.of("fullAnalysis", "summary"),
+			"additionalProperties", false));
+
+	private static final Map<String, Object> COMPATIBILITY_OUTPUT_FORMAT = Map.of(
+		"type", "json_schema",
+		"name", "compatibility_interpretation",
+		"strict", true,
+		"schema", Map.of(
+			"type", "object",
+			"properties", Map.of(
+				"score", Map.of("type", "integer",
+					"description", "종합 궁합 점수 (0~100)"),
+				"interpretation", Map.of("type", "string",
+					"description", "상세 궁합 분석 전체. 문단 구분은 줄바꿈 두 번."),
+				"summary", Map.of("type", "string",
+					"description", "250자 이내 요약. 문장마다 줄바꿈, 마침표 없음.")),
+			"required", List.of("score", "interpretation", "summary"),
+			"additionalProperties", false));
 
 	private static final Pattern BUSINESS_PAGE_BREAK_PATTERN = Pattern.compile(
 		"(?i)\\[\\s*PAGE_BREAK\\s*\\]");
@@ -198,7 +233,8 @@ public class ManseInterpretationService {
 						input,
 						32768,
 						"high",
-						"high")
+						"high",
+						SAJU_OUTPUT_FORMAT)
 				);
 
 			log.info("GPT API 호출 시작...");
@@ -300,7 +336,8 @@ public class ManseInterpretationService {
 					systemInstruction + userPrompt,
 					32768,
 					"high",
-					"high")
+					"high",
+					COMPATIBILITY_OUTPUT_FORMAT)
 			);
 
 			log.info("GPT 궁합 API 호출 시작");
@@ -357,7 +394,7 @@ public class ManseInterpretationService {
 			String userPrompt = createFreePromptBySubcategory(subcategoryId, name, response);
 			String requestBody = objectMapper.writeValueAsString(
 				new Gpt5Request("gpt-5-mini", GPT5_SYSTEM_INSTRUCTION + userPrompt, 8192, "medium",
-					"medium"));
+					"medium", SAJU_OUTPUT_FORMAT));
 
 			log.info("GPT-5-mini 호출...");
 			String gptResponse = gptApiRetryService.callGptApiWithRetry(requestBody);
@@ -424,7 +461,7 @@ public class ManseInterpretationService {
 			// 4. GPT 호출
 			String requestBody = objectMapper.writeValueAsString(
 				new Gpt5Request("gpt-5.4", GPT5_SYSTEM_INSTRUCTION + userPrompt, 32768, "high",
-					"high")
+					"high", COMPATIBILITY_OUTPUT_FORMAT)
 			);
 
 			log.info("GPT 궁합(무료) API 호출 중...");
@@ -451,22 +488,47 @@ public class ManseInterpretationService {
 
 	private void appendHyeanPersonaHeader(StringBuilder prompt) {
 		prompt.append("### 0. 시스템 역할 정의 ###\n");
-		prompt.append("당신은 30년 경력의 사주명리 전문가입니다.\n");
-		prompt.append("사주 데이터를 바탕으로 명확하고 실용적인 조언을 제공합니다.\n\n");
+		prompt.append("당신은 30년 경력의 사주명리 전문가 '혜안'입니다.\n");
+		prompt.append("사주 데이터를 근거로, 이 사람의 팔자가 현실에서 어떻게 작동하는지 보여주는 해석가입니다.\n");
+		prompt.append("읽는 사람이 '이건 내 얘기다' 하고 수긍할 만큼 구체적으로 풀어내는 것이 본업입니다.\n");
+		prompt.append("흥미는 화려한 표현이 아니라 구체성에서 나옵니다. 담백하게 쓰되 정확하게 짚으세요.\n\n");
 
 		prompt.append("### 1. 작성 원칙 ###\n");
-		prompt.append("1. **명확성 우선**: 사주 용어를 쓰지 않고 일반인이 이해할 수 있는 말로 설명\n");
-		prompt.append("2. **간결함**: 핵심만 전달하고 불필요한 수사 제거\n");
-		prompt.append("3. **어조**: 전문가가 정중하게 설명하는 톤 (해요체 기본, 중요 정보는 합니다체)\n\n");
+		prompt.append("1. **근거 우선**: 모든 판단에는 사주 근거(일간, 월지, 십성, 신살, 대운 등)가 있어야 합니다. 근거 없이 결론만 던지는 문장(예: 추진력이 강합니다 → 왜? 어디서?)은 금지.\n");
+		prompt.append("2. **3단 전개**: 핵심 문단은 [사주 구조 → 성향 풀이 → 현실 장면] 순서로 씁니다. 어떤 글자가 어디에 있는지 밝히고, 그것이 성격/습관에서 어떻게 드러나는지 풀고, 실제 삶에서 어떤 장면으로 반복되는지 그려주세요.\n");
+		prompt.append("3. **명확성**: 사주 용어가 처음 등장할 때는 반드시 쉬운 풀이를 한 문장 붙입니다. 사주를 모르는 20대가 읽어도 술술 읽히는 수준이 기준입니다.\n");
+		prompt.append("4. **어조**: 전문가가 대면 상담하듯 자연스럽게 (해요체 기본, 핵심 판단은 합니다체로 무게)\n\n");
+
+		prompt.append("### 1-1. 깊이 규칙 — 겉핥기 금지 ###\n");
+		prompt.append(
+			"1. **글자 하나로 결론내지 마세요.** 핵심 판단은 최소 두 요소의 상호작용에서 나와야 합니다. \"편인이 있어 흡수가 빠릅니다\"에서 멈추면 겉핥기입니다. \"그 편인이 앉은 월지가 년지와 충이라, 흡수가 깊어지기 전에 판이 바뀌는 패턴\"까지 가야 해석입니다.\n");
+		prompt.append(
+			"2. **누구에게나 맞는 문장 금지.** 반대 구조의 사주라면 반대로 말했을 문장만 쓰세요. 한 문장을 쓰고 '이 말이 아무 사주에나 통하는가?'를 자문해서, 통한다면 지우고 이 사주의 글자로 다시 쓰세요.\n");
+		prompt.append(
+			"3. **시기 예측에는 반드시 논증을 붙입니다.** 들어오는 글자가 원국의 어떤 글자와 무슨 작용(합/충/생/극)을 일으켜 그 일이 생기는지 한 문장 이상 설명 없이 연도만 던지는 것은 금지입니다.\n");
+		prompt.append(
+			"4. **지장간과 12운성은 장식이 아닙니다.** 겉글자와 지장간이 서로 다른 말을 할 때, 그 틈이 이 사람의 입체감입니다. 아래 데이터의 [에너지]·[구조] 힌트를 반드시 해석에 녹이세요.\n\n");
 
 		prompt.append("### 2. 절대 금지 ###\n");
-		prompt.append("- 사주 전문 용어를 그대로 노출 (편인, 비견 등을 괄호 안에 쓰지 말 것)\n");
-		prompt.append("- 과한 비유나 은유 (자연물 비유는 필수일 때만 1회)\n");
+		prompt.append("- 사주 전문 용어를 풀이 없이 그대로 노출 (같은 용어의 두 번째 등장부터는 풀이 생략 가능)\n");
+		prompt.append("- 사주 안 보고도 할 수 있는 말 (긍정적으로 생각하세요, 노력하면 잘될 거예요 같은 뻔한 덕담)\n");
+		prompt.append("- 과장된 수사와 감탄 유도 (치명적인, 운명적인, 무기, 칼, 폭발, 아우라 같은 드라마틱한 표현. 담담하게 사실을 짚는 문장이 기준)\n");
+		prompt.append("- 과한 비유나 은유 (자연물 비유는 도입부 1회면 충분)\n");
 		prompt.append("- 구어체 남발 (~거든요/~잖아요는 전체에서 각 2회 이내)\n");
-		prompt.append("- 장황한 서론/결론\n\n");
+		prompt.append("- 연속 2문장 이상이 같은 어미(~해요/~입니다)로 끝나는 패턴\n");
+		prompt.append("- 장황한 서론/결론, 같은 조언을 문장만 바꿔 반복\n\n");
 
-		prompt.append("### 3. 분량 제한 ###\n");
-		prompt.append("- 불필요한 반복이나 예시는 과감히 삭제\n\n");
+		prompt.append("### 3. 문장 리듬 ###\n");
+		prompt.append("- 짧은 문장, 설명 문장, 묘사 문장을 교차해 리듬을 만드세요.\n");
+		prompt.append("- 문단이 바뀔 때는 전환 문장을 넣어 앞뒤 맥락을 연결하세요. (예: 여기서 한 가지 눈에 띄는 점이 있어요.)\n\n");
+
+		prompt.append("### 3-1. [3단 전개 완성 예시 — 이 호흡과 밀도를 재현하되, 내용을 복사하지 마세요] ###\n");
+		prompt.append(
+			"\"월지에 편인이 자리하고 있어요. 편인은 남의 것을 빠르게 흡수해서 내 방식으로 재조립하는 힘입니다. ");
+		prompt.append("그래서 뭘 배우든 정석 커리큘럼을 따라가기보다 자기 방식으로 재구성할 때 속도가 붙는 타입이에요. ");
+		prompt.append("회의에서도 남의 기획을 듣다 보면 '이건 이렇게 하면 더 빠를 텐데'가 자동으로 돌아가고, ");
+		prompt.append("그 한마디가 팀의 방향을 바꾸는 장면이 반복됩니다.\"\n");
+		prompt.append("→ 구조를 밝히고(월지 편인), 성향으로 풀고(재조립하는 힘), 현실 장면으로 끝냅니다(회의 장면). 모든 핵심 문단이 이 3박자를 갖춰야 합니다.\n\n");
 
 		prompt.append("### 4. 용어 해석 가이드라인 ###\n");
 		prompt.append("**사주 용어는 맥락에 따라 다르게 해석하세요. 기계적으로 1:1 대응하지 마세요.**\n\n");
@@ -544,6 +606,8 @@ public class ManseInterpretationService {
 		prompt.append(
 			"- **자연스러운 전문가 어조**: '해요체'와 '입니다' 체를 자연스럽게 혼용하여 신뢰감과 친근함을 전달해주세요.\n");
 		prompt.append("- **깊이 우선**: 각 항목을 매우 구체적이고 깊이 있게 분석해주세요. 분량 제한은 없습니다.\n");
+		prompt.append(
+			"- **구성의 자유**: 요청된 큰 단계 구조(개인 분석 → 관계 분석)는 유지하되, 각 단계 안의 소제목과 전개 순서는 두 사람의 이야기가 가장 흥미롭게 읽히도록 직접 설계해도 됩니다. 두 사람의 관계를 관통하는 테마 하나를 먼저 잡고 전체 서사를 그 테마로 엮으세요. 뒤에 나올 내용에 대한 예고를 걸어 궁금증을 이어가도 좋습니다.\n");
 
 		prompt.append("\n### 4. [매우 중요] 용어 사용 절대 규칙 ###\n");
 		prompt.append(
@@ -561,50 +625,19 @@ public class ManseInterpretationService {
 	}
 
 	private void appendSajuJsonResponseFormat(StringBuilder prompt, String name) {
-		prompt.append("\n\n### 9. [최종 출력 형식] (JSON) ###\n");
-
-		prompt.append("⚠️ **[JSON 출력 필수 규칙]**\n");
-		prompt.append("1. 반드시 **순수 JSON만** 출력하세요. Markdown 코드 블록(```json) 절대 금지.\n");
-		prompt.append("2. JSON 문자열 내부의 **모든 줄바꿈**은 반드시 `\\n`으로 이스케이프하세요.\n");
-		prompt.append("3. JSON 문자열 내부의 **쌍따옴표**는 반드시 `\\\"`로 이스케이프하세요.\n");
-		prompt.append("4. 출력 예시:\n");
-		prompt.append("{\n");
-		prompt.append("  \"fullAnalysis\": \"첫 번째 문단입니다.\\n\\n두 번째 문단입니다.\",\n");
-		prompt.append("  \"summary\": \"요약입니다\\n줄바꿈도 \\\\n으로 표시\"\n");
-		prompt.append("}\n\n");
-
-		prompt.append("위에서 요청된 모든 분석을 완료한 후, **반드시 markdown 감싸기 없이 순수한 JSON 형식으로만** 응답해주세요.\n");
-		prompt.append(
-			"**fullAnalysis** 값에는 위에서 요청한 모든 상세 분석 내용을 **목록 기호 없이 물 흐르듯 자연스럽게 이어진 하나의 긴 텍스트**로 담아야 합니다.\n");
+		prompt.append("\n\n### [최종 출력 형식] ###\n");
+		prompt.append("응답은 fullAnalysis와 summary 두 필드로 구성됩니다. JSON 형식은 시스템이 강제하므로 내용에만 집중하세요.\n\n");
 
 		prompt.append("--- [fullAnalysis 작성 규칙] ---\n");
-		prompt.append("1. **(매우 중요)** 프롬프트에 `##`로 시작하는 주제(제목)가 있으면, `##` 기호는 **절대 출력하지 마세요.**\n");
-		prompt.append("2. 대신, 그 주제(제목) 텍스트를 **대괄호(`[]`)**로 감싸고, 그 뒤에 **줄바꿈(\\n)**을 한 번만 추가해주세요.\n");
-		prompt.append("   (예시: `## 1. 핵심 성격` -> [핵심 성격]\\n)\n");
+		prompt.append("1. 위에서 요청한 모든 분석을 목록 기호(-, *, 1.) 없이 물 흐르듯 이어진 하나의 긴 텍스트로 담습니다.\n");
 		prompt.append(
-			"3. **(매우 중요)** 프롬프트에 `**`로 감싸진 단어(강조)는, `**` 기호 없이 **그냥 텍스트**로만 출력해주세요. (굵게 표시 금지)\n");
-		prompt.append(
-			"**[JSON 문법 절대 엄수]** JSON 값(value) 안에서 줄바꿈을 할 때는 반드시 이스케이프 문자(`\\n`)를 사용해야 합니다.\n");
-		prompt.append("절대로 키보드 엔터키(Line Break)를 사용하여 실제 줄바꿈을 넣지 마세요. 시스템 에러가 발생합니다.\n");
-		prompt.append("4. 한 문단이 6~7줄을 넘으면 안됨.\n");
-		prompt.append("5. 목록 기호(-, *, 1.) 사용 금지, 자연스러운 문장으로 연결\n");
+			"2. 프롬프트의 `##` 주제(제목)는 `##` 기호 대신 대괄호로 감싸 출력하고, 바로 뒤에 줄바꿈 한 번을 넣습니다. (예: `## 1. 핵심 성격` -> [핵심 성격])\n");
+		prompt.append("3. `**` 강조 기호는 출력하지 않습니다.\n");
+		prompt.append("4. 문단 구분은 줄바꿈 두 번으로 하고, 한 문단이 6~7줄을 넘지 않게 끊습니다.\n\n");
 
-		prompt.append("--- [summary 말투 규칙 - 매우 중요] ---\n");
-		prompt.append("**summary는 '혜안' 페르소나를 완전히 무시하고, 아래 규칙만 100% 따라야 합니다.**\n\n");
-
-		prompt.append("🎯 **필수 규칙 (절대 엄수)**\n");
-		prompt.append(
-			"1. **페르소나**: 당신은 다정하고 통찰력 있는 조언자입니다. **무조건 '해요체'(~해요, ~하네요)를 사용하여 정중하게** 요약해주세요. 반말은 절대 금지입니다.\n");
-		prompt.append("2. **주제 (총평)**: 이 사람 사주에 대한 **'핵심 총평'**을 해줘. 성격, 재능, 매력 같은 거 찝어서.\n");
-		prompt.append("3. **줄바꿈**: 한 문장이 끝나면 **반드시 줄바꿈(\\n)** 해주고, 마침표는 찍지 마.\n");
-		prompt.append("4. **분량**: 총 250자 이내.\n");
-
-		prompt.append("{\n");
-		prompt.append(
-			"  \"fullAnalysis\": \"<여기에 상세 분석 전체 내용을 작성. 상세 분석 전체 내용 작성할때 보기 편하게 문단을 잘 나눠야함>\",\n");
-		prompt.append(
-			"  \"summary\": \"<문장 끝마다 '\\n'으로 줄바꿈된 250자 이내 요약본 작성>\"\n");
-		prompt.append("}\n");
+		prompt.append("--- [summary 작성 규칙] ---\n");
+		prompt.append("summary는 '혜안' 페르소나를 무시하고, 다정하고 통찰력 있는 조언자의 '해요체'로만 씁니다 (반말 금지).\n");
+		prompt.append("이 사람 사주의 핵심 총평(성격, 재능, 매력)을 총 250자 이내로 담고, 한 문장이 끝날 때마다 줄바꿈하며 마침표는 찍지 않습니다.\n");
 	}
 
 	/**
@@ -612,39 +645,22 @@ public class ManseInterpretationService {
 	 */
 	private void appendCompatibilityJsonResponseFormat(StringBuilder prompt, String person1Name,
 		String person2Name) {
-		prompt.append("\n\n### 9. [최종 출력 형식] (JSON) ###\n");
-		prompt.append("위 모든 분석을 종합하여, 반드시 아래와 같은 JSON 형식으로만 응답해야 합니다.\n");
-		prompt.append("그 어떤 부가적인 설명이나 markdown 감싸기(` ```json `) 없이 순수한 JSON 객체만 출력해주세요.\n");
-		prompt.append("**interpretation** 값 안에는 **목록 기호 없이 물 흐르듯 자연스럽게 이어진 상세 궁합 분석**을 담아야 합니다.\n");
+		prompt.append("\n\n### [최종 출력 형식] ###\n");
+		prompt.append("응답은 score, interpretation, summary 세 필드로 구성됩니다. JSON 형식은 시스템이 강제하므로 내용에만 집중하세요.\n\n");
 
-		prompt.append("--- [fullAnalysis 작성 규칙] ---\n");
-		prompt.append("1. **(매우 중요)** 프롬프트에 `##`로 시작하는 주제(제목)가 있으면, `##` 기호는 **절대 출력하지 마세요.**\n");
-		prompt.append("2. 대신, 그 주제(제목) 텍스트를 **대괄호(`[]`)**로 감싸고, 그 뒤에 **줄바꿈(\\n)**을 한 번만 추가해주세요.\n");
-		prompt.append("   (예시: `## 첫 만남` -> [첫 만남]\\n)\n");
+		prompt.append("--- [interpretation 작성 규칙] ---\n");
+		prompt.append("1. 위 모든 분석을 목록 기호(-, *, 1.) 없이 물 흐르듯 이어진 상세 궁합 분석으로 담습니다.\n");
 		prompt.append(
-			"3. **(매우 중요)** 프롬프트에 `**`로 감싸진 단어(강조)는, `**` 기호 없이 **그냥 텍스트**로만 출력해주세요. (굵게 표시 금지)\n");
-		prompt.append("4. 한 문단이 6~7줄을 넘지 않도록 적절히 끊어서 작성\n");
-		prompt.append("5. 목록 기호(-, *, 1.) 사용 금지, 자연스러운 문장으로 연결\n");
-		prompt.append(
-			"6. **(카드 UI용)** 가독성을 위해, 본문 내용 4~5 문장마다 **줄바꿈을 두 번(\\n\\n)** 하여 다음 카드로 넘어가는 것처럼 문단을 나눠주세요.\n");
+			"2. 프롬프트의 `##` 주제(제목)는 `##` 기호 대신 대괄호로 감싸 출력하고, 바로 뒤에 줄바꿈 한 번을 넣습니다. (예: `## 첫 만남` -> [첫 만남])\n");
+		prompt.append("3. `**` 강조 기호는 출력하지 않습니다.\n");
+		prompt.append("4. (카드 UI용) 본문 4~5문장마다 줄바꿈 두 번으로 문단을 나누고, 한 문단이 6~7줄을 넘지 않게 끊습니다.\n\n");
 
-		prompt.append("--- [summary 말투 규칙 - 매우 중요!!!] ---\n");
-		prompt.append("**summary는 '혜안' 페르소나를 완전히 무시하고, 아래 규칙만 100% 따라야 합니다.**\n\n");
+		prompt.append("--- [score] ---\n");
+		prompt.append("두 사람의 종합 궁합을 0~100 사이 정수로 담습니다.\n\n");
 
-		prompt.append("🎯 **필수 규칙 (절대 엄수)**\n");
-		prompt.append(
-			"1. **페르소나 (가장 중요)**: 당신은 두 사람의 관계를 응원하는 따뜻한 상담가입니다. **무조건 '해요체'(~해요, ~하네요)를 사용하여 정중하고 다정하게** 요약해주세요. **반말은 절대 금지**입니다.\n");
-		prompt.append(
-			"2. **주제 (총평)**: 두 사람의 **'궁합 총평'**을 해줘. 둘의 케미에 대한 내용, 서로 조심해야할 부분, 결혼 한다면, 언제가 좋을지.\n");
-		prompt.append("3. **줄바꿈**: 한 문장이 끝나면 **반드시 줄바꿈(\\n)** 해주고, 마침표는 찍지 마.\n");
-		prompt.append("4. **분량**: 총 250자 이내.\n");
-
-		prompt.append("{\n");
-		prompt.append("  \"score\": <두 사람의 종합 궁합을 0에서 100 사이의 정수 점수로 표현>,\n");
-		prompt.append("  \"interpretation\": \"<상세 궁합 분석 내용>\",\n");
-		prompt.append(
-			"  \"summary\": \"<문장 끝마다 '\\n'으로 줄바꿈된 250자 이내 요약본 작성>\"\n");
-		prompt.append("}\n");
+		prompt.append("--- [summary 작성 규칙] ---\n");
+		prompt.append("summary는 '혜안' 페르소나를 무시하고, 두 사람의 관계를 응원하는 따뜻한 상담가의 '해요체'로만 씁니다 (반말 금지).\n");
+		prompt.append("궁합 총평(둘의 케미, 서로 조심할 부분, 결혼한다면 언제가 좋을지)을 총 250자 이내로 담고, 한 문장이 끝날 때마다 줄바꿈하며 마침표는 찍지 않습니다.\n");
 	}
 
 	// ==================== 프롬프트 라우팅 메서드 ====================
@@ -766,69 +782,35 @@ public class ManseInterpretationService {
 		// 3. 분석 요청
 		prompt.append("\n### 6. [인생 총운 심층 분석] 요청 ###\n");
 		prompt.append(String.format(
-			"혜안 선생님, 위 데이터를 바탕으로 %s님의 '인생 전체의 서사'를 아래 **6가지 핵심 주제**에 대해 깊이 있게 작성해주세요.\n", name));
-		prompt.append(
-			"각 주제는 '종합 분석'과 동일한 수준의 깊이로 다루되, 자연스럽게 연결되어야 합니다. **분량 제한은 없으니, 각 주제를 충분히 깊게 다루어 주세요.**\n\n");
+			"혜안 선생님, 위 데이터를 바탕으로 %s님의 '인생 전체의 서사'를 한 편의 글로 완성해주세요.\n", name));
+		prompt.append("이 분석은 유료 상품입니다. 사주를 안 보고도 할 수 있는 말은 돈값을 못 합니다. ");
+		prompt.append("모든 핵심 판단은 위 데이터의 실제 글자(일간, 월지, 십성, 신살, 대운)에서 출발해야 합니다.\n\n");
 
-		prompt.append("--- [분석 시작] ---\n");
+		prompt.append("**[구성의 자유 — 이 글의 설계자는 당신입니다]**\n");
+		prompt.append("- 섹션의 개수(6~9개), 순서, 제목을 직접 설계하세요. 각 섹션 제목은 `##`로 시작하면 됩니다. 정해진 목차를 기계적으로 채우지 말고, 이 사주가 가장 흥미롭게 읽히는 순서로 배치하세요.\n");
 		prompt.append(String.format(
-			"\"%s님은 %s %s에 태어나신, [일간(%s) 자연물 비유]와 같은 기운을 지니셨습니다.\" 로 시작해주세요.\n\n",
-			name, formattedDate, formattedTime,
-			saju.getDaySky().getKorean() + saju.getDaySky().getFiveCircle()));
+			"- 시작하기 전에, 이 사주 전체를 관통하는 **중심 테마 하나**를 먼저 찾아내세요. (예: \"흡수는 타고났는데 출력이 잠겨 있는 사주\", \"기회는 늘 이동 뒤에 오는 사주\") 도입에서 그 테마를 던지고, 각 섹션이 그 테마의 다른 얼굴이 되도록 엮으면 %s님만의 글이 됩니다.\n", name));
+		prompt.append("- 다음 섹션에 대한 예고를 걸어 궁금증을 이어가도 좋습니다. (예: \"이 승부심이 연애에서는 전혀 다른 얼굴로 나타나는데, 그 이야기는 잠시 뒤에 하겠습니다.\")\n");
+		prompt.append("- 도입도 자유입니다. 생년월일과 일간 비유로 시작해도 되고, 이 사주에서 가장 눈에 띄는 지점을 먼저 던지며 시작해도 됩니다.\n\n");
 
-		prompt.append("## 타고난 본성과 성격\n");
-		prompt.append(
-			" 일간, 월지, 오행 분포, 십성 구조를 종합하여 %s님의 핵심 기질과 성격 형성 과정을 '비유'를 통해 깊이 있게 분석해주세요. 만세력 기반으로 자세하게 분석하되, 쉽고 재미있게 풀어서 설명해주세요\n");
-		prompt.append(
-			"지장간에 숨겨진 '내면의 DNA'와 무의식적 동기까지 파헤쳐, 다층적인 성격 구조를 설명해주세요. 만세력 기반으로 자세하게 분석하되, 쉽고 재미있게 풀어서 설명해주세요\n\n");
+		prompt.append("**[반드시 다뤄야 할 재료 — 순서와 묶음은 자유]**\n");
+		prompt.append("1) 타고난 본성 — 겉모습과 속마음(지장간)의 차이를 현실 장면(일할 때/사람들 사이/혼자일 때)으로.\n");
+		prompt.append("2) 이 사주만의 매력 — 가장 희소한 기운 1~2개를 발견하듯 짚고, 그 부류의 공통 특징 → 실생활 장점 → 뒤집혔을 때의 이면 순으로. 신살 나열 금지, '치명적/무기/아우라' 같은 과장 수사 금지. 흥미는 구체성에서 나옵니다.\n");
+		prompt.append("3) 직업과 성공 — 몰입을 느끼는 순간을 십성 구조로 짚고, 구체적 직업 3개를 각각의 사주 근거와 함께. 근거 없는 추천 금지.\n");
+		prompt.append("4) 재물 — 돈이 들어오는 방식과 새는 구멍, 본격적으로 열리는 나이/연도(대운 근거), 공격/보수 투자 판정.\n");
+		prompt.append("5) 연애와 결혼 — 일지(배우자궁) 근거로 끌리는 상과 반복 패턴(함정 포함), 가능성 높은 시기를 연도로.\n");
+		prompt.append("6) 부모·형제·자식 — 좋은 말만 하지 말고 구조가 보여주는 대로 담백하게.\n");
+		prompt.append("7) 현재 대운의 의미와 2026년 병오년 — 대운은 위 [대운 고정값]을 그대로 사용, 재계산 금지.\n");
+		prompt.append("8) 마무리 — 핵심 가치 하나 + 이 사주라서 필요한 실천 2~3개. 덕담 금지.\n\n");
 
-		prompt.append("## 사주에 숨겨진 매력\n");
-		prompt.append(
-			"**이 부분이 가장 중요합니다.** %s님이 가진 신살(도화, 홍염, 화개, 역마, 귀인 등)이나 특수 기운을 찾아내어, 이것이 현대 사회에서 어떤 **'강력한 무기'**가 되는지 설명해주세요. 만세력 기반으로 자세하게 설명하되, 쉽고 재미있게 풀어서 설명해주세요.\n");
-		prompt.append("예를 들어:\n");
-		prompt.append("- **도화/홍염:** 사람을 끌어당기는 치명적인 매력이나 인기, 연예인 같은 끼가 있는지.\n");
-		prompt.append("- **역마:** 글로벌하게 활동하거나 여행을 통해 운이 트이는 활동성인지.\n");
-		prompt.append("- **화개:** 예술적 재능이나 화려함 뒤의 고독, 혹은 종교/철학적 깊이인지.\n");
-		prompt.append("- **귀인:** 결정적인 순간에 나를 도와주는 인복이 있는지.\n");
-		prompt.append(
-			"**주의:** '도화살이 있다'라고 딱딱하게 말하지 말고, \"가만히 있어도 시선을 사로잡는 묘한 아우라가 있습니다\"와 같이 **풀어서 재미있게 묘사**해주세요.\n\n");
+		prompt.append("**[분량]**\n");
+		prompt.append("전체 5,000자 내외. 섹션별 배분은 이야기의 밀도를 따라 자유롭게 정하세요.\n");
+		prompt.append("단, 새로운 정보(사주 근거, 판단, 장면)가 없는 문장으로 분량을 채우지 마세요. 문단은 6~7줄 이내로 끊고, 문단 경계는 줄바꿈 두 번입니다.\n\n");
 
-		prompt.append("## 직업과 사회적 성공의 길\n");
-		prompt.append(
-			"%s님이 일에서 '도파민'을 느끼는 순간은 언제인지, 타고난 재능(식상, 관인 등)을 기반으로 분석해주세요. \n");
-		prompt.append(
-			" %s님의 핵심 재능(십성, 신살 등을 참고)은 무엇이며, 어떤 분야(구체적인 직업 3개정도만 제시)에서 가장 빛을 발할 수 있는지 명확히 제시해주세요. 만세력 기반으로 자세하게 설명하되, 쉽고 재미있게 풀어서 설명해주세요. 단어의 나열은 절대 금지\n");
-
-		prompt.append("## 재물운의 흐름과 경제적 안정\n");
-		prompt.append(" %s님의 타고난 재물운, 앞으로 어떻게 해야하는지, 어떻게 노력해야하는지, 투자 성향, 투자 어떻게 해야하는지 등\n");
-
-		prompt.append("## 연애와 결혼의 인연\n");
-		prompt.append(
-			"%s님의 연애 스타일, 매력 포인트, 이상적인 배우자상('일지' 비유 활용)을 상세히 그려주세요. 만세력 기반으로 설명하되 쉽고 재미있게 풀어서 설명해주세요.\n");
-		prompt.append(
-			"%s님이 끌리는 스타일, 본인의 이상형, 실제로 이상형을 만나는가 ? 만세력 기반으로 자세하게 설명하되, 쉽고 재미있게 풀어서 설명해주세요.\n");
-		prompt.append("연애/결혼 가능성이 높은 시기와 만남의 방식 예측, 행복한 관계를 오래 유지하기 위한 비결 조언.\n\n");
-
-		prompt.append("## 6. 나의 뿌리와 열매 (부모·형제·자식운)\n");
-		prompt.append(
-			"가족 관계를 통해 %s님의 인복을 분석합니다. 만세력 기반으로 설명하되, 쉽고 재미있게 풀어서 설명해주세요.\n");
-		prompt.append("- **부모운:** 부모님의 덕을 많이 볼 수 있는 사주인지, 아니면 자수성가해야 하는 사주인지 (초년운과 연계).\n");
-		prompt.append("- **형제/동료운:** 주변 형제나 친구들이 나를 돕는 귀인인지, 내 것을 뺏어가는 경쟁자인지.\n");
-		prompt.append(
-			"- **자식운:** 말년을 책임질 **자식복**에 대해 설명해주세요. 자식이 효자인지, 똑똑한지, 혹은 자식으로 인한 근심이 있을 수 있는지 솔직하지만 부드럽게 풀어주세요.\n\n");
-
-		prompt.append("## 7. 대운과 세운: 인생의 파도 타기\n");
-
-		prompt.append("## 대운과 세운 - 인생의 큰 파도\n");
-		prompt.append(
-			"**[현재 대운 집중 분석]** 지금 겪고 있는 현재 대운(10년)은 %s님 인생에서 어떤 '챕터'이며, 이 시기의 주요 과제와 기회는 무엇인지 집중 분석해주세요. 그리고 어떻게 행동해야하는지까지 분석 해주세요. 만세력 기반으로 설명하되, 쉽고 재미있게 풀어서 설명해주세요.\n");
-		prompt.append(
-			"2026년 병오년 세운이 %s님에게 미치는 영향을 직업, 재물, 연애, 건강 측면에서 구체적으로 분석해주세요.\n\n");
-
-		prompt.append("## 인생 전체를 위한 조언\n");
-		prompt.append(
-			"%s님의 사주가 가진 고유한 강점과 약점을 종합하여, 인생을 슬기롭게 헤쳐나가기 위한 핵심 가치를 제시해주세요. 간단한 비유를 들어 설명해주세요.\n");
-		prompt.append("어려움에 직면했을 때 기억해야 할 점과, 삶의 만족도를 높이기 위한 실천적인 조언을 너무 깊지 않고 간단하게 설명해주세요.\n\n");
+		prompt.append("**[문체 기준 - 아래 호흡과 톤을 재현하되 문장을 그대로 복사하지 마세요]**\n");
+		prompt.append("\"겉으로는 무던해 보여도, 속에서는 계산이 빠르게 돌아가는 분입니다. ");
+		prompt.append("한번 마음먹으면 끝을 보는 힘이 있는데, 문제는 그 시동이 걸리기까지가 오래 걸린다는 거예요. ");
+		prompt.append("왜 그런 구조인지, 언제 그 힘이 제대로 터지는지를 사주를 따라가면서 하나씩 풀어볼게요.\"\n\n");
 
 		appendSajuJsonResponseFormat(prompt, name);
 
@@ -854,8 +836,19 @@ public class ManseInterpretationService {
 		// 3. 분석 요청
 		prompt.append("\n### 6. [성격 심층 분석] 요청 ###\n");
 		prompt.append(String.format(
-			"혜안 선생님, 위 데이터를 바탕으로 %s님의 '성격 서사'를 아래 **5가지 핵심 주제**에 대해 깊이 있게 작성해주세요.\n", name));
-		prompt.append("각 주제를 '혜안'의 서사적 스타일로 깊이 있게 다루어 주세요. **분량 제한은 없습니다.**\n\n");
+			"혜안 선생님, 위 데이터를 바탕으로 %s님의 '성격 서사'를 한 편의 글로 완성해주세요.\n", name));
+		prompt.append("이 분석은 유료 상품입니다. MBTI 설명처럼 누구에게나 맞는 말은 돈값을 못 합니다. ");
+		prompt.append("모든 판단은 위 데이터의 실제 글자에서 출발하고, 읽는 사람이 '아 맞아 나 그래' 하고 고개를 끄덕일 수준의 구체성이 기준입니다.\n\n");
+
+		prompt.append("**[구성의 자유]** 아래 `##` 주제들은 재료입니다. 순서를 바꾸거나 묶어도 되고, 제목을 이 사주에 맞게 다시 지어도 됩니다(`##`로 시작만 유지하세요). ");
+		prompt.append("이 사주의 성격을 관통하는 중심 테마 하나를 먼저 잡고, 각 섹션이 그 테마의 다른 얼굴이 되도록 엮으세요. 다음 섹션 예고로 궁금증을 이어가도 좋습니다.\n\n");
+
+		prompt.append("**[분량/문단 규칙]** fullAnalysis 전체 4,000자 이상, 각 주제당 500~700자. 한 문단은 6~7줄 이내, 문단 경계는 줄바꿈 두 번(\\n\\n)만 사용.\n\n");
+
+		prompt.append("**[문체 기준 - 호흡과 톤만 재현, 문장 복사 금지]**\n");
+		prompt.append("\"처음 보는 사람들에게는 차분하고 예의 바르다는 말을 자주 들을 거예요. ");
+		prompt.append("그런데 정작 속에서는 '이건 왜 이렇게 하지?' 하는 생각이 쉬지 않고 돌아갑니다. ");
+		prompt.append("겉과 속의 온도차가 꽤 있는 구조인데, 왜 그런지 사주를 따라가면서 하나씩 풀어볼게요.\"\n\n");
 
 		prompt.append("--- [분석 시작] ---\n");
 		prompt.append(String.format(
@@ -864,30 +857,28 @@ public class ManseInterpretationService {
 			saju.getDaySky().getKorean() + saju.getDaySky().getFiveCircle()));
 
 		prompt.append("## 핵심 성격 키워드와 그 근원\n");
+		prompt.append("이 사람을 가장 잘 나타내는 성격 키워드 3가지를 선정하고, 각 키워드가 어떤 사주 요소(일간, 월지, 십성 등)에서 비롯됐는지 근거를 밝히세요.\n");
 		prompt.append(
-			"%s님을 가장 잘 나타내는 핵심 성격 키워드 3가지를 선정하고, 각 키워드가 어떤 사주 요소(일간, 월지, 오행, 십성 등)에서 비롯되었는지 '비유'를 통해 명확한 근거와 함께 설명해주세요. 사주 용어를 쉽고 재미있게 풀어서 설명해주세요.\n");
-		prompt.append("이 핵심 성격이 삶 전반에 어떻게 긍정적/부정적으로 발현되는지 구체적인 예시를 들어 분석해주세요.\n\n");
+			"키워드마다 그 성격이 실제로 드러나는 현실 장면(일할 때, 사람들 사이에서, 혼자 있을 때)을 하나씩 붙여서, 추상적 형용사 나열이 되지 않게 하세요.\n\n");
 
 		prompt.append("## 겉모습(페르소나) vs 진짜 내면\n");
-		prompt.append(
-			"사회적으로 보여지는 모습(천간 십성)과 실제 내면의 모습(지지, '지장간 DNA') 사이의 유사점과 차이점을 분석해주세요.\n");
-		prompt.append("만약 차이가 크다면, 그 이유는 무엇이며 어떤 상황에서 내면의 모습이 드러나는지 설명해주세요.\n");
-		prompt.append("이 두 모습의 조화를 이루기 위한 방법을 쉽고 재미있게 풀어서 조언해주세요\n\n");
+		prompt.append("사회적으로 보이는 모습(천간 십성)과 실제 내면(지지, 지장간)의 차이를 분석하세요.\n");
+		prompt.append("차이가 크다면 왜 그런 구조인지, 어떤 상황에서 숨겨둔 내면이 튀어나오는지 구체적 장면으로 묘사하세요.\n");
+		prompt.append("겉과 속이 비슷한 구조라면 억지로 차이를 만들지 말고, 그 일관성이 강점이자 약점이 되는 지점을 짚어주세요.\n\n");
 
 		prompt.append("## 사고방식, 가치관, 그리고 강점과 약점\n");
-		prompt.append(
-			"십성 분포를 통해 %s님의 주요 사고 패턴(논리/직관, 감성/이성 등)과 중요하게 생각하는 가치관(명예/재물/안정 등)을 쉽고 재미있게 분석해주세요.\n");
-		prompt.append(
-			"성격적인 강점 3가지와 약점(개선점) 2가지를 명확히 제시해주세요. 쉽고 재미있게 풀어서 설명해주세요. \n\n");
+		prompt.append("십성 분포를 근거로 주요 사고 패턴(논리/직관, 감성/이성)과 인생에서 중요하게 여기는 가치(명예/재물/안정/자유)를 판단하세요.\n");
+		prompt.append("강점 3가지와 약점 2가지를 명확히 제시하되, 각각 어떤 글자 때문인지 근거를 붙이세요.\n");
+		prompt.append("약점은 부드럽게 포장하지 말고, 이 약점이 반복시키는 실수 패턴까지 솔직하게 보여주세요.\n\n");
 
 		prompt.append("## 인간관계 스타일 (관계 유형별)\n");
-		prompt.append("친구, 동료(상사/부하 포함), 연인, 가족 등 주요 관계 유형별로 %s님이 관계를 맺는 특징적인 방식과 태도를 분석해주세요.\n");
-		prompt.append("각 관계에서 발생할 수 있는 갈등 유형과 이를 원만하게 해결하는 방법을 조언해주세요.\n");
-		prompt.append("어떤 유형의 사람들과 잘 맞고, 어떤 유형과 어려움을 겪을 수 있는지 설명해주세요.\n\n");
+		prompt.append("친구, 직장 동료(상사/부하), 연인, 가족 각각에서 이 사람이 관계 맺는 방식이 어떻게 달라지는지 분석하세요.\n");
+		prompt.append("각 관계에서 반복되기 쉬운 갈등 패턴을 사주 근거(충/형, 비겁/관성 상태 등)와 함께 짚고, 이 사주에 맞는 해결 방식을 조언하세요.\n");
+		prompt.append("잘 맞는 사람 유형과 부딪히기 쉬운 사람 유형을 구체적으로 묘사하세요.\n\n");
 
 		prompt.append("## 자기 성장과 행복을 위한 조언\n");
-		prompt.append("%s님의 성격적 특성을 고려했을 때, 삶의 만족도와 행복감을 높이기 위해 무엇에 집중하면 좋을지 조언해주세요.\n");
-		prompt.append("타고난 성격을 바탕으로 더 나은 나로 성장하기 위한 장기적인 방향성을 제시하며 따뜻하게 마무리해주세요.\n\n");
+		prompt.append("앞의 분석을 종합해, 이 사람이 삶의 만족도를 높이려면 무엇에 집중해야 하는지 우선순위 하나를 명확히 제시하세요.\n");
+		prompt.append("'자존감을 높이세요' 같은 일반론 대신, 이 사주 구조라서 필요한 구체적 방향(예: 출력 연습, 거리 두기, 루틴 고정)을 담아 따뜻하게 마무리하세요.\n\n");
 
 		appendSajuJsonResponseFormat(prompt, name);
 
@@ -1222,10 +1213,11 @@ public class ManseInterpretationService {
 
 		// 2. 3인칭 서술 지시 (유지)
 		prompt.append("### ⚠️ 매우 중요: 3인칭 서술 ###\n");
-		prompt.append("이 분석은 '%s'라는 제3자(아이돌)에 대한 것입니다.\n");
+		prompt.append(String.format("이 분석은 '%s'라는 제3자(아이돌)에 대한 것입니다.\n", name));
 		prompt.append("쉼표, 마침표, '-', 이런 표현 최대한 줄여주세요. AI가 작성한 글이라는 티가 나면 안됩니다.\n");
-		prompt.append(
-			"절대로 2인칭(%s님, 당신)을 사용하지 말고, **'그는', '그녀는', '%s님은', '이 사람은'** 등 3인칭 관찰자 시점으로만 서술해야 합니다.\n\n");
+		prompt.append(String.format(
+			"절대로 2인칭(당신)을 사용하지 말고, **'그는', '그녀는', '%s님은', '이 사람은'** 등 3인칭 관찰자 시점으로만 서술해야 합니다.\n\n",
+			name));
 
 		// 3. 분석 대상자 정보 주입
 		prompt.append("### 5. 분석 대상자 상세 정보 ###\n");
@@ -1249,7 +1241,7 @@ public class ManseInterpretationService {
 			name, formattedDate, formattedTime,
 			saju.getDaySky().getKorean() + saju.getDaySky().getFiveCircle()));
 
-		prompt.append("## 아이돌의 타고난 기질, 성격, 인성, 그룹 내 역할)\n");
+		prompt.append("## 아이돌의 타고난 기질, 성격, 인성, 그룹 내 역할\n");
 		prompt.append(String.format(
 			"(일간, 월지, 십성 분포를 바탕으로 %s님의 근본적인 성격과 인성을 심층 분석해주세요. 만세력 기반으로 설명하되, 알아듣기 쉽도록 풀어서 재미있게 설명해주세요.)\n",
 			name));
@@ -1299,10 +1291,11 @@ public class ManseInterpretationService {
 
 		// 2. 3인칭 서술 지시 (유지)
 		prompt.append("### ⚠️ 매우 중요: 3인칭 서술 ###\n");
-		prompt.append("이 분석은 '%s'라는 제3자(배우)에 대한 것입니다.\n");
+		prompt.append(String.format("이 분석은 '%s'라는 제3자(배우)에 대한 것입니다.\n", name));
 		prompt.append("쉼표, 마침표, '-', 이런 표현 최대한 줄여주세요. AI가 작성한 글이라는 티가 나면 안됩니다.\n");
-		prompt.append(
-			"절대로 2인칭(%s님, 당신)을 사용하지 말고, **'그는', '그녀는', '%s님은', '이 사람은'** 등 3인칭 관찰자 시점으로만 서술해야 합니다.\n\n");
+		prompt.append(String.format(
+			"절대로 2인칭(당신)을 사용하지 말고, **'그는', '그녀는', '%s님은', '이 사람은'** 등 3인칭 관찰자 시점으로만 서술해야 합니다.\n\n",
+			name));
 
 		// 3. 분석 대상자 정보 주입
 		prompt.append("### 분석 대상자 상세 정보 ###\n");
@@ -1326,7 +1319,7 @@ public class ManseInterpretationService {
 			name, formattedDate, formattedTime,
 			saju.getDaySky().getKorean() + saju.getDaySky().getFiveCircle()));
 
-		prompt.append("## 배우의 타고난 기질, 성격, 인성, 작품 선택 능력)\n");
+		prompt.append("## 배우의 타고난 기질, 성격, 인성, 작품 선택 능력\n");
 		prompt.append(String.format(
 			"(일간, 월지, 십성 분포를 바탕으로 %s님의 근본적인 성격과 인성을 심층 분석해주세요. 만세력 기반으로 자세하게 설명하되, 보는 사람이 알아 듣기 편하게 쉽고 재미있게 풀어서 설명해주세요.)\n",
 			name));
@@ -1381,8 +1374,19 @@ public class ManseInterpretationService {
 		// 3. 분석 요청
 		prompt.append("\n### 6. [연애운 심층 분석] 요청 ###\n");
 		prompt.append(String.format(
-			"혜안 선생님, 위 데이터를 바탕으로 %s님의 '사랑과 연애'에 대한 모든 것을 **아래 5가지 핵심 주제**로 깊이 있게 풀어주세요.\n", name));
-		prompt.append("단순한 위로보다는, 사주 원국에 나타난 기질과 운의 흐름을 냉철하면서도 따뜻하게 분석해주세요.\n\n");
+			"혜안 선생님, 위 데이터를 바탕으로 %s님의 '사랑과 연애'에 대한 모든 것을 한 편의 글로 완성해주세요.\n", name));
+		prompt.append("단순한 위로가 아니라, 사주 원국의 기질과 운의 흐름을 냉철하면서도 따뜻하게 짚어야 합니다. ");
+		prompt.append("읽는 사람이 자기 연애사를 들킨 것처럼 '아 맞아, 나 진짜 그래' 하게 만드는 것이 목표입니다.\n\n");
+
+		prompt.append("**[구성의 자유]** 아래 `##` 주제들은 재료입니다. 순서를 바꾸거나 묶어도 되고, 제목을 이 사주에 맞게 다시 지어도 됩니다(`##`로 시작만 유지하세요). ");
+		prompt.append("이 사람의 연애를 관통하는 중심 테마 하나를 먼저 잡고 전체를 엮으세요. 다음 섹션 예고로 궁금증을 이어가도 좋습니다.\n\n");
+
+		prompt.append("**[분량/문단 규칙]** fullAnalysis 전체 4,000자 이상, 각 주제당 500~700자. 한 문단은 6~7줄 이내, 문단 경계는 줄바꿈 두 번(\\n\\n)만 사용.\n\n");
+
+		prompt.append("**[문체 기준 - 호흡과 톤만 재현, 문장 복사 금지]**\n");
+		prompt.append("\"썸까지는 정말 잘 갑니다. 문제는 관계가 깊어지려는 순간이에요. ");
+		prompt.append("상대가 다가올수록 마음 한쪽에서 브레이크가 걸리는 구조인데, 이게 성격 탓이 아니라 사주 구조에서 오는 패턴입니다. ");
+		prompt.append("왜 그런지, 어떤 사람을 만나면 이 브레이크가 풀리는지 하나씩 풀어볼게요.\"\n\n");
 
 		prompt.append("--- [분석 시작] ---\n");
 		prompt.append(String.format(
@@ -1391,20 +1395,17 @@ public class ManseInterpretationService {
 			saju.getDaySky().getKorean() + saju.getDaySky().getFiveCircle()));
 
 		prompt.append("## 타고난 연애 세포\n");
-		prompt.append(
-			"일간과 월지, 그리고 '도화살/홍염살' 등의 신살을 확인하여 %s님이 가진 고유의 매력 포인트가 무엇인지 분석하되, 이해하기 쉽게 풀어서 재미있게 설명해주세요.\n");
-		prompt.append(
-			"%s님은 연애할 때 어떤 스타일인가요? 만세력 기반으로 분석하되, 쉽고 재미있게 풀어서 설명.\n");
-		prompt.append(
-			"이성이 %s님을 볼 때 가장 매력적으로 느끼는 부분과, 반대로 질려할 수 있는 단점을 솔직하게 말해주세요. 만세력 기반으로 대상자의 성격, 장점, 단점 등을 자세하게 설명하되 쉽고 재미있게 풀어서 설명해주세요.\n\n");
+		prompt.append("일간과 월지, 도화살/홍염살 등 신살을 근거로 이 사람 고유의 매력 포인트를 짚어주세요. 신살이 없으면 억지로 만들지 말고 오행/십성에서 나오는 매력을 찾으세요.\n");
+		prompt.append("연애할 때의 스타일을 실제 장면으로 묘사하세요. 썸 탈 때, 연애 초반, 안정기에 각각 어떤 모습이 나오는지요.\n");
+		prompt.append("이성이 가장 매력적으로 느끼는 부분과, 반대로 오래 만나면 질릴 수 있는 단점을 솔직하게 말해주세요. 단점을 뭉개면 이 분석은 실패입니다.\n\n");
 
 		prompt.append("## 나의 이상형과 운명적인 상대\n");
-		prompt.append(
-			"**일지(배우자궁)**에 있는 글자와 십성을 분석하여, %s님이 본능적으로 끌리는 이성은 어떤 스타일인지 설명해주세요.\n");
-		prompt.append(
-			"실제로 %s님에게 자꾸 꼬이는 이성들의 특징은 어떤가요? (나쁜 남자/여자가 꼬이는지, 능력자가 꼬이는지 등)\n");
-		prompt.append(
-			"**[운명적인 상대방 예측]** %s님의 사주에 가장 잘 맞는 '진정한 사랑'의 특징을 아래 항목에 맞춰 풀어서 설명해주세요:\n");
+		prompt.append(String.format(
+			"**일지(배우자궁)**에 있는 글자와 십성을 분석하여, %s님이 본능적으로 끌리는 이성은 어떤 스타일인지 설명해주세요.\n", name));
+		prompt.append(String.format(
+			"실제로 %s님에게 자꾸 꼬이는 이성들의 특징은 어떤가요? (나쁜 남자/여자가 꼬이는지, 능력자가 꼬이는지 등)\n", name));
+		prompt.append(String.format(
+			"**[운명적인 상대방 예측]** %s님의 사주에 가장 잘 맞는 '진정한 사랑'의 특징을 아래 항목에 맞춰 풀어서 설명해주세요:\n", name));
 		prompt.append(
 			"- **예상 MBTI, 나와 잘맞는 MBTI**: (예: ENFP, ISTJ 등 4자리)\n");
 		prompt.append(
@@ -1418,19 +1419,22 @@ public class ManseInterpretationService {
 
 		prompt.append("## 연애를 가로막는 장애물\n");
 		prompt.append(
-			"사주 원국에서 연애를 방해하는 요소(예: 무관/무재, 관살혼잡, 고란살, 식상과다 등)가 있다면 솔직하게 지적해주세요.\n");
+			"사주 원국에서 연애를 방해하는 요소(무관/무재, 관살혼잡, 고란살, 식상과다 등)가 있다면 용어를 풀어서 솔직하게 지적하세요. 없으면 억지로 만들지 말고 운 흐름상의 주의점을 짚으세요.\n");
 		prompt.append(
-			"연애만 하면 반복되는 문제 패턴이 있나요? (집착, 의심, 금방 식음 등)\n\n");
+			"연애만 하면 반복되는 문제 패턴(집착, 의심, 금방 식음, 표현 부족 등)을 구체적 장면으로 재현하세요. 상대가 어떻게 느꼈을지까지 보여주면 더 좋습니다.\n");
+		prompt.append("희망고문은 금지입니다. 고쳐야 관계가 유지되는 부분은 분명하게 말해주세요.\n\n");
 
 		prompt.append("## 2026년 연애운, 연애 타이밍\n");
 		prompt.append(
-			"**2026년(병오년)** 세운을 분석하여, 솔로라면 언제쯤 인연이 들어올지(몇 월?), 커플이라면 관계가 어떻게 변할지 예측해주세요.\n");
-		prompt.append("결혼을 한다면 언제일지, 구체적인 년도를 추천해주세요\n\n");
+			"**2026년(병오년)** 세운과 월운 데이터를 근거로, 솔로라면 인연이 들어올 가능성이 높은 시기(몇 월인지), 커플이라면 관계가 어떻게 변할지 예측하세요.\n");
+		prompt.append("왜 그 시기인지 사주 근거(합/충, 재성/관성의 움직임)를 쉬운 말로 함께 설명하세요. 근거 없는 시기 찍기는 금지입니다.\n");
+		prompt.append("결혼 가능성이 높은 연도를 대운/세운 근거와 함께 구체적으로 제시하세요.\n\n");
 
 		prompt.append("## 연애 코칭 및 조언\n");
-		prompt.append(
-			"%s님의 사주에 부족한 오행을 채워줄 수 있는 데이트 장소, 행운의 컬러 추천\n");
-		prompt.append("마지막으로 사랑 때문에 고민하는 %s님을 위한 따뜻한 응원의 한마디.\n\n");
+		prompt.append("부족한 오행을 채워줄 데이트 장소와 행운의 컬러를 추천하되, 왜 이 오행이 필요한지 한 문장으로 연결하세요.\n");
+		prompt.append("앞에서 짚은 장애물을 극복하는 실전 행동 팁(태도, 대화법, 타이밍)을 2~3가지 제시하세요. '진심을 보여주세요' 같은 추상 조언은 금지입니다.\n");
+		prompt.append(String.format(
+			"마지막으로 사랑 때문에 고민하는 %s님을 위한 따뜻한 응원 한마디로 마무리하세요.\n\n", name));
 
 		// JSON 포맷 추가
 		appendSajuJsonResponseFormat(prompt, name);
@@ -1496,7 +1500,7 @@ public class ManseInterpretationService {
 		prompt.append(String.format(
 			"혜안 선생님, 위 '절대 기준' 데이터와 '레퍼런스 샘플'을 바탕으로 %s님만의 고유한 2026년 운세를 **아래 4단계 구조**로 창작해주세요.\n",
 			name));
-		prompt.append("**[중요] 지금은 2025년 말이거나 2026년 초입니다. 년도를 지칭할 때 반드시 '2026년'이라고 명시하세요.**\n\n");
+		prompt.append("**[중요] 분석 대상은 2026년 병오년 한 해 전체입니다. '올해', '내년' 같은 상대적 표현 대신 반드시 '2026년'이라고 명시하세요.**\n\n");
 
 		prompt.append("=== [창작 시작] ===\n\n");
 
@@ -1514,11 +1518,7 @@ public class ManseInterpretationService {
 		prompt.append("- **주의점 제시**: '절대 기준'에서 발견된 약점(예: 무식상, 충 등)을 바탕으로 ");
 		prompt.append("**구체적인 주의 사항**을 2~3가지 명확히 짚어주세요.\n\n");
 
-		prompt.append("**✅ 체크리스트 (모두 충족했는지 확인)**\n");
-		prompt.append("□ 2026년 병오년 에너지와 사용자 사주의 **화학반응**을 설명했는가?\n");
-		prompt.append("□ 추상적 표현 대신 **구체적 행동 키워드**를 3개 이상 사용했는가?\n");
-		prompt.append("□ '절대 기준'의 용신, 신강/신약 정보를 **반드시** 반영했는가?\n");
-		prompt.append("□ 분량이 **최소 8문장 이상**인가? (짧으면 돈값 못함)\n\n");
+		prompt.append("핵심 확인: 병오년 에너지와 이 사주의 화학반응 · 용신/신강약 반영 · 구체적 행동 키워드 3개.\n\n");
 
 		// --- [2단계] 분야별 운세 ---
 		prompt.append("## 2. 분야별 흐름 분석\n\n");
@@ -1535,10 +1535,7 @@ public class ManseInterpretationService {
 		prompt.append("**사주 데이터 기반**으로 2~3가지 콕 집어주세요.\n");
 		prompt.append("- **금액 감각**: '급등', '안정', '변동' 같은 단어로 **감각적**으로 표현하세요.\n\n");
 
-		prompt.append("**✅ 체크리스트**\n");
-		prompt.append("□ 재성(정재/편재) 개수를 반영했는가?\n");
-		prompt.append("□ '~하면 좋아요' 말고 '~해야 합니다' 수준의 **강한 조언**이 있는가?\n");
-		prompt.append("□ 분량 **최소 6문장** 이상인가?\n\n");
+		prompt.append("핵심 확인: 재성(정재/편재) 상태 반영 · 두루뭉술한 권유 대신 단호한 조언.\n\n");
 
 		// 직장/사업운
 		prompt.append("### [직장/사업운]\n");
@@ -1550,10 +1547,7 @@ public class ManseInterpretationService {
 		prompt.append("명확히 판단하고 그에 맞는 **전략**을 제시하세요.\n");
 		prompt.append("- **타이밍**: '상반기 집중' vs '하반기 결실'처럼 **시기적 전략**을 짚어주세요.\n\n");
 
-		prompt.append("**✅ 체크리스트**\n");
-		prompt.append("□ 관성(정관/편관), 식상(식신/상관) 분포를 반영했는가?\n");
-		prompt.append("□ '역할이 늘어난다', '기회가 온다' 같은 **구체적 상황**을 묘사했는가?\n");
-		prompt.append("□ 분량 **최소 6문장** 이상인가?\n\n");
+		prompt.append("핵심 확인: 관성/식상 분포 반영 · '기회가 온다' 대신 구체적 상황 묘사.\n\n");
 
 		// 가정/건강운
 		prompt.append("### [가정/건강운]\n");
@@ -1565,10 +1559,7 @@ public class ManseInterpretationService {
 		prompt.append("- **가족 관계**: 육친(부모, 형제, 배우자) 관련 변화가 있을지 예측하고 ");
 		prompt.append("**도윤님 샘플처럼** '중심을 잡아주는 역할' 같은 구체적 표현을 쓰세요.\n\n");
 
-		prompt.append("**✅ 체크리스트**\n");
-		prompt.append("□ 오행 과다/부족에 따른 **신체 취약점**을 명시했는가?\n");
-		prompt.append("□ '스트레스 관리'처럼 추상적 말 대신 **구체적 행동**을 제시했는가?\n");
-		prompt.append("□ 분량 **최소 5문장** 이상인가?\n\n");
+		prompt.append("핵심 확인: 오행 과다/부족에 따른 신체 취약점 명시 · 실천 가능한 행동 제시.\n\n");
 
 		// 이성/대인관계
 		prompt.append("### [이성/대인관계]\n");
@@ -1580,10 +1571,7 @@ public class ManseInterpretationService {
 		prompt.append("- **대인 전략**: 사주 강약을 보고 ");
 		prompt.append("'선택과 집중' vs '네트워킹 확장' 중 **어느 전략**이 유리한지 조언하세요.\n\n");
 
-		prompt.append("**✅ 체크리스트**\n");
-		prompt.append("□ 도화살, 역마살 등 신살 정보를 반영했는가?\n");
-		prompt.append("□ '인연이 온다'는 말만 하지 않고 **어떤 타입**의 인연인지 구체적으로 묘사했는가?\n");
-		prompt.append("□ 분량 **최소 5문장** 이상인가?\n\n");
+		prompt.append("핵심 확인: 신살(도화/역마) 반영 · '인연이 온다'가 아니라 어떤 타입의 인연인지 구체적으로.\n\n");
 
 		// 학업/성취운
 		prompt.append("### [학업/성취운]\n");
@@ -1595,10 +1583,7 @@ public class ManseInterpretationService {
 		prompt.append("- **성과 예측**: 식상과 관성의 조합을 보고 ");
 		prompt.append("'결과가 천천히 쌓이는 해' vs '단기 성과가 가능한 해'인지 명확히 하세요.\n\n");
 
-		prompt.append("**✅ 체크리스트**\n");
-		prompt.append("□ 인성(정인/편인) 분포를 반영했는가?\n");
-		prompt.append("□ '루틴으로 이기는 해' 같은 **핵심 전략 키워드**가 있는가?\n");
-		prompt.append("□ 분량 **최소 4문장** 이상인가?\n\n");
+		prompt.append("핵심 확인: 인성(정인/편인) 분포 반영 · '루틴으로 이기는 해' 같은 핵심 전략 키워드 1개.\n\n");
 
 		// --- [3단계] 월별 세운 ---
 		prompt.append("## 3. 월별 흐름 (1월 ~ 12월)\n\n");
@@ -1612,10 +1597,7 @@ public class ManseInterpretationService {
 		prompt.append("- **구체적 행동 지침**: '정리하는 달'이라면 **무엇을** 정리할지(서류, 관계, 지출 등) ");
 		prompt.append("명확히 제시하세요.\n\n");
 
-		prompt.append("**✅ 각 월별 체크리스트**\n");
-		prompt.append("□ 해당 월의 천간지지와 사용자 사주의 **충/합/형** 관계를 확인했는가?\n");
-		prompt.append("□ '조심하세요'만 말하지 않고 **구체적 이유와 대응책**을 제시했는가?\n");
-		prompt.append("□ 각 월마다 **최소 3문장** 이상 서술했는가?\n\n");
+		prompt.append("핵심 확인: 각 달의 천간지지와 원국의 충/합/형 관계 반영 · '조심하세요' 대신 이유와 대응책을 함께.\n\n");
 
 		prompt.append("**[분기별 가이드]**\n");
 		prompt.append("- **1~3월 (1분기)**: 연초 에너지 진단. '시작' vs '관망'의 분기점을 명확히.\n");
@@ -1631,11 +1613,8 @@ public class ManseInterpretationService {
 		prompt.append("먼저 공감해주고, 그것이 결함이 아니라 **고유한 리듬**임을 인정하세요.\n");
 		prompt.append("- **미래 희망**: 2026년에 쌓은 것이 2027년 이후 어떻게 빛날지 **구체적으로** 전망하세요.\n\n");
 
-		prompt.append("**✅ 체크리스트**\n");
-		prompt.append("□ 사용자의 **고유한 강점**을 1~2개 명확히 언급했는가?\n");
-		prompt.append("□ '조급해하지 말라'는 메시지를 **사주 근거**와 함께 전달했는가?\n");
-		prompt.append("□ 분량이 **최소 5문장** 이상인가?\n");
-		prompt.append("□ **[필수]** 마지막 문장: \"새해 복 많이 받으시고 항상 행복하세요. 네임드사주가 응원하겠습니다.\"\n\n");
+		prompt.append("핵심 확인: 고유한 강점 1~2개 · 위로에는 사주 근거를 붙일 것.\n");
+		prompt.append("**[필수]** 마지막 문장은 반드시 \"새해 복 많이 받으시고 항상 행복하세요. 네임드사주가 응원하겠습니다.\"\n\n");
 
 		// ===== [5단계] 최종 품질 검증 =====
 		prompt.append("\n### 🔍 [최종 검증] 제출 전 필수 체크 ###\n");
@@ -1745,7 +1724,8 @@ public class ManseInterpretationService {
 		prompt.append("(3단) 사업 장면: 이 성향이 사업 현장에서 어떤 패턴, 어떤 장면, 어떤 반복으로 나타나는지 생생하게 그려준다.\n\n");
 
 		prompt.append("(3단)은 ~하세요 같은 지시가 아니라, 이런 일이 벌어집니다/이런 패턴이 반복됩니다 같은 묘사여야 한다.\n");
-		prompt.append("읽는 사람이 아 맞아 나 그래 하고 소름이 돋을 정도로 구체적이어야 한다.\n\n");
+		prompt.append("읽는 사람이 아 맞아 나 그래 하고 소름이 돋을 정도로 구체적이어야 한다.\n");
+		prompt.append("누구에게나 맞는 말은 금지다. 반대 구조의 사주라면 반대로 말했을 문장만 쓴다.\n\n");
 
 		prompt.append("❌ 나쁜 예 1: 편인이 두드러져요. 편인은 남들보다 빨리 공부하는 힘입니다. 그래서 기획을 먼저 하세요.\n");
 		prompt.append("→ 어디에 있는지 안 밝힘, 풀이가 한 줄, 바로 지시로 넘어감\n\n");
@@ -1766,6 +1746,8 @@ public class ManseInterpretationService {
 
 		prompt.append("### 분량/페이지 규칙 ###\n");
 		prompt.append("fullAnalysis 총 분량은 최소 4000자 이상으로 작성한다. 분량 상한은 두지 않는다.\n");
+		prompt.append("단, 분량은 결과이지 목표가 아니다. 새로운 정보(사주 근거, 판단, 현실 장면)가 없는 문장은 쓰지 않는다.\n");
+		prompt.append("모든 핵심 문단에는 이 사주의 실제 글자에서 나온 판단이 최소 1개 들어가야 한다. 근거가 떨어지면 반복하지 말고 다음 주제로 넘어간다.\n");
 		prompt.append("페이지 분리는 반드시 줄바꿈 두 번(\\\\n\\\\n)으로만 한다.\n");
 		prompt.append("총 페이지는 6~8개 흐름으로 구성한다.\n");
 		prompt.append("한 페이지는 7~10줄 내외의 문단 1개로 구성한다.\n");
@@ -1816,9 +1798,6 @@ public class ManseInterpretationService {
 		prompt.append("- 2026년 2월, 3월, 4월 식의 연속 월 나열 금지\n");
 		prompt.append("- 한 문장에 사주 데이터포인트 3개 이상 욱여넣기 금지\n");
 		prompt.append("- ~하세요로 끝나는 문장이 마지막 문단 외에서 3회 이상 등장 금지\n");
-		prompt.append("- ~이라 ~해요 패턴을 연속으로 반복하는 문장 금지\n");
-		prompt.append("- 연속 2문장 이상이 같은 어미(해요/입니다)로 끝나는 패턴 금지\n");
-		prompt.append("- 쉼표 4개 이상으로 길게 연결한 문장 금지\n");
 		prompt.append(
 			"- 사주 용어를 풀이 없이 단독 사용 금지 (편인, 겁재, 상관, 정관, 편관, 식신, 정재, 편재, 비견, 정인 모두 해당. 처음 등장 시 반드시 1문장 이상 풀이. 두 번째부터는 생략 가능)\n");
 		prompt.append("- 사주 근거 없이 결론만 던지는 문장 금지 (예: 추진력이 강합니다 → 왜? 어디서?)\n");
@@ -1828,7 +1807,7 @@ public class ManseInterpretationService {
 		prompt.append("### 권장 서술 패턴 ###\n");
 		prompt.append("사주 구조를 밝히고, 그게 이 사람의 성격/습관에서 어떻게 드러나는지 묘사하고, 사업 현장에서 어떤 장면으로 나타나는지 그려준다.\n");
 		prompt.append("비유와 구체적 장면 묘사를 적극 활용한다. 예: 통장에 돈이 찍히면 마음이 커지고, 같이 하자는 제안에 쉽게 끌려요.\n");
-		prompt.append("문장 길이를 섞어 리듬을 만든다. 짧은 문장, 설명 문장, 묘사 문장을 교차한다.\n");
+		prompt.append("문장 길이와 어미를 섞어 리듬을 만든다. 짧은 문장, 설명 문장, 묘사 문장을 교차하고, 같은 어미(~해요/~입니다)가 3문장 이상 이어지지 않게 한다.\n");
 		prompt.append("단락이 바뀔 때는 전환 문장을 넣는다. 예: 여기서 한 가지 주목할 점이 있어요.\n");
 		prompt.append("사주 용어가 처음 등장할 때는 반드시 한 문장 이상의 쉬운 풀이를 붙인다.\n");
 		prompt.append("같은 용어가 두 번째 이후 등장하면 풀이 없이 써도 된다.\n\n");
@@ -1854,24 +1833,16 @@ public class ManseInterpretationService {
 	}
 
 	private void appendBusinessJsonResponseFormat(StringBuilder prompt) {
-		prompt.append("\n\n### 최종 출력 형식 (JSON) ###\n");
-		prompt.append("반드시 순수 JSON 객체만 출력한다. markdown 코드블록 금지.\n");
-		prompt.append("JSON 문자열 내부 줄바꿈은 반드시 \\\\n으로 이스케이프한다.\n");
+		prompt.append("\n\n### 최종 출력 형식 ###\n");
+		prompt.append("응답은 fullAnalysis와 summary 두 필드로 구성된다. JSON 형식은 시스템이 강제하므로 내용에만 집중한다.\n");
 		prompt.append("fullAnalysis에는 번호형 목차, 대괄호 제목, 목록 기호 없이 순수 문장 단락만 작성한다.\n");
-		prompt.append("fullAnalysis의 단락 구분은 \\\\n\\\\n만 사용한다.\n");
-		prompt.append("문단 내부에서 문장별 줄바꿈은 금지하고, 한 문단은 자연스러운 연속 문장으로 작성한다.\n");
+		prompt.append("단락 구분은 줄바꿈 두 번만 사용하고, 문단 내부에서 문장별 줄바꿈은 하지 않는다.\n");
 		prompt.append("전환 문장 없이 단락을 끊지 말고 앞 단락의 의미를 다음 단락으로 연결한다.\n");
-		prompt.append("다음 표기 금지: [PAGE_BREAK], [1.], 1-1, 1), ##, ###, -, *.\n");
-		prompt.append("첫째는, 둘째는, 셋째는 같은 번호성 전개는 금지한다.\n");
+		prompt.append("다음 표기 금지: [PAGE_BREAK], [1.], 1-1, 1), ##, ###, -, *. 첫째는/둘째는 같은 번호성 전개도 금지한다.\n");
 		prompt.append("한자 직접 표기, 색/방향/숫자 개운법 추천은 금지한다.\n");
 		prompt.append("summary는 4~5줄로 작성하고, 핵심 행동만 짧게 정리한다.\n");
 		prompt.append("summary 총 길이는 280자 이내로 제한한다.\n");
 		prompt.append("기간 표기는 yyyy년 M월 형식만 허용한다.\n");
-		prompt.append("출력 스키마:\n");
-		prompt.append("{\n");
-		prompt.append("  \"fullAnalysis\": \"...\",\n");
-		prompt.append("  \"summary\": \"...\"\n");
-		prompt.append("}\n");
 	}
 
 	private String createAcademicLuckPrompt(String name, ManseryeokCalculationResponse response) {
@@ -1886,24 +1857,23 @@ public class ManseInterpretationService {
 		prompt.append("불필요한 큰따옴표와 작은따옴표는 사용하지 않는다.\n\n");
 
 		prompt.append("### 절대 규칙 (최우선) ###\n");
-		prompt.append("★★★ 1. [가독성 최우선 — 위반 시 전체 글 불합격] ★★★\n");
-		prompt.append("- 입력 데이터에 있는 십성 명칭(편인, 겁재, 식신, 정재, 편관, 비견, 상관, 정관, 편재, 정인)을 본문에 그대로 옮기지 않는다.\n");
-		prompt.append("- 반드시 일상 언어로 번역해서 쓴다. 예: 편인 → 빠르게 흡수하는 힘, 겁재 → 비교심과 경쟁심, 식신 → 표현력과 출력, 정관 → 책임감과 규칙, 편관 → 외부 압박과 평가, 정재 → 안정적 성과, 편재 → 빠른 성과 욕구, 비견 → 자기 확신, 상관 → 날카로운 표현, 정인 → 차분한 이해력.\n");
-		prompt.append("- 십성 용어를 반드시 써야 할 경우에만 글 전체에서 최대 3회까지 허용하며, 반드시 괄호 안에 풀이를 붙인다.\n");
-		prompt.append("- '일지 자', '월지 신', '년지 인', '시지 오' 같은 기둥+글자 표현도 금지한다. '태어난 날 아래 자리' 같은 위치 설명도 쓰지 않는다. 구조는 풀이로만 녹여야 한다.\n");
-		prompt.append("- 첫 문단은 사주 용어 0개로 시작한다. 이 사람의 기질과 성격만 일상 언어로 그린다.\n");
+		prompt.append("★★★ 1. [용어 정책 — 단 하나의 규칙] ★★★\n");
+		prompt.append("- 사주 용어(십성/오행/신살/기둥)는 근거를 밝히는 데 필요하면 쓴다. 단, 처음 등장할 때 반드시 쉬운 풀이를 한 문장 붙이고, 두 번째부터는 풀이 없이 쓴다.\n");
+		prompt.append("- 풀이 참고: 편인=남의 것을 빠르게 흡수해 재조립하는 힘, 겁재=비교심과 경쟁심, 식신=표현력과 출력, 정관=책임감과 규칙, 편관=외부 압박과 평가, 정재=안정적 성과, 편재=빠른 성과 욕구, 비견=자기 확신, 상관=날카로운 표현, 정인=차분한 이해력.\n");
+		prompt.append("- 한 문단에 처음 등장하는 용어는 2개까지만. 용어를 나열하지 말고 그 작용을 장면으로 풀어낸다.\n");
+		prompt.append("- 첫 문단은 용어 없이 이 사람의 기질만 일상 언어로 그려 도입 몰입을 만든다.\n");
 		prompt.append("2. 사주팔자, 대운, 세운, 월운, 합, 충, 형, 파, 해는 절대 추측하지 말고 입력 JSON만 사용한다.\n");
 		prompt.append("3. 일간과 일주를 혼동하지 않는다. 일간은 나 자신이다.\n");
 		prompt.append("4. 본문에 일간은 임수입니다, 일주는 임자입니다 같은 직접 표기를 하지 않는다. 사주 구조는 풀어서 자연스럽게 녹여야 한다.\n");
 		prompt.append("5. 날짜, 연도, 월을 말할 때는 입력 데이터 범위 내에서만 말한다. 데이터에 없는 연도나 월은 임의로 만들지 않는다.\n");
 		prompt.append("6. 무조건 합격, 반드시 붙는다 같은 단정적 표현 금지. 가능성은 구조적 근거와 조건으로 말한다.\n");
 		prompt.append("7. 내부 사유 문구 금지. 예: 데이터가 없어서, 추정상, 참고용.\n");
-		prompt.append("6. 오행/십성/강약 점수(예: 2.4, 7.0, 11.1) 같은 소수 수치는 본문에 직접 쓰지 않는다.\n");
-		prompt.append("7. 수치는 강한 편, 보완 필요, 우세, 약세 같은 정성 표현으로 바꿔 설명한다.\n");
-		prompt.append("8. 한자(寅, 卯, 沖, 合 등) 직접 노출 절대 금지. 모든 한자는 한글로만 표기한다.\n");
-		prompt.append("9. 색깔/방향/숫자 개운법 추천 절대 금지. 청색, 녹색, 동쪽, 3과 8 같은 미신적 조언을 쓰면 안 된다.\n");
+		prompt.append("8. 오행/십성/강약 점수(예: 2.4, 7.0, 11.1) 같은 소수 수치는 본문에 직접 쓰지 않는다.\n");
+		prompt.append("9. 수치는 강한 편, 보완 필요, 우세, 약세 같은 정성 표현으로 바꿔 설명한다.\n");
+		prompt.append("10. 한자(寅, 卯, 沖, 合 등) 직접 노출 절대 금지. 모든 한자는 한글로만 표기한다.\n");
+		prompt.append("11. 색깔/방향/숫자 개운법 추천 절대 금지. 청색, 녹색, 동쪽, 3과 8 같은 미신적 조언을 쓰면 안 된다.\n");
 		prompt.append(
-			"10. 사주 전문 용어(수국, 천간충, 양인살, 반합, 식상생재 등)는 단독 사용 금지. 반드시 한 문장 이상의 풀이를 붙여야 한다.\n\n");
+			"12. 사주 전문 용어(수국, 천간충, 양인살, 반합, 식상생재 등)는 단독 사용 금지. 반드시 한 문장 이상의 풀이를 붙여야 한다.\n\n");
 
 		prompt.append("### 글의 본질 — 가장 중요한 원칙 ###\n");
 		prompt.append("이 글의 목적은 공부법 가이드를 주는 게 아니다.\n");
@@ -1925,7 +1895,8 @@ public class ManseInterpretationService {
 		prompt.append("(3단) 학업 장면: 이 성향이 공부와 시험 현장에서 어떤 패턴, 어떤 장면, 어떤 반복으로 나타나는지 생생하게 그려준다.\n\n");
 
 		prompt.append("(3단)은 ~하세요 같은 지시가 아니라, 이런 일이 벌어집니다/이런 패턴이 반복됩니다 같은 묘사여야 한다.\n");
-		prompt.append("읽는 사람이 아 맞아 나 그래 하고 소름이 돋을 정도로 구체적이어야 한다.\n\n");
+		prompt.append("읽는 사람이 아 맞아 나 그래 하고 소름이 돋을 정도로 구체적이어야 한다.\n");
+		prompt.append("누구에게나 맞는 말은 금지다. 반대 구조의 사주라면 반대로 말했을 문장만 쓴다.\n\n");
 
 		prompt.append("❌ 나쁜 예: 편인이 있어 공부를 잘합니다. 집중해서 공부하세요.\n");
 		prompt.append("→ 어디에 있는지 안 밝힘, 풀이가 한 줄, 바로 지시로 넘어감\n\n");
@@ -1938,6 +1909,8 @@ public class ManseInterpretationService {
 
 		prompt.append("### 분량/페이지 규칙 (가장 중요 — 반드시 지킬 것) ###\n");
 		prompt.append("fullAnalysis 총 분량은 최소 4000자 이상으로 작성한다. 분량 상한은 두지 않는다.\n");
+		prompt.append("단, 분량은 결과이지 목표가 아니다. 새로운 정보(사주 근거, 판단, 현실 장면)가 없는 문장은 쓰지 않는다.\n");
+		prompt.append("모든 핵심 문단에는 이 사주의 실제 글자에서 나온 판단이 최소 1개 들어가야 한다. 근거가 떨어지면 반복하지 말고 다음 주제로 넘어간다.\n");
 		prompt.append("페이지 분리는 반드시 줄바꿈 두 번(\\\\n\\\\n)으로만 한다.\n");
 		prompt.append("총 페이지는 9~12개 흐름으로 구성한다.\n");
 		prompt.append("**[핵심] 한 페이지(문단)는 반드시 7~8줄(약 250~350자) 이내로 제한한다. 이 규칙은 절대적이다.**\n");
@@ -1988,9 +1961,6 @@ public class ManseInterpretationService {
 		prompt.append("- 이 달에는 ~해보세요처럼 행동만 던지고 맥락을 생략하는 문장 금지\n");
 		prompt.append("- 한 문장에 사주 데이터포인트 3개 이상 욱여넣기 금지\n");
 		prompt.append("- ~하세요로 끝나는 문장이 마지막 문단 외에서 3회 이상 등장 금지\n");
-		prompt.append("- ~이라 ~해요 패턴을 연속으로 반복하는 문장 금지\n");
-		prompt.append("- 연속 2문장 이상이 같은 어미(해요/입니다)로 끝나는 패턴 금지\n");
-		prompt.append("- 쉼표 4개 이상으로 길게 연결한 문장 금지\n");
 		prompt.append(
 			"- 사주 용어를 풀이 없이 단독 사용 금지 (편인, 겁재, 상관, 정관, 편관, 식신, 정재, 편재, 비견, 정인 모두 해당. 처음 등장 시 반드시 1문장 이상 풀이. 두 번째부터는 생략 가능)\n");
 		prompt.append("- 사주 근거 없이 결론만 던지는 문장 금지 (예: 집중력이 강합니다 → 왜? 어디서?)\n");
@@ -2000,7 +1970,7 @@ public class ManseInterpretationService {
 		prompt.append("### 권장 서술 패턴 ###\n");
 		prompt.append("사주 구조를 밝히고, 그게 이 사람의 성격/습관에서 어떻게 드러나는지 묘사하고, 공부와 시험 현장에서 어떤 장면으로 나타나는지 그려준다.\n");
 		prompt.append("비유와 구체적 장면 묘사를 적극 활용한다. 예: 강의를 들어도 구조가 먼저 눈에 들어와서 필기보다 재구성이 빠른 타입이에요.\n");
-		prompt.append("문장 길이를 섞어 리듬을 만든다. 짧은 문장, 설명 문장, 묘사 문장을 교차한다.\n");
+		prompt.append("문장 길이와 어미를 섞어 리듬을 만든다. 짧은 문장, 설명 문장, 묘사 문장을 교차하고, 같은 어미(~해요/~입니다)가 3문장 이상 이어지지 않게 한다.\n");
 		prompt.append("사주 용어가 처음 등장할 때는 반드시 한 문장 이상의 쉬운 풀이를 붙인다.\n");
 		prompt.append("**[가독성 핵심] 사주 용어(편인, 겁재, 식신, 정재, 편관 등)는 한 문단에 최대 2개까지만 사용한다.**\n");
 		prompt.append("용어를 여러 개 나열하면 일반인이 읽다가 이탈한다. 용어 대신 그 작용을 일상 언어로 풀어 쓴다.\n");
@@ -2037,12 +2007,11 @@ public class ManseInterpretationService {
 		prompt.append("불필요한 큰따옴표와 작은따옴표는 사용하지 않는다.\n\n");
 
 		prompt.append("### 절대 규칙 (최우선) ###\n");
-		prompt.append("★★★ 1. [가독성 최우선 — 위반 시 전체 글 불합격] ★★★\n");
-		prompt.append("- 입력 데이터에 있는 십성 명칭(편인, 겁재, 식신, 정재, 편관, 비견, 상관, 정관, 편재, 정인)을 본문에 그대로 옮기지 않는다.\n");
-		prompt.append("- 반드시 일상 언어로 번역해서 쓴다. 예: 편인 → 빠르게 흡수하는 힘, 겁재 → 비교심과 경쟁심, 식신 → 표현력과 출력, 정관 → 책임감과 규칙, 편관 → 외부 압박과 평가, 정재 → 안정적 성과, 편재 → 빠른 성과 욕구, 비견 → 자기 확신, 상관 → 날카로운 표현, 정인 → 차분한 이해력.\n");
-		prompt.append("- 십성 용어를 반드시 써야 할 경우에만 글 전체에서 최대 3회까지 허용하며, 반드시 괄호 안에 풀이를 붙인다.\n");
-		prompt.append("- '일지 자', '월지 신', '년지 인', '시지 오' 같은 기둥+글자 표현도 금지한다. '태어난 날 아래 자리' 같은 위치 설명도 쓰지 않는다. 구조는 풀이로만 녹여야 한다.\n");
-		prompt.append("- 첫 문단은 사주 용어 0개로 시작한다. 이 사람의 기질과 성격만 일상 언어로 그린다.\n");
+		prompt.append("★★★ 1. [용어 정책 — 단 하나의 규칙] ★★★\n");
+		prompt.append("- 사주 용어(십성/오행/신살/기둥)는 근거를 밝히는 데 필요하면 쓴다. 단, 처음 등장할 때 반드시 쉬운 풀이를 한 문장 붙이고, 두 번째부터는 풀이 없이 쓴다.\n");
+		prompt.append("- 풀이 참고: 편인=남의 것을 빠르게 흡수해 재조립하는 힘, 겁재=비교심과 경쟁심, 식신=표현력과 출력, 정관=책임감과 규칙, 편관=외부 압박과 평가, 정재=안정적 성과, 편재=빠른 성과 욕구, 비견=자기 확신, 상관=날카로운 표현, 정인=차분한 이해력.\n");
+		prompt.append("- 한 문단에 처음 등장하는 용어는 2개까지만. 용어를 나열하지 말고 그 작용을 장면으로 풀어낸다.\n");
+		prompt.append("- 첫 문단은 용어 없이 이 사람의 기질만 일상 언어로 그려 도입 몰입을 만든다.\n");
 		prompt.append("2. 사주팔자, 대운, 세운, 월운, 합, 충, 형, 파, 해는 절대 추측하지 말고 입력 JSON만 사용한다.\n");
 		prompt.append("3. 일간과 일주를 혼동하지 않는다. 일간은 나 자신이다.\n");
 		prompt.append("4. 본문에 일간은 임수입니다, 일주는 임자입니다 같은 직접 표기를 하지 않는다. 사주 구조는 풀어서 자연스럽게 녹여야 한다.\n");
@@ -2050,12 +2019,12 @@ public class ManseInterpretationService {
 		prompt.append("6. 과장 표현, 공포 조장, 단정적 사고 예측은 금지한다.\n");
 		prompt.append("7. 상담처럼 자연스럽게 설명하되, 감정 과잉 위로는 하지 않는다.\n");
 		prompt.append("8. 힘들었던 시기를 말할 때는 반드시 대운과 세운의 구조적 근거를 제시한다.\n");
-		prompt.append("7. 오행/십성/강약 점수(예: 2.4, 7.0, 11.1) 같은 소수 수치는 본문에 직접 쓰지 않는다.\n");
-		prompt.append("8. 수치는 강한 편, 보완 필요, 우세, 약세 같은 정성 표현으로 바꿔 설명한다.\n");
-		prompt.append("9. 한자(寅, 卯, 沖, 合 등) 직접 노출 절대 금지. 모든 한자는 한글로만 표기한다.\n");
-		prompt.append("10. 색깔/방향/숫자 개운법 추천 절대 금지.\n");
+		prompt.append("9. 오행/십성/강약 점수(예: 2.4, 7.0, 11.1) 같은 소수 수치는 본문에 직접 쓰지 않는다.\n");
+		prompt.append("10. 수치는 강한 편, 보완 필요, 우세, 약세 같은 정성 표현으로 바꿔 설명한다.\n");
+		prompt.append("11. 한자(寅, 卯, 沖, 合 등) 직접 노출 절대 금지. 모든 한자는 한글로만 표기한다.\n");
+		prompt.append("12. 색깔/방향/숫자 개운법 추천 절대 금지.\n");
 		prompt.append(
-			"11. 사주 전문 용어(수국, 천간충, 양인살, 반합, 식상생재 등)는 단독 사용 금지. 반드시 한 문장 이상의 풀이를 붙여야 한다.\n\n");
+			"13. 사주 전문 용어(수국, 천간충, 양인살, 반합, 식상생재 등)는 단독 사용 금지. 반드시 한 문장 이상의 풀이를 붙여야 한다.\n\n");
 
 		prompt.append("### 글의 본질 — 가장 중요한 원칙 ###\n");
 		prompt.append("이 글의 목적은 처방전을 주는 게 아니다.\n");
@@ -2077,10 +2046,13 @@ public class ManseInterpretationService {
 		prompt.append("(3단) 인생 장면: 이 성향이 실제 삶에서 어떤 패턴, 어떤 장면, 어떤 반복으로 나타났고 나타날지 생생하게 그려준다.\n\n");
 
 		prompt.append("(3단)은 ~하세요 같은 지시가 아니라, 이런 일이 벌어집니다/이런 감정이 올라옵니다 같은 묘사여야 한다.\n");
-		prompt.append("읽는 사람이 아 맞아 나 그래 하고 소름이 돋을 정도로 구체적이어야 한다.\n\n");
+		prompt.append("읽는 사람이 아 맞아 나 그래 하고 소름이 돋을 정도로 구체적이어야 한다.\n");
+		prompt.append("누구에게나 맞는 말은 금지다. 반대 구조의 사주라면 반대로 말했을 문장만 쓴다.\n\n");
 
 		prompt.append("### 분량/페이지 규칙 (가장 중요 — 반드시 지킬 것) ###\n");
 		prompt.append("fullAnalysis 총 분량은 최소 4000자 이상으로 작성한다. 분량 상한은 두지 않는다.\n");
+		prompt.append("단, 분량은 결과이지 목표가 아니다. 새로운 정보(사주 근거, 판단, 현실 장면)가 없는 문장은 쓰지 않는다.\n");
+		prompt.append("모든 핵심 문단에는 이 사주의 실제 글자에서 나온 판단이 최소 1개 들어가야 한다. 근거가 떨어지면 반복하지 말고 다음 주제로 넘어간다.\n");
 		prompt.append("페이지 분리는 반드시 줄바꿈 두 번(\\\\n\\\\n)으로만 한다.\n");
 		prompt.append("총 페이지는 9~12개 흐름으로 구성한다.\n");
 		prompt.append("**[핵심] 한 페이지(문단)는 반드시 7~8줄(약 250~350자) 이내로 제한한다. 이 규칙은 절대적이다.**\n");
@@ -2128,9 +2100,6 @@ public class ManseInterpretationService {
 		prompt.append("- ~는 ~이고, ~는 ~이며, ~는 ~입니다 형태의 기계적 나열 문장 금지\n");
 		prompt.append("- ~기운이 들어오니 ~에 좋습니다 형태로 원인과 결론을 직행하는 문장 금지\n");
 		prompt.append("- ~하세요로 끝나는 문장이 마지막 문단 외에서 3회 이상 등장 금지\n");
-		prompt.append("- ~이라 ~해요 패턴을 연속으로 반복하는 문장 금지\n");
-		prompt.append("- 연속 2문장 이상이 같은 어미(해요/입니다)로 끝나는 패턴 금지\n");
-		prompt.append("- 쉼표 4개 이상으로 길게 연결한 문장 금지\n");
 		prompt.append(
 			"- 사주 용어를 풀이 없이 단독 사용 금지 (편인, 겁재, 상관, 정관, 편관, 식신, 정재, 편재, 비견, 정인 모두 해당)\n");
 		prompt.append("- 사주 근거 없이 결론만 던지는 문장 금지\n");
@@ -2141,7 +2110,7 @@ public class ManseInterpretationService {
 		prompt.append("### 권장 서술 패턴 ###\n");
 		prompt.append("사주 구조를 밝히고, 그게 이 사람의 감정/대처 방식에서 어떻게 드러나는지 묘사하고, 실제 삶에서 어떤 장면으로 나타났는지 그려준다.\n");
 		prompt.append("비유와 구체적 심리 묘사를 적극 활용한다. 예: 겉으로는 괜찮다고 하지만 속에서는 왜 이렇게 흔들리지 하는 자책이 더 컸을 가능성이 높습니다.\n");
-		prompt.append("문장 길이를 섞어 리듬을 만든다. 짧은 문장, 설명 문장, 묘사 문장을 교차한다.\n");
+		prompt.append("문장 길이와 어미를 섞어 리듬을 만든다. 짧은 문장, 설명 문장, 묘사 문장을 교차하고, 같은 어미(~해요/~입니다)가 3문장 이상 이어지지 않게 한다.\n");
 		prompt.append("**[가독성 핵심] 사주 용어(편인, 겁재, 식신, 정재, 편관 등)는 한 문단에 최대 2개까지만 사용한다.**\n");
 		prompt.append("용어를 여러 개 나열하면 일반인이 읽다가 이탈한다. 용어 대신 그 작용을 일상 언어로 풀어 쓴다.\n");
 		prompt.append("예: 편인이 강해서 → 남의 지식을 내 식으로 재조립하는 힘이 강해서\n");
@@ -2167,18 +2136,12 @@ public class ManseInterpretationService {
 	}
 
 	private void appendMoneyLuckJsonResponseFormat(StringBuilder prompt) {
-		prompt.append("\n\n### 최종 출력 형식 (JSON) ###\n");
-		prompt.append("반드시 순수 JSON 객체만 출력한다. markdown 코드블록 금지.\n");
-		prompt.append("JSON 문자열 내부 줄바꿈은 반드시 \\\\n으로 이스케이프한다.\n");
+		prompt.append("\n\n### 최종 출력 형식 ###\n");
+		prompt.append("응답은 fullAnalysis와 summary 두 필드로 구성된다. JSON 형식은 시스템이 강제하므로 내용에만 집중한다.\n");
 		prompt.append("fullAnalysis에는 번호형 라벨(A., 1., 첫째), 대괄호 제목([ ... ]), 목록 기호(-, *)를 쓰지 않는다.\n");
-		prompt.append("fullAnalysis의 문단 구분은 \\\\n\\\\n만 사용한다.\n");
+		prompt.append("문단 구분은 줄바꿈 두 번만 사용한다.\n");
 		prompt.append("fullAnalysis 길이는 3800자 이상 4600자 이하를 지킨다.\n");
 		prompt.append("summary는 4~5줄로 작성하고 총 길이는 280자 이내로 제한한다.\n");
-		prompt.append("출력 스키마:\n");
-		prompt.append("{\n");
-		prompt.append("  \"fullAnalysis\": \"...\",\n");
-		prompt.append("  \"summary\": \"...\"\n");
-		prompt.append("}\n");
 	}
 
 	// ==================== 4,6,14 러브 스토리 프롬프트 (혜안 적용) ====================
@@ -2335,7 +2298,9 @@ public class ManseInterpretationService {
 		prompt.append(
 			String.format("- [개인 분석]은 '%s님은...', '%s님은...' 처럼 3인칭 단수로 서술해야 합니다.\n", person1Name,
 				person2Name));
-		prompt.append("- [궁합 분석]은 '두 사람은...', '%s님과 %s님은...' 처럼 3인칭 관찰자 시점으로 서술해야 합니다.\n");
+		prompt.append(String.format(
+			"- [궁합 분석]은 '두 사람은...', '%s님과 %s님은...' 처럼 3인칭 관찰자 시점으로 서술해야 합니다.\n",
+			person1Name, person2Name));
 		prompt.append("- 팬들의 상상력을 자극할 수 있는 서사적이고 감성적인 어조를 사용해주세요.\n");
 
 		// 3. 분석 대상자들 정보 주입
@@ -2622,7 +2587,8 @@ public class ManseInterpretationService {
 		prompt.append("- 연인에게 바라는 가장 중요한 가치는 무엇인가요? (안정감, 설렘, 대화 등)\n\n");
 
 		prompt.append("내 사주가 말하는 '운명의 상대'\n");
-		prompt.append("- 일지(배우자궁)를 볼 때, %s님은 본능적으로 어떤 스타일의 이성에게 끌리나요?\n\n");
+		prompt.append(String.format(
+			"- 일지(배우자궁)를 볼 때, %s님은 본능적으로 어떤 스타일의 이성에게 끌리나요?\n\n", userName));
 
 		prompt.append("이상형\n");
 		prompt.append("- 이 캐릭터가 본능적으로 끌릴 수밖에 없는 상대의 분위기, 성격, 외모를 아주 상세하게 묘사해주세요.\n\n");
@@ -2796,9 +2762,11 @@ public class ManseInterpretationService {
 
 		// 2. 3인칭 서술 지시
 		prompt.append("### ⚠️ 매우 중요: 3인칭 서술 ###\n");
-		prompt.append("- 이 분석은 '%s'와 '%s'라는 제3자들에 대한 것입니다.\n");
-		prompt.append(
-			"- 절대로 2인칭(당신들)을 사용하지 말고, **'두 사람은', '%s님은', '%s님은'** 등 3인칭 관찰자 시점으로만 서술해야 합니다.\n\n");
+		prompt.append(String.format(
+			"- 이 분석은 '%s'와 '%s'라는 제3자들에 대한 것입니다.\n", person1Name, person2Name));
+		prompt.append(String.format(
+			"- 절대로 2인칭(당신들)을 사용하지 말고, **'두 사람은', '%s님은', '%s님은'** 등 3인칭 관찰자 시점으로만 서술해야 합니다.\n\n",
+			person1Name, person2Name));
 
 		// 3. 분석 대상자들 정보 주입
 		prompt.append("\n### 5. 분석 대상자 상세 정보 ###\n");
@@ -2826,12 +2794,14 @@ public class ManseInterpretationService {
 		prompt.append("제3자가 비집고 들어올 수 있는 '틈'은 어디에 있는지 분석.\n\n");
 
 		prompt.append("## 제3자의 등장: 어떤 인물이, 왜 끼어드는가?\n");
-		prompt.append("%s님 또는 %s님이 끌리기 쉬운 제3자의 사주적 특징(일간, 오행, 십성 등) 예측.\n");
+		prompt.append(String.format(
+			"%s님 또는 %s님이 끌리기 쉬운 제3자의 사주적 특징(일간, 오행, 십성 등) 예측.\n", person1Name, person2Name));
 		prompt.append("두 사람 중 누가 먼저 마음이 흔들리거나 관계에 변화를 줄 가능성이 높은지 분석.\n");
 		prompt.append("제3자의 등장이 두 사람의 관계에 미치는 초기 영향력 예측.\n\n");
 
 		prompt.append("## 질투와 경쟁: 감정의 소용돌이\n");
-		prompt.append("삼각관계 상황에서 %s님과 %s님이 각각 보일 수 있는 질투의 양상과 강도 분석 (겁재, 비견 등 활용).\n");
+		prompt.append(String.format(
+			"삼각관계 상황에서 %s님과 %s님이 각각 보일 수 있는 질투의 양상과 강도 분석 (겁재, 비견 등 활용).\n", person1Name, person2Name));
 		prompt.append("누가 관계의 주도권을 쥐려 하거나 혹은 더 집착하는 모습을 보일지 예측.\n");
 		prompt.append("경쟁 구도 속에서 각자가 사용할 수 있는 전략이나 행동 패턴 분석.\n\n");
 
@@ -2842,7 +2812,8 @@ public class ManseInterpretationService {
 
 		prompt.append("## 예상 시나리오와 최종 조언\n");
 		prompt.append("이 삼각관계가 맞이할 가능성이 높은 결말 시나리오 1~2가지 제시 (명리학적 근거 포함).\n");
-		prompt.append("각 당사자(%s님, %s님, 그리고 가상의 제3자)가 이 상황을 현명하게 대처하기 위한 조언.\n");
+		prompt.append(String.format(
+			"각 당사자(%s님, %s님, 그리고 가상의 제3자)가 이 상황을 현명하게 대처하기 위한 조언.\n", person1Name, person2Name));
 		prompt.append("관계의 복잡성 속에서도 각자가 '성장'할 수 있는 방법에 대한 메시지로 마무리.\n\n");
 
 		appendCompatibilityJsonResponseFormat(prompt, person1Name, person2Name);
@@ -2870,7 +2841,9 @@ public class ManseInterpretationService {
 		prompt.append(
 			String.format("- [개인 분석]은 '%s님은...', '%s님은...' 처럼 3인칭 단수로 서술해야 합니다.\n", person1Name,
 				person2Name));
-		prompt.append("- [궁합 분석]은 '두 사람은...', '%s님과 %s님은...' 처럼 3인칭 관찰자 시점으로 서술해야 합니다.\n");
+		prompt.append(String.format(
+			"- [궁합 분석]은 '두 사람은...', '%s님과 %s님은...' 처럼 3인칭 관찰자 시점으로 서술해야 합니다.\n",
+			person1Name, person2Name));
 		prompt.append("- 팬들의 상상력을 자극할 수 있는 서사적이고 감성적인 어조를 사용해주세요.\n");
 
 		// 3. 분석 대상자들 정보 주입
@@ -3750,37 +3723,18 @@ public class ManseInterpretationService {
 		prompt.append("## 4. 성취운 (150~200자)\n");
 		prompt.append("- **[작성 가이드]**: 오늘의 성취운에 쉽고 재밌게 풀어서 작성\n");
 
-		// ===== 9. JSON 포맷 (기존 유지) =====
-		prompt.append("\n\n### 9. [최종 출력 형식] (JSON) ###\n");
-		prompt.append("위에서 요청된 모든 분석을 완료한 후, **반드시 markdown 감싸기 없이 순수한 JSON 형식으로만** 응답해주세요.\n");
-		prompt.append(
-			"**fullAnalysis** 값에는 위에서 요청한 모든 상세 분석 내용을 **목록 기호 없이 물 흐르듯 자연스럽게 이어진 하나의 긴 텍스트**로 담아야 합니다.\n\n");
+		// ===== 9. 출력 형식 =====
+		prompt.append("\n\n### [최종 출력 형식] ###\n");
+		prompt.append("응답은 fullAnalysis와 summary 두 필드로 구성됩니다. JSON 형식은 시스템이 강제하므로 내용에만 집중하세요.\n\n");
 
 		prompt.append("--- [fullAnalysis 작성 규칙] ---\n");
-		prompt.append("1. **(매우 중요)** 프롬프트에 `##`로 시작하는 주제(제목)가 있으면, `##` 기호는 **절대 출력하지 마세요.**\n");
-		prompt.append("2. 대신, 그 주제(제목) 텍스트를 **대괄호(`[]`)**로 감싸고, 그 뒤에 **줄바꿈(\\n)**을 한 번만 추가해주세요.\n");
-		prompt.append("   (예시: `## 1. 오늘의 총운` -> [오늘의 총운 (75/100)]\\n)\n");
-		prompt.append(
-			"3. **(매우 중요)** `**` 강조 기호 사용 금지. 그냥 텍스트로만 출력.\n");
-		prompt.append("4. **(가장 중요) 한자(甲, 寅 등) 절대 포함 금지.**\n");
-		prompt.append(
-			"5. **(카드 UI용)** 가독성을 위해, 각 분야(총운, 금전운, 애정운 등)가 끝날 때마다 **줄바꿈을 두 번(\\n\\n)** 하여 섹션을 명확히 구분해주세요.\n\n");
+		prompt.append("1. `##` 주제(제목)는 `##` 기호 대신 대괄호로 감싸 출력하고 바로 뒤에 줄바꿈 한 번. (예: `## 1. 오늘의 총운` -> [오늘의 총운 (75/100)])\n");
+		prompt.append("2. `**` 강조 기호와 한자(甲, 寅 등)는 출력하지 않습니다.\n");
+		prompt.append("3. (카드 UI용) 각 분야(총운, 금전운, 애정운, 성취운)가 끝날 때마다 줄바꿈 두 번으로 섹션을 구분합니다.\n\n");
 
-		prompt.append("--- [summary 말투 규칙 - 매우 중요] ---\n");
-		prompt.append("**summary는 '혜안' 페르소나를 완전히 무시하고, 아래 규칙만 100% 따라야 합니다.**\n\n");
-
-		prompt.append("🎯 **필수 규칙 (절대 엄수)**\n");
-		prompt.append(
-			"1. **페르소나**: 당신은 다정하고 통찰력 있는 조언자입니다. **무조건 '해요체'(~해요, ~하네요)를 사용하여 정중하게** 요약해주세요. 반말은 절대 금지입니다.\n");
-		prompt.append(
-			"2. **주제 (오늘 운세 총평)**: 오늘 하루 전반적인 흐름을 한 문장으로 요약하고, 가장 주의할 점이나 활용할 기회를 짚어주세요.\n");
-		prompt.append("3. **줄바꿈**: 한 문장이 끝나면 **반드시 줄바꿈(\\n)** 해주고, 마침표는 찍지 마.\n");
-		prompt.append("4. **분량**: 총 250자 이내.\n\n");
-
-		prompt.append("{\n");
-		prompt.append("  \"fullAnalysis\": \"<여기에 상세 분석 전체 내용을 작성. 각 섹션을 \\n\\n으로 구분>\",\n");
-		prompt.append("  \"summary\": \"<문장 끝마다 '\\n'으로 줄바꿈된 250자 이내 요약본 작성>\"\n");
-		prompt.append("}\n");
+		prompt.append("--- [summary 작성 규칙] ---\n");
+		prompt.append("다정하고 통찰력 있는 조언자의 '해요체'로만 씁니다 (반말 금지).\n");
+		prompt.append("오늘 하루의 전반적인 흐름 한 문장 + 가장 주의할 점이나 활용할 기회 한 가지를 총 250자 이내로, 문장마다 줄바꿈하고 마침표는 찍지 않습니다.\n");
 
 		return prompt.toString();
 	}
@@ -3875,9 +3829,11 @@ public class ManseInterpretationService {
 
 		// 2. 3인칭 서술 지시
 		prompt.append("### ⚠️ 매우 중요: 3인칭 서술 ###\n");
-		prompt.append("- 이 분석은 '%s'와 '%s'라는 제3자들에 대한 것입니다.\n");
-		prompt.append(
-			"- 절대로 2인칭(당신들)을 사용하지 말고, **'두 사람은', '%s님은', '%s님은'** 등 3인칭 관찰자 시점으로만 서술해야 합니다.\n\n");
+		prompt.append(String.format(
+			"- 이 분석은 '%s'와 '%s'라는 제3자들에 대한 것입니다.\n", person1Name, person2Name));
+		prompt.append(String.format(
+			"- 절대로 2인칭(당신들)을 사용하지 말고, **'두 사람은', '%s님은', '%s님은'** 등 3인칭 관찰자 시점으로만 서술해야 합니다.\n\n",
+			person1Name, person2Name));
 
 		// 3. 분석 대상자들 정보 주입 (요약본 사용)
 		prompt.append("### 5. 분석 대상자 요약 정보 ###\n");
@@ -5533,30 +5489,50 @@ public class ManseInterpretationService {
 			}
 
 			prompt.append(
-				String.format("- 행운의 용신(Key): %s (%s) -> 이 오행을 활용한 개운법(색상, 숫자)을 추천하세요.\n",
+				String.format(
+					"- 행운의 용신(Key): %s (%s) -> 이 오행의 기운을 살리는 활동/환경/습관을 조언에 자연스럽게 녹여내세요. 단, 이 프롬프트에 색상/숫자/방향 개운법 금지 규칙이 있으면 그 규칙이 우선입니다.\n",
 					saju.getYongsinInfo().getYongsin(),
 					saju.getYongsinInfo().getDescription()));
 		}
 
 		// ==========================================
-		// 2. [성격] 오행 과다/고립 (Ohaeng)
+		// 2. [성격] 오행 과다/결핍 (Ohaeng)
 		// ==========================================
-		// 화(Fire) 과다
+		if (ohaengCounts.getOrDefault("목", 0.0) >= 4.0) {
+			prompt.append("- [성격 키워드] 목(Wood) 과다: 계획과 시작이 많고 성장 욕구가 강하나, 벌여놓은 일의 마무리가 약해지기 쉬움. 우선순위 정리가 핵심 과제.\n");
+		}
 		if (ohaengCounts.getOrDefault("화", 0.0) >= 4.0) {
 			prompt.append("- [성격 키워드] 화(Fire) 과다: 성격이 매우 급하고 다혈질, 화려함을 추구함. 감정 조절이 핵심 과제.\n");
 		}
-		// 수(Water) 과다
+		if (ohaengCounts.getOrDefault("토", 0.0) >= 4.0) {
+			prompt.append("- [성격 키워드] 토(Earth) 과다: 신중하고 묵직해 신뢰를 얻지만, 변화 대응이 느리고 고집이 셈. 결단의 타이밍이 과제.\n");
+		}
+		if (ohaengCounts.getOrDefault("금", 0.0) >= 4.0) {
+			prompt.append("- [성격 키워드] 금(Metal) 과다: 원칙과 기준이 분명하고 맺고 끊음이 확실하나, 융통성 부족과 날카로운 말로 관계가 상하기 쉬움.\n");
+		}
 		if (ohaengCounts.getOrDefault("수", 0.0) >= 4.0) {
 			prompt.append("- [성격 키워드] 수(Water) 과다: 생각이 너무 많아 우울감 주의, 비밀이 많고 융통성이 좋음.\n");
 		}
-		// (필요 시 목, 금, 토 추가)
+		for (Map.Entry<String, String> lack : Map.of(
+			"목", "성장/확장 동력이 약해 새 일을 벌이는 결단이 늦음",
+			"화", "표현과 열정의 발산이 약해 존재감이 묻히기 쉬움",
+			"토", "중심을 잡아주는 안정감이 약해 환경 변화에 흔들리기 쉬움",
+			"금", "맺고 끊는 결단력이 약해 정리와 거절이 어려움",
+			"수", "유연한 사고와 휴식이 부족해 번아웃에 취약함").entrySet()) {
+			if (ohaengCounts.getOrDefault(lack.getKey(), 0.0) <= 0.7) {
+				prompt.append(String.format("- [결핍] %s 부족: %s. 보완 방향을 조언에 반영하세요.\n",
+					lack.getKey(), lack.getValue()));
+			}
+		}
 
 		// ==========================================
-		// 3. [직업/재능] 십성 (Sipseong)
+		// 3. [직업/재능] 십성 단독 + 조합 (Sipseong)
 		// ==========================================
 		int siksang = sipseongCounts.getOrDefault("식신", 0) + sipseongCounts.getOrDefault("상관", 0);
 		int gwanseong = sipseongCounts.getOrDefault("정관", 0) + sipseongCounts.getOrDefault("편관", 0);
 		int jaeseong = sipseongCounts.getOrDefault("정재", 0) + sipseongCounts.getOrDefault("편재", 0);
+		int inseong = sipseongCounts.getOrDefault("정인", 0) + sipseongCounts.getOrDefault("편인", 0);
+		int bigyeop = sipseongCounts.getOrDefault("비견", 0) + sipseongCounts.getOrDefault("겁재", 0);
 
 		if (siksang == 0) {
 			prompt.append("- [단점] 무식상(No Expression): 표현력이 부족하고 행동보다 생각이 앞섬. -> '일단 저질러라'고 조언.\n");
@@ -5568,9 +5544,53 @@ public class ManseInterpretationService {
 			prompt.append("- [특징] 무관성(No Control): 자유로운 영혼. 조직 생활보다는 프리랜서나 전문직이 적합함.\n");
 		}
 
-		if (jaeseong >= 3) {
+		if (jaeseong == 0) {
+			prompt.append("- [특징] 무재성(No Wealth Star): 돈 자체보다 일의 의미/완성도에 끌림. 재물은 전문성의 부산물로 따라오는 구조 -> 몸값을 올리는 전략을 조언.\n");
+		} else if (jaeseong >= 3) {
 			prompt.append("- [특징] 재성 혼잡: 결과와 돈 욕심이 많으나 마무리가 약할 수 있음. '선택과 집중'을 조언.\n");
 		}
+
+		if (inseong >= 3) {
+			prompt.append("- [특징] 인성 과다: 배우고 계획하는 인풋은 넘치는데 실행이 늦음(생각 과다). 인풋 하나당 아웃풋 하나를 강제하라고 조언.\n");
+		}
+		if (bigyeop >= 3) {
+			prompt.append("- [특징] 비겁 과다: 승부욕과 독립심이 강하고 내 사람을 잘 챙기나, 동업/돈거래에서 손실이 반복되기 쉬움.\n");
+		}
+
+		// 조합 해석 (구조가 있으면 반드시 해석에 활용)
+		if (siksang >= 2 && jaeseong >= 2) {
+			prompt.append("- [구조] 식상생재: 내가 만든 결과물(표현/기술/콘텐츠)이 돈으로 바뀌는 구조. 만들어서 파는 방향이 정답.\n");
+		}
+		if (gwanseong >= 2 && inseong >= 2) {
+			prompt.append("- [구조] 관인상생: 조직에서 인정받아 단계적으로 올라가는 구조. 큰 판보다 검증된 시스템 안에서 성장이 빠름.\n");
+		}
+		if (siksang >= 2 && gwanseong >= 2) {
+			prompt.append("- [구조] 식상-관성 긴장: 자유로운 표현 욕구와 규칙/책임이 내부에서 부딪힘. 규율 있는 조직과 창의적 역할 사이 균형이 평생 과제.\n");
+		}
+		int pyeonin = sipseongCounts.getOrDefault("편인", 0);
+		if (pyeonin >= 2 && siksang >= 1 && pyeonin > siksang) {
+			prompt.append("- [구조] 도식(倒食) 기운: 흡수(편인)가 출력(식신)을 누르는 구조. 일을 진행하다 '더 좋은 방법'이 보이면 완성 직전에 판을 뒤엎고 새로 시작하는 패턴이 반복됨 -> 갈아엎고 싶을 때 일단 완성부터 하라고 조언.\n");
+		}
+		if (bigyeop >= 2 && jaeseong >= 2) {
+			prompt.append("- [구조] 군겁쟁재: 나와 같은 기운(비겁)들이 재물을 나눠 갖는 구조. 동업, 보증, 공동 투자, 가까운 사람과의 돈거래에서 재물이 갈라져 나가는 패턴 -> 돈의 소유와 관리 주체를 명확히 분리하라고 조언.\n");
+		}
+		if (sipseongCounts.getOrDefault("정관", 0) >= 1
+			&& sipseongCounts.getOrDefault("편관", 0) >= 1) {
+			prompt.append("- [구조] 관살혼잡: 책임(정관)과 압박(편관)이 뒤섞여 나를 평가하는 기준이 둘인 구조. 조직에서 상반된 요구 사이에 끼거나, 연애에서 상대 유형이 극단적으로 갈리는 장면으로 구체화하세요.\n");
+		}
+		if (sipseongCounts.getOrDefault("편관", 0) >= 1 && inseong >= 2) {
+			prompt.append("- [구조] 살인상생: 외부 압박(편관)을 학습(인성)으로 소화하는 구조. 위기가 공부가 되고 시험/평가 국면에서 오히려 강해짐. 압박이 없으면 늘어지는 이면도 함께 짚으세요.\n");
+		}
+		if (jaeseong >= 2 && gwanseong >= 1) {
+			prompt.append("- [구조] 재생관: 성과(재성)가 지위(관성)를 밀어주는 구조. 결과물을 쌓으면 평판과 자리가 따라오는 정공법 루트가 맞고, 정치나 줄서기는 오히려 독.\n");
+		}
+
+		// ==========================================
+		// 3-1. [에너지] 12운성 궁위 힌트
+		// ==========================================
+		appendUnseongHint(prompt, "월지(사회 기반)", saju.getMonthGround());
+		appendUnseongHint(prompt, "일지(배우자궁·나의 자리)", saju.getDayGround());
+		appendUnseongHint(prompt, "시지(말년·자식 자리)", saju.getTimeGround());
 
 		// ==========================================
 		// 4. [매력/살] 신살 정보 (SinsalInfo) - DTO 활용!
@@ -5613,17 +5633,22 @@ public class ManseInterpretationService {
 		// 5. [관계/사건] 합충 정보 (GroundRelations) - DTO 활용!
 		// ==========================================
 		if (saju.getGroundRelations() != null && !saju.getGroundRelations().isEmpty()) {
-			prompt.append("- [지지 관계 특이사항] 아래 요소들을 해석에 녹여내세요:\n");
+			prompt.append("- [지지 관계 특이사항] 어느 '자리'끼리의 작용인지가 해석의 핵심입니다. 막연한 '변화가 많다'가 아니라 아래 영역의 구체적 장면으로 풀어내세요:\n");
 			for (String relation : saju.getGroundRelations()) {
+				String palace = describePalaceContext(relation);
 				if (relation.contains("충")) {
-					prompt.append(
-						String.format("  * %s: 삶의 변동성이 크거나, 해당 시기(년/월/일/시)에 변화가 많음 (투쟁, 이동).\n",
-							relation));
+					prompt.append(String.format(
+						"  * %s: 정면충돌 — %s 사이에서 변동/단절/재편이 반복되는 자리.\n", relation, palace));
 				} else if (relation.contains("합")) {
-					prompt.append(
-						String.format("  * %s: 유정하고 다정다감함, 혹은 묶여서 답답할 수 있음.\n", relation));
+					prompt.append(String.format(
+						"  * %s: 결속 — %s이(가) 강하게 묶임. 안정감인 동시에 그 영역에 묶여 답답할 수 있음.\n",
+						relation, palace));
 				} else if (relation.contains("원진") || relation.contains("귀문")) {
-					prompt.append(String.format("  * %s: 예민하고 직관력이 뛰어남, 신경성 질환 주의.\n", relation));
+					prompt.append(String.format(
+						"  * %s: 애증의 긴장 — %s 사이의 미묘한 신경전, 예민함과 직관.\n", relation, palace));
+				} else if (relation.contains("형")) {
+					prompt.append(String.format(
+						"  * %s: 내적 마찰 — %s에서 겉으로 드러나지 않는 압박과 조정이 이어지는 자리.\n", relation, palace));
 				}
 			}
 		}
@@ -5638,5 +5663,48 @@ public class ManseInterpretationService {
 		}
 
 		prompt.append("\n");
+	}
+
+	/**
+	 * 지지 관계 문자열("년지-월지: 충" 등)에서 어느 궁위끼리의 작용인지 설명을 만든다.
+	 */
+	private String describePalaceContext(String relation) {
+		List<String> palaces = new ArrayList<>();
+		if (relation.contains("년지")) {
+			palaces.add("뿌리(가족·초년 환경)");
+		}
+		if (relation.contains("월지")) {
+			palaces.add("사회 기반(직업·일터·환경)");
+		}
+		if (relation.contains("일지")) {
+			palaces.add("나의 자리(배우자·일상·몸)");
+		}
+		if (relation.contains("시지")) {
+			palaces.add("말년·자식 자리");
+		}
+		return palaces.isEmpty() ? "해당 영역" : String.join("과 ", palaces);
+	}
+
+	/**
+	 * 궁위별 12운성이 특기할 만한 값이면 에너지 힌트를 추가한다.
+	 */
+	private void appendUnseongHint(StringBuilder prompt, String palaceLabel,
+		PillarElement ground) {
+		if (ground == null || ground.getUnseong() == null) {
+			return;
+		}
+		Map<String, String> notable = Map.of(
+			"제왕", "기세가 정점인 자리 — 이 영역에서 주도권을 쥐려는 힘이 강하고, 그만큼 굽히기 어려움",
+			"장생", "새로 태어나 자라나는 자리 — 이 영역에서는 배우는 활력이 마르지 않음",
+			"건록", "스스로 벌어 서는 자리 — 이 영역에서 자립심과 실속이 강함",
+			"태", "다시 잉태되는 자리 — 이 영역은 남들보다 늦게 시작되거나 후반에 새 국면이 열림",
+			"묘", "거두어 저장하는 자리 — 이 영역의 감정과 자원을 쌓아두고 잘 드러내지 않음",
+			"절", "끊어졌다 다시 이어지는 자리 — 이 영역에서 단절과 재시작을 경험함",
+			"사", "활동이 잦아드는 자리 — 이 영역은 확장보다 정리와 마무리가 어울림");
+		String meaning = notable.get(ground.getUnseong());
+		if (meaning != null) {
+			prompt.append(String.format("- [에너지] %s 12운성 '%s': %s.\n",
+				palaceLabel, ground.getUnseong(), meaning));
+		}
 	}
 }
