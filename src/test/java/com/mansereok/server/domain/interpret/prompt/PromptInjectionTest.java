@@ -173,7 +173,7 @@ class PromptInjectionTest {
 	@DisplayName("궁합 요약 정보 줄의 이름도 라벨과 따옴표로 감싼다")
 	void shouldLabelNameInCompatibilitySummaryLine() {
 		StringBuilder prompt = new StringBuilder();
-		SajuProfileSections.appendPersonInfoToPrompt(prompt, "김태우", sampleResponse());
+		SajuSummarySections.appendPersonInfoToPrompt(prompt, "김태우", sampleResponse());
 
 		assertThat(prompt.toString()).contains("이름: '김태우' | 남성");
 		assertThat(prompt.toString().lines().anyMatch(line -> line.startsWith("김태우 | "))).isFalse();

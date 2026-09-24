@@ -1,21 +1,10 @@
 package com.mansereok.server.domain.interpret.prompt;
 
-import com.mansereok.server.domain.interpret.dto.response.ManseryeokCalculationResponse;
-import com.mansereok.server.domain.interpret.dto.response.ManseryeokCalculationResponse.JijangganElement;
-import com.mansereok.server.domain.interpret.dto.response.ManseryeokCalculationResponse.JijangganInfo;
-import com.mansereok.server.domain.interpret.dto.response.ManseryeokCalculationResponse.PillarElement;
 import com.mansereok.server.domain.interpret.dto.response.ManseryeokCalculationResponse.SajuInfo;
-import java.time.LocalDate;
-import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.HashMap;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 import lombok.extern.slf4j.Slf4j;
-import java.util.SequencedMap;
 
 /**
  * 대운과 60갑자 계산 조각. 오늘 일진도 여기서 구한다.
@@ -26,22 +15,22 @@ final class DaewoonSections {
 	private DaewoonSections() {
 	}
 
-	static final List<String> GAPJA_CYCLE_KOR = new ArrayList<>();
+	private static final List<String> GAPJA_CYCLE_KOR = new ArrayList<>();
 
 	// 60갑자 순서 정의 (대운 계산용)
-	static final List<String> HEAVENLY_STEMS = Arrays.asList("甲", "乙", "丙", "丁", "戊",
+	private static final List<String> HEAVENLY_STEMS = Arrays.asList("甲", "乙", "丙", "丁", "戊",
 		"己", "庚", "辛", "壬", "癸");
 
-	static final List<String> EARTHLY_BRANCHES = Arrays.asList("子", "丑", "寅", "卯", "辰",
+	private static final List<String> EARTHLY_BRANCHES = Arrays.asList("子", "丑", "寅", "卯", "辰",
 		"巳", "午", "未", "申", "酉", "戌", "亥");
 
-	static final List<String> HEAVENLY_STEMS_KOR = Arrays.asList("갑", "을", "병", "정", "무",
+	private static final List<String> HEAVENLY_STEMS_KOR = Arrays.asList("갑", "을", "병", "정", "무",
 		"기", "경", "신", "임", "계");
 
-	static final List<String> EARTHLY_BRANCHES_KOR = Arrays.asList("자", "축", "인", "묘", "진",
+	private static final List<String> EARTHLY_BRANCHES_KOR = Arrays.asList("자", "축", "인", "묘", "진",
 		"사", "오", "미", "신", "유", "술", "해");
 
-	static final List<String> GAPJA_CYCLE = new ArrayList<>();
+	private static final List<String> GAPJA_CYCLE = new ArrayList<>();
 
 	static {
 		for (int i = 0; i < 60; i++) {
@@ -70,13 +59,17 @@ final class DaewoonSections {
 		// 1. 필수 데이터 검증
 		if (saju.getYearSky() == null || saju.getMonthSky() == null
 			|| saju.getMonthGround() == null || saju.getBigFortuneNumber() == null) {
-			prompt.append("대운 정보 없음 (필수 데이터 누락)\n");
+			prompt.append("""
+				대운 정보 없음 (필수 데이터 누락)
+				""");
 			return;
 		}
 
 		String yearSkyMinusPlus = saju.getYearSky().getMinusPlus();
 		if (yearSkyMinusPlus == null) {
-			prompt.append("대운 정보 없음 (음양 정보 누락)\n");
+			prompt.append("""
+				대운 정보 없음 (음양 정보 누락)
+				""");
 			return;
 		}
 
@@ -105,7 +98,9 @@ final class DaewoonSections {
 
 		if (skyIndex == -1 || groundIndex == -1) {
 			log.error("대운 계산 실패: 천간={}, 지지={}", skyChar, groundChar);
-			prompt.append("대운 정보 없음 (월주 매칭 실패)\n");
+			prompt.append("""
+				대운 정보 없음 (월주 매칭 실패)
+				""");
 			return;
 		}
 
@@ -115,7 +110,9 @@ final class DaewoonSections {
 			monthGapjaIndex = findGapjaIndex(skyIndex, groundIndex);
 		} catch (IllegalArgumentException e) {
 			log.error("존재할 수 없는 간지 조합: 천간인덱스={}, 지지인덱스={}", skyIndex, groundIndex);
-			prompt.append("대운 정보 오류 (잘못된 간지 조합)\n");
+			prompt.append("""
+				대운 정보 오류 (잘못된 간지 조합)
+				""");
 			return;
 		}
 
@@ -128,7 +125,10 @@ final class DaewoonSections {
 			currentDaewoonIndex = Math.max(0, (currentAge - startAge) / 10);
 		}
 
-		prompt.append(String.format("대운 시작: %d세 | 흐름: %s\n", startAge, flowDirection));
+		prompt.append("""
+			대운 시작: %d세 | 흐름: %s
+			"""
+			.formatted(startAge, flowDirection));
 		String currentDaewoonKor = null;
 		String currentDaewoonChi = null;
 		int currentStartAge = -1;
@@ -159,29 +159,34 @@ final class DaewoonSections {
 					: birthYear + age;
 
 			if (i == currentDaewoonIndex) {
-				prompt.append(String.format("▶ %d~%d세: %s (현재)\n", age, age + 9, daewoonStr));
+				prompt.append("""
+					▶ %d~%d세: %s (현재)
+					"""
+					.formatted(age, age + 9, daewoonStr));
 				currentDaewoonKor = daewoonKor;
 				currentDaewoonChi = daewoonChi;
 				currentStartAge = age;
 				currentStartYear = daewoonStartYear;
 			} else {
-				prompt.append(String.format("  %d~%d세: %s\n", age, age + 9, daewoonStr));
+				prompt.append("""
+					  %d~%d세: %s
+					"""
+					.formatted(age, age + 9, daewoonStr));
 			}
 		}
 
 		if (currentDaewoonChi != null) {
-			prompt.append(String.format(
-				"[대운 고정값] 기준연도=%d, 현재대운=%s(%s), 구간=%d~%d세, 시작연도=%d\n",
-				referenceYear, currentDaewoonKor, currentDaewoonChi,
-				currentStartAge, currentStartAge + 9, currentStartYear
-			));
+			prompt.append("""
+				[대운 고정값] 기준연도=%d, 현재대운=%s(%s), 구간=%d~%d세, 시작연도=%d
+				"""
+				.formatted(referenceYear, currentDaewoonKor, currentDaewoonChi, currentStartAge, currentStartAge + 9, currentStartYear));
 		}
 	}
 
 	/**
 	 * ✅ [완벽한 방법] 0~59를 순회하며 천간/지지가 일치하는 인덱스를 찾음 수학 공식 오류 가능성을 원천 차단함.
 	 */
-	static int findGapjaIndex(int skyIndex, int groundIndex) {
+	private static int findGapjaIndex(int skyIndex, int groundIndex) {
 		for (int i = 0; i < 60; i++) {
 			// i번째 간지의 천간 인덱스는 i % 10
 			// i번째 간지의 지지 인덱스는 i % 12
@@ -196,7 +201,7 @@ final class DaewoonSections {
 	/**
 	 * 문자열 첫 글자 추출 (안전)
 	 */
-	static String extractFirstChar(String str) {
+	private static String extractFirstChar(String str) {
 		if (str == null || str.isEmpty()) {
 			return "";
 		}

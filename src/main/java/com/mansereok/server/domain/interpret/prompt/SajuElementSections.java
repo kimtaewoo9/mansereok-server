@@ -4,17 +4,9 @@ import com.mansereok.server.domain.interpret.dto.response.ManseryeokCalculationR
 import com.mansereok.server.domain.interpret.dto.response.ManseryeokCalculationResponse.JijangganElement;
 import com.mansereok.server.domain.interpret.dto.response.ManseryeokCalculationResponse.JijangganInfo;
 import com.mansereok.server.domain.interpret.dto.response.ManseryeokCalculationResponse.PillarElement;
-import com.mansereok.server.domain.interpret.dto.response.ManseryeokCalculationResponse.SajuInfo;
-import java.time.LocalDate;
-import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.HashMap;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.SequencedMap;
 
 /**
  * 지장간과 오행 분포를 다루는 조각.
@@ -30,7 +22,10 @@ final class SajuElementSections {
 			return;
 		}
 		JijangganInfo jijanggan = pillar.getJijanggan();
-		prompt.append(String.format("- %s(%s): ", pillarName, pillar.getKorean()));
+		prompt.append("""
+			- %s(%s):\s\
+			"""
+			.formatted(pillarName, pillar.getKorean()));
 
 		List<String> jijangganElements = new ArrayList<>();
 
@@ -148,7 +143,7 @@ final class SajuElementSections {
 		}
 	}
 
-	static void addElementCount(Map<String, Double> ohaengCounts,
+	private static void addElementCount(Map<String, Double> ohaengCounts,
 		Map<String, Integer> sipseongCounts,
 		PillarElement element, double weight) {
 		if (element == null) {
@@ -164,7 +159,7 @@ final class SajuElementSections {
 		}
 	}
 
-	static void addGroundWithJijanggan(Map<String, Double> ohaengCounts,
+	private static void addGroundWithJijanggan(Map<String, Double> ohaengCounts,
 		Map<String, Integer> sipseongCounts, PillarElement ground) {
 
 		if (ground == null) {
@@ -190,7 +185,7 @@ final class SajuElementSections {
 		}
 	}
 
-	static void addJijangganElement(Map<String, Double> ohaengCounts,
+	private static void addJijangganElement(Map<String, Double> ohaengCounts,
 		Map<String, Integer> sipseongCounts, JijangganElement element) {
 
 		// 오행 카운팅 (기존)

@@ -50,13 +50,13 @@ public class CompatibilityPromptFactory {
 		return switch (subcategoryId.intValue()) {
 			case 4, 6 -> CompatibilityPrompts.createLoveStoryPrompt(person1Name, person1Response,
 				person2Name, person2Response);
-			case 7 -> CompatibilityPrompts.createIdolCompatibilityPrompt(person1Name,
+			case 7 -> CelebrityCompatibilityPrompts.createIdolCompatibilityPrompt(person1Name,
 				person1Response, person2Name, person2Response);
 			case 8 -> CompatibilityPrompts.createTriangleRelationshipPrompt(person1Name,
 				person1Response, person2Name, person2Response);
 			case 14 -> CompatibilityPrompts.createLoveStoryPrompt(person1Name, person1Response,
 				person2Name, person2Response);
-			case 15 -> CompatibilityPrompts.createActorCompatibilityPrompt(person1Name,
+			case 15 -> CelebrityCompatibilityPrompts.createActorCompatibilityPrompt(person1Name,
 				person1Response, person2Name, person2Response);
 			case 19 -> ReunionPrompts.createReunionPrompt(person1Name, person1Response, person2Name,
 				person2Response);

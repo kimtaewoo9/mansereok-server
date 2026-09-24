@@ -35,8 +35,8 @@ public class SajuPromptFactory {
 				case 17 -> FortunePrompts.createLoveLuckPrompt(name, response); // 연애운
 				case 18 -> FortunePrompts.createNewYear2026Prompt(name, response); // 신년 운세
 				case 20 -> FortunePrompts.createMoneyLuckPrompt(name, response);
-				case 21 -> CareerPrompts.createBusinessLuckPrompt(name, response);
-				case 22 -> CareerPrompts.createAcademicLuckPrompt(name, response); // 학업운
+				case 21 -> BusinessAndAcademicPrompts.createBusinessLuckPrompt(name, response);
+				case 22 -> BusinessAndAcademicPrompts.createAcademicLuckPrompt(name, response); // 학업운
 				case 23 -> LifeAndPersonalityPrompts.createLifeAdvicePrompt(name, response); // 인생조언
 				default ->
 					throw new IllegalArgumentException("지원하지 않는 카테고리입니다: " + subcategoryId);

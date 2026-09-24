@@ -525,7 +525,7 @@ public class ManseInterpretationService {
 		}
 	}
 
-	// ==================== 프롬프트 라우팅 메서드 ====================
+	// ==================== GPT 응답 후처리 ====================
 
 	private String normalizeAnalysisBySubcategory(Long subcategoryId, String fullAnalysis) {
 		if (fullAnalysis == null) {

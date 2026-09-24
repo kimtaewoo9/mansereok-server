@@ -19,7 +19,7 @@ class PromptBuilderContentTest {
 	@Test
 	@DisplayName("사업운 프롬프트는 새 섹션 구조와 페이지 분리 규칙을 담는다")
 	void businessPromptHasNewSectionStructureAndPageBreakRules() {
-		String prompt = CareerPrompts.createBusinessLuckPrompt("김태우", response);
+		String prompt = BusinessAndAcademicPrompts.createBusinessLuckPrompt("김태우", response);
 
 		assertThat(prompt).isNotNull();
 		assertThat(prompt).contains("fullAnalysis 총 분량은 최소 4000자 이상으로 작성한다.");
