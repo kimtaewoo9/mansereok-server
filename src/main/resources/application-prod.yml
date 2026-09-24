@@ -93,12 +93,6 @@ openai:
     key: ${OPENAI_API_KEY}
     base-url: https://api.openai.com
 
-# Gemini API
-gemini:
-  api:
-    key: ${GEMINI_API_KEY}
-    base-url: https://generativelanguage.googleapis.com/v1beta/models
-
 # 만세력 불러올 API
 posteller:
   api:
