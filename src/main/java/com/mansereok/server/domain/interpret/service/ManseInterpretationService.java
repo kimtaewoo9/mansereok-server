@@ -19,6 +19,7 @@ import com.mansereok.server.domain.notification.service.DiscordNotificationServi
 import com.mansereok.server.domain.user.entity.User;
 import com.mansereok.server.domain.user.service.EmailService;
 import com.mansereok.server.domain.user.service.UserService;
+import com.mansereok.server.global.exception.OpenAiIncompleteResponseException;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
@@ -277,6 +278,11 @@ public class ManseInterpretationService {
 				log.error("이메일 실패", e);
 			}
 
+		} catch (OpenAiIncompleteResponseException e) {
+			// 토큰 상한 도달은 프롬프트·토큰 설정을 손봐야 한다는 신호라 따로 센다.
+			// @Async 라 예외가 HTTP 응답으로 나가지 않으므로 운영에서는 이 로그로 본다.
+			log.error("해석 미완성 - reason: {}, resultId: {}", e.getReason(), resultId);
+			sajuResultService.rollbackStatus(resultId);
 		} catch (Exception e) {
 			log.error("해석 중 오류 발생: {}", e.getMessage(), e);
 			// 6. [DB] 에러 롤백
@@ -361,6 +367,10 @@ public class ManseInterpretationService {
 			} catch (Exception e) {
 			}
 
+		} catch (OpenAiIncompleteResponseException e) {
+			// 토큰 상한 도달은 프롬프트·토큰 설정을 손봐야 한다는 신호라 따로 센다.
+			log.error("궁합 해석 미완성 - reason: {}, resultId: {}", e.getReason(), resultId);
+			sajuResultService.rollbackCompatibilityStatus(resultId);
 		} catch (Exception e) {
 			log.error("궁합 분석 오류: {}", e.getMessage(), e);
 			// 5. [DB] 롤백
@@ -423,6 +433,10 @@ public class ManseInterpretationService {
 				log.error("OG 실패", e);
 			}
 
+		} catch (OpenAiIncompleteResponseException e) {
+			// 토큰 상한 도달은 프롬프트·토큰 설정을 손봐야 한다는 신호라 따로 센다.
+			log.error("무료 해석 미완성 - reason: {}, resultId: {}", e.getReason(), resultId);
+			sajuResultService.rollbackStatus(resultId);
 		} catch (Exception e) {
 			log.error("무료 사주 오류: {}", e.getMessage(), e);
 			// 5. [DB] 롤백
@@ -492,6 +506,12 @@ public class ManseInterpretationService {
 			// 6. 후처리 (OG이미지 등)
 			ogImageGenerationService.generateAndUploadOgImage(savedResult);
 
+		} catch (OpenAiIncompleteResponseException e) {
+			// 토큰 상한 도달은 프롬프트·토큰 설정을 손봐야 한다는 신호라 따로 센다.
+			log.error("무료 궁합 해석 미완성 - reason: {}, resultId: {}", e.getReason(), resultId);
+			if (resultId != null) {
+				sajuResultService.rollbackCompatibilityStatus(resultId);
+			}
 		} catch (Exception e) {
 			log.error("무료 궁합 분석 오류: {}", e.getMessage(), e);
 			if (resultId != null) {

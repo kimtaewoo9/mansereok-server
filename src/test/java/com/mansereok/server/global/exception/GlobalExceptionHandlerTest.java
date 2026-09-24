@@ -39,7 +39,7 @@ class GlobalExceptionHandlerTest {
 	@DisplayName("미완성 응답은 502 OPENAI_INCOMPLETE_RESPONSE 로 내려간다")
 	void mapsIncompleteTo502() {
 		ResponseEntity<ErrorResponse> response = handler.handleOpenAiIncompleteResponse(
-			new OpenAiIncompleteResponseException("max_output_tokens", "응답이 완성되지 않았습니다."));
+			new OpenAiIncompleteResponseException("max_output_tokens"));
 
 		assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_GATEWAY);
 		assertThat(response.getBody()).isNotNull();
@@ -51,7 +51,7 @@ class GlobalExceptionHandlerTest {
 	@DisplayName("거부 응답은 502 OPENAI_REFUSAL 로 내려간다")
 	void mapsRefusalTo502() {
 		ResponseEntity<ErrorResponse> response = handler.handleOpenAiRefusal(
-			new OpenAiRefusalException("도와드릴 수 없습니다.", "OpenAI 가 응답을 거부했습니다."));
+			new OpenAiRefusalException("도와드릴 수 없습니다."));
 
 		assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_GATEWAY);
 		assertThat(response.getBody()).isNotNull();
@@ -66,8 +66,8 @@ class GlobalExceptionHandlerTest {
 			.isNotInstanceOf(GptApiFailedException.class)
 			.isInstanceOf(OpenAiException.class);
 		assertThat(new OpenAiRequestException("x")).isInstanceOf(OpenAiException.class);
-		assertThat(new OpenAiIncompleteResponseException("max_output_tokens", "x"))
+		assertThat(new OpenAiIncompleteResponseException("max_output_tokens"))
 			.isInstanceOf(OpenAiException.class);
-		assertThat(new OpenAiRefusalException("r", "x")).isInstanceOf(OpenAiException.class);
+		assertThat(new OpenAiRefusalException("r")).isInstanceOf(OpenAiException.class);
 	}
 }

@@ -8,8 +8,12 @@ public class OpenAiIncompleteResponseException extends OpenAiException {
 
 	private final String reason;
 
-	public OpenAiIncompleteResponseException(String reason, String message) {
-		super(message);
+	/**
+	 * reason 만 받고 메시지는 여기서 조립한다. (reason, message) 처럼 String 두 개를 잇달아 받으면
+	 * 호출부가 순서를 바꿔 넣어도 컴파일되어 아무도 잡지 못한다.
+	 */
+	public OpenAiIncompleteResponseException(String reason) {
+		super("OpenAI 응답이 완성되지 않았습니다. reason: " + reason);
 		this.reason = reason;
 	}
 

@@ -24,12 +24,11 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.client.ClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
-import org.springframework.web.client.HttpClientErrorException;
-import org.springframework.web.client.HttpServerErrorException;
-import org.springframework.web.client.HttpStatusCodeException;
 import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
+import org.springframework.web.client.RestClientResponseException;
+import org.springframework.web.client.UnknownContentTypeException;
 
 /**
  * OpenAI Responses API 호출 구현.
@@ -45,6 +44,12 @@ public class OpenAiResponsesRestClient implements OpenAiResponsesClient {
 	private static final String RESPONSES_PATH = "/responses";
 	/** 백오프에 더하는 지터 비율. 동시에 실패한 요청들이 같은 시점에 몰리지 않게 한다. */
 	private static final double JITTER_RATIO = 0.2;
+	/**
+	 * 재시도 한 번의 대기 상한. Retry-After 를 그대로 믿으면 상대 서버가 보낸 값(예: 3600)이
+	 * gptTaskExecutor 스레드 점유 시간을 정하게 된다. 우리 스레드를 얼마나 묶을지는 우리가 정한다.
+	 * 지수 백오프에도 같은 상한을 씌워 maxAttempts 를 키웠을 때의 폭주를 함께 막는다.
+	 */
+	private static final long MAX_RETRY_DELAY_MS = 30_000L;
 
 	private final RestClient restClient;
 	private final OpenAiProperties properties;
@@ -110,6 +115,10 @@ public class OpenAiResponsesRestClient implements OpenAiResponsesClient {
 	 * 애초에 다른 모델을 쓰던 경로에서는 아무것도 바꾸지 못한 채 같은 모델로 재호출한다.
 	 */
 	private String callFallback(Gpt5Request request, TransientFailure lastFailure) {
+		// 후속 판단 거리: fallback 티어가 하나뿐이라 무료(light = gpt-5-mini / 8192) 경로도
+		// 5xx 가 이어지면 gpt-5.2 / 32768 토큰으로 올라간다. 기존 코드는 문자열 치환 버그 때문에
+		// 이 경로의 fallback 이 아무 일도 하지 않았으므로, 버그를 고친 결과로 새로 생기는 비용 노출이다.
+		// 티어별 fallback 을 두거나 light 는 fallback 없이 실패시키는 선택은 다음 PR 로 남긴다.
 		ModelTier fallback = properties.fallback();
 		log.warn("OpenAI {}회 재시도 최종 실패(마지막 원인: {}). fallback 모델 {} 로 1회 더 호출합니다.",
 			properties.maxAttempts(),
@@ -153,16 +162,15 @@ public class OpenAiResponsesRestClient implements OpenAiResponsesClient {
 				body == null ? 0 : body.length());
 			return body;
 
-		} catch (HttpClientErrorException e) {
-			if (e.getStatusCode().value() == HttpStatus.TOO_MANY_REQUESTS.value()) {
-				throw new TransientFailure("요청 한도 초과 (429)", e, parseRetryAfterMillis(e));
-			}
-			// 429 를 뺀 4xx 는 같은 요청을 다시 보내도 같은 답이 온다. 백오프를 쓰지 않고 즉시 실패시킨다.
-			throw new OpenAiRequestException(
-				"OpenAI 요청이 거절되었습니다. status: " + e.getStatusCode().value(), e);
+		} catch (RestClientResponseException e) {
+			// HttpClientErrorException·HttpServerErrorException 은 물론, HttpStatus.resolve() 가
+			// 실패하는 비표준 상태코드(프록시·CDN 이 내는 430·499 등)로 생기는
+			// UnknownHttpStatusCodeException 까지 여기서 상태코드 기준으로 갈린다.
+			throw classify(e.getStatusCode().value(), e, e.getResponseHeaders());
 
-		} catch (HttpServerErrorException e) {
-			throw new TransientFailure("서버 오류 (" + e.getStatusCode().value() + ")", e, null);
+		} catch (UnknownContentTypeException e) {
+			// 에러 페이지가 text/html 로 오면 상태코드는 멀쩡한데 본문 변환에서 터진다. 분류는 같다.
+			throw classify(e.getStatusCode().value(), e, e.getResponseHeaders());
 
 		} catch (ResourceAccessException e) {
 			throw new TransientFailure("연결·읽기 실패: " + e.getMessage(), e, null);
@@ -170,6 +178,22 @@ public class OpenAiResponsesRestClient implements OpenAiResponsesClient {
 		} catch (RestClientException e) {
 			throw new TransientFailure("호출 실패: " + e.getMessage(), e, null);
 		}
+	}
+
+	/**
+	 * 상태코드로 재시도 대상과 즉시 실패를 가른다.
+	 * 429 와 5xx 만 재시도하고, 429 를 뺀 4xx 는 같은 요청을 다시 보내도 같은 답이 오므로 즉시 실패시킨다.
+	 */
+	private RuntimeException classify(int status, RestClientException cause, HttpHeaders headers) {
+		if (status == HttpStatus.TOO_MANY_REQUESTS.value()) {
+			return new TransientFailure("요청 한도 초과 (429)", cause, parseRetryAfterMillis(headers));
+		}
+		// HttpStatus.valueOf 는 비표준 코드에서 예외를 던지므로 숫자 범위로 본다.
+		if (status >= 400 && status < 500) {
+			return new OpenAiRequestException(
+				"OpenAI 요청이 거절되었습니다. status: " + status, cause);
+		}
+		return new TransientFailure("서버 오류 (" + status + ")", cause, null);
 	}
 
 	private void sleepBeforeRetry(int attempt, Long retryAfterMillis) {
@@ -188,15 +212,16 @@ public class OpenAiResponsesRestClient implements OpenAiResponsesClient {
 		double base = properties.backoffDelayMs()
 			* Math.pow(properties.backoffMultiplier(), attempt - 1);
 		double jitter = base * JITTER_RATIO * jitterSource.getAsDouble();
-		return (long) (base + jitter);
+		return Math.min((long) (base + jitter), MAX_RETRY_DELAY_MS);
 	}
 
 	/**
 	 * 429 의 Retry-After 를 밀리초로 바꾼다. 초 단위 숫자 형태만 해석하고,
 	 * HTTP-date 형태면 null 을 돌려 지수 백오프로 넘긴다.
+	 * Double.parseDouble 은 "Infinity"·"NaN" 도 받아들이므로 유한한 값인지 먼저 확인하고,
+	 * 유한하더라도 MAX_RETRY_DELAY_MS 로 잘라 상대 서버가 우리 스레드 점유 시간을 정하지 못하게 한다.
 	 */
-	private Long parseRetryAfterMillis(HttpStatusCodeException e) {
-		HttpHeaders headers = e.getResponseHeaders();
+	private Long parseRetryAfterMillis(HttpHeaders headers) {
 		if (headers == null) {
 			return null;
 		}
@@ -206,10 +231,17 @@ public class OpenAiResponsesRestClient implements OpenAiResponsesClient {
 		}
 		try {
 			double seconds = Double.parseDouble(retryAfter.trim());
-			if (seconds < 0) {
+			if (!Double.isFinite(seconds) || seconds < 0) {
+				log.warn("Retry-After 값이 유한한 초가 아니라 지수 백오프를 씁니다. 값: {}", retryAfter);
 				return null;
 			}
-			return (long) (seconds * 1000);
+			long millis = (long) (seconds * 1000);
+			if (millis > MAX_RETRY_DELAY_MS) {
+				log.warn("Retry-After {}초가 상한 {}ms 를 넘어 상한까지만 기다립니다.",
+					retryAfter, MAX_RETRY_DELAY_MS);
+				return MAX_RETRY_DELAY_MS;
+			}
+			return millis;
 		} catch (NumberFormatException ignored) {
 			log.warn("Retry-After 를 해석하지 못해 지수 백오프를 씁니다. 값: {}", retryAfter);
 			return null;
@@ -243,16 +275,10 @@ public class OpenAiResponsesRestClient implements OpenAiResponsesClient {
 		String status = root.path("status").asText("");
 		if ("incomplete".equals(status)) {
 			String reason = root.path("incomplete_details").path("reason").asText("unknown");
-			throw new OpenAiIncompleteResponseException(reason,
-				"OpenAI 응답이 완성되지 않았습니다. reason: " + reason);
+			throw new OpenAiIncompleteResponseException(reason);
 		}
 
-		String refusal = findRefusal(root);
-		if (refusal != null) {
-			throw new OpenAiRefusalException(refusal, "OpenAI 가 응답을 거부했습니다: " + refusal);
-		}
-
-		String outputText = findOutputText(root);
+		String outputText = extractFromContents(root);
 		if (outputText == null) {
 			throw new OpenAiUnavailableException(
 				"OpenAI 응답에서 output_text 를 찾지 못했습니다. status: " + status
@@ -277,23 +303,23 @@ public class OpenAiResponsesRestClient implements OpenAiResponsesClient {
 			usage.path("total_tokens").asInt());
 	}
 
-	private String findRefusal(JsonNode root) {
+	/**
+	 * content 배열을 한 번만 훑으면서 refusal 우선 규칙까지 한자리에서 본다.
+	 * refusal 은 뒤에 있어도 그 자리에서 던지므로 output_text 보다 항상 먼저 처리된다.
+	 */
+	private String extractFromContents(JsonNode root) {
+		String outputText = null;
 		for (JsonNode content : messageContents(root)) {
-			if ("refusal".equals(content.path("type").asText())) {
-				return content.path("refusal").asText("사유 없음");
+			String type = content.path("type").asText();
+			if ("refusal".equals(type)) {
+				throw new OpenAiRefusalException(content.path("refusal").asText("사유 없음"));
 			}
-		}
-		return null;
-	}
-
-	private String findOutputText(JsonNode root) {
-		for (JsonNode content : messageContents(root)) {
-			if ("output_text".equals(content.path("type").asText())
+			if (outputText == null && "output_text".equals(type)
 				&& content.path("text").isTextual()) {
-				return content.path("text").asText();
+				outputText = content.path("text").asText();
 			}
 		}
-		return null;
+		return outputText;
 	}
 
 	private List<JsonNode> messageContents(JsonNode root) {
