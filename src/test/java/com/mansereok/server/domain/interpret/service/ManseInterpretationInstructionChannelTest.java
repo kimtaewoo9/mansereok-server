@@ -80,7 +80,8 @@ class ManseInterpretationInstructionChannelTest {
 			sajuResultService,
 			new SajuPromptFactory(),
 			new CompatibilityPromptFactory(),
-			new AnalysisNormalizer()
+			new AnalysisNormalizer(),
+			new InterpretationPipeline()
 		);
 	}
 

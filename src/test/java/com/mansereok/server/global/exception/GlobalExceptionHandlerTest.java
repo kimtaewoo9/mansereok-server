@@ -2,6 +2,7 @@ package com.mansereok.server.global.exception;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.util.concurrent.RejectedExecutionException;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
@@ -105,5 +106,17 @@ class GlobalExceptionHandlerTest {
 			.doesNotContain(INTERNAL_BODY_LENGTH)
 			.doesNotContain("본문 길이")
 			.doesNotContain("status: 400");
+	}
+
+	@Test
+	@DisplayName("스레드 풀 포화는 503 SERVER_BUSY 로 내려간다")
+	void mapsRejectedExecutionTo503() {
+		ResponseEntity<ErrorResponse> response = handler.handleRejectedExecution(
+			new RejectedExecutionException("무료 사주 요청이 폭주하고 있습니다. 잠시 후 다시 시도해주세요."));
+
+		assertThat(response.getStatusCode()).isEqualTo(HttpStatus.SERVICE_UNAVAILABLE);
+		assertThat(response.getBody()).isNotNull();
+		assertThat(response.getBody().getErrorCode()).isEqualTo("SERVER_BUSY");
+		assertThat(response.getBody().getStatus()).isEqualTo(503);
 	}
 }

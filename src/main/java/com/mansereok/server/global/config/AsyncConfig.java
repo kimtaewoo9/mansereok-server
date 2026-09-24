@@ -9,6 +9,13 @@ import org.springframework.context.annotation.Primary;
 import org.springframework.scheduling.annotation.EnableAsync;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 
+/**
+ * 비동기 스레드 풀 설정.
+ *
+ * <p>세 풀 모두 포화 시 RejectedExecutionException 을 던진다. @Async 메서드의 제출은
+ * 호출 스레드(= 요청 스레드)에서 일어나므로 이 예외는 컨트롤러까지 올라오고,
+ * GlobalExceptionHandler 가 503 으로 내려 준다("잠시 후 다시 시도").
+ */
 @Configuration
 @EnableAsync
 @Slf4j
@@ -60,13 +67,24 @@ public class AsyncConfig {
 		return executor;
 	}
 
-	// 무료 사주 전용 대용량 스레드 풀
+	/**
+	 * 무료 사주 전용 스레드 풀.
+	 *
+	 * <p>예전 설정은 core 50 / max 200 / queue 1000 이었다. 그런데 ThreadPoolExecutor 는
+	 * 큐가 꽉 찬 뒤에야 core 를 넘겨 스레드를 만들기 때문에, 큐 1000 이 다 차기 전에는
+	 * 동시 실행이 절대 50 을 넘지 않는다. max 200 은 사실상 죽은 설정이었고, 대신 큐에서만
+	 * 1000 건이 쌓여 대기 시간이 길어진다(OpenAI 호출은 건당 수십 초다).
+	 *
+	 * <p>그래서 실제로 돌아가던 값인 50 을 동시 호출 수로 못박고(core = max = 50),
+	 * 큐는 200 으로 줄여 감당 못 할 양은 빨리 거부하게 했다. 늘리고 싶으면 core 와 max 를
+	 * 같이 올려야 한다. max 만 올리는 것은 효과가 없다.
+	 */
 	@Bean(name = "gptFreeTaskExecutor")
 	public Executor gptFreeTaskExecutor() {
 		ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
 		executor.setCorePoolSize(50);
-		executor.setMaxPoolSize(200);
-		executor.setQueueCapacity(1000);
+		executor.setMaxPoolSize(50);
+		executor.setQueueCapacity(200);
 		executor.setThreadNamePrefix("GptFree-");
 
 		executor.setRejectedExecutionHandler((r, executor1) -> {
