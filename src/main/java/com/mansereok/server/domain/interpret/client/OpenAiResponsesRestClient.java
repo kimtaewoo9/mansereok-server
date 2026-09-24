@@ -141,6 +141,7 @@ public class OpenAiResponsesRestClient implements OpenAiResponsesClient {
 			request.getText() == null ? null : request.getText().getFormat();
 		return new Gpt5Request(
 			tier.model(),
+			request.getInstructions(),
 			request.getInput(),
 			tier.maxOutputTokens(),
 			tier.reasoningEffort(),
