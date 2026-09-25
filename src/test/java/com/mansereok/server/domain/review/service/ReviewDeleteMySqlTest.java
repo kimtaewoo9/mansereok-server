@@ -43,8 +43,9 @@ class ReviewDeleteMySqlTest extends LocalMySqlTest {
 	private final String memberUsername = "review_member_" + runId;
 	// reviews.order_id 는 UNIQUE 라 실행마다 다른 번호를 쓴다. 실제 주문 번호와 겹치지 않게 큰 수에서 시작한다.
 	private final long orderId = 9_000_000_000L + Long.parseLong(runId, 16);
-	// 상품별 목록에 이번 실행의 리뷰만 나오게 상품 번호도 같은 방식으로 정한다. reviews.sub_category_id 에는 외래 키가 없다.
-	private final long subCategoryId = 9_000_000_000L + Long.parseLong(runId, 16);
+	// 상품별 목록에 이번 실행의 리뷰만 나오게 상품 번호도 실행마다 다르게 쓴다. 주문 번호와 다른 수에서 시작해서, 쿼리가 두
+	// 컬럼을 바꿔 써도 알아챌 수 있게 한다. reviews.sub_category_id 에는 외래 키가 없다.
+	private final long subCategoryId = 8_000_000_000L + Long.parseLong(runId, 16);
 
 	private Long reviewId;
 
