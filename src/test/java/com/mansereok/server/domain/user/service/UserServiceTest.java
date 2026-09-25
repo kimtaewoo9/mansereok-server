@@ -6,6 +6,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
 import static org.mockito.Mockito.inOrder;
+import static org.mockito.Mockito.mockingDetails;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -32,6 +33,7 @@ import java.sql.SQLIntegrityConstraintViolationException;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.hibernate.exception.ConstraintViolationException;
 import org.hibernate.exception.ConstraintViolationException.ConstraintKind;
 import org.junit.jupiter.api.BeforeEach;
@@ -351,16 +353,21 @@ public class UserServiceTest {
 		@Test
 		@DisplayName("비밀번호 암호화(BCrypt)는 트랜잭션을 열기 전에 끝낸다")
 		void encodesPasswordBeforeOpeningTransaction() {
-			// given
+			// given: 암호화하는 순간에 트랜잭션 매니저가 그때까지 받은 호출 수를 적어 둔다
+			AtomicInteger transactionCallsWhenEncoding = new AtomicInteger(-1);
+			given(passwordEncoder.encode("password123")).willAnswer(invocation -> {
+				transactionCallsWhenEncoding.set(mockingDetails(transactionManager).getInvocations().size());
+				return "encoded-password";
+			});
 			givenSaveAssignsId(2L);
 
 			// when
 			signUp();
 
-			// then: 암호화하는 수십~100ms 동안 DB 커넥션을 쥐지 않는다
-			InOrder inOrder = inOrder(passwordEncoder, transactionManager);
-			inOrder.verify(passwordEncoder).encode("password123");
-			inOrder.verify(transactionManager).getTransaction(any());
+			// then: 암호화하는 수십~100ms 동안 트랜잭션도 DB 커넥션도 쥐지 않는다
+			assertThat(transactionCallsWhenEncoding)
+				.as("암호화할 때까지 트랜잭션 매니저가 받은 호출 수")
+				.hasValue(0);
 		}
 
 		@Test
