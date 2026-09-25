@@ -45,4 +45,43 @@ public final class PersonalInfoMasker {
 			.appendCodePoint(codePoints[length - 1])
 			.toString();
 	}
+
+	/**
+	 * 이메일에서 '@' 앞부분의 첫 글자만 남기고 나머지를 가린다. '@' 뒤(도메인)는 메일 발송 문제를 살필 때 필요해 그대로 둔다. 앞뒤
+	 * 공백은 떼고 센다.
+	 *
+	 * <ul>
+	 *   <li>앞부분이 한 글자: 전부 가린다. 예) a@example.com → *@example.com</li>
+	 *   <li>앞부분이 두 글자 이상: 첫 글자만 남기고 나머지 글자 수만큼 가린다. 예) user@example.com → u***@example.com</li>
+	 *   <li>'@' 가 없으면 전체를 앞부분으로 보고 같은 규칙으로 가린다. 예) user → u***</li>
+	 * </ul>
+	 *
+	 * <p>'@' 는 마지막 것을 기준으로 나눈다. 따옴표로 감싼 앞부분에는 '@' 가 들어갈 수 있지만 도메인에는 들어갈 수 없다.
+	 *
+	 * @return 가린 이메일. null 이면 null, 공백뿐이면 빈 문자열
+	 */
+	public static String maskEmail(String email) {
+		if (email == null) {
+			return null;
+		}
+		String stripped = email.strip();
+		int at = stripped.lastIndexOf('@');
+		String localPart = at < 0 ? stripped : stripped.substring(0, at);
+		String domainPart = at < 0 ? "" : stripped.substring(at);
+		return maskAllButFirst(localPart) + domainPart;
+	}
+
+	private static String maskAllButFirst(String text) {
+		int[] codePoints = text.codePoints().toArray();
+		int length = codePoints.length;
+		if (length == 0) {
+			return "";
+		}
+		if (length == 1) {
+			return MASK;
+		}
+		return new StringBuilder().appendCodePoint(codePoints[0])
+			.append(MASK.repeat(length - 1))
+			.toString();
+	}
 }

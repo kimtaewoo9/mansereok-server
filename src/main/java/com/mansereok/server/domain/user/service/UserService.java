@@ -114,10 +114,13 @@ public class UserService {
 		return userRepository.findByEmail(email);
 	}
 
+	/**
+	 * 로그인한 사용자의 계정을 찾는다. 이메일 가입자는 username 이 이메일이라 로그와 예외 메시지에 username 을 넣지 않는다.
+	 * 예외 메시지는 GlobalExceptionHandler 가 WARN 로그로 남긴다.
+	 */
 	public User findByUsername(String username) {
-		log.info("사용자 ID: " + username);
 		return userRepository.findByUsername(username)
-			.orElseThrow(() -> new EntityNotFoundException("사용자를 찾을 수 없습니다: " + username));
+			.orElseThrow(() -> new EntityNotFoundException("사용자를 찾을 수 없습니다."));
 	}
 
 	/**
@@ -364,7 +367,8 @@ public class UserService {
 		// 3. 유저 삭제 (Hard Delete)
 		userRepository.delete(user);
 
-		log.info("회원 탈퇴 처리 완료: userId={}, username={}", userId, username);
+		// 개인정보를 지운 뒤라 이메일(username)은 남기지 않는다.
+		log.info("회원 탈퇴 처리 완료: userId={}", userId);
 
 		// 알림 전송
 		try {

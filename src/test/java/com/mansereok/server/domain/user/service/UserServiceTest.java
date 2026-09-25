@@ -25,10 +25,12 @@ import com.mansereok.server.domain.user.entity.SocialType;
 import com.mansereok.server.domain.user.entity.User;
 import com.mansereok.server.domain.user.repository.RefreshTokenRepository;
 import com.mansereok.server.domain.user.repository.UserRepository;
+import jakarta.persistence.EntityNotFoundException;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.util.Optional;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -39,9 +41,11 @@ import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
-@ExtendWith(MockitoExtension.class)
+@ExtendWith({MockitoExtension.class, OutputCaptureExtension.class})
 public class UserServiceTest {
 
 	@InjectMocks
@@ -380,6 +384,60 @@ public class UserServiceTest {
 		// then
 		assertThat(found).isEmpty();
 		verifyNoInteractions(userRepository);
+	}
+
+	@Nested
+	@DisplayName("이메일 가입자의 username 은 이메일이라")
+	class UsernameIsEmail {
+
+		private static final String EMAIL = "member@example.com";
+
+		@Test
+		@DisplayName("계정을 찾을 때 username 을 로그에 남기지 않는다")
+		void findByUsernameDoesNotLogUsername(CapturedOutput output) {
+			// given
+			given(userRepository.findByUsername(EMAIL)).willReturn(Optional.of(emailSignupMember()));
+
+			// when
+			userService.findByUsername(EMAIL);
+
+			// then
+			assertThat(output.getAll()).doesNotContain(EMAIL);
+		}
+
+		@Test
+		@DisplayName("계정이 없을 때 던지는 예외 메시지에 username 을 넣지 않는다(GlobalExceptionHandler 가 WARN 로그로 남긴다)")
+		void notFoundMessageHasNoUsername() {
+			// given
+			given(userRepository.findByUsername(EMAIL)).willReturn(Optional.empty());
+
+			// when & then
+			assertThatThrownBy(() -> userService.findByUsername(EMAIL))
+				.isInstanceOf(EntityNotFoundException.class)
+				.hasMessage("사용자를 찾을 수 없습니다.");
+		}
+
+		@Test
+		@DisplayName("탈퇴 완료 로그에는 userId 만 남기고 이메일은 남기지 않는다")
+		void deleteUserLogsOnlyUserId(CapturedOutput output) {
+			// given
+			User member = emailSignupMember();
+			member.setId(7L);
+			given(userRepository.findByUsername(EMAIL)).willReturn(Optional.of(member));
+
+			// when
+			userService.deleteUser(EMAIL);
+
+			// then
+			assertThat(output.getAll())
+				.contains("회원 탈퇴 처리 완료: userId=7")
+				.doesNotContain(EMAIL);
+		}
+
+		private User emailSignupMember() {
+			return User.create(EMAIL, "이메일회원", "encoded-password", EMAIL, LocalDate.of(1990, 1, 1),
+				Gender.FEMALE, true, true, false);
+		}
 	}
 
 	private void givenSaveAssignsId(Long id) {
