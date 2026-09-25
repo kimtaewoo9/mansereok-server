@@ -14,7 +14,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * 해석 실행(InterpretationPipeline)이 결과를 쓰는 DB 메서드.
+ * 해석 실행(InterpretationPipeline)이 결과를 쓰는 DB 메서드. 실패한 해석을 되돌리는 메서드는 여기 없다. 결과 ID 를 받기 전에
+ * 실패해도 되돌릴 수 있도록 결제 ID 로 되돌리는 ResultService.rollbackStatusByPaymentId 를 쓴다.
  *
  * <p>모든 메서드가 해석을 시작한 시각(startedAt, ResultService.startProcessing 이 돌려준 값)을 받는다. 행을 잠가 읽은 뒤 그 시각이
  * 결과에 그대로 남아 있는지(isProcessingStartedAt) 보고, 다르면 쓰지 않는다. 오래 멈춰 정보 입력 대기로 되돌려졌거나, 그 뒤 같은
@@ -71,20 +72,6 @@ public class SajuResultService {
 		return resultRepository.save(result);
 	}
 
-	/**
-	 * 이 실행이 시작한 해석이면 정보 입력 대기로 되돌린다. 되돌려졌거나 다른 요청이 다시 시작한 결과, 완료된 결과는 그대로 둔다.
-	 * resultId 가 null 이면(결과 ID 를 받기 전에 실패) 아무것도 하지 않는다.
-	 */
-	@Transactional
-	public void rollbackStatus(Long resultId, LocalDateTime startedAt) {
-		if (resultId == null) {
-			return;
-		}
-		resultRepository.findByIdForUpdate(resultId)
-			.filter(result -> result.isProcessingStartedAt(startedAt))
-			.ifPresent(Result::revertToInputRequired);
-	}
-
 	// ==========================================
 	// 2. 궁합 분석용 DB 메서드 (추가됨)
 	// ==========================================
@@ -120,17 +107,6 @@ public class SajuResultService {
 
 		result.completeInterpretation(interpretation, score, summary);
 		return compatibilityResultRepository.save(result);
-	}
-
-	/** 이 실행이 시작한 궁합 해석이면 정보 입력 대기로 되돌린다. rollbackStatus 와 같은 규칙이다. */
-	@Transactional
-	public void rollbackCompatibilityStatus(Long resultId, LocalDateTime startedAt) {
-		if (resultId == null) {
-			return;
-		}
-		compatibilityResultRepository.findByIdForUpdate(resultId)
-			.filter(result -> result.isProcessingStartedAt(startedAt))
-			.ifPresent(CompatibilityResult::revertToInputRequired);
 	}
 
 	private static void requireStartedAt(Result result, LocalDateTime startedAt) {

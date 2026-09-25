@@ -47,6 +47,7 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.dao.CannotAcquireLockException;
 import org.springframework.scheduling.annotation.Async;
 
 /**
@@ -64,7 +65,7 @@ class ManseInterpretationServiceFlowTest {
 	private static final String USERNAME = "user-1";
 	private static final Long PAYMENT_ID = 100L;
 	private static final Long RESULT_ID = 7L;
-	/** 컨트롤러가 해석을 시작한 시각. 결과를 쓰는 세 단계에 그대로 넘어가야 한다. */
+	/** 컨트롤러가 해석을 시작한 시각. 결과를 쓰는 두 단계와 결제 ID 로 되돌리는 단계에 그대로 넘어가야 한다. */
 	private static final LocalDateTime STARTED_AT = LocalDateTime.of(2026, 9, 26, 9, 0);
 	private static final Long SUBCATEGORY_ID = 1L;
 	private static final String EMAIL = "tester@example.com";
@@ -93,6 +94,8 @@ class ManseInterpretationServiceFlowTest {
 	private EmailService emailService;
 	@Mock
 	private SajuResultService sajuResultService;
+	@Mock
+	private ResultService resultService;
 	@Mock
 	private SajuPromptFactory sajuPromptFactory;
 	@Mock
@@ -151,6 +154,7 @@ class ManseInterpretationServiceFlowTest {
 			discordNotificationService,
 			emailService,
 			sajuResultService,
+			resultService,
 			sajuPromptFactory,
 			compatibilityPromptFactory,
 			analysisNormalizer,
@@ -232,7 +236,7 @@ class ManseInterpretationServiceFlowTest {
 				.saveFinalResult(RESULT_ID, STARTED_AT, "정규화된 본문", "정규화된 요약");
 			inOrder.verify(ogImageGenerationService).generateAndUploadOgImage(result);
 			inOrder.verify(emailService).sendResultReadyEmail(EMAIL, "테스터");
-			verify(sajuResultService, never()).rollbackStatus(any(), any());
+			verify(resultService, never()).rollbackStatusByPaymentId(any(), any());
 			assertThat(captureRequest().getInput()).isEqualTo(PAID_SINGLE_PROMPT);
 		}
 
@@ -252,7 +256,7 @@ class ManseInterpretationServiceFlowTest {
 				.saveCompatibilityFinalResult(RESULT_ID, STARTED_AT, "궁합 본문", 88, "궁합 요약");
 			inOrder.verify(ogImageGenerationService).generateAndUploadOgImage(compatibilityResult);
 			inOrder.verify(emailService).sendResultReadyEmail(EMAIL, "테스터");
-			verify(sajuResultService, never()).rollbackCompatibilityStatus(any(), any());
+			verify(resultService, never()).rollbackCompatibilityStatusByPaymentId(any(), any());
 			assertThat(captureRequest().getInput()).isEqualTo(COMPATIBILITY_PROMPT);
 		}
 
@@ -272,7 +276,7 @@ class ManseInterpretationServiceFlowTest {
 				.saveFinalResult(RESULT_ID, STARTED_AT, "정규화된 본문", "정규화된 요약");
 			inOrder.verify(ogImageGenerationService).generateAndUploadOgImage(result);
 			verify(emailService, never()).sendResultReadyEmail(anyString(), anyString());
-			verify(sajuResultService, never()).rollbackStatus(any(), any());
+			verify(resultService, never()).rollbackStatusByPaymentId(any(), any());
 			assertThat(captureRequest().getInput()).isEqualTo(FREE_SINGLE_PROMPT);
 		}
 
@@ -292,7 +296,7 @@ class ManseInterpretationServiceFlowTest {
 				.saveCompatibilityFinalResult(RESULT_ID, STARTED_AT, "궁합 본문", 88, "궁합 요약");
 			inOrder.verify(ogImageGenerationService).generateAndUploadOgImage(compatibilityResult);
 			verify(emailService, never()).sendResultReadyEmail(anyString(), anyString());
-			verify(sajuResultService, never()).rollbackCompatibilityStatus(any(), any());
+			verify(resultService, never()).rollbackCompatibilityStatusByPaymentId(any(), any());
 			assertThat(captureRequest().getInput()).isEqualTo(COMPATIBILITY_PROMPT);
 		}
 
@@ -323,7 +327,7 @@ class ManseInterpretationServiceFlowTest {
 			verify(sajuResultService).saveFinalResult(RESULT_ID, STARTED_AT, "정규화된 본문", "정규화된 요약");
 			verify(ogImageGenerationService).generateAndUploadOgImage(result);
 			verify(emailService, never()).sendResultReadyEmail(anyString(), anyString());
-			verify(sajuResultService, never()).rollbackStatus(any(), any());
+			verify(resultService, never()).rollbackStatusByPaymentId(any(), any());
 		}
 	}
 
@@ -487,7 +491,7 @@ class ManseInterpretationServiceFlowTest {
 
 			callInterpret();
 
-			verify(sajuResultService).rollbackStatus(RESULT_ID, STARTED_AT);
+			verify(resultService).rollbackStatusByPaymentId(PAYMENT_ID, STARTED_AT);
 			verify(sajuResultService, never()).saveFinalResult(anyLong(), any(), any(), any());
 			verify(ogImageGenerationService, never()).generateAndUploadOgImage(any(Result.class));
 			verify(emailService, never()).sendResultReadyEmail(anyString(), anyString());
@@ -501,7 +505,7 @@ class ManseInterpretationServiceFlowTest {
 
 			callCompatibility();
 
-			verify(sajuResultService).rollbackCompatibilityStatus(RESULT_ID, STARTED_AT);
+			verify(resultService).rollbackCompatibilityStatusByPaymentId(PAYMENT_ID, STARTED_AT);
 			verify(sajuResultService, never())
 				.saveCompatibilityFinalResult(anyLong(), any(), any(), any(), any());
 		}
@@ -514,7 +518,7 @@ class ManseInterpretationServiceFlowTest {
 
 			callInterpretFree();
 
-			verify(sajuResultService).rollbackStatus(RESULT_ID, STARTED_AT);
+			verify(resultService).rollbackStatusByPaymentId(PAYMENT_ID, STARTED_AT);
 			verify(sajuResultService, never()).saveFinalResult(anyLong(), any(), any(), any());
 		}
 
@@ -526,9 +530,69 @@ class ManseInterpretationServiceFlowTest {
 
 			callCompatibilityFree();
 
-			verify(sajuResultService).rollbackCompatibilityStatus(RESULT_ID, STARTED_AT);
+			verify(resultService).rollbackCompatibilityStatusByPaymentId(PAYMENT_ID, STARTED_AT);
 			verify(sajuResultService, never())
 				.saveCompatibilityFinalResult(anyLong(), any(), any(), any(), any());
+		}
+	}
+
+	/**
+	 * GPT 앞뒤의 DB 단계가 실패하는 경우다. 입력 정보 채우기가 실패하면 결과 ID 를 받지 못하지만, 컨트롤러가 이미 결과를 해석 중으로
+	 * 바꿔 두었으므로 결제 ID 로 되돌려야 한다. 예전에는 결과 ID 가 null 이라 되돌리기가 아무것도 하지 않았다.
+	 */
+	@Nested
+	@DisplayName("GPT 앞뒤의 결과 단계가 실패하면")
+	class ResultStepFailure {
+
+		@Test
+		@DisplayName("단일 해석의 입력 정보 채우기가 DB 오류로 실패하면 GPT 를 부르지 않고 결제 ID 로 해석 중 상태를 되돌린다")
+		void singleRollsBackByPaymentIdWhenFillFails() {
+			// given
+			given(sajuResultService.updateInitialStatus(eq(PAYMENT_ID), eq(STARTED_AT), eq("홍길동"), any(),
+				anyString())).willThrow(new CannotAcquireLockException("잠금 대기 초과"));
+
+			// when
+			service.interpret("홍길동", person1, USERNAME, SUBCATEGORY_ID, PAYMENT_ID, STARTED_AT, null);
+
+			// then
+			verify(resultService, times(1)).rollbackStatusByPaymentId(PAYMENT_ID, STARTED_AT);
+			verify(openAiResponsesClient, never()).createResponse(any());
+		}
+
+		@Test
+		@DisplayName("궁합 해석의 입력 정보 채우기가 DB 오류로 실패하면 GPT 를 부르지 않고 결제 ID 로 해석 중 상태를 되돌린다")
+		void compatibilityRollsBackByPaymentIdWhenFillFails() {
+			// given
+			given(sajuResultService.updateCompatibilityInitialStatus(eq(PAYMENT_ID), eq(STARTED_AT), eq("홍길동"),
+				anyString(), eq("김영희"), anyString())).willThrow(new CannotAcquireLockException("잠금 대기 초과"));
+
+			// when
+			service.analyzeCompatibilityWithSubcategory("홍길동", person1, "김영희", person2,
+				SUBCATEGORY_ID, PAYMENT_ID, STARTED_AT, USERNAME, null, null);
+
+			// then
+			verify(resultService, times(1)).rollbackCompatibilityStatusByPaymentId(PAYMENT_ID, STARTED_AT);
+			verify(openAiResponsesClient, never()).createResponse(any());
+		}
+
+		/**
+		 * 정규화는 GPT 호출이 아니라 결과 저장 단계에서 한다. 그래서 정규화 예외는 결과를 저장하지 못한 실패로 되돌려진다.
+		 */
+		@Test
+		@DisplayName("GPT 본문 정규화가 실패하면 결과를 저장하지 않고 결제 ID 로 해석 중 상태를 되돌린다")
+		void rollsBackByPaymentIdWhenNormalizationFails() {
+			// given
+			givenSajuResponse();
+			given(analysisNormalizer.normalizeAnalysis(SUBCATEGORY_ID, "본문입니다"))
+				.willThrow(new IllegalArgumentException("정규화 실패"));
+
+			// when
+			callInterpret();
+
+			// then
+			verify(resultService, times(1)).rollbackStatusByPaymentId(PAYMENT_ID, STARTED_AT);
+			verify(sajuResultService, never()).saveFinalResult(anyLong(), any(), any(), any());
+			verify(ogImageGenerationService, never()).generateAndUploadOgImage(any(Result.class));
 		}
 	}
 
@@ -554,7 +618,7 @@ class ManseInterpretationServiceFlowTest {
 			// then
 			verify(openAiResponsesClient, never()).createResponse(any());
 			verify(sajuResultService, never()).saveFinalResult(anyLong(), any(), any(), any());
-			verify(sajuResultService, never()).rollbackStatus(any(), any());
+			verify(resultService, never()).rollbackStatusByPaymentId(any(), any());
 		}
 
 		@Test
@@ -569,7 +633,7 @@ class ManseInterpretationServiceFlowTest {
 			callInterpret();
 
 			// then
-			verify(sajuResultService, never()).rollbackStatus(any(), any());
+			verify(resultService, never()).rollbackStatusByPaymentId(any(), any());
 			verify(ogImageGenerationService, never()).generateAndUploadOgImage(any(Result.class));
 			verify(emailService, never()).sendResultReadyEmail(anyString(), anyString());
 		}
@@ -586,7 +650,7 @@ class ManseInterpretationServiceFlowTest {
 			callCompatibility();
 
 			// then
-			verify(sajuResultService, never()).rollbackCompatibilityStatus(any(), any());
+			verify(resultService, never()).rollbackCompatibilityStatusByPaymentId(any(), any());
 			verify(ogImageGenerationService, never()).generateAndUploadOgImage(any(CompatibilityResult.class));
 			verify(emailService, never()).sendResultReadyEmail(anyString(), anyString());
 		}
@@ -613,7 +677,7 @@ class ManseInterpretationServiceFlowTest {
 
 			verify(sajuResultService).saveFinalResult(RESULT_ID, STARTED_AT, "정규화된 본문", "정규화된 요약");
 			verify(ogImageGenerationService).generateAndUploadOgImage(result);
-			verify(sajuResultService, never()).rollbackStatus(any(), any());
+			verify(resultService, never()).rollbackStatusByPaymentId(any(), any());
 		}
 
 		@Test
@@ -628,7 +692,7 @@ class ManseInterpretationServiceFlowTest {
 
 			verify(sajuResultService).saveFinalResult(RESULT_ID, STARTED_AT, "정규화된 본문", "정규화된 요약");
 			verify(ogImageGenerationService).generateAndUploadOgImage(result);
-			verify(sajuResultService, never()).rollbackStatus(any(), any());
+			verify(resultService, never()).rollbackStatusByPaymentId(any(), any());
 		}
 
 		@Test
@@ -642,7 +706,7 @@ class ManseInterpretationServiceFlowTest {
 
 			verify(sajuResultService).saveFinalResult(RESULT_ID, STARTED_AT, "정규화된 본문", "정규화된 요약");
 			verify(emailService).sendResultReadyEmail(EMAIL, "테스터");
-			verify(sajuResultService, never()).rollbackStatus(any(), any());
+			verify(resultService, never()).rollbackStatusByPaymentId(any(), any());
 		}
 
 		@Test
@@ -658,7 +722,7 @@ class ManseInterpretationServiceFlowTest {
 			verify(sajuResultService)
 				.saveCompatibilityFinalResult(RESULT_ID, STARTED_AT, "궁합 본문", 88, "궁합 요약");
 			verify(emailService).sendResultReadyEmail(EMAIL, "테스터");
-			verify(sajuResultService, never()).rollbackCompatibilityStatus(any(), any());
+			verify(resultService, never()).rollbackCompatibilityStatusByPaymentId(any(), any());
 		}
 
 		@Test
@@ -672,7 +736,7 @@ class ManseInterpretationServiceFlowTest {
 
 			verify(sajuResultService).saveFinalResult(RESULT_ID, STARTED_AT, "정규화된 본문", "정규화된 요약");
 			verify(ogImageGenerationService).generateAndUploadOgImage(result);
-			verify(sajuResultService, never()).rollbackStatus(any(), any());
+			verify(resultService, never()).rollbackStatusByPaymentId(any(), any());
 		}
 	}
 

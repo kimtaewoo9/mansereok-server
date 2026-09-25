@@ -47,6 +47,7 @@ public class ManseInterpretationService {
 	private final DiscordNotificationService discordNotificationService; // 👈 Slack -> Discord
 	private final EmailService emailService;
 	private final SajuResultService sajuResultService;
+	private final ResultService resultService;
 
 	private final SajuPromptFactory sajuPromptFactory;
 	private final CompatibilityPromptFactory compatibilityPromptFactory;
@@ -163,6 +164,7 @@ public class ManseInterpretationService {
 		DiscordNotificationService discordNotificationService,
 		EmailService emailService,
 		SajuResultService sajuResultService,
+		ResultService resultService,
 		SajuPromptFactory sajuPromptFactory,
 		CompatibilityPromptFactory compatibilityPromptFactory,
 		AnalysisNormalizer analysisNormalizer,
@@ -176,6 +178,7 @@ public class ManseInterpretationService {
 		this.discordNotificationService = discordNotificationService;
 		this.emailService = emailService;
 		this.sajuResultService = sajuResultService;
+		this.resultService = resultService;
 		this.sajuPromptFactory = sajuPromptFactory;
 		this.compatibilityPromptFactory = compatibilityPromptFactory;
 		this.analysisNormalizer = analysisNormalizer;
@@ -310,8 +313,11 @@ public class ManseInterpretationService {
 	}
 
 	/**
-	 * 단일 사주(Result) 의 시작·완료·롤백. 유료와 무료가 같은 것을 쓴다. 세 단계 모두 해석을 시작한 시각(startedAt)을 넘겨,
+	 * 단일 사주(Result) 의 시작·완료·되돌리기. 유료와 무료가 같은 것을 쓴다. 세 단계 모두 해석을 시작한 시각(startedAt)을 넘겨,
 	 * 이 실행이 시작한 해석일 때만 결과를 쓰거나 되돌린다.
+	 *
+	 * <p>되돌리기는 결과 ID 가 아니라 결제 ID 로 한다. 첫 DB 단계(markInProgress)가 실패하면 결과 ID 를 받지 못하는데, 컨트롤러가
+	 * 이미 결과를 해석 중으로 바꿔 두었으므로 그때도 되돌려야 한다. 컨트롤러의 제출 거부 되돌리기와 같은 메서드를 쓴다.
 	 */
 	private ResultStatusHandler<GptSajuResponse, Result> sajuResultStatusHandler(
 		Long paymentId, LocalDateTime startedAt, String name, ManseryeokCalculationResponse response,
@@ -319,12 +325,18 @@ public class ManseInterpretationService {
 	) {
 		return new ResultStatusHandler<>() {
 			@Override
+			public Long paymentId() {
+				return paymentId;
+			}
+
+			@Override
 			public Long markInProgress() {
 				return sajuResultService
 					.updateInitialStatus(paymentId, startedAt, name, response, extractIlgan(response))
 					.getId();
 			}
 
+			/** 본문과 요약을 여기서 정규화한다. 정규화에서 난 예외도 결과 저장 단계의 실패로 되돌려진다. */
 			@Override
 			public Result saveFinalResult(Long resultId, GptSajuResponse gptData) {
 				return sajuResultService.saveFinalResult(
@@ -335,15 +347,15 @@ public class ManseInterpretationService {
 			}
 
 			@Override
-			public void rollbackToInitialStatus(Long resultId) {
-				sajuResultService.rollbackStatus(resultId, startedAt);
+			public void rollbackToInitialStatus() {
+				resultService.rollbackStatusByPaymentId(paymentId, startedAt);
 			}
 		};
 	}
 
 	/**
-	 * 궁합(CompatibilityResult) 의 시작·완료·롤백. 유료와 무료가 같은 것을 쓴다. 단일 사주와 같이 세 단계 모두 해석을 시작한
-	 * 시각(startedAt)을 넘긴다.
+	 * 궁합(CompatibilityResult) 의 시작·완료·되돌리기. 유료와 무료가 같은 것을 쓴다. 단일 사주와 같이 세 단계 모두 해석을 시작한
+	 * 시각(startedAt)을 넘기고, 되돌리기는 결제 ID 로 한다. 궁합 본문은 정규화하지 않는다.
 	 */
 	private ResultStatusHandler<GptCompatibilityResponse, CompatibilityResult> compatibilityResultStatusHandler(
 		Long paymentId, LocalDateTime startedAt,
@@ -351,6 +363,11 @@ public class ManseInterpretationService {
 		String person2Name, ManseryeokCalculationResponse person2Response
 	) {
 		return new ResultStatusHandler<>() {
+			@Override
+			public Long paymentId() {
+				return paymentId;
+			}
+
 			@Override
 			public Long markInProgress() {
 				return sajuResultService.updateCompatibilityInitialStatus(
@@ -368,8 +385,8 @@ public class ManseInterpretationService {
 			}
 
 			@Override
-			public void rollbackToInitialStatus(Long resultId) {
-				sajuResultService.rollbackCompatibilityStatus(resultId, startedAt);
+			public void rollbackToInitialStatus() {
+				resultService.rollbackCompatibilityStatusByPaymentId(paymentId, startedAt);
 			}
 		};
 	}
