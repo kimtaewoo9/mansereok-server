@@ -94,4 +94,33 @@ public class ResultService {
 			compatibilityResultRepository.save(result);
 		}
 	}
+
+	/**
+	 * PROCESSING 으로 바꿔 둔 상태를 INPUT_REQUIRED 로 되돌린다.
+	 *
+	 * <p>컨트롤러는 비동기 제출 직전에 상태를 PROCESSING 으로 바꾸는데, 스레드 풀이 포화면
+	 * 제출 자체가 거부되어 해석이 시작조차 하지 않는다. 그 행을 되돌리지 않으면 결과가
+	 * 영원히 PROCESSING 에 남아 사용자가 재시도도 못 한다. 결과 ID 가 아니라 결제 ID 로 찾는
+	 * 이유는, 거부 시점에는 아직 비동기 쪽 resultId 를 모르기 때문이다.
+	 */
+	@Transactional
+	public void rollbackStatusByPaymentId(Long paymentId) {
+		resultRepository.findByPaymentId(paymentId).ifPresent(result -> {
+			if (result.getStatus() == ResultStatus.PROCESSING) {
+				result.setStatus(ResultStatus.INPUT_REQUIRED);
+				resultRepository.save(result);
+			}
+		});
+	}
+
+	/** 궁합 결과의 PROCESSING 상태를 결제 ID 로 찾아 INPUT_REQUIRED 로 되돌린다. */
+	@Transactional
+	public void rollbackCompatibilityStatusByPaymentId(Long paymentId) {
+		compatibilityResultRepository.findByPaymentId(paymentId).ifPresent(result -> {
+			if (result.getStatus() == ResultStatus.PROCESSING) {
+				result.setStatus(ResultStatus.INPUT_REQUIRED);
+				compatibilityResultRepository.save(result);
+			}
+		});
+	}
 }

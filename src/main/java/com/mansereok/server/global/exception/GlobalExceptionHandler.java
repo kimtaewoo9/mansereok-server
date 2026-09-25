@@ -4,6 +4,7 @@ import io.swagger.v3.oas.annotations.Hidden;
 import jakarta.persistence.EntityNotFoundException;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.RejectedExecutionException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -172,6 +173,24 @@ public class GlobalExceptionHandler {
 			"서버 내부 오류가 발생했습니다. 잠시 후 다시 시도해주세요."
 		);
 		return new ResponseEntity<>(response, HttpStatus.INTERNAL_SERVER_ERROR);
+	}
+
+	/**
+	 * [503 Service Unavailable] 비동기 스레드 풀 포화.
+	 *
+	 * <p>@Async 메서드의 제출은 호출 스레드(= 요청 스레드)에서 일어나므로, AsyncConfig 의
+	 * 거부 핸들러가 던진 예외가 컨트롤러까지 올라온다. 그냥 두면 500 으로 나가지만 실제로는
+	 * 서버가 망가진 게 아니라 지금 붐비는 것뿐이라, 잠시 후 재시도를 뜻하는 503 이 맞다.
+	 */
+	@ExceptionHandler(RejectedExecutionException.class)
+	public ResponseEntity<ErrorResponse> handleRejectedExecution(RejectedExecutionException e) {
+		log.error("비동기 스레드 풀 포화로 요청 거부: {}", e.getMessage());
+		ErrorResponse response = ErrorResponse.of(
+			HttpStatus.SERVICE_UNAVAILABLE.value(),
+			"SERVER_BUSY",
+			"현재 요청이 많아 처리가 지연되고 있습니다. 잠시 후 다시 시도해주세요."
+		);
+		return new ResponseEntity<>(response, HttpStatus.SERVICE_UNAVAILABLE);
 	}
 
 	/**

@@ -12,6 +12,8 @@ import com.mansereok.server.domain.payment.entity.Payment;
 import com.mansereok.server.domain.payment.service.PaymentService;
 import jakarta.validation.Valid;
 import java.util.Map;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.function.Consumer;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
@@ -67,24 +69,26 @@ public class ManseryeokController {
 				)
 			);
 
-		if (subcategoryId >= 100) {
-			manseInterpretationService.interpretFree(
-				request.getName(),
-				manse,
-				username,
-				subcategoryId,
-				request.getPaymentId()
-			);
-		} else {
-			manseInterpretationService.interpret(
-				request.getName(),
-				manse,
-				username,
-				subcategoryId,
-				request.getPaymentId(),
-				request.getSourceTitle()
-			);
-		}
+		submitOrRollback(request.getPaymentId(), resultService::rollbackStatusByPaymentId, () -> {
+			if (subcategoryId >= 100) {
+				manseInterpretationService.interpretFree(
+					request.getName(),
+					manse,
+					username,
+					subcategoryId,
+					request.getPaymentId()
+				);
+			} else {
+				manseInterpretationService.interpret(
+					request.getName(),
+					manse,
+					username,
+					subcategoryId,
+					request.getPaymentId(),
+					request.getSourceTitle()
+				);
+			}
+		});
 
 		log.info("만세력 해석 요청 접수 완료 (비동기 처리 시작): paymentId={}", request.getPaymentId());
 		return ResponseEntity.accepted()
@@ -127,15 +131,17 @@ public class ManseryeokController {
 				)
 			);
 
-		manseInterpretationService.analyzeCompatibilityWithSubcategory(
-			person1.getName(), person1Response,
-			person2.getName(), person2Response,
-			subcategoryId,
-			request.getPaymentId(),
-			username,
-			person1.getSourceTitle(),
-			person2.getSourceTitle() // 상대방 캐릭터
-		);
+		submitOrRollback(request.getPaymentId(),
+			resultService::rollbackCompatibilityStatusByPaymentId,
+			() -> manseInterpretationService.analyzeCompatibilityWithSubcategory(
+				person1.getName(), person1Response,
+				person2.getName(), person2Response,
+				subcategoryId,
+				request.getPaymentId(),
+				username,
+				person1.getSourceTitle(),
+				person2.getSourceTitle() // 상대방 캐릭터
+			));
 
 		log.info("궁합 분석 요청 접수 완료 (비동기 처리 시작): paymentId={}", request.getPaymentId());
 		return ResponseEntity.accepted()
@@ -172,13 +178,14 @@ public class ManseryeokController {
 		resultService.updateStatusToProcessing(payment.getId());
 
 		// 4. [비동기] 무료 전용 해석 메서드 호출 (별도 스레드 풀)
-		manseInterpretationService.interpretFree(
-			request.getName(),
-			manse,
-			username,
-			subcategoryId,
-			payment.getId()
-		);
+		submitOrRollback(payment.getId(), resultService::rollbackStatusByPaymentId,
+			() -> manseInterpretationService.interpretFree(
+				request.getName(),
+				manse,
+				username,
+				subcategoryId,
+				payment.getId()
+			));
 
 		return ResponseEntity.accepted().body(Map.of(
 			"message", "분석이 시작되었습니다. 잠시 후 결과를 확인해 주세요.",
@@ -209,17 +216,42 @@ public class ManseryeokController {
 		resultService.updateCompatibilityStatusToProcessing(payment.getId());
 
 		// 4. [비동기] 무료 궁합 해석 서비스 호출
-		manseInterpretationService.analyzeCompatibilityFree(
-			request.getPerson1().getName(), p1Manse,
-			request.getPerson2().getName(), p2Manse,
-			subcategoryId,
-			payment.getId(),
-			username
-		);
+		submitOrRollback(payment.getId(), resultService::rollbackCompatibilityStatusByPaymentId,
+			() -> manseInterpretationService.analyzeCompatibilityFree(
+				request.getPerson1().getName(), p1Manse,
+				request.getPerson2().getName(), p2Manse,
+				subcategoryId,
+				payment.getId(),
+				username
+			));
 
 		return ResponseEntity.accepted().body(Map.of(
 			"message", "무료 궁합/재회운 분석이 시작되었습니다.",
 			"paymentId", payment.getId()
 		));
+	}
+
+	/**
+	 * 비동기 해석 제출을 감싼다.
+	 *
+	 * <p>제출 직전에 결과 상태를 PROCESSING 으로 바꿔 두는데, 스레드 풀이 포화면
+	 * {@code TaskRejectedException}(= {@link RejectedExecutionException} 의 하위 타입)이
+	 * 제출 스레드, 즉 이 요청 스레드에서 그대로 튀어나온다. 해석은 시작조차 하지 않았으므로
+	 * 되돌리지 않으면 결과가 영원히 PROCESSING 에 남는다. 상태를 되돌린 뒤 예외는 그대로 올려
+	 * GlobalExceptionHandler 가 503("잠시 후 다시")로 내려 주게 한다.
+	 */
+	private void submitOrRollback(Long paymentId, Consumer<Long> rollback, Runnable submission) {
+		try {
+			submission.run();
+		} catch (RejectedExecutionException e) {
+			log.error("비동기 해석 제출이 거부되었습니다. 상태를 되돌립니다: paymentId={}", paymentId, e);
+			try {
+				rollback.accept(paymentId);
+			} catch (Exception rollbackFailure) {
+				// 되돌리기까지 실패해도 원래의 거부 예외를 덮지 않는다 (Effective Java 아이템 77).
+				log.error("제출 거부 후 상태 되돌리기 실패: paymentId={}", paymentId, rollbackFailure);
+			}
+			throw e;
+		}
 	}
 }

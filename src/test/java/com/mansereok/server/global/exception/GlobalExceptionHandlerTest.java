@@ -2,8 +2,10 @@ package com.mansereok.server.global.exception;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.util.concurrent.RejectedExecutionException;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.springframework.core.task.TaskRejectedException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 
@@ -105,5 +107,36 @@ class GlobalExceptionHandlerTest {
 			.doesNotContain(INTERNAL_BODY_LENGTH)
 			.doesNotContain("본문 길이")
 			.doesNotContain("status: 400");
+	}
+
+	@Test
+	@DisplayName("스레드 풀 포화는 503 SERVER_BUSY 로 내려간다")
+	void mapsRejectedExecutionTo503() {
+		ResponseEntity<ErrorResponse> response = handler.handleRejectedExecution(
+			new RejectedExecutionException("무료 사주 요청이 폭주하고 있습니다. 잠시 후 다시 시도해주세요."));
+
+		assertThat(response.getStatusCode()).isEqualTo(HttpStatus.SERVICE_UNAVAILABLE);
+		assertThat(response.getBody()).isNotNull();
+		assertThat(response.getBody().getErrorCode()).isEqualTo("SERVER_BUSY");
+		assertThat(response.getBody().getStatus()).isEqualTo(503);
+	}
+
+	/**
+	 * 실제로 컨트롤러까지 올라오는 타입은 ThreadPoolTaskExecutor 가 감싼 TaskRejectedException 이다.
+	 * RejectedExecutionException 의 하위 타입이라 같은 핸들러가 받는데, 스프링 쪽 계층이 바뀌면
+	 * 조용히 500 으로 돌아가므로 상속 관계까지 여기서 고정한다.
+	 */
+	@Test
+	@DisplayName("스프링이 감싼 TaskRejectedException 도 같은 503 핸들러가 받는다")
+	void mapsSpringTaskRejectedTo503() {
+		TaskRejectedException rejected = new TaskRejectedException("Executor did not accept task");
+
+		assertThat(rejected).isInstanceOf(RejectedExecutionException.class);
+
+		ResponseEntity<ErrorResponse> response = handler.handleRejectedExecution(rejected);
+
+		assertThat(response.getStatusCode()).isEqualTo(HttpStatus.SERVICE_UNAVAILABLE);
+		assertThat(response.getBody()).isNotNull();
+		assertThat(response.getBody().getErrorCode()).isEqualTo("SERVER_BUSY");
 	}
 }
