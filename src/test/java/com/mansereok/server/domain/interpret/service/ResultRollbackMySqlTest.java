@@ -20,6 +20,10 @@ import org.springframework.beans.factory.annotation.Autowired;
  * <p>서비스는 트랜잭션 안에서 읽은 엔티티의 상태만 바꾸고 save 를 부르지 않는다. 바뀐 상태가 커밋 때 DB 에 반영되는지는 목
  * 저장소로 알 수 없어, 저장한 행을 서비스로 바꾼 뒤 JPA 캐시를 거치지 않고 JdbcTemplate 로 다시 읽는다.
  *
+ * <p>해석 중 행은 검증 대상인 markProcessing 으로 만들어 저장하므로, 되돌리기 테스트는 저장한 행이 DB 에서 실제로
+ * PROCESSING 인지 given 끝에서 먼저 확인한다. 그렇지 않으면 markProcessing 이 상태를 바꾸지 못할 때 행이 처음부터
+ * INPUT_REQUIRED 라 아무것도 되돌리지 않고 통과한다.
+ *
  * <p>행은 이번 실행의 결제 ID 로 만들고 뒤 정리에서 그 결제 ID 로만 지운다. 결과 표는 결제 표를 참조하지 않으므로 결제 행은
  * 만들지 않는다.
  */
@@ -56,6 +60,7 @@ class ResultRollbackMySqlTest extends InterpretationMySqlTest {
 		void rollbackByPaymentIdIsSaved() {
 			// given
 			saveCompatibility(processingCompatibility());
+			assertThat(compatibilityStatusInDatabase()).as("준비: DB 에 해석 중으로 저장").isEqualTo("PROCESSING");
 
 			// when
 			resultService.rollbackCompatibilityStatusByPaymentId(paymentId);
@@ -69,6 +74,7 @@ class ResultRollbackMySqlTest extends InterpretationMySqlTest {
 		void rollbackByResultIdIsSaved() {
 			// given
 			Long resultId = saveCompatibility(processingCompatibility());
+			assertThat(compatibilityStatusInDatabase()).as("준비: DB 에 해석 중으로 저장").isEqualTo("PROCESSING");
 
 			// when
 			sajuResultService.rollbackCompatibilityStatus(resultId);
@@ -100,6 +106,7 @@ class ResultRollbackMySqlTest extends InterpretationMySqlTest {
 		void rollbackByPaymentIdIsSaved() {
 			// given
 			saveSaju(processingSaju());
+			assertThat(sajuStatusInDatabase()).as("준비: DB 에 해석 중으로 저장").isEqualTo("PROCESSING");
 
 			// when
 			resultService.rollbackStatusByPaymentId(paymentId);
@@ -113,6 +120,7 @@ class ResultRollbackMySqlTest extends InterpretationMySqlTest {
 		void rollbackByResultIdIsSaved() {
 			// given
 			Long resultId = saveSaju(processingSaju());
+			assertThat(sajuStatusInDatabase()).as("준비: DB 에 해석 중으로 저장").isEqualTo("PROCESSING");
 
 			// when
 			sajuResultService.rollbackStatus(resultId);

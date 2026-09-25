@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.lenient;
 
 import com.mansereok.server.domain.interpret.entity.CompatibilityResult;
 import com.mansereok.server.domain.interpret.entity.Result;
@@ -28,6 +29,11 @@ import org.mockito.junit.jupiter.MockitoExtension;
  * (SajuResultService) 되돌린다. 각각 사주 결과와 궁합 결과가 있다. 저장소는 목이지만 돌려주는 엔티티는 진짜라서 엔티티가 실제로
  * 어떤 상태가 되는지 본다. 예전 테스트는 서비스나 엔티티를 목으로 바꿔 "되돌리기를 불렀다"만 확인했고, 그 사이 궁합 쪽 되돌리기는
  * 아무것도 바꾸지 못하고 있었다.
+ *
+ * <p>네 갈래 모두 해석 중(되돌린다), 완료(그대로 둔다), 행 없음(예외 없이 끝난다)을 같은 순서로 두고, 결과 ID 갈래에는 ID 가
+ * null 인 경우를 더한다. 빠진 경우가 있으면 갈래끼리 견줘 바로 보이게 하려는 것이다. 해석 중 결과는 검증 대상인 markProcessing
+ * 으로 만들므로, 그 준비가 실제로 해석 중이 됐는지 given 끝에서 먼저 확인한다. 그렇지 않으면 markProcessing 이 상태를 바꾸지
+ * 못할 때 결과가 처음부터 정보 입력 대기라 되돌리기 테스트가 아무것도 되돌리지 않고 통과한다.
  *
  * <p>save 호출 여부는 보지 않는다. 트랜잭션 안에서 읽은 엔티티는 커밋 때 반영되며, 그 사실은 ResultRollbackMySqlTest 가 실제
  * MySQL 로 확인한다.
@@ -67,6 +73,7 @@ class ResultStatusRollbackTest {
 			// given
 			CompatibilityResult result = processingCompatibility();
 			given(compatibilityResultRepository.findByPaymentId(PAYMENT_ID)).willReturn(Optional.of(result));
+			assertThat(result.getStatus()).as("준비: 해석 중").isEqualTo(ResultStatus.PROCESSING);
 
 			// when
 			resultService.rollbackCompatibilityStatusByPaymentId(PAYMENT_ID);
@@ -111,6 +118,7 @@ class ResultStatusRollbackTest {
 			// given
 			CompatibilityResult result = processingCompatibility();
 			given(compatibilityResultRepository.findById(RESULT_ID)).willReturn(Optional.of(result));
+			assertThat(result.getStatus()).as("준비: 해석 중").isEqualTo(ResultStatus.PROCESSING);
 
 			// when
 			sajuResultService.rollbackCompatibilityStatus(RESULT_ID);
@@ -134,8 +142,25 @@ class ResultStatusRollbackTest {
 		}
 
 		@Test
+		@DisplayName("결과 ID 에 해당하는 궁합 결과가 없으면 예외 없이 끝난다")
+		void ignoresMissingResult() {
+			// given
+			given(compatibilityResultRepository.findById(RESULT_ID)).willReturn(Optional.empty());
+
+			// when & then
+			assertThatCode(() -> sajuResultService.rollbackCompatibilityStatus(RESULT_ID))
+				.doesNotThrowAnyException();
+		}
+
+		@Test
 		@DisplayName("결과 ID 를 받기 전에 실패해 ID 가 null 이면 예외 없이 끝난다")
 		void ignoresNullResultId() {
+			// given
+			// 실제 저장소(SimpleJpaRepository.findById)는 null ID 를 받으면 이 예외를 던진다. 서비스가 null 을 먼저 거르면
+			// 불리지 않는 스텁이라 lenient 로 둔다. 거르지 않으면 이 예외가 그대로 나와 테스트가 실패한다.
+			lenient().when(compatibilityResultRepository.findById(null))
+				.thenThrow(new IllegalArgumentException("The given id must not be null"));
+
 			// when & then
 			assertThatCode(() -> sajuResultService.rollbackCompatibilityStatus(null))
 				.doesNotThrowAnyException();
@@ -152,6 +177,7 @@ class ResultStatusRollbackTest {
 			// given
 			Result result = processingSaju();
 			given(resultRepository.findByPaymentId(PAYMENT_ID)).willReturn(Optional.of(result));
+			assertThat(result.getStatus()).as("준비: 해석 중").isEqualTo(ResultStatus.PROCESSING);
 
 			// when
 			resultService.rollbackStatusByPaymentId(PAYMENT_ID);
@@ -173,6 +199,17 @@ class ResultStatusRollbackTest {
 			// then
 			assertThat(result.getStatus()).isEqualTo(ResultStatus.COMPLETED);
 		}
+
+		@Test
+		@DisplayName("결제 ID 에 해당하는 사주 결과가 없으면 예외 없이 끝난다")
+		void ignoresMissingResult() {
+			// given
+			given(resultRepository.findByPaymentId(PAYMENT_ID)).willReturn(Optional.empty());
+
+			// when & then
+			assertThatCode(() -> resultService.rollbackStatusByPaymentId(PAYMENT_ID))
+				.doesNotThrowAnyException();
+		}
 	}
 
 	@Nested
@@ -185,6 +222,7 @@ class ResultStatusRollbackTest {
 			// given
 			Result result = processingSaju();
 			given(resultRepository.findById(RESULT_ID)).willReturn(Optional.of(result));
+			assertThat(result.getStatus()).as("준비: 해석 중").isEqualTo(ResultStatus.PROCESSING);
 
 			// when
 			sajuResultService.rollbackStatus(RESULT_ID);
@@ -205,6 +243,31 @@ class ResultStatusRollbackTest {
 
 			// then
 			assertThat(result.getStatus()).isEqualTo(ResultStatus.COMPLETED);
+		}
+
+		@Test
+		@DisplayName("결과 ID 에 해당하는 사주 결과가 없으면 예외 없이 끝난다")
+		void ignoresMissingResult() {
+			// given
+			given(resultRepository.findById(RESULT_ID)).willReturn(Optional.empty());
+
+			// when & then
+			assertThatCode(() -> sajuResultService.rollbackStatus(RESULT_ID))
+				.doesNotThrowAnyException();
+		}
+
+		@Test
+		@DisplayName("결과 ID 를 받기 전에 실패해 ID 가 null 이면 예외 없이 끝난다")
+		void ignoresNullResultId() {
+			// given
+			// 실제 저장소(SimpleJpaRepository.findById)는 null ID 를 받으면 이 예외를 던진다. 서비스가 null 을 먼저 거르면
+			// 불리지 않는 스텁이라 lenient 로 둔다. 거르지 않으면 이 예외가 그대로 나와 테스트가 실패한다.
+			lenient().when(resultRepository.findById(null))
+				.thenThrow(new IllegalArgumentException("The given id must not be null"));
+
+			// when & then
+			assertThatCode(() -> sajuResultService.rollbackStatus(null))
+				.doesNotThrowAnyException();
 		}
 	}
 

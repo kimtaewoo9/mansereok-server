@@ -101,7 +101,8 @@ public class CompatibilityResult {
 
 	/**
 	 * 해석 중(PROCESSING)인 결과만 정보 입력 대기(INPUT_REQUIRED)로 되돌린다. 해석이 실패했거나 시작하지 못했을 때 부른다.
-	 * 입력 대기로 돌아가야 사용자가 다시 요청하거나 환불받을 수 있다.
+	 * 환불 검사는 입력 대기인 결과만 통과시킨다. 다만 지금 환불(PaymentService.cancelPayment)은 사주 결과 표만 찾으므로,
+	 * 궁합 결제는 환불이 궁합 결과 표도 찾게 된 뒤부터 이 검사를 받는다.
 	 *
 	 * @return 되돌렸으면 true. 입력 대기이거나 이미 완료된 결과는 그대로 두고 false.
 	 */
@@ -113,7 +114,7 @@ public class CompatibilityResult {
 		return true;
 	}
 
-	// 두 사람의 이름과 일간만 채운다. 상태는 markProcessing 과 revertToInputRequired 로만 바꾼다.
+	// 두 사람의 이름과 일간만 채우고 상태는 바꾸지 않는다.
 	public void updatePersonsInformation(
 		String person1Name,
 		String person1Ilgan,
