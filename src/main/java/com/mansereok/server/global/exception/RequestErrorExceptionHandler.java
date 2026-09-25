@@ -31,18 +31,19 @@ import org.springframework.web.method.annotation.MethodArgumentTypeMismatchExcep
  * 요청이 잘못됐거나(본문·파라미터·메서드·Content-Type) DB 잠금을 얻지 못한 경우를 500 대신 알맞은 상태 코드로 돌려준다.
  *
  * <p>{@link GlobalExceptionHandler} 의 {@code @ExceptionHandler(Exception.class)} 는 모든 예외를 받는다. 스프링 MVC 가 원래
- * 400·405·415 로 돌려주던 예외도 그보다 먼저 이 catch-all 에 잡혀 500 과 ERROR 로그가 됐다. 이 클래스는
- * {@link Ordered#HIGHEST_PRECEDENCE} 로 먼저 보고, 아래 타입만 번역한다. 응답 형식은 {@link ErrorResponse} 이고 로그는 WARN 한
- * 줄이다. 응답에는 필드 이름과 보낸 값만 담고 예외 원문(Jackson·SQL 메시지, 내부 클래스 이름)은 담지 않는다.
+ * 400·405·415 로 돌려주던 예외도 그보다 먼저 이 catch-all 에 잡혀 500 과 ERROR 로그가 됐다. 이 클래스는 GlobalExceptionHandler
+ * 바로 앞 순서에서 보고, 아래 타입만 번역한다. 응답 형식은 {@link ErrorResponse} 이고 로그는 WARN 한 줄이다. 응답에는 필드 이름과
+ * 보낸 값만 담고 예외 원문(Jackson·SQL 메시지, 내부 클래스 이름)은 담지 않는다.
  *
  * <ul>
- *   <li>본문을 읽을 수 없음(깨진 JSON, 빈 본문, enum·날짜 형식 불일치): 400 INVALID_REQUEST_BODY</li>
+ *   <li>요청 본문을 읽을 수 없음(깨진 JSON, 빈 본문, enum·날짜 형식 불일치): 400 INVALID_REQUEST_BODY</li>
  *   <li>파라미터 형식 불일치, 파라미터 제약 위반: 400 INVALID_PARAMETER</li>
  *   <li>필수 쿼리 파라미터 없음: 400 MISSING_PARAMETER</li>
  *   <li>지원하지 않는 HTTP 메서드: 405 METHOD_NOT_ALLOWED(Allow 헤더 포함)</li>
  *   <li>지원하지 않는 Content-Type: 415 UNSUPPORTED_MEDIA_TYPE</li>
  *   <li>DB 잠금 대기 초과·교착({@link PessimisticLockingFailureException} 과 하위의 CannotAcquireLockException):
- *   503 SERVER_BUSY. 다시 보내면 성공할 수 있는 혼잡이라 5xx 로 두어 포트원 웹훅 같은 호출자가 다시 보내게 한다.</li>
+ *   503 SERVER_BUSY. 다시 보내면 성공할 수 있는 혼잡이라 5xx 로 두어 호출자가 다시 보낼 수 있게 한다. 서비스가 잠금 실패를 잡아
+ *   원인을 버린 도메인 예외로 바꿔 던지면 이 클래스로 오지 않고 그 도메인 예외의 응답이 나간다.</li>
  * </ul>
  *
  * <p>일부러 하지 않는 것은 다음과 같다.
@@ -56,23 +57,43 @@ import org.springframework.web.method.annotation.MethodArgumentTypeMismatchExcep
  *   경합이 나는 호출 지점에서 {@link UniqueConstraintViolations} 로 UNIQUE 위반만 도메인 예외로 바꾼다.</li>
  * </ul>
  *
- * <p>스프링은 advice 순서대로 예외 타입을 찾고, 없으면 그 advice 안에서 원인(cause) 타입까지 찾은 뒤 다음 advice 로 넘어간다.
- * 그래서 아래 타입을 원인으로 품은 다른 예외(예: 잠금 실패를 감싼 도메인 예외)도 이 클래스가 먼저 처리한다.
+ * <p>스프링은 advice 를 순서대로 보며, 한 advice 안에서 던져진 예외의 타입을 먼저 찾고 없으면 원인(cause) 체인의 타입까지 찾은 뒤
+ * 다음 advice 로 넘어간다. 그래서 위 타입을 원인으로 품은 다른 예외도 이 클래스로 온다. 이 때문에 두 가지를 정해 둔다.
+ * <ul>
+ *   <li>본문 읽기 오류(HttpMessageNotReadableException)는 던져진 예외 자신일 때만 400 으로 답한다. RestClient·RestTemplate 은 우리
+ *   서버가 바깥 API 응답을 읽지 못해도 이 예외를 RestClientException 으로 감싸 던진다. 이것은 클라이언트의 잘못이 아니라 서버 쪽
+ *   장애라 catch-all 과 같게 500 INTERNAL_SERVER_ERROR 로 답하고 ERROR 로그에 스택을 남긴다. 잠금 실패는 감싸여 있어도 같은
+ *   혼잡이라 503 으로 답한다.</li>
+ *   <li>순서는 {@link Ordered#HIGHEST_PRECEDENCE} 가 아니라 GlobalExceptionHandler(@Order 가 없어 LOWEST_PRECEDENCE) 바로 앞이다.
+ *   컨트롤러 하나만 맡는 처리기(assignableTypes)는 HIGHEST_PRECEDENCE 에 둔다. 그래야 바깥 호출 오류나 잠금 실패를 감싼 자기
+ *   예외(예: 로그인 실패)를 이 클래스보다 먼저 받는다. 둘 다 HIGHEST_PRECEDENCE 이면 어느 쪽이 먼저인지 정해져 있지 않다.</li>
+ * </ul>
  *
  * <p>이 파일은 결제 스택이 그대로 복사해 쓴다. 고칠 때는 두 스택에 같게 고친다.
  */
 @Slf4j
 @Hidden
-@Order(Ordered.HIGHEST_PRECEDENCE)
+@Order(Ordered.LOWEST_PRECEDENCE - 1) // GlobalExceptionHandler 바로 앞, 컨트롤러 전용 처리기(HIGHEST_PRECEDENCE) 뒤
 @RestControllerAdvice
 public class RequestErrorExceptionHandler {
 
 	/**
-	 * [400] 본문을 읽을 수 없음. 값의 형식이 틀린 경우(InvalidFormatException)에는 어느 필드의 어떤 값인지 알려준다.
+	 * [400] 요청 본문을 읽을 수 없음. 값의 형식이 틀린 경우(InvalidFormatException)에는 어느 필드의 어떤 값인지 알려준다.
+	 *
+	 * <p>스프링은 던져진 예외와 그 원인 체인을 모두 인자 후보로 넘긴다. 그래서 {@code e} 에는 체인에서 찾은
+	 * HttpMessageNotReadableException 이, {@code thrown} 에는 가장 바깥의 던져진 예외가 온다. 둘이 다르면 요청 본문이 아니라
+	 * 바깥 API 응답 같은 다른 곳을 읽다 난 오류라 [500] 으로 답한다.
 	 */
 	@ExceptionHandler(HttpMessageNotReadableException.class)
-	public ResponseEntity<ErrorResponse> handleUnreadableBody(HttpMessageNotReadableException e,
+	public ResponseEntity<ErrorResponse> handleUnreadableBody(HttpMessageNotReadableException e, Exception thrown,
 		HttpServletRequest request) {
+		if (thrown != e) {
+			log.error("요청 본문이 아닌 곳(바깥 API 응답 등)을 읽지 못한 서버 내부 오류: {} {}, {}", request.getMethod(),
+				request.getRequestURI(), thrown.getMessage(), thrown);
+			ErrorResponse response = ErrorResponse.of(HttpStatus.INTERNAL_SERVER_ERROR.value(),
+				"INTERNAL_SERVER_ERROR", "서버 내부 오류가 발생했습니다. 잠시 후 다시 시도해주세요.");
+			return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(response);
+		}
 		if (e.getCause() instanceof InvalidFormatException invalidFormat) {
 			String field = fieldPath(invalidFormat.getPath());
 			// 보낸 값에는 이름·생년월일 같은 개인정보가 있을 수 있어 로그에는 필드 이름만 남긴다.
@@ -88,14 +109,19 @@ public class RequestErrorExceptionHandler {
 
 	/**
 	 * [400] 쿼리 파라미터나 경로 변수의 형식이 타입과 맞지 않음(예: 숫자 자리에 abc).
+	 *
+	 * <p>보낸 값은 문자열일 때만 알려준다. 같은 파라미터를 여러 번 보내면 값이 String[] 이라, 문자열로 이으면 배열의 내부 표현
+	 * ([Ljava.lang.String;@...)이 응답에 나간다. 그때는 파라미터 이름만 알려준다.
 	 */
 	@ExceptionHandler(MethodArgumentTypeMismatchException.class)
 	public ResponseEntity<ErrorResponse> handleParameterTypeMismatch(
 		MethodArgumentTypeMismatchException e, HttpServletRequest request) {
 		log.warn("요청 파라미터 형식이 맞지 않음: {} {}, parameter={}", request.getMethod(),
 			request.getRequestURI(), e.getName());
-		return badRequest("INVALID_PARAMETER",
-			"요청 파라미터 '" + e.getName() + "' 의 값 '" + e.getValue() + "' 이 올바른 형식이 아닙니다.");
+		String message = e.getValue() instanceof String value
+			? "요청 파라미터 '" + e.getName() + "' 의 값 '" + value + "' 이 올바른 형식이 아닙니다."
+			: "요청 파라미터 '" + e.getName() + "' 의 값이 올바른 형식이 아닙니다.";
+		return badRequest("INVALID_PARAMETER", message);
 	}
 
 	/**

@@ -36,17 +36,20 @@ class ProductRequestErrorTest {
 	}
 
 	@ParameterizedTest(name = "[{index}] GET {0} → 400 {1}")
-	@CsvSource(textBlock = """
-		# 요청 주소,                          errorCode
-		/api/v1/products,                     MISSING_PARAMETER
-		/api/v1/products?categoryId=abc,      INVALID_PARAMETER
-		/api/v1/products/abc,                 INVALID_PARAMETER
+	@CsvSource(quoteCharacter = '"', textBlock = """
+		# 요청 주소,                                  errorCode,          message
+		/api/v1/products,                             MISSING_PARAMETER,  "필수 요청 파라미터 'categoryId' 가 없습니다."
+		/api/v1/products?categoryId=abc,              INVALID_PARAMETER,  "요청 파라미터 'categoryId' 의 값 'abc' 이 올바른 형식이 아닙니다."
+		/api/v1/products/abc,                         INVALID_PARAMETER,  "요청 파라미터 'productId' 의 값 'abc' 이 올바른 형식이 아닙니다."
+		# 같은 파라미터를 여러 번 보내면 값이 배열이라, 값은 빼고 이름만 알린다.
+		/api/v1/products?categoryId=abc&categoryId=1, INVALID_PARAMETER,  "요청 파라미터 'categoryId' 의 값이 올바른 형식이 아닙니다."
 		""")
-	@DisplayName("categoryId 가 없거나 숫자 자리에 글자가 오면 400 과 원인별 errorCode 를 돌려준다")
-	void badRequest(String url, String errorCode) throws Exception {
+	@DisplayName("categoryId 가 없거나 숫자 자리에 글자가 오면 400 과 원인별 errorCode·메시지를 돌려준다")
+	void badRequest(String url, String errorCode, String message) throws Exception {
 		mockMvc.perform(get(url))
 			.andExpect(status().isBadRequest())
-			.andExpect(jsonPath("$.errorCode").value(errorCode));
+			.andExpect(jsonPath("$.errorCode").value(errorCode))
+			.andExpect(jsonPath("$.message").value(message));
 	}
 
 	@Test
