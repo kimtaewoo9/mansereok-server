@@ -195,7 +195,8 @@ public class PaymentReconciler {
 
 	/**
 	 * 환불 진행 중(CANCEL_REQUESTED)은 포트원에 대응하는 상태가 없어 건너뛰고, 우리가 모르는 포트원 상태도
-	 * 상태 불일치로 접지 않는다(금액만 비교한다). 첫 대조와 저장 직전 재확인이 같은 규칙을 쓴다.
+	 * 상태 불일치로 접지 않는다(금액만 비교한다). 첫 대조에서만 쓴다. 저장 직전 재확인은 CANCEL_REQUESTED 를 건너뛰지 않는다
+	 * ({@link #keepStillMismatched}).
 	 */
 	private static boolean hasStatusMismatch(PortOnePaymentResponse pgPayment, Payment dbPayment) {
 		if (dbPayment.getStatus() == PaymentStatus.CANCEL_REQUESTED) {
@@ -218,13 +219,19 @@ public class PaymentReconciler {
 	 *
 	 * <p>환불은 CANCEL_REQUESTED 커밋 → 포트원 취소 → CANCELLED 커밋 순서로 몇 초 동안 진행되고, 대사는 PG 목록과 DB 를
 	 * 서로 다른 순간에 읽는다. 그래서 환불 도중에 대사가 돌면 CANCEL_REQUESTED_STALE 이나 STATUS_MISMATCH 가 잠깐 보였다가
-	 * 환불이 끝나면 사라진다. 이 두 타입은 다시 읽은 값에 같은 규칙을 한 번 더 적용해, 불일치가 사라졌으면 뺀다.
+	 * 환불이 끝나면 사라진다. 이 두 타입은 다시 읽은 값으로 불일치가 사라졌는지 보고, 사라졌으면 뺀다.
 	 *
 	 * <ul>
 	 *   <li>CANCEL_REQUESTED_STALE: 다시 읽은 DB 결제가 아직 CANCEL_REQUESTED 일 때만 남긴다.</li>
-	 *   <li>STATUS_MISMATCH: 다시 조회한 PG 결제와 다시 읽은 DB 결제의 상태가 여전히 다를 때만 남긴다. 그 사이 환불이
-	 *   시작돼 DB 가 CANCEL_REQUESTED 가 됐으면 진행 중인 환불이므로 뺀다.</li>
+	 *   <li>STATUS_MISMATCH: 다시 조회한 PG 상태와 다시 읽은 DB 상태가 같아졌을 때만 뺀다. 우리가 모르는 PG 상태는 같아졌다고
+	 *   확인하지 못한 것이라 남긴다.</li>
 	 * </ul>
+	 *
+	 * <p>STATUS_MISMATCH 는 다시 읽은 DB 가 CANCEL_REQUESTED 여도 빼지 않는다. CANCEL_REQUESTED 는 PAID 에서만 되므로, 이때
+	 * 첫 읽기는 DB=PAID 이고 PG 는 PAID 가 아니었다(예를 들어 CANCELLED). 그런데 PG 목록은 DB 보다 먼저 읽고, 환불은
+	 * CANCEL_REQUESTED 커밋이 포트원 취소보다 앞선다. 그래서 첫 DB 읽기 뒤에 시작한 환불로는 그보다 먼저 본 PG=CANCELLED 를
+	 * 설명할 수 없다. 포트원 취소가 시간 초과로 실패한 것처럼 보여 PAID 로 되돌렸는데 실제로는 환불된 결제에, 사용자가 환불을 다시
+	 * 시도한 경우가 그렇다. 이때 빼면 진짜 불일치를 잃는다.
 	 *
 	 * <p>다시 읽은 값이 없으면(DB 결제를 못 찾음, PG 재조회 실패, PG 가 다른 결제 ID 를 돌려줌) 첫 판단을 그대로 둔다. 불일치가
 	 * 사라졌다고 확인한 경우만 빼야 진짜 불일치를 놓치지 않는다. 다른 타입은 환불이 끝나도 사라지지 않으므로 그대로 둔다.
@@ -249,7 +256,8 @@ public class PaymentReconciler {
 		return switch (mismatch.getType()) {
 			case CANCEL_REQUESTED_STALE -> freshDbPayment.getStatus() == PaymentStatus.CANCEL_REQUESTED;
 			case STATUS_MISMATCH -> samePaymentFound(freshPgLookup, freshDbPayment)
-				.map(freshPgPayment -> hasStatusMismatch(freshPgPayment, freshDbPayment))
+				.flatMap(freshPgPayment -> PaymentStatus.fromPortOneStatus(freshPgPayment.getStatus()))
+				.map(freshPgStatus -> freshPgStatus != freshDbPayment.getStatus())
 				.orElse(true);
 			default -> true;
 		};

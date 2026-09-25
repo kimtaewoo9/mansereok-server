@@ -37,6 +37,8 @@ public class PaymentReconciliationMismatch {
 
 	private static final String UNREADABLE_MERCHANT_UID = "customData 에서 주문 번호를 읽지 못했습니다.";
 
+	private static final String PG_ID_MISSING = "PG 단건 조회 응답에 결제 ID 가 없어 대조하지 않았습니다.";
+
 	@Id
 	@GeneratedValue(strategy = GenerationType.IDENTITY)
 	private Long id;
@@ -125,17 +127,20 @@ public class PaymentReconciliationMismatch {
 
 	/**
 	 * DB 결제 ID 로 단건 조회했는데 다른 ID 의 PG 결제가 돌아온 경우. 돌아온 결제는 이 DB 결제의 것이 아니라서 pg* 칸은
-	 * 비우고, 돌아온 결제 ID 는 detail 에 남긴다.
+	 * 비우고, 돌아온 결제 ID 는 detail 에 남긴다. 응답에 결제 ID 가 아예 없으면 "null 이라는 ID" 로 읽히지 않게 그 사실을 따로
+	 * 적는다.
 	 *
 	 * @param pgPayment 단건 조회가 돌려준 PG 결제
 	 */
 	public static PaymentReconciliationMismatch pgIdMismatch(Long runId,
 		PortOnePaymentResponse pgPayment, Payment dbPayment, LocalDateTime detectedAt) {
+		String detail = pgPayment.getId() == null
+			? PG_ID_MISSING
+			: ("PG 단건 조회가 다른 결제 ID(%s)의 거래를 돌려줘 대조하지 않았습니다. "
+				+ "한 PG 결제에 DB 결제가 여러 건 붙었을 수 있습니다.").formatted(pgPayment.getId());
 		return create(runId, MismatchType.PG_ID_MISMATCH, dbPayment.getImpUid(),
 			dbPayment.getMerchantUid(), null, null, dbPayment.getStatus(), dbPayment.getAmount(),
-			("PG 단건 조회가 다른 결제 ID(%s)의 거래를 돌려줘 대조하지 않았습니다. "
-				+ "한 PG 결제에 DB 결제가 여러 건 붙었을 수 있습니다.").formatted(pgPayment.getId()),
-			detectedAt);
+			detail, detectedAt);
 	}
 
 	private static PaymentReconciliationMismatch create(Long runId, MismatchType type,

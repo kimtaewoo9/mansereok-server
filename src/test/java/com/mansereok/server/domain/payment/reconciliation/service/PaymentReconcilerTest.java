@@ -16,6 +16,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.NullSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
@@ -361,26 +362,35 @@ class PaymentReconcilerTest {
 	@DisplayName("다시 읽은 값으로 첫 대조의 불일치를 확인하면")
 	class WhenRecheckingWithFreshValues {
 
-		@Test
-		@DisplayName("STATUS_MISMATCH 였는데 그 사이 환불이 시작돼 DB 가 CANCEL_REQUESTED 면 진행 중인 환불이라 뺀다")
-		void statusMismatchWhileRefundStarted_isDropped() {
-			// given
+		@ParameterizedTest(name = "[{index}] 다시 읽은 PG={0}, DB={1} → 남는 건수={2}")
+		@CsvSource(textBlock = """
+			# 양쪽이 같아졌을 때만 뺀다
+			CANCELLED,        CANCELLED,        0
+			CANCELLED,        PAID,             1
+			# 첫 읽기 뒤에 시작한 환불은 먼저 본 PG=CANCELLED 를 설명하지 못하므로 남긴다
+			CANCELLED,        CANCEL_REQUESTED, 1
+			# 우리가 모르는 PG 상태는 같아졌다고 확인하지 못한 것이다
+			SOMETHING_NEW,    CANCELLED,        1
+			""")
+		@DisplayName("STATUS_MISMATCH 는 다시 조회한 PG 상태와 다시 읽은 DB 상태가 같아졌을 때만 빼고, DB 가 CANCEL_REQUESTED 가 됐어도 남긴다")
+		void statusMismatch_isDroppedOnlyWhenBothSidesAgree(String freshPgStatus,
+			PaymentStatus freshDbStatus, int keptCount) {
+			// given: 첫 읽기는 PG=CANCELLED, DB=PAID
 			List<PaymentReconciliationMismatch> firstRead = reconcile(
 				List.of(pgPayment(IMP_UID, "CANCELLED", PRICE)),
 				List.of(dbPayment(IMP_UID, PaymentStatus.PAID, PRICE)));
 			assertThat(firstRead).as("첫 대조 결과").extracting(PaymentReconciliationMismatch::getType)
 				.containsExactly(MismatchType.STATUS_MISMATCH);
-			Map<String, Payment> freshDb =
-				Map.of(IMP_UID, dbPayment(IMP_UID, PaymentStatus.CANCEL_REQUESTED, PRICE));
+			Map<String, Payment> freshDb = Map.of(IMP_UID, dbPayment(IMP_UID, freshDbStatus, PRICE));
 			Map<String, PgLookup> freshPg =
-				Map.of(IMP_UID, PgLookup.found(pgPayment(IMP_UID, "CANCELLED", PRICE)));
+				Map.of(IMP_UID, PgLookup.found(pgPayment(IMP_UID, freshPgStatus, PRICE)));
 
 			// when
-			List<PaymentReconciliationMismatch> kept =
+			List<PaymentReconciliationMismatch> keptMismatches =
 				reconciler.keepStillMismatched(firstRead, freshDb, freshPg);
 
 			// then
-			assertThat(kept).isEmpty();
+			assertThat(keptMismatches).hasSize(keptCount);
 		}
 
 		@Test

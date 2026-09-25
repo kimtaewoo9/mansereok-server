@@ -163,6 +163,18 @@ class PaymentReconciliationMismatchTest {
 			assertThat(mismatch.getDetail()).isEqualTo(
 				"PG 단건 조회가 다른 결제 ID(pay_other)의 거래를 돌려줘 대조하지 않았습니다. 한 PG 결제에 DB 결제가 여러 건 붙었을 수 있습니다.");
 		}
+
+		@Test
+		@DisplayName("pgIdMismatch 는 돌아온 PG 결제에 ID 가 없으면 'null' 을 ID 처럼 적지 않고 응답에 결제 ID 가 없었다고 적는다")
+		void pgIdMismatchWithoutReturnedId() {
+			// when
+			PaymentReconciliationMismatch mismatch = PaymentReconciliationMismatch.pgIdMismatch(RUN_ID,
+				pgPayment(null, "PAID", 10000L), dbPayment(PaymentStatus.PAID, 10000L), DETECTED_AT);
+
+			// then
+			assertThat(mismatch.getType()).isEqualTo(MismatchType.PG_ID_MISMATCH);
+			assertThat(mismatch.getDetail()).isEqualTo("PG 단건 조회 응답에 결제 ID 가 없어 대조하지 않았습니다.");
+		}
 	}
 
 	@Nested
