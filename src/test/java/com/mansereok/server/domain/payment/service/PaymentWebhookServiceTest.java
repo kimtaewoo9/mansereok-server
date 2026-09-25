@@ -116,7 +116,7 @@ class PaymentWebhookServiceTest {
 			paymentRepository,
 			paidOrderFinalizer,
 			orderDiscountRestorer,
-			new DuplicatePaymentCanceller(portOneClient, paymentVerifier, eventPublisher),
+			new DuplicatePaymentCanceller(portOneClient, paymentVerifier, paymentRepository, eventPublisher),
 			transactionManager
 		);
 	}
@@ -502,12 +502,18 @@ class PaymentWebhookServiceTest {
 			givenLockedOrder(order);
 		}
 
+		/** 두 번째 결제는 payments 표에 아직 기록되지 않았다. 자동 취소까지 가는 테스트에서만 부른다. */
+		private void givenSecondPaymentNotRecorded() {
+			given(paymentRepository.findByImpUid(SECOND_PAYMENT_ID)).willReturn(Optional.empty());
+		}
+
 		@Test
 		@DisplayName("포트원에서 승인된 결제면 그 결제를 취소하고 알림을 한 번 보낸 뒤 예외 없이 끝내며 주문은 첫 결제 그대로 둔다")
 		void cancelsSecondPaymentAndReturnsNormally() {
 			// given
 			given(portOneClient.getPayment(SECOND_PAYMENT_ID)).willReturn(
 				portOneResponseWithCustomData(SECOND_PAYMENT_ID, "PAID", PRICE));
+			givenSecondPaymentNotRecorded();
 
 			// when
 			assertThatCode(() -> paymentWebhookService.processWebhook(webhookBody(SECOND_PAYMENT_ID, "Paid")))
@@ -523,7 +529,8 @@ class PaymentWebhookServiceTest {
 			assertThat(order.getStatus()).isEqualTo(OrderStatus.PAID);
 			assertThat(order.getPaymentId()).isEqualTo(PAYMENT_ID);
 			verify(orderRepository, never()).save(any(Order.class));
-			verifyNoInteractions(paymentRepository, orderDiscountRestorer, resultService);
+			verify(paymentRepository, never()).save(any(Payment.class));
+			verifyNoInteractions(orderDiscountRestorer, resultService);
 		}
 
 		@Test
@@ -532,6 +539,7 @@ class PaymentWebhookServiceTest {
 			// given
 			given(portOneClient.getPayment(SECOND_PAYMENT_ID)).willReturn(
 				portOneResponseWithCustomData(SECOND_PAYMENT_ID, "PAID", PRICE));
+			givenSecondPaymentNotRecorded();
 
 			// when
 			paymentWebhookService.processWebhook(webhookBody(SECOND_PAYMENT_ID, "Paid"));
@@ -549,6 +557,7 @@ class PaymentWebhookServiceTest {
 			// given
 			given(portOneClient.getPayment(SECOND_PAYMENT_ID)).willReturn(
 				portOneResponseWithCustomData(SECOND_PAYMENT_ID, "PAID", PRICE));
+			givenSecondPaymentNotRecorded();
 			willThrow(new PaymentException("결제 취소 연동 중 오류가 발생했습니다."))
 				.given(portOneClient).cancelPayment(SECOND_PAYMENT_ID, "같은 주문의 중복 결제 자동 취소");
 			given(portOneClient.findPayment(SECOND_PAYMENT_ID)).willReturn(
@@ -560,12 +569,13 @@ class PaymentWebhookServiceTest {
 
 			// then
 			assertThat(capturedAnomalyEvent().summary()).contains("자동 취소에 실패했습니다");
-			verifyNoInteractions(paymentRepository, resultService);
+			verify(paymentRepository, never()).save(any(Payment.class));
+			verifyNoInteractions(resultService);
 		}
 
 		@ParameterizedTest(name = "포트원 재조회 상태 {0}")
 		@ValueSource(strings = {"READY", "FAILED", "CANCELLED"})
-		@DisplayName("두 번째 결제가 포트원에서 승인된 상태가 아니면 돈이 빠져나가지 않았으므로 취소·알림 없이 정상 반환한다")
+		@DisplayName("두 번째 결제가 포트원에서 승인 전이거나 실패·전액 취소 상태면 돈이 빠져나가지 않았으므로 취소·알림 없이 정상 반환한다")
 		void ignoresSecondPaymentThatIsNotPaid(String status) {
 			// given
 			given(portOneClient.getPayment(SECOND_PAYMENT_ID)).willReturn(
@@ -578,6 +588,60 @@ class PaymentWebhookServiceTest {
 			assertThat(order.getPaymentId()).isEqualTo(PAYMENT_ID);
 			verify(portOneClient, never()).cancelPayment(any(), any());
 			verifyNoInteractions(eventPublisher, paymentRepository, resultService);
+		}
+
+		@ParameterizedTest(name = "포트원 재조회 상태 {0}")
+		@ValueSource(strings = {"PARTIAL_CANCELLED", "partial_cancelled"})
+		@DisplayName("두 번째 결제가 포트원에서 부분 취소 상태면 남은 금액이 청구돼 있으므로, 취소하지 않고 확인해 달라는 알림을 한 번 보낸 뒤 정상 반환한다")
+		void alertsWithoutCancelWhenSecondPaymentIsPartiallyCancelled(String status) {
+			// given
+			given(portOneClient.getPayment(SECOND_PAYMENT_ID)).willReturn(
+				portOneResponseWithCustomData(SECOND_PAYMENT_ID, status, PRICE));
+
+			// when
+			assertThatCode(() -> paymentWebhookService.processWebhook(webhookBody(SECOND_PAYMENT_ID, "Paid")))
+				.doesNotThrowAnyException();
+
+			// then
+			assertThat(order.getPaymentId()).isEqualTo(PAYMENT_ID);
+			verify(portOneClient, never()).cancelPayment(any(), any());
+			PaymentAnomalyEvent alert = capturedAnomalyEvent();
+			assertThat(alert.summary()).isEqualTo("이미 결제가 끝난 주문에 다른 결제가 부분 취소 상태로 왔습니다. "
+				+ "남은 금액이 아직 청구돼 있으니 확인해 주세요. 자동 취소는 하지 않았습니다.");
+			assertThat(alert.details())
+				.containsEntry("한 번 더 온 결제 ID", SECOND_PAYMENT_ID)
+				.containsEntry("포트원 결제 상태", status);
+			verify(orderRepository, never()).save(any(Order.class));
+			verify(paymentRepository, never()).save(any(Payment.class));
+			verifyNoInteractions(orderDiscountRestorer, resultService);
+		}
+
+		@Test
+		@DisplayName("두 번째 결제가 payments 표에 이미 다른 주문의 결제로 기록돼 있으면, 운영자가 웹훅을 다시 보내도 취소하지 않고 확인해 달라는 알림을 한 번 보낸 뒤 정상 반환한다")
+		void alertsWithoutCancelWhenSecondPaymentIsRecordedForAnotherOrder() {
+			// given: customData 대조가 없던 예전 코드가 이 결제를 다른 주문 order_other_999 의 결제로 기록했다
+			given(portOneClient.getPayment(SECOND_PAYMENT_ID)).willReturn(
+				portOneResponseWithCustomData(SECOND_PAYMENT_ID, "PAID", PRICE));
+			given(paymentRepository.findByImpUid(SECOND_PAYMENT_ID)).willReturn(Optional.of(
+				Payment.create(SECOND_PAYMENT_ID, "order_other_999", (long) PRICE, PaymentStatus.PAID, 99L, 2L,
+					SUB_CATEGORY_ID)));
+
+			// when
+			assertThatCode(() -> paymentWebhookService.processWebhook(webhookBody(SECOND_PAYMENT_ID, "Paid")))
+				.doesNotThrowAnyException();
+
+			// then
+			assertThat(order.getPaymentId()).isEqualTo(PAYMENT_ID);
+			verify(portOneClient, never()).cancelPayment(any(), any());
+			PaymentAnomalyEvent alert = capturedAnomalyEvent();
+			assertThat(alert.summary()).isEqualTo("이미 결제 기록이 있는 결제가 결제가 끝난 주문에 또 왔습니다. "
+				+ "다른 주문의 결제로 기록됐을 수 있어 자동 취소는 하지 않았습니다. 결제가 기록된 주문을 확인해 주세요.");
+			assertThat(alert.details())
+				.containsEntry("한 번 더 온 결제 ID", SECOND_PAYMENT_ID)
+				.containsEntry("결제가 기록된 주문 번호", "order_other_999");
+			verify(orderRepository, never()).save(any(Order.class));
+			verify(paymentRepository, never()).save(any(Payment.class));
+			verifyNoInteractions(orderDiscountRestorer, resultService);
 		}
 	}
 

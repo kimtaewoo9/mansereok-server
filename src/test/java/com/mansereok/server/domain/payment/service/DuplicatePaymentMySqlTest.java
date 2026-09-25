@@ -6,6 +6,7 @@ import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 
 import com.mansereok.server.domain.order.entity.Order;
@@ -45,7 +46,8 @@ import org.springframework.beans.factory.annotation.Autowired;
  * 완료 요청과 웹훅이 겹칠 때는 웹훅이 먼저 잠금을 잡는 일이 많아, 웹훅이 뒤에 와서 취소하는 경우는 순서를 고정한 테스트로 따로 본다.
  *
  * <p>포트원은 목이다. 두 결제 모두 customData 에 이 주문을 담은 승인 결제로 답하고, 취소는 성공한다. DB 에 남은 사실은 JPA 캐시를
- * 거치지 않고 SQL 로 센다. 데이터는 실행마다 다른 키(runId)로 만들고 그 키로만 지운다.
+ * 거치지 않고 SQL 로 센다. 데이터는 실행마다 다른 키(runId)로 만들고 그 키로만 지운다. 운영 채널 알림은 커밋 뒤 다른 스레드에서
+ * 가므로, 자동 취소 알림이 한 번 간 뒤에도 잠시 지켜봐 뒤늦게 오는 두 번째 알림까지 잡는다.
  */
 class DuplicatePaymentMySqlTest extends PaymentMySqlTest {
 
@@ -53,6 +55,10 @@ class DuplicatePaymentMySqlTest extends PaymentMySqlTest {
 	private static final String CANCEL_REASON = "같은 주문의 중복 결제 자동 취소";
 	private static final String DUPLICATE_PAYMENT_MESSAGE = "이미 결제가 끝난 주문입니다. 중복 결제는 자동으로 취소됩니다.";
 	private static final String CANCELLED_ALERT = "이미 결제가 끝난 주문에 결제가 한 번 더 승인돼 자동으로 취소했습니다.";
+	private static final String CANCEL_FAILED_ALERT =
+		"이미 결제가 끝난 주문에 결제가 한 번 더 승인됐는데 자동 취소에 실패했습니다. 포트원에서 손으로 취소해 주세요.";
+	/** 자동 취소 알림이 한 번 간 뒤에도 알림 수가 그대로인지 지켜보는 시간. 알림은 요청이 끝나기 전에 모두 알림 풀에 들어간다. */
+	private static final Duration ALERT_WATCH_TIME = Duration.ofMillis(300);
 
 	@Autowired
 	private PaymentConfirmService paymentConfirmService;
@@ -130,10 +136,8 @@ class DuplicatePaymentMySqlTest extends PaymentMySqlTest {
 		assertThat(results).filteredOn(result -> !result.succeeded()).singleElement().satisfies(result ->
 			assertThat(result.error()).isInstanceOf(PaymentException.class).hasMessage(DUPLICATE_PAYMENT_MESSAGE));
 
-		// then: 운영 채널 알림은 커밋 뒤 다른 스레드에서 가므로 조건이 맞을 때까지 기다린다
-		await().atMost(Duration.ofSeconds(5)).untilAsserted(() ->
-			then(discordNotificationService).should(times(1))
-				.sendPaymentAnomalyNotification(eq(CANCELLED_ALERT), anyMap()));
+		// then
+		assertOnlyAutoCancelledAlertSentOnce();
 	}
 
 	@RepeatedTest(value = 20, name = "{displayName} ({currentRepetition}/{totalRepetitions})")
@@ -161,12 +165,21 @@ class DuplicatePaymentMySqlTest extends PaymentMySqlTest {
 		CallResult<Object> completeResult = results.get(0);
 		CallResult<Object> webhookResult = results.get(1);
 		assertThat(webhookResult.error()).as("웹훅은 어느 쪽이든 예외 없이 끝나 포트원에 200 을 돌려준다").isNull();
-		assertThat(completeResult.succeeded())
-			.as("완료 요청은 자기 결제(첫 결제)가 확정됐을 때만 성공한다. 오류: %s", completeResult.error())
-			.isEqualTo(firstPaymentId.equals(confirmedPaymentId));
-		await().atMost(Duration.ofSeconds(5)).untilAsserted(() ->
-			then(discordNotificationService).should(times(1))
-				.sendPaymentAnomalyNotification(eq(CANCELLED_ALERT), anyMap()));
+		assertThat(completeResult)
+			.as("완료 요청은 자기 결제(첫 결제)가 확정됐으면 PAID 주문을 받고, 웹훅의 두 번째 결제가 확정됐으면 안내와 함께 거부된다")
+			.satisfiesAnyOf(
+				result -> {
+					assertThat(confirmedPaymentId).isEqualTo(firstPaymentId);
+					assertThat(result.error()).isNull();
+					assertThat(result.value()).isInstanceOfSatisfying(Order.class,
+						order -> assertThat(order.getStatus()).isEqualTo(OrderStatus.PAID));
+				},
+				result -> {
+					assertThat(confirmedPaymentId).isEqualTo(secondPaymentId);
+					assertThat(result.error()).isInstanceOf(PaymentException.class)
+						.hasMessage(DUPLICATE_PAYMENT_MESSAGE);
+				});
+		assertOnlyAutoCancelledAlertSentOnce();
 	}
 
 	@Test
@@ -183,9 +196,22 @@ class DuplicatePaymentMySqlTest extends PaymentMySqlTest {
 		assertThat(confirmedPaymentIdInDb()).isEqualTo(firstPaymentId);
 		assertThat(paymentIdsInDb()).as("결제 행").containsExactly(firstPaymentId);
 		assertThat(paymentIdCancelledOnce()).isEqualTo(secondPaymentId);
-		await().atMost(Duration.ofSeconds(5)).untilAsserted(() ->
+		assertOnlyAutoCancelledAlertSentOnce();
+	}
+
+	/**
+	 * 운영 채널에 자동 취소 알림이 한 번 가고, 손으로 취소하라는 알림은 가지 않았는지 확인한다.
+	 *
+	 * <p>알림은 커밋 뒤 다른 스레드에서 가므로 조건이 맞을 때까지 기다린다. 한 번이 된 순간 끝내면 뒤늦게 오는 두 번째 알림을 놓치므로,
+	 * 조건이 맞은 뒤에도 {@link #ALERT_WATCH_TIME} 동안 그대로인지 지켜본다(Awaitility 의 during).
+	 */
+	private void assertOnlyAutoCancelledAlertSentOnce() {
+		await().during(ALERT_WATCH_TIME).atMost(Duration.ofSeconds(5)).untilAsserted(() -> {
 			then(discordNotificationService).should(times(1))
-				.sendPaymentAnomalyNotification(eq(CANCELLED_ALERT), anyMap()));
+				.sendPaymentAnomalyNotification(eq(CANCELLED_ALERT), anyMap());
+			then(discordNotificationService).should(never())
+				.sendPaymentAnomalyNotification(eq(CANCEL_FAILED_ALERT), anyMap());
+		});
 	}
 
 	private String confirmedPaymentIdInDb() {

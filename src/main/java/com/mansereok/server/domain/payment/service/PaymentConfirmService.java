@@ -98,7 +98,8 @@ public class PaymentConfirmService {
 		ConfirmOutcome outcome = transactionTemplate.execute(
 			status -> confirm(username, request, paymentResponse));
 
-		// 3. 트랜잭션 밖: 중복 결제 취소. 잠금과 커넥션을 놓은 뒤 포트원을 부른다.
+		// 3. 트랜잭션 밖: 중복 결제 취소. 잠금과 트랜잭션을 놓은 뒤 포트원을 부른다.
+		//    open-in-view 가 켜져 있어 DB 커넥션은 요청이 끝날 때까지 잡혀 있다(포트원 읽기 시간 제한 안에서).
 		return switch (outcome) {
 			case Finished finished -> finished.order();
 			case DuplicatePayment duplicate -> {

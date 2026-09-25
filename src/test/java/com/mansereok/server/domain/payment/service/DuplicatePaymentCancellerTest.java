@@ -2,7 +2,6 @@ package com.mansereok.server.domain.payment.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
-import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.willThrow;
 import static org.mockito.Mockito.times;
@@ -14,6 +13,7 @@ import com.mansereok.server.domain.order.entity.OrderStatus;
 import com.mansereok.server.domain.payment.client.PortOneClient;
 import com.mansereok.server.domain.payment.dto.response.PortOnePaymentResponse;
 import com.mansereok.server.domain.payment.event.PaymentAnomalyEvent;
+import com.mansereok.server.domain.payment.repository.PaymentRepository;
 import com.mansereok.server.domain.payment.service.ConfirmOutcome.DuplicatePayment;
 import com.mansereok.server.global.exception.PaymentException;
 import com.mansereok.server.global.exception.PortOneUnavailableException;
@@ -38,9 +38,11 @@ import org.springframework.test.util.ReflectionTestUtils;
  *
  * <p>결제 완료 API 와 웹훅은 보통 같은 결제에 대해 함께 오므로, 둘 다 중복 결제로 보고 취소를 부를 수 있다. 뒤에 부른 쪽의 취소는
  * 포트원이 "이미 취소된 결제" 로 거절한다. 그때 "손으로 취소해 주세요" 알림이 나가면 운영자가 이미 끝난 일을 다시 확인하게 되므로,
- * 취소가 실패하면 포트원에서 결제를 다시 조회해 전액 취소돼 있을 때만 알림을 건너뛴다.
+ * 취소가 실패하면 포트원에서 결제를 다시 조회해 전액 취소돼 있는지 본다. 포트원이 거절한 경우(4xx)에는 알림을 건너뛰고, 응답을 받지
+ * 못한 경우(시간 초과·5xx)에는 이 요청의 취소가 반영됐을 수 있어 취소돼 있다는 알림을 한 번 보낸다.
  *
- * <p>포트원과 알림 발행만 목으로 두고, customData 대조는 진짜 PaymentVerifier 로 한다.
+ * <p>포트원과 알림 발행만 목으로 두고, customData 대조는 진짜 PaymentVerifier 로 한다. 취소 단계는 payments 표를 보지 않으므로
+ * PaymentRepository 는 생성자를 채우는 데만 쓴다.
  */
 @ExtendWith(MockitoExtension.class)
 class DuplicatePaymentCancellerTest {
@@ -50,9 +52,13 @@ class DuplicatePaymentCancellerTest {
 	private static final String RECORDED_PAYMENT_ID = "pay_test_001";
 	private static final String DUPLICATE_PAYMENT_ID = "pay_test_002";
 	private static final String CANCEL_REASON = "같은 주문의 중복 결제 자동 취소";
+	private static final String CANCEL_FAILED_ALERT =
+		"이미 결제가 끝난 주문에 결제가 한 번 더 승인됐는데 자동 취소에 실패했습니다. 포트원에서 손으로 취소해 주세요.";
 
 	@Mock
 	private PortOneClient portOneClient;
+	@Mock
+	private PaymentRepository paymentRepository;
 	@Mock
 	private ApplicationEventPublisher eventPublisher;
 
@@ -61,7 +67,7 @@ class DuplicatePaymentCancellerTest {
 	@BeforeEach
 	void setUp() {
 		canceller = new DuplicatePaymentCanceller(portOneClient,
-			new PaymentVerifier(Jackson2ObjectMapperBuilder.json().build()), eventPublisher);
+			new PaymentVerifier(Jackson2ObjectMapperBuilder.json().build()), paymentRepository, eventPublisher);
 	}
 
 	@Test
@@ -82,8 +88,8 @@ class DuplicatePaymentCancellerTest {
 	}
 
 	@Nested
-	@DisplayName("포트원 취소가 실패하면")
-	class WhenCancelFails {
+	@DisplayName("포트원이 취소 요청을 거절하면(PaymentException, 4xx)")
+	class WhenPortOneRejectsCancel {
 
 		@BeforeEach
 		void givenCancelFails() {
@@ -114,7 +120,7 @@ class DuplicatePaymentCancellerTest {
 
 			// when & then
 			assertThatCode(() -> canceller.cancel(duplicateOfPaidOrder())).doesNotThrowAnyException();
-			verify(eventPublisher, times(1)).publishEvent(any(PaymentAnomalyEvent.class));
+			assertThat(capturedAnomalyEvent().summary()).isEqualTo(CANCEL_FAILED_ALERT);
 		}
 
 		@Test
@@ -128,8 +134,7 @@ class DuplicatePaymentCancellerTest {
 
 			// then
 			PaymentAnomalyEvent alert = capturedAnomalyEvent();
-			assertThat(alert.summary()).isEqualTo(
-				"이미 결제가 끝난 주문에 결제가 한 번 더 승인됐는데 자동 취소에 실패했습니다. 포트원에서 손으로 취소해 주세요.");
+			assertThat(alert.summary()).isEqualTo(CANCEL_FAILED_ALERT);
 			assertThat(alert.details())
 				.containsEntry("한 번 더 온 결제 ID", DUPLICATE_PAYMENT_ID)
 				.containsEntry("실패 원인", "결제 취소 연동 중 오류가 발생했습니다.");
@@ -144,7 +149,46 @@ class DuplicatePaymentCancellerTest {
 
 			// when & then
 			assertThatCode(() -> canceller.cancel(duplicateOfPaidOrder())).doesNotThrowAnyException();
-			assertThat(capturedAnomalyEvent().summary()).contains("자동 취소에 실패했습니다");
+			assertThat(capturedAnomalyEvent().summary()).isEqualTo(CANCEL_FAILED_ALERT);
+		}
+	}
+
+	@Nested
+	@DisplayName("포트원 취소 응답을 받지 못하면(PortOneUnavailableException, 시간 초과·5xx)")
+	class WhenCancelResponseIsLost {
+
+		@BeforeEach
+		void givenCancelResponseIsLost() {
+			willThrow(new PortOneUnavailableException("결제 취소 연동 중 일시적인 오류가 발생했습니다."))
+				.given(portOneClient).cancelPayment(DUPLICATE_PAYMENT_ID, CANCEL_REASON);
+		}
+
+		@Test
+		@DisplayName("다시 조회해 전액 취소돼 있으면 이 요청의 취소가 반영됐을 수 있어, 예외 없이 취소돼 있다는 알림을 실패 원인과 함께 한 번 보낸다")
+		void alertsOnceWhenCancelledAtPortOne() {
+			// given
+			given(portOneClient.findPayment(DUPLICATE_PAYMENT_ID)).willReturn(
+				Optional.of(portOneResponse("CANCELLED")));
+
+			// when & then
+			assertThatCode(() -> canceller.cancel(duplicateOfPaidOrder())).doesNotThrowAnyException();
+			PaymentAnomalyEvent alert = capturedAnomalyEvent();
+			assertThat(alert.summary()).isEqualTo("이미 결제가 끝난 주문에 결제가 한 번 더 승인돼 취소를 요청했습니다. "
+				+ "취소 응답은 받지 못했지만 포트원에서 취소된 것을 확인했습니다. 따로 할 일은 없습니다.");
+			assertThat(alert.details())
+				.containsEntry("한 번 더 온 결제 ID", DUPLICATE_PAYMENT_ID)
+				.containsEntry("취소 요청 실패 원인", "결제 취소 연동 중 일시적인 오류가 발생했습니다.");
+		}
+
+		@Test
+		@DisplayName("다시 조회해도 승인 상태면 예외 없이 손으로 취소하라는 알림을 한 번 보낸다")
+		void alertsToCancelByHandWhenStillPaid() {
+			// given
+			given(portOneClient.findPayment(DUPLICATE_PAYMENT_ID)).willReturn(Optional.of(portOneResponse("PAID")));
+
+			// when & then
+			assertThatCode(() -> canceller.cancel(duplicateOfPaidOrder())).doesNotThrowAnyException();
+			assertThat(capturedAnomalyEvent().summary()).isEqualTo(CANCEL_FAILED_ALERT);
 		}
 	}
 
