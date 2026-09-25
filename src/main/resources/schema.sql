@@ -209,10 +209,11 @@ CREATE TABLE `subcategories` (
 
 
 -- 인덱스 생성 (검색 성능 최적화)
-CREATE INDEX idx_manses_solar_date ON manses(solar_date);
-CREATE INDEX idx_manses_lunar_date ON manses(lunar_date);
--- solar_date와 leap_month의 조합은 사용자의 요청대로 유지
-CREATE INDEX idx_solar_leap ON manses(solar_date, leap_month);
+-- manses 인덱스는 Manse 엔티티의 @Table 선언과 같은 이름으로 둔다. 양력 날짜 조회는 solar_date 의 UNIQUE 를 쓴다.
+-- 월운·대운의 절입 시각 범위 조회(>=, >, <= 뒤 정렬)
+CREATE INDEX idx_manses_season_start_time ON manses(season_start_time);
+-- 음력 날짜로 평달·윤달 후보 조회. 음력 날짜가 0000-00-00 인 행 269개가 서로 겹쳐 UNIQUE 로 걸지 않는다.
+CREATE INDEX idx_manses_lunar_date_leap_month ON manses(lunar_date, leap_month);
 
 -- 외래 키가 있는 테이블에는 인덱스 생성
 CREATE INDEX idx_personal_info_user_id ON personal_info(user_id);

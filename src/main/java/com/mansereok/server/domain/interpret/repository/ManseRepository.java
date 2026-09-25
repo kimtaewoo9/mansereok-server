@@ -6,9 +6,12 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
-import org.springframework.data.jpa.repository.Query;
 import org.springframework.stereotype.Repository;
 
+/**
+ * manses 조회. 절입 시각으로 찾는 조회는 idx_manses_season_start_time, 음력 날짜로 찾는 조회는
+ * idx_manses_lunar_date_leap_month 를 쓴다(Manse 의 @Table 선언).
+ */
 @Repository
 public interface ManseRepository extends JpaRepository<Manse, Long> {
 
@@ -18,25 +21,9 @@ public interface ManseRepository extends JpaRepository<Manse, Long> {
 	Optional<Manse> findBySolarDate(LocalDate solarDate);
 
 	/**
-	 * 음력 날짜로 만세력 조회
-	 */
-	Optional<Manse> findByLunarDate(LocalDate lunarDate);
-
-	/**
-	 * 음력 날짜(+윤달 여부)로 만세력 조회
-	 */
-	Optional<Manse> findByLunarDateAndLeapMonth(LocalDate lunarDate, Boolean leapMonth);
-
-	/**
-	 * 음력 날짜로 만세력 전체 조회 (윤달 분기 판단용)
+	 * 음력 날짜로 만세력 전체 조회. 윤달이 낀 날짜는 평달과 윤달 두 행이 양력 날짜 순서로 온다. 윤달 여부는 이 목록에서 고른다.
 	 */
 	List<Manse> findAllByLunarDateOrderBySolarDateAsc(LocalDate lunarDate);
-
-	/**
-	 * 절입시간이 특정 시간 이후인 첫 번째 만세력 조회 (순행용 - 같은 시간 포함)
-	 */
-	Optional<Manse> findFirstBySeasonStartTimeGreaterThanEqualOrderBySeasonStartTimeAsc(
-		LocalDateTime datetime);
 
 	/**
 	 * 절입시간이 특정 시간 이후인 첫 번째 만세력 조회 (대운 순행용 - 같은 시간 제외)
@@ -45,14 +32,14 @@ public interface ManseRepository extends JpaRepository<Manse, Long> {
 		LocalDateTime datetime);
 
 	/**
-	 * 절입시간이 특정 시간 이전인 첫 번째 만세력 조회 (역행용)
+	 * 절입시간이 특정 시간 이전인 첫 번째 만세력 조회 (대운 역행용, 월운의 현재 절입 기준점 - 같은 시간 포함)
 	 */
 	Optional<Manse> findFirstBySeasonStartTimeLessThanEqualOrderBySeasonStartTimeDesc(
 		LocalDateTime datetime);
 
 	/**
-	 * 절기 정보가 있는 만세력들 조회
+	 * 절입시간이 특정 시간과 같거나 이후인 절입일을 절입 시각 순서로 13개까지 조회 (월운용). 월운 12개월과 마지막 달이 끝나는 다음
+	 * 절입 하나다. 표 끝(2100년)에 가까우면 남은 만큼만 온다.
 	 */
-	@Query("SELECT m FROM Manse m WHERE m.season IS NOT NULL AND m.seasonStartTime IS NOT NULL ORDER BY m.solarDate")
-	List<Manse> findAllBySeason();
+	List<Manse> findTop13BySeasonStartTimeGreaterThanEqualOrderBySeasonStartTimeAsc(LocalDateTime datetime);
 }
