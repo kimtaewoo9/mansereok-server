@@ -12,7 +12,7 @@ class MarchMonthlyNormalizeSmokeTest {
 	@Test
 	void normalizeMarchMonthlyText_repairsBrokenHeadersAndCapsSectionLength() throws Exception {
 		ManseInterpretationService service = new ManseInterpretationService(
-			null, null, null, null, null, null, null, null, null
+			null, null, null, null, null, null, null, null, null, null, null
 		);
 
 		String raw = """
