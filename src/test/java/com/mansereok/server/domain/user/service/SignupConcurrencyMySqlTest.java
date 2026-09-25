@@ -1,11 +1,13 @@
 package com.mansereok.server.domain.user.service;
 
+import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.BDDMockito.then;
+import static org.mockito.BDDMockito.willAnswer;
 import static org.mockito.Mockito.times;
 
 import com.mansereok.server.domain.auth.service.oauth.OauthLoginResult;
@@ -24,6 +26,10 @@ import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.Callable;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -94,6 +100,37 @@ class SignupConcurrencyMySqlTest extends LocalMySqlTest {
 			then(slackNotificationService).should(times(1))
 				.sendUserCreatedNotification(eq("동시가입"), eq(email), any(), eq("일반 회원가입"), any());
 		});
+	}
+
+	@Test
+	@DisplayName("가입 알림을 보내는 동안에는 가입이 이미 커밋되어, 다른 트랜잭션이 새 회원 행을 본다")
+	void signupNotificationIsSentAfterCommit() throws Exception {
+		// given: 가입 알림을 래치에서 붙잡아, 알림을 보내는 순간에 멈춰 세운다(sleep 을 쓰지 않는다)
+		CountDownLatch notificationStarted = new CountDownLatch(1);
+		CountDownLatch releaseNotification = new CountDownLatch(1);
+		willAnswer(invocation -> {
+			notificationStarted.countDown();
+			releaseNotification.await(10, SECONDS);
+			return null;
+		}).given(discordNotificationService)
+			.sendUserCreatedNotification(eq("알림확인"), eq(email), any(), eq("일반 회원가입"), any());
+
+		ExecutorService executor = Executors.newSingleThreadExecutor();
+		try {
+			Future<User> signup = executor.submit(() -> userService.createUser("알림확인", email, "password123",
+				LocalDate.of(1990, 1, 1), Gender.FEMALE, true, false));
+			assertThat(notificationStarted.await(10, SECONDS)).as("가입 알림을 보내기 시작했다").isTrue();
+
+			// when & then: 알림이 멈춰 있는 동안 다른 커넥션에서 본다
+			assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM users WHERE email = ?", Integer.class,
+				email)).as("다른 트랜잭션이 본 새 회원 행(커밋 전이면 0)").isEqualTo(1);
+
+			releaseNotification.countDown();
+			signup.get(10, SECONDS);
+		} finally {
+			releaseNotification.countDown();
+			executor.shutdownNow();
+		}
 	}
 
 	@Test
