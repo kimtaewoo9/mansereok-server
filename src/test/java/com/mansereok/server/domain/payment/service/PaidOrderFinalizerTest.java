@@ -6,6 +6,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.willThrow;
 import static org.mockito.Mockito.inOrder;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -14,6 +15,7 @@ import com.mansereok.server.domain.interpret.service.ResultService;
 import com.mansereok.server.domain.order.entity.Order;
 import com.mansereok.server.domain.order.entity.OrderStatus;
 import com.mansereok.server.domain.order.repository.OrderRepository;
+import com.mansereok.server.domain.order.service.OrderDiscountRestorer;
 import com.mansereok.server.domain.payment.entity.Payment;
 import com.mansereok.server.domain.payment.entity.PaymentStatus;
 import com.mansereok.server.domain.payment.event.PaymentCompletedEvent;
@@ -27,6 +29,7 @@ import org.hibernate.exception.ConstraintViolationException;
 import org.hibernate.exception.ConstraintViolationException.ConstraintKind;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -59,6 +62,8 @@ class PaidOrderFinalizerTest {
 	private PaymentRepository paymentRepository;
 	@Mock
 	private ResultService resultService;
+	@Mock
+	private OrderDiscountRestorer orderDiscountRestorer;
 	@Mock
 	private ApplicationEventPublisher eventPublisher;
 
@@ -252,5 +257,40 @@ class PaidOrderFinalizerTest {
 			.isSameAs(unknownViolation);
 
 		verifyNoInteractions(resultService);
+	}
+
+	@Nested
+	@DisplayName("만료 때 되돌린 할인을 다시 쓸지")
+	class ReapplyDiscountAfterExpiry {
+
+		@Test
+		@DisplayName("만료(EXPIRED)된 주문을 확정하면 되돌렸던 쿠폰·할인 코드를 같은 호출 안에서 한 번 다시 사용 처리한다")
+		void expiredOrder_reappliesDiscountOnce() {
+			// given
+			Order expiredOrder = Order.create(MERCHANT_UID, USER_ID, SUB_CATEGORY_ID, 10000, 9000, "SALE10", null,
+				OrderStatus.EXPIRED, "김태우", "taewoo@example.com");
+			ReflectionTestUtils.setField(expiredOrder, "id", ORDER_ID);
+			givenPaymentSaveAssignsId();
+
+			// when
+			paidOrderFinalizer.finalizePaid(expiredOrder, PAYMENT_ID, AMOUNT, PAID_AT);
+
+			// then
+			assertThat(expiredOrder.getStatus()).isEqualTo(OrderStatus.PAID);
+			verify(orderDiscountRestorer, times(1)).reapply(expiredOrder);
+		}
+
+		@Test
+		@DisplayName("결제 대기(PENDING) 주문을 확정하면 주문을 만들 때 이미 할인을 썼으므로 다시 사용 처리하지 않는다")
+		void pendingOrder_doesNotReapplyDiscount() {
+			// given
+			givenPaymentSaveAssignsId();
+
+			// when
+			paidOrderFinalizer.finalizePaid(order, PAYMENT_ID, AMOUNT, PAID_AT);
+
+			// then
+			verify(orderDiscountRestorer, never()).reapply(any());
+		}
 	}
 }

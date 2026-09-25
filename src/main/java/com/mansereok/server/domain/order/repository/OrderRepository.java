@@ -4,6 +4,7 @@ import com.mansereok.server.domain.order.entity.Order;
 import com.mansereok.server.domain.order.entity.OrderStatus;
 import jakarta.persistence.LockModeType;
 import java.time.LocalDateTime;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -38,6 +39,15 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
 	Optional<Order> findByMerchantUidWithLock(@Param("merchantUid") String merchantUid);
 
 	List<Order> findAllByStatusAndCreatedAtBefore(OrderStatus status, LocalDateTime cutoff);
+
+	/**
+	 * 주문 excludedOrderId 말고 이 쿠폰을 쓴 주문 중 상태가 statuses 에 드는 것이 있는지 돌려준다. 할인 복구가 "다른 주문이 아직
+	 * 이 쿠폰을 쥐고 있는가" 를 확인할 때 쓴다.
+	 *
+	 * <p>orders.coupon_id 에 인덱스가 없으면 orders 를 훑는다. 환불·만료처럼 복구할 때만 부른다.
+	 */
+	boolean existsByCouponIdAndStatusInAndIdNot(Long couponId, Collection<OrderStatus> statuses,
+		Long excludedOrderId);
 
 	/**
 	 * 현재 상태가 expected 일 때만 next 로 바꾼다. 영향 행 수(0 또는 1)로 경합 여부를 판단한다.

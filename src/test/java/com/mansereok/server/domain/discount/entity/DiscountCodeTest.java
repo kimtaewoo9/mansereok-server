@@ -162,6 +162,39 @@ class DiscountCodeTest {
 		}
 
 		@Test
+		@DisplayName("결제가 끝난 주문 몫으로 올릴 때는 이미 최대 횟수여도 거절하지 않고 1 올린다")
+		void incrementsPastLimitForPaidOrder() {
+			// given
+			DiscountCode discountCode = DiscountCodeFixture.usableCode().maxUses(5).currentUses(5).build();
+
+			// when
+			discountCode.incrementUsageAllowingOverflow();
+
+			// then
+			assertThat(discountCode.getCurrentUses()).isEqualTo(6);
+		}
+
+		@ParameterizedTest(name = "[{index}] 최대 {0}번 중 {1}번 사용 → 넘음 {2}")
+		@DisplayName("사용 횟수가 최대 횟수보다 커야 넘은 것으로 본다")
+		@CsvSource(textBlock = """
+			# 최대 횟수, 사용 횟수, 넘었는가
+			5, 4, false
+			5, 5, false
+			5, 6, true
+			""")
+		void exceedsMaxUsesOnlyAboveLimit(int maxUses, int currentUses, boolean expected) {
+			// given
+			DiscountCode discountCode = DiscountCodeFixture.usableCode().maxUses(maxUses).currentUses(currentUses)
+				.build();
+
+			// when
+			boolean exceeded = discountCode.exceedsMaxUses();
+
+			// then
+			assertThat(exceeded).isEqualTo(expected);
+		}
+
+		@Test
 		@DisplayName("사용 횟수를 되돌리면 1 내린다")
 		void decrementsUsage() {
 			// given

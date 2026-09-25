@@ -102,6 +102,25 @@ public class DiscountCodeService {
 		discountCodeRepository.save(discountCode); // 변경 감지(Dirty checking)
 	}
 
+	/**
+	 * 만료 뒤 늦게 결제된 주문 몫으로, 만료 때 돌려놓은 사용 횟수를 다시 1 올린다.
+	 *
+	 * <p>행을 잠가 읽은 뒤 최대 횟수에 닿았어도 올린다. 결제는 이미 이 코드의 할인가로 끝났으므로 거절하지 않고, 넘었는지를
+	 * 돌려줘 호출자가 운영 알림을 보내게 한다. 코드가 비활성이거나 기간이 지났어도 올린다.
+	 *
+	 * <p>잠금 순서는 주문 행 → 할인 코드 행이다. 호출자(결제 확정)가 이미 주문 행을 잠근 트랜잭션 안에서 부른다.
+	 *
+	 * @return 올린 뒤 사용 횟수가 최대 횟수를 넘었으면 true
+	 * @throws PaymentException 코드가 없을 때
+	 */
+	@Transactional
+	public boolean reapplyUsage(String code) {
+		DiscountCode discountCode = discountCodeRepository.findByCodeForUpdate(code)
+			.orElseThrow(() -> new PaymentException("존재하지 않는 할인 코드입니다."));
+		discountCode.incrementUsageAllowingOverflow();
+		return discountCode.exceedsMaxUses();
+	}
+
 	@Transactional
 	public DiscountCode createReviewRewardCode(Long userId, int discountAmount) {
 		// 1. 고유 코드 생성 (유일성 보장)

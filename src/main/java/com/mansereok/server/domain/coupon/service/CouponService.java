@@ -93,6 +93,30 @@ public class CouponService {
 		coupon.use();
 	}
 
+	/**
+	 * 만료 뒤 늦게 결제된 주문 몫으로, 만료 때 돌려놓은 쿠폰을 다시 사용 처리한다.
+	 *
+	 * <p>쿠폰 행을 잠가 읽은 뒤 미사용이면 사용 처리한다. 그사이 다른 주문이 이 쿠폰을 이미 썼다면 아무것도 바꾸지 않고 false 를
+	 * 돌려준다. 결제는 이미 끝났으므로 예외로 확정을 되돌리지 않고, 호출자가 운영 알림을 보낸다. 쿠폰 기간은 보지 않는다
+	 * ({@link Coupon#useForPaidOrder()}).
+	 *
+	 * <p>잠금 순서는 주문 행 → 쿠폰 행이다. 호출자(결제 확정)가 이미 주문 행을 잠근 트랜잭션 안에서 부르고, 잠금은 그 트랜잭션이
+	 * 끝날 때 풀린다.
+	 *
+	 * @return 이 호출로 사용 처리했으면 true, 다른 주문이 이미 쓰고 있어 그대로 두었으면 false
+	 * @throws PaymentException 쿠폰이 없을 때
+	 */
+	@Transactional
+	public boolean claimForPaidOrder(Long couponId) {
+		Coupon coupon = couponRepository.findByIdWithLock(couponId)
+			.orElseThrow(() -> new PaymentException("쿠폰 정보를 찾을 수 없습니다."));
+		if (coupon.isUsed()) {
+			return false;
+		}
+		coupon.useForPaidOrder();
+		return true;
+	}
+
 	@Transactional(readOnly = true)
 	public List<CouponEventDto> getCouponEvents(Long userId) {
 		List<Object[]> results = couponTemplateRepository.findAllWithIssueStatus(userId);
