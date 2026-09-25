@@ -1,14 +1,12 @@
 package com.mansereok.server.domain.auth.service.oauth;
 
 import com.mansereok.server.domain.auth.dto.response.AccessTokenDto;
-import com.mansereok.server.domain.auth.dto.response.oauth.XProfileDto;
 import com.mansereok.server.domain.auth.dto.response.oauth.XProfileResponse;
 import com.mansereok.server.domain.user.entity.SocialType;
 import com.mansereok.server.global.exception.OauthLoginException;
 import com.mansereok.server.global.exception.OauthProviderUnavailableException;
 import java.util.Base64;
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
 import org.springframework.stereotype.Service;
@@ -18,7 +16,6 @@ import org.springframework.web.client.RestClient;
 
 @Service
 @RequiredArgsConstructor
-@Slf4j
 public class XService {
 
 	@Value("${oauth.x.client-id}")
@@ -42,18 +39,13 @@ public class XService {
 	 * 바꾼 뒤 그 토큰으로 프로필을 읽는다. 액세스 토큰은 이 메서드 밖으로 나가지 않는다.
 	 *
 	 * @throws OauthLoginException               X 가 요청을 거절했거나 토큰·사용자 정보(data)를 주지 않음
-	 * @throws OauthProviderUnavailableException X 에 닿지 못했거나 시간 안에 답이 없거나 5xx
+	 * @throws OauthProviderUnavailableException X 에 닿지 못했거나 시간 안에 답이 없거나 5xx·408·429
 	 */
 	public OauthProfile authenticate(String code, String codeVerifier) {
 		String accessToken = providerCalls.accessTokenOf(
 			providerCalls.send("토큰 교환", () -> requestAccessToken(code, codeVerifier)));
-		XProfileResponse response = providerCalls.send("프로필 조회", () -> requestProfile(accessToken));
-		// 실제 프로필 정보는 data 필드 안에 있다.
-		XProfileDto profile = response == null ? null : response.getData();
-		OauthProfile oauthProfile = providerCalls.profileOf(profile, XProfileDto::toOauthProfile);
-		log.debug("소셜 로그인 제공자 인증 완료: provider={}, socialId={}", SocialType.X,
-			oauthProfile.socialId());
-		return oauthProfile;
+		XProfileResponse profile = providerCalls.send("프로필 조회", () -> requestProfile(accessToken));
+		return providerCalls.profileOf(profile, XProfileResponse::toOauthProfile);
 	}
 
 	// X 로그인 할떄, PKCE가 반드시 있어야함 .

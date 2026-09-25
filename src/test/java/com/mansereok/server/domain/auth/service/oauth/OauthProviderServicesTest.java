@@ -11,6 +11,7 @@ import static org.springframework.test.web.client.match.MockRestRequestMatchers.
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withBadRequest;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withException;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withServiceUnavailable;
+import static org.springframework.test.web.client.response.MockRestResponseCreators.withStatus;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withUnauthorizedRequest;
 
@@ -19,7 +20,12 @@ import ch.qos.logback.classic.Logger;
 import com.mansereok.server.domain.user.entity.SocialType;
 import com.mansereok.server.global.exception.OauthLoginException;
 import com.mansereok.server.global.exception.OauthProviderUnavailableException;
+import java.io.ByteArrayInputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.SequenceInputStream;
 import java.net.http.HttpTimeoutException;
+import java.nio.charset.StandardCharsets;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -33,7 +39,10 @@ import org.slf4j.LoggerFactory;
 import org.springframework.boot.test.system.CapturedOutput;
 import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.http.HttpMethod;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
+import org.springframework.http.client.ClientHttpResponse;
+import org.springframework.mock.http.client.MockClientHttpResponse;
 import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.HttpServerErrorException;
@@ -54,11 +63,13 @@ import org.springframework.web.client.RestClientException;
 @ExtendWith(OutputCaptureExtension.class)
 class OauthProviderServicesTest {
 
+	private static final String AUTH_CODE = "AUTH-CODE-123";
 	private static final String ACCESS_TOKEN = "SECRET-ACCESS-TOKEN";
 	private static final String ID_TOKEN = "SECRET-ID-TOKEN";
 	private static final String REFRESH_TOKEN = "SECRET-REFRESH-TOKEN";
 	private static final String EMAIL = "leak@example.com";
 	private static final String NAME = "비밀이름";
+	private static final String X_HANDLE = "secret_handle";
 
 	private static final String TOKEN_RESPONSE = """
 		{"access_token": "SECRET-ACCESS-TOKEN", "id_token": "SECRET-ID-TOKEN",
@@ -120,7 +131,7 @@ class OauthProviderServicesTest {
 			// then
 			assertThat(output.getAll())
 				.contains("provider=" + provider.socialType + ", socialId=" + provider.socialId)
-				.doesNotContain(ACCESS_TOKEN, ID_TOKEN, REFRESH_TOKEN, EMAIL, NAME);
+				.doesNotContain(AUTH_CODE, ACCESS_TOKEN, ID_TOKEN, REFRESH_TOKEN, EMAIL, NAME, X_HANDLE);
 		}
 	}
 
@@ -144,9 +155,53 @@ class OauthProviderServicesTest {
 				.withCauseInstanceOf(HttpClientErrorException.class)
 				.satisfies(e -> {
 					assertThat(e.getProvider()).isEqualTo(provider.socialType);
-					assertThat(e.getReason()).isEqualTo("토큰 교환 요청을 제공자가 거절함(HTTP 400)");
+					assertThat(e.getReason())
+						.isEqualTo("토큰 교환 요청을 제공자가 거절함(HTTP 400, error=invalid_grant, error_code=KOE320)");
 				});
 			providerServer.verify();
+		}
+
+		@ParameterizedTest(name = "[{index}] {0} → {2}")
+		@CsvSource(delimiter = '|', textBlock = """
+			# 본문 형식      | 제공자 오류 본문                                                                               | 이유
+			application/json | {"error": "invalid_grant", "error_description": "code=AUTH-CODE-123", "error_code": "KOE320"} | 토큰 교환 요청을 제공자가 거절함(HTTP 400, error=invalid_grant, error_code=KOE320)
+			application/json | {"error": "redirect_uri_mismatch", "error_description": "Bad Request"}                     | 토큰 교환 요청을 제공자가 거절함(HTTP 400, error=redirect_uri_mismatch)
+			# 코드 모양이 아닌 값(문장, 인가 코드가 섞인 값)은 버린다
+			application/json | {"error": "code=AUTH-CODE-123 is invalid"}                                              | 토큰 교환 요청을 제공자가 거절함(HTTP 400)
+			# 모양이 다른 본문, JSON 이 아닌 본문, 빈 본문은 상태만 남긴다
+			application/json | {"error": {"code": 400, "message": "AUTH-CODE-123"}}                                    | 토큰 교환 요청을 제공자가 거절함(HTTP 400)
+			text/html        | <html>AUTH-CODE-123</html>                                                               | 토큰 교환 요청을 제공자가 거절함(HTTP 400)
+			application/json | ''                                                                                       | 토큰 교환 요청을 제공자가 거절함(HTTP 400)
+			""")
+		@DisplayName("제공자가 400 으로 거절하면 이유에 HTTP 상태와 오류 코드(error, error_code)만 적고 설명과 본문은 적지 않는다")
+		void reasonKeepsOnlyErrorCodes(String contentType, String errorBody, String expectedReason) {
+			// given
+			providerServer.expect(once(), requestTo(Provider.KAKAO.tokenUrl))
+				.andRespond(withBadRequest().contentType(MediaType.parseMediaType(contentType)).body(errorBody));
+
+			// when & then
+			assertThatExceptionOfType(OauthLoginException.class)
+				.isThrownBy(() -> Provider.KAKAO.authenticate(restClient))
+				.satisfies(e -> assertThat(e.getReason()).isEqualTo(expectedReason));
+		}
+
+		@ParameterizedTest(name = "[{index}] HTTP {0}")
+		@CsvSource(delimiter = '|', textBlock = """
+			# 상태             | 이유
+			REQUEST_TIMEOUT    | 토큰 교환 요청을 제공자가 지금은 받지 않음(HTTP 408)
+			TOO_MANY_REQUESTS  | 토큰 교환 요청을 제공자가 지금은 받지 않음(HTTP 429)
+			""")
+		@DisplayName("제공자가 408·429 로 답하면 사용자 잘못이 아니라 제공자가 잠시 받지 않는 것이라 OauthProviderUnavailableException 을 던진다")
+		void providerRefusesForNow(HttpStatus status, String expectedReason) {
+			// given
+			providerServer.expect(once(), requestTo(Provider.KAKAO.tokenUrl))
+				.andRespond(withStatus(status));
+
+			// when & then
+			assertThatExceptionOfType(OauthProviderUnavailableException.class)
+				.isThrownBy(() -> Provider.KAKAO.authenticate(restClient))
+				.withCauseInstanceOf(HttpClientErrorException.class)
+				.satisfies(e -> assertThat(e.getReason()).isEqualTo(expectedReason));
 		}
 
 		@ParameterizedTest(name = "[{index}] {0}")
@@ -185,12 +240,37 @@ class OauthProviderServicesTest {
 
 		@ParameterizedTest(name = "[{index}] {0}")
 		@EnumSource(Provider.class)
-		@DisplayName("200 이어도 access_token 이 없으면(네이버의 잘못된 인가 코드 응답) 프로필을 부르지 않고 OauthLoginException 을 던진다")
-		void tokenResponseWithoutAccessToken(Provider provider) {
+		@DisplayName("응답 헤더는 왔지만 본문을 받다가 끊기면(읽기 제한 초과) OauthProviderUnavailableException 을 던진다")
+		void responseBodyCutOff(Provider provider) {
+			// given: RestClient 는 본문 읽기 중의 IOException 을 ResourceAccessException 이 아닌 RestClientException 으로 감싼다
+			providerServer.expect(once(), requestTo(provider.tokenUrl))
+				.andRespond(request -> bodyCutOffAfter("{\"access_token\": \""));
+
+			// when & then
+			assertThatExceptionOfType(OauthProviderUnavailableException.class)
+				.isThrownBy(() -> provider.authenticate(restClient))
+				.withCauseExactlyInstanceOf(RestClientException.class)
+				.satisfies(e -> assertThat(e.getReason())
+					.isEqualTo("토큰 교환 응답 본문을 다 받기 전에 끊기거나 시간 안에 오지 않음(IOException)"));
+		}
+
+		@ParameterizedTest(name = "[{index}] {0}: {1}")
+		@CsvSource(delimiter = '|', textBlock = """
+			# 제공자 | 200 토큰 응답(access_token 없음, 빈 문자열)
+			GOOGLE   | {"error": "invalid_request", "error_description": "no valid data in session"}
+			KAKAO    | {"error": "invalid_request", "error_description": "no valid data in session"}
+			NAVER    | {"error": "invalid_request", "error_description": "no valid data in session"}
+			X        | {"error": "invalid_request", "error_description": "no valid data in session"}
+			GOOGLE   | {"access_token": "", "error": "invalid_request"}
+			KAKAO    | {"access_token": "", "error": "invalid_request"}
+			NAVER    | {"access_token": "", "error": "invalid_request"}
+			X        | {"access_token": "", "error": "invalid_request"}
+			""")
+		@DisplayName("200 이어도 access_token 이 없거나 비었으면(네이버의 잘못된 인가 코드 응답) 프로필을 부르지 않고 OauthLoginException 을 던진다")
+		void tokenResponseWithoutAccessToken(Provider provider, String tokenResponse) {
 			// given
 			providerServer.expect(once(), requestTo(provider.tokenUrl))
-				.andRespond(withSuccess("{\"error\": \"invalid_request\","
-					+ " \"error_description\": \"no valid data in session\"}", MediaType.APPLICATION_JSON));
+				.andRespond(withSuccess(tokenResponse, MediaType.APPLICATION_JSON));
 
 			// when & then
 			assertThatExceptionOfType(OauthLoginException.class)
@@ -240,7 +320,7 @@ class OauthProviderServicesTest {
 			GOOGLE   | {"name": "비밀이름", "email": "leak@example.com"}                      | 프로필 응답에 사용자 정보가 없음
 			KAKAO    | {"kakao_account": {"email": "leak@example.com"}}                      | 프로필 응답에 사용자 정보가 없음
 			NAVER    | {"resultcode": "024", "message": "Authentication failed"}             | 프로필 응답에 사용자 정보가 없음
-			X        | {"errors": [{"title": "Unauthorized"}]}                                | 프로필 응답 본문이 비어 있음
+			X        | {"errors": [{"title": "Unauthorized"}]}                                | 프로필 응답에 사용자 정보가 없음
 			""")
 		@DisplayName("200 이어도 사용자 번호가 없으면 누구인지 알 수 없어 OauthLoginException 을 던진다")
 		void profileWithoutSocialId(Provider provider, String profileResponse, String expectedReason) {
@@ -269,6 +349,20 @@ class OauthProviderServicesTest {
 			.andRespond(withSuccess(profileResponse, MediaType.APPLICATION_JSON));
 	}
 
+	// 200 과 JSON 헤더, 본문 앞부분까지 준 뒤 다음 읽기에서 IOException 을 낸다. 읽기 제한에 걸린 JDK HttpClient 본문과 같다.
+	private static ClientHttpResponse bodyCutOffAfter(String firstPart) {
+		InputStream cutOff = new InputStream() {
+			@Override
+			public int read() throws IOException {
+				throw new IOException("본문을 받다가 끊김");
+			}
+		};
+		MockClientHttpResponse response = new MockClientHttpResponse(new SequenceInputStream(
+			new ByteArrayInputStream(firstPart.getBytes(StandardCharsets.UTF_8)), cutOff), HttpStatus.OK);
+		response.getHeaders().setContentType(MediaType.APPLICATION_JSON);
+		return response;
+	}
+
 	/**
 	 * 제공자마다 다른 주소·응답 모양·호출 방법을 한 줄로 모은다. 프로필 응답에는 로그에 남으면 안 되는 이메일과 이름을 넣어 둔다.
 	 */
@@ -279,7 +373,7 @@ class OauthProviderServicesTest {
 			""") {
 			@Override
 			OauthProfile authenticate(RestClient restClient) {
-				return new GoogleService(restClient).authenticate("AUTH-CODE-123");
+				return new GoogleService(restClient).authenticate(AUTH_CODE);
 			}
 		},
 		KAKAO(SocialType.KAKAO, "https://kauth.kakao.com/oauth/token", "https://kapi.kakao.com/v2/user/me",
@@ -289,7 +383,7 @@ class OauthProviderServicesTest {
 			""") {
 			@Override
 			OauthProfile authenticate(RestClient restClient) {
-				return new KakaoService(restClient).authenticate("AUTH-CODE-123");
+				return new KakaoService(restClient).authenticate(AUTH_CODE);
 			}
 		},
 		NAVER(SocialType.NAVER, "https://nid.naver.com/oauth2.0/token", "https://openapi.naver.com/v1/nid/me",
@@ -299,7 +393,7 @@ class OauthProviderServicesTest {
 			""") {
 			@Override
 			OauthProfile authenticate(RestClient restClient) {
-				return new NaverService(restClient).authenticate("AUTH-CODE-123", "STATE-123");
+				return new NaverService(restClient).authenticate(AUTH_CODE, "STATE-123");
 			}
 		},
 		X(SocialType.X, "https://api.twitter.com/2/oauth2/token", "https://api.twitter.com/2/users/me",
@@ -309,7 +403,7 @@ class OauthProviderServicesTest {
 			""") {
 			@Override
 			OauthProfile authenticate(RestClient restClient) {
-				return new XService(restClient).authenticate("AUTH-CODE-123", "CODE-VERIFIER-123");
+				return new XService(restClient).authenticate(AUTH_CODE, "CODE-VERIFIER-123");
 			}
 		};
 

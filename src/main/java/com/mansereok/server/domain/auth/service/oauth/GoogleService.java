@@ -6,7 +6,6 @@ import com.mansereok.server.domain.user.entity.SocialType;
 import com.mansereok.server.global.exception.OauthLoginException;
 import com.mansereok.server.global.exception.OauthProviderUnavailableException;
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.util.LinkedMultiValueMap;
@@ -15,7 +14,6 @@ import org.springframework.web.client.RestClient;
 
 @Service
 @RequiredArgsConstructor
-@Slf4j
 public class GoogleService {
 
 	@Value("${oauth.google.client-id}")
@@ -36,16 +34,13 @@ public class GoogleService {
 	 * 프로필을 읽는다. 액세스 토큰은 이 메서드 밖으로 나가지 않는다.
 	 *
 	 * @throws OauthLoginException               구글이 요청을 거절했거나(인가 코드 재사용·만료 등) 토큰·사용자 번호를 주지 않음
-	 * @throws OauthProviderUnavailableException 구글에 닿지 못했거나 시간 안에 답이 없거나 5xx
+	 * @throws OauthProviderUnavailableException 구글에 닿지 못했거나 시간 안에 답이 없거나 5xx·408·429
 	 */
 	public OauthProfile authenticate(String code) {
 		String accessToken = providerCalls.accessTokenOf(
 			providerCalls.send("토큰 교환", () -> requestAccessToken(code)));
 		GoogleProfileDto profile = providerCalls.send("프로필 조회", () -> requestProfile(accessToken));
-		OauthProfile oauthProfile = providerCalls.profileOf(profile, GoogleProfileDto::toOauthProfile);
-		log.debug("소셜 로그인 제공자 인증 완료: provider={}, socialId={}", SocialType.GOOGLE,
-			oauthProfile.socialId());
-		return oauthProfile;
+		return providerCalls.profileOf(profile, GoogleProfileDto::toOauthProfile);
 	}
 
 	// 인가 코드를 액세스 토큰으로 바꾼다.

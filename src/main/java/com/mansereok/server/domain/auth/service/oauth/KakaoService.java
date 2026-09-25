@@ -6,7 +6,6 @@ import com.mansereok.server.domain.user.entity.SocialType;
 import com.mansereok.server.global.exception.OauthLoginException;
 import com.mansereok.server.global.exception.OauthProviderUnavailableException;
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.util.LinkedMultiValueMap;
@@ -15,7 +14,6 @@ import org.springframework.web.client.RestClient;
 
 @Service
 @RequiredArgsConstructor
-@Slf4j
 public class KakaoService {
 
 	@Value("${oauth.kakao.client-id}")
@@ -33,16 +31,13 @@ public class KakaoService {
 	 * 프로필을 읽는다. 액세스 토큰은 이 메서드 밖으로 나가지 않는다.
 	 *
 	 * @throws OauthLoginException               카카오가 요청을 거절했거나(같은 인가 코드 재사용 KOE320 등) 토큰·사용자 번호를 주지 않음
-	 * @throws OauthProviderUnavailableException 카카오에 닿지 못했거나 시간 안에 답이 없거나 5xx
+	 * @throws OauthProviderUnavailableException 카카오에 닿지 못했거나 시간 안에 답이 없거나 5xx·408·429
 	 */
 	public OauthProfile authenticate(String code) {
 		String accessToken = providerCalls.accessTokenOf(
 			providerCalls.send("토큰 교환", () -> requestAccessToken(code)));
 		KakaoProfileDto profile = providerCalls.send("프로필 조회", () -> requestProfile(accessToken));
-		OauthProfile oauthProfile = providerCalls.profileOf(profile, KakaoProfileDto::toOauthProfile);
-		log.debug("소셜 로그인 제공자 인증 완료: provider={}, socialId={}", SocialType.KAKAO,
-			oauthProfile.socialId());
-		return oauthProfile;
+		return providerCalls.profileOf(profile, KakaoProfileDto::toOauthProfile);
 	}
 
 	private AccessTokenDto requestAccessToken(String code) {

@@ -6,7 +6,6 @@ import com.mansereok.server.domain.user.entity.SocialType;
 import com.mansereok.server.global.exception.OauthLoginException;
 import com.mansereok.server.global.exception.OauthProviderUnavailableException;
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.util.LinkedMultiValueMap;
@@ -15,7 +14,6 @@ import org.springframework.web.client.RestClient;
 
 @Service
 @RequiredArgsConstructor
-@Slf4j
 public class NaverService {
 
 	@Value("${oauth.naver.client-id}")
@@ -39,16 +37,13 @@ public class NaverService {
 	 * 실패로 끝낸다.
 	 *
 	 * @throws OauthLoginException               네이버가 요청을 거절했거나 토큰·사용자 번호를 주지 않음
-	 * @throws OauthProviderUnavailableException 네이버에 닿지 못했거나 시간 안에 답이 없거나 5xx
+	 * @throws OauthProviderUnavailableException 네이버에 닿지 못했거나 시간 안에 답이 없거나 5xx·408·429
 	 */
 	public OauthProfile authenticate(String code, String state) {
 		String accessToken = providerCalls.accessTokenOf(
 			providerCalls.send("토큰 교환", () -> requestAccessToken(code, state)));
 		NaverProfileDto profile = providerCalls.send("프로필 조회", () -> requestProfile(accessToken));
-		OauthProfile oauthProfile = providerCalls.profileOf(profile, NaverProfileDto::toOauthProfile);
-		log.debug("소셜 로그인 제공자 인증 완료: provider={}, socialId={}", SocialType.NAVER,
-			oauthProfile.socialId());
-		return oauthProfile;
+		return providerCalls.profileOf(profile, NaverProfileDto::toOauthProfile);
 	}
 
 	private AccessTokenDto requestAccessToken(String code, String state) {
