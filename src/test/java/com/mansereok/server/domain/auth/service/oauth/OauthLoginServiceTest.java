@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 
 import com.mansereok.server.domain.auth.dto.response.oauth.XProfileDto;
@@ -101,6 +102,10 @@ class OauthLoginServiceTest {
 			// given
 			given(userRepository.findBySocialTypeAndSocialId(socialType, "id-1"))
 				.willReturn(Optional.empty());
+			// 예전 파생 쿼리처럼 이메일 null 조회에 이메일 없는 다른 회원을 돌려주게 해 둔다. 이메일 없이 이메일로 찾으면 그 회원의
+			// 계정을 받게 되어 아래 결과 단언이 실패한다. 옳은 코드는 이 조회를 부르지 않으므로 lenient 로 둔다.
+			lenient().when(userRepository.findByEmail(null))
+				.thenReturn(Optional.of(socialSignupUser(30L, SocialType.KAKAO, "someone-else")));
 			givenSaveAssignsNewId();
 
 			// when
@@ -112,7 +117,6 @@ class OauthLoginServiceTest {
 			assertThat(result.user()).extracting(User::getId, User::getEmail, User::getSocialType,
 					User::getSocialId)
 				.containsExactly(NEW_USER_ID, null, socialType, "id-1");
-			then(userRepository).should(never()).findByEmail(any());
 		}
 	}
 
@@ -127,6 +131,10 @@ class OauthLoginServiceTest {
 			// given
 			given(userRepository.findBySocialTypeAndSocialId(socialType, "id-1"))
 				.willReturn(Optional.empty());
+			// 그 이메일로 가입한 기존 회원이 있다. 확인되지 않은 이메일로 연동하면 이 계정을 받게 되어 아래 결과 단언이 실패한다.
+			// 옳은 코드는 이 조회를 부르지 않으므로 lenient 로 둔다.
+			lenient().when(userRepository.findByEmail("victim@example.com"))
+				.thenReturn(Optional.of(emailSignupUser(30L, "victim@example.com")));
 			givenSaveAssignsNewId();
 
 			// when
@@ -135,8 +143,8 @@ class OauthLoginServiceTest {
 
 			// then
 			assertThat(result.newlyRegistered()).isTrue();
-			assertThat(result.user().getEmail()).isNull();
-			then(userRepository).should(never()).findByEmail(any());
+			assertThat(result.user()).extracting(User::getId, User::getEmail)
+				.containsExactly(NEW_USER_ID, null);
 		}
 	}
 

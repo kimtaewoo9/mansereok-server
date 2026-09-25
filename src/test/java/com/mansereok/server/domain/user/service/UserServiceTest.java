@@ -33,6 +33,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.NullAndEmptySource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.InjectMocks;
@@ -316,6 +317,38 @@ public class UserServiceTest {
 			"소셜회원", null, 1L, expectedSignupPath, saved.getCreatedAt());
 		verify(slackNotificationService).sendUserCreatedNotification(
 			"소셜회원", null, 1L, expectedSignupPath, saved.getCreatedAt());
+	}
+
+	@ParameterizedTest(name = "[{index}] {0} 가입")
+	@EnumSource(value = SocialType.class, mode = EnumSource.Mode.EXCLUDE, names = "NAVER")
+	@DisplayName("네이버가 아닌 소셜 가입은 제공자의 사용자 번호를 username 으로 저장한다")
+	void registerWithOauth_UsesSocialIdAsUsername(SocialType socialType) {
+		// given
+		givenSaveAssignsId(1L);
+
+		// when
+		User saved = userService.registerWithOauth(
+			new OauthProfile(socialType, "social-1", null, "소셜회원", false));
+
+		// then
+		assertThat(saved.getUsername()).isEqualTo("social-1");
+	}
+
+	@Test
+	@DisplayName("네이버 가입은 사용자 번호가 아닌 무작위 10자리 대문자를 username 으로 저장한다")
+	void registerWithOauth_UsesRandomUsernameForNaver() {
+		// given
+		givenSaveAssignsId(1L);
+
+		// when
+		User saved = userService.registerWithOauth(
+			new OauthProfile(SocialType.NAVER, "naver-id-1", null, "네이버회원", false));
+
+		// then
+		assertThat(saved.getUsername())
+			.isNotEqualTo("naver-id-1")
+			.hasSize(10)
+			.isUpperCase();
 	}
 
 	@Test

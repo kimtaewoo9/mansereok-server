@@ -149,8 +149,12 @@ public class UserService {
 	}
 
 	/**
-	 * 소셜 가입 계정의 username. 네이버는 무작위 10자리, 나머지 제공자는 제공자의 사용자 번호를 그대로 쓴다. username 은 JWT
-	 * subject 로 쓰이므로 이미 가입한 사용자를 위해 규칙을 바꾸지 않는다.
+	 * 소셜 가입 계정의 username. 네이버는 무작위 10자리 대문자, 나머지 제공자는 제공자의 사용자 번호를 그대로 쓴다. 예전 컨트롤러의
+	 * 규칙을 그대로 옮겼다. username 은 가입할 때 한 번 저장되고 다시 계산하지 않으므로, 규칙을 바꿔도 이미 가입한 사용자에게는
+	 * 영향이 없다.
+	 *
+	 * <p>남는 위험: 제공자가 달라도 사용자 번호가 같으면 username 이 겹칠 수 있다. 운영 DB 에 username UNIQUE 가 있으면 뒤에
+	 * 오는 가입이 실패한다. 없으면 같은 username 행이 둘 생기고, username 으로 회원을 찾는 요청이 두 사용자 모두 실패한다.
 	 */
 	private static String oauthUsername(OauthProfile profile) {
 		if (profile.socialType() == SocialType.NAVER) {
