@@ -80,7 +80,7 @@ final class LifeAndPersonalityPrompts {
 
 			""");
 
-		PromptSections.appendSajuJsonResponseFormat(prompt);
+		PromptSections.appendSajuOutputFormat(prompt);
 
 		return prompt.toString();
 	}
@@ -178,7 +178,7 @@ final class LifeAndPersonalityPrompts {
 
 			""");
 
-		PromptSections.appendSajuJsonResponseFormat(prompt);
+		PromptSections.appendSajuOutputFormat(prompt);
 
 		return prompt.toString();
 	}
@@ -303,7 +303,7 @@ final class LifeAndPersonalityPrompts {
 
 		PromptSections.appendLongformAnalysisData(prompt, name, response);
 
-		PromptSections.appendBusinessJsonResponseFormat(prompt);
+		PromptSections.appendBusinessOutputFormat(prompt);
 		return prompt.toString();
 	}
 }

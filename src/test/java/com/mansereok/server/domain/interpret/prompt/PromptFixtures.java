@@ -17,8 +17,8 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 프롬프트 빌더 테스트가 공유하는 고정 입력. 골든 파일과 1:1 로 묶여 있으므로
- * 값을 바꾸면 골든 파일도 다시 만들어야 한다.
+ * 프롬프트 빌더 테스트가 공유하는 고정 입력. 기대 결과 파일과 1:1 로 묶여 있으므로
+ * 값을 바꾸면 기대 결과 파일도 다시 만들어야 한다.
  */
 public final class PromptFixtures {
 
@@ -130,15 +130,15 @@ public final class PromptFixtures {
 
 	/**
 	 * 대운이 역행하는 샘플. person1(남성·년간 양)과 person2(여성·년간 음)는 둘 다 순행이라
-	 * 역행 분기가 골든에 한 번도 잡히지 않았다. 여기서는 남성 + 년간 음으로 역행을 태운다.
+	 * 역행 분기가 기대 결과 파일에 한 번도 잡히지 않았다. 여기서는 남성 + 년간 음으로 역행을 태운다.
 	 *
 	 * <p>월주를 을축(乙丑, 60갑자 1번)으로 잡아 둔 것이 핵심이다. 역행은 월주 인덱스에서 빼 나가므로
 	 * 1 - (i + 1) 이 음수가 되고, 자바 음수 나머지를 보정하는 {@code ((x % 60) + 60) % 60} 경로를
 	 * 반드시 지나간다. 월주를 큰 인덱스로 잡으면 뺄셈 결과가 양수라 그 보정이 실행되지 않는다.
 	 *
 	 * <p>대운 시작 연도를 2000년으로 둬서 기준연도 2026 인 상품(18, 101, 106)에서는
-	 * 대운 구간이 (2026 - 2000) / 10 = 2 로 고정된다. 기준연도가 고정된 상품만 골든으로 떠 두면
-	 * 해가 바뀌어도 이 골든은 흔들리지 않는다.
+	 * 대운 구간이 (2026 - 2000) / 10 = 2 로 고정된다. 기준연도가 고정된 상품만 기대 결과 파일로 만들어 두면
+	 * 해가 바뀌어도 이 기대 결과 파일은 흔들리지 않는다.
 	 */
 	public static ManseryeokCalculationResponse personReverseDaewoon() {
 		SajuInfo saju = SajuInfo.builder()
@@ -193,7 +193,7 @@ public final class PromptFixtures {
 
 	/**
 	 * 값이 비거나 없는 경로를 태우는 샘플. 시간 모름, 여성, 지장간/신살/용신/월운 없음.
-	 * 프롬프트 빌더의 null 분기가 골든에 잡히도록 일부러 비워 둔다.
+	 * 프롬프트 빌더의 null 분기가 기대 결과 파일에 잡히도록 일부러 비워 둔다.
 	 */
 	public static ManseryeokCalculationResponse personEdge() {
 		SajuInfo saju = SajuInfo.builder()

@@ -314,7 +314,7 @@ final class ReunionManualSections {
 		// ==========================================
 		// 출력 형식 꼬리
 		// ==========================================
-		PromptSections.appendCompatibilityJsonResponseFormat(prompt);
+		PromptSections.appendCompatibilityOutputFormat(prompt);
 
 		// ==========================================
 		// 최종 체크리스트

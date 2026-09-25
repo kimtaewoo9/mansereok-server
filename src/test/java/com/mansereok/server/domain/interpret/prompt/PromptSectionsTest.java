@@ -59,10 +59,10 @@ class PromptSectionsTest {
 
 	@Test
 	@DisplayName("사주 출력 형식 꼬리는 스키마가 못 잡는 작성 규칙만 남기고 필드 구성 설명은 지운다")
-	void sajuJsonResponseFormatKeepsOnlyWritingRules() {
+	void sajuOutputFormatKeepsOnlyWritingRules() {
 		StringBuilder prompt = new StringBuilder();
 
-		PromptSections.appendSajuJsonResponseFormat(prompt);
+		PromptSections.appendSajuOutputFormat(prompt);
 
 		String text = prompt.toString();
 		assertThat(text).startsWith("\n\n### [최종 출력 형식] ###\n");
@@ -80,10 +80,10 @@ class PromptSectionsTest {
 
 	@Test
 	@DisplayName("궁합 출력 형식 꼬리는 세 필드의 작성 규칙만 남기고 필드 구성 설명은 지운다")
-	void compatibilityJsonResponseFormatKeepsOnlyWritingRules() {
+	void compatibilityOutputFormatKeepsOnlyWritingRules() {
 		StringBuilder prompt = new StringBuilder();
 
-		PromptSections.appendCompatibilityJsonResponseFormat(prompt);
+		PromptSections.appendCompatibilityOutputFormat(prompt);
 
 		String text = prompt.toString();
 		assertThat(text).contains("--- [interpretation 작성 규칙] ---");
@@ -97,11 +97,11 @@ class PromptSectionsTest {
 
 	@Test
 	@DisplayName("구획 조립은 사용자 입력 구획을 먼저 놓고 분석 지시 구획을 뒤에 붙인다")
-	void sectionBoundaryPutsUserInputBeforeAnalysis() {
+	void userInputSectionComesBeforeAnalysis() {
 		SequencedMap<String, String> userValues = new LinkedHashMap<>();
 		userValues.put("이름", "김태우");
 
-		String prompt = PromptSections.withSectionBoundary(userValues, "분석 지시 본문");
+		String prompt = PromptSections.prependUserInputSection(userValues, "분석 지시 본문");
 
 		assertThat(prompt).startsWith(UserInputSanitizer.USER_INPUT_SECTION_HEADER);
 		assertThat(prompt).endsWith("\n" + UserInputSanitizer.ANALYSIS_SECTION_HEADER
@@ -112,10 +112,10 @@ class PromptSectionsTest {
 
 	@Test
 	@DisplayName("사업운 출력 형식 꼬리는 summary 줄 수 제한을 담는다")
-	void businessJsonResponseFormatLimitsSummaryLines() {
+	void businessOutputFormatLimitsSummaryLines() {
 		StringBuilder prompt = new StringBuilder();
 
-		PromptSections.appendBusinessJsonResponseFormat(prompt);
+		PromptSections.appendBusinessOutputFormat(prompt);
 
 		assertThat(prompt.toString()).contains("summary는 4~5줄로 작성");
 		assertThat(prompt.toString()).contains("summary 총 길이는 280자 이내");
@@ -124,10 +124,10 @@ class PromptSectionsTest {
 
 	@Test
 	@DisplayName("재물운 출력 형식 꼬리는 번호형 라벨과 목록 기호 금지를 담는다")
-	void moneyLuckJsonResponseFormatForbidsListMarkers() {
+	void moneyLuckOutputFormatForbidsListMarkers() {
 		StringBuilder prompt = new StringBuilder();
 
-		PromptSections.appendMoneyLuckJsonResponseFormat(prompt);
+		PromptSections.appendMoneyLuckOutputFormat(prompt);
 
 		assertThat(prompt.toString()).contains("### 최종 출력 형식 ###");
 		assertThat(prompt.toString()).contains(

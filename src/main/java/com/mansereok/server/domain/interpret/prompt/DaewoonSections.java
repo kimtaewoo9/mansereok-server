@@ -54,7 +54,7 @@ final class DaewoonSections {
 	/**
 	 * 대운 계산 (선형 탐색을 통한 100% 정확한 인덱스 매칭)
 	 */
-	static void appendDaewoonSimple(StringBuilder prompt, SajuInfo saju, String gender,
+	static void appendDaewoonPeriods(StringBuilder prompt, SajuInfo saju, String gender,
 		int birthYear, int referenceYear) {
 		// 1. 필수 데이터 검증
 		if (saju.getYearSky() == null || saju.getMonthSky() == null

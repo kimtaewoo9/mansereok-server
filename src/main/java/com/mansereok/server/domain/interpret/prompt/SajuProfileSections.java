@@ -108,11 +108,11 @@ final class SajuProfileSections {
 		prompt.append("""
 			**지장간 (숨겨진 DNA)**
 			""");
-		SajuElementSections.appendJijangganDetail(prompt, "년지", saju.getYearGround());
-		SajuElementSections.appendJijangganDetail(prompt, "월지", saju.getMonthGround());
-		SajuElementSections.appendJijangganDetail(prompt, "일지", saju.getDayGround());
+		SajuElementSections.appendJijangganLine(prompt, "년지", saju.getYearGround());
+		SajuElementSections.appendJijangganLine(prompt, "월지", saju.getMonthGround());
+		SajuElementSections.appendJijangganLine(prompt, "일지", saju.getDayGround());
 		if (saju.getTimeGround() != null) {
-			SajuElementSections.appendJijangganDetail(prompt, "시지", saju.getTimeGround());
+			SajuElementSections.appendJijangganLine(prompt, "시지", saju.getTimeGround());
 		}
 		prompt.append("\n");
 
@@ -135,7 +135,7 @@ final class SajuProfileSections {
 
 			// [수정] birthYear 전달!
 			int birthYear = input.getSolarDate().getYear();
-			DaewoonSections.appendDaewoonSimple(prompt, saju, input.getGender(), birthYear, targetYear);
+			DaewoonSections.appendDaewoonPeriods(prompt, saju, input.getGender(), birthYear, targetYear);
 
 		} else if (saju.getBigFortuneNumberMin() != null && saju.getBigFortuneNumberMax() != null) {
 			prompt.append("""

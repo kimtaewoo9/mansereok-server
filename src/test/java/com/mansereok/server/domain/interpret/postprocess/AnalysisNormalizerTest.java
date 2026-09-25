@@ -10,7 +10,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
 /**
- * 규칙별 단위 테스트. 골든 테스트가 "예전과 같은가" 를 지킨다면 여기서는 "왜 이렇게 다듬는가" 를 적는다.
+ * 규칙별 단위 테스트. 기대 결과 비교 테스트가 "예전과 같은가" 를 지킨다면 여기서는 "왜 이렇게 다듬는가" 를 적는다.
  */
 @DisplayName("해석 후처리")
 class AnalysisNormalizerTest {
@@ -30,14 +30,14 @@ class AnalysisNormalizerTest {
 
 		@Test
 		@DisplayName("null 본문과 요약은 null 을 그대로 돌려준다")
-		void nullText() {
+		void returnsNullForNullText() {
 			assertThat(normalizer.normalizeAnalysis(21L, null)).isNull();
 			assertThat(normalizer.normalizeSummary(21L, null)).isNull();
 		}
 
 		@Test
 		@DisplayName("subcategoryId 가 null 이면 아무것도 손대지 않는다")
-		void nullSubcategoryId() {
+		void leavesTextUntouchedWhenSubcategoryIdIsNull() {
 			String raw = "[1. 총운]\n1-1 그대로 남아야 합니다.";
 
 			assertThat(normalizer.normalizeAnalysis(null, raw)).isEqualTo(raw);
@@ -47,7 +47,7 @@ class AnalysisNormalizerTest {
 		@ParameterizedTest(name = "규칙이 없는 상품 {0} 은 원문 그대로다")
 		@ValueSource(longs = {1L, 2L, 5L, 19L, 999L})
 		@DisplayName("표에 없는 상품은 원문 그대로다")
-		void unknownSubcategoryId(long subcategoryId) {
+		void leavesTextUntouchedForUnknownSubcategory(long subcategoryId) {
 			String raw = "[1. 총운]\n1-1 그대로 남아야 합니다.\n### 머리말";
 
 			assertThat(normalizer.normalizeAnalysis(subcategoryId, raw)).isEqualTo(raw);
@@ -57,7 +57,7 @@ class AnalysisNormalizerTest {
 		@ParameterizedTest(name = "빈 문자열 입력({0})은 빈 문자열을 돌려준다")
 		@ValueSource(longs = {20L, 21L, 101L, 102L, 104L, 106L})
 		@DisplayName("빈 문자열은 빈 문자열로 남는다")
-		void blankText(long subcategoryId) {
+		void keepsBlankTextBlank(long subcategoryId) {
 			assertThat(normalizer.normalizeAnalysis(subcategoryId, "")).isEmpty();
 			assertThat(normalizer.normalizeAnalysis(subcategoryId, "   \n\n  \n")).isEmpty();
 			assertThat(normalizer.normalizeSummary(subcategoryId, "")).isEmpty();
@@ -65,7 +65,7 @@ class AnalysisNormalizerTest {
 
 		@Test
 		@DisplayName("규칙에 걸리지 않는 평문은 내용이 그대로 남는다")
-		void plainText() {
+		void keepsPlainTextUnchanged() {
 			String raw = "돈의 흐름은 천천히 좋아집니다. 무리한 투자만 피하면 됩니다.";
 
 			assertThat(normalizer.normalizeAnalysis(20L, raw)).isEqualTo(raw);
@@ -190,7 +190,7 @@ class AnalysisNormalizerTest {
 		@ParameterizedTest(name = "{0} 은 사업운 규칙을 쓴다")
 		@ValueSource(longs = {21L, 22L, 23L})
 		@DisplayName("세 상품이 같은 규칙을 공유한다")
-		void sharesRule(long subcategoryId) {
+		void businessAcademicLifeAdviceShareOneRule(long subcategoryId) {
 			String normalized = normalizer.normalizeAnalysis(subcategoryId, "천간충이 있어요.");
 
 			assertThat(normalized).contains("천간 충돌(생각과 실행이 맞부딪히는 구조)");
@@ -387,7 +387,7 @@ class AnalysisNormalizerTest {
 
 		@Test
 		@DisplayName("3월 월운(106)은 알려진 섹션이 하나도 없으면 빈 문자열이 된다")
-		void marchMonthlyWithoutKnownSections() {
+		void marchMonthlyBecomesEmptyWithoutKnownSections() {
 			assertThat(normalizer.normalizeAnalysis(106L, "섹션 제목이 전혀 없는 본문입니다.")).isEmpty();
 		}
 	}

@@ -46,7 +46,7 @@ public class SajuPromptFactory {
 		SequencedMap<String, String> userValues = new LinkedHashMap<>();
 		userValues.put("이름", name);
 		userValues.put("작품명", sourceTitle);
-		return PromptSections.withSectionBoundary(userValues, analysisPrompt);
+		return PromptSections.prependUserInputSection(userValues, analysisPrompt);
 	}
 
 	/**
@@ -72,6 +72,6 @@ public class SajuPromptFactory {
 
 		SequencedMap<String, String> userValues = new LinkedHashMap<>();
 		userValues.put("이름", name);
-		return PromptSections.withSectionBoundary(userValues, analysisPrompt);
+		return PromptSections.prependUserInputSection(userValues, analysisPrompt);
 	}
 }

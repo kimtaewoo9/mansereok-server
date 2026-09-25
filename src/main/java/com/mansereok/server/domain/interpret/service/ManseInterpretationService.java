@@ -20,7 +20,7 @@ import com.mansereok.server.domain.interpret.prompt.SajuPromptFactory;
 import com.mansereok.server.domain.interpret.prompt.UserInputSanitizer;
 import com.mansereok.server.domain.interpret.repository.CompatibilityResultRepository;
 import com.mansereok.server.domain.interpret.service.InterpretationPipeline.PostStep;
-import com.mansereok.server.domain.interpret.service.InterpretationPipeline.ResultLifecycle;
+import com.mansereok.server.domain.interpret.service.InterpretationPipeline.ResultStatusHandler;
 import com.mansereok.server.domain.notification.service.DiscordNotificationService;
 import com.mansereok.server.domain.user.entity.User;
 import com.mansereok.server.domain.user.service.EmailService;
@@ -193,11 +193,11 @@ public class ManseInterpretationService {
 		log.info("✅ 사주 해석 요청 시작 - name: {}, subcategoryId: {}", name, subcategoryId);
 
 		// 알림과 이메일이 같은 사용자를 본다. 한 번만 조회해서 둘이 나눠 쓴다.
-		Supplier<User> user = lazyUser(username);
+		Supplier<User> user = findUserOnce(username);
 
 		interpretationPipeline.run(
 			"유료 단일 사주 해석",
-			sajuLifecycle(paymentId, name, response, subcategoryId),
+			sajuResultStatusHandler(paymentId, name, response, subcategoryId),
 			() -> discordNotificationService.sendInterpretationRequestNotification(
 				name, user.get().getEmail(),
 				response.getInput().getSolarDate().toString(), subcategoryId),
@@ -221,14 +221,14 @@ public class ManseInterpretationService {
 	) {
 		log.info("✅ 궁합 분석 요청 시작: {} & {}", person1Name, person2Name);
 
-		Supplier<User> user = lazyUser(username);
+		Supplier<User> user = findUserOnce(username);
 		String systemInstruction = REUNION_SUBCATEGORY_ID.equals(subcategoryId)
 			? REUNION_SYSTEM_INSTRUCTION
 			: GPT5_SYSTEM_INSTRUCTION;
 
 		interpretationPipeline.run(
 			"유료 궁합 분석",
-			compatibilityLifecycle(paymentId, person1Name, person1Response, person2Name,
+			compatibilityResultStatusHandler(paymentId, person1Name, person1Response, person2Name,
 				person2Response),
 			() -> discordNotificationService.sendCompatibilityRequestNotification(
 				person1Name, person1Response.getInput().getSolarDate().toString(),
@@ -253,11 +253,11 @@ public class ManseInterpretationService {
 	) {
 		log.info("🆓 무료 사주 해석 시작");
 
-		Supplier<User> user = lazyUser(username);
+		Supplier<User> user = findUserOnce(username);
 
 		interpretationPipeline.run(
 			"무료 단일 사주 해석",
-			sajuLifecycle(paymentId, name, response, subcategoryId),
+			sajuResultStatusHandler(paymentId, name, response, subcategoryId),
 			() -> discordNotificationService.sendInterpretationRequestNotification(
 				name, user.get().getEmail(),
 				response.getInput().getSolarDate().toString(), subcategoryId),
@@ -286,7 +286,7 @@ public class ManseInterpretationService {
 
 		interpretationPipeline.run(
 			"무료 궁합 분석",
-			compatibilityLifecycle(paymentId, person1Name, person1Response, person2Name,
+			compatibilityResultStatusHandler(paymentId, person1Name, person1Response, person2Name,
 				person2Response),
 			() -> discordNotificationService.sendCompatibilityRequestNotification(
 				person1Name, person1Response.getInput().getSolarDate().toString(),
@@ -304,19 +304,19 @@ public class ManseInterpretationService {
 	}
 
 	/** 단일 사주(Result) 의 시작·완료·롤백. 유료와 무료가 같은 것을 쓴다. */
-	private ResultLifecycle<GptSajuResponse, Result> sajuLifecycle(
+	private ResultStatusHandler<GptSajuResponse, Result> sajuResultStatusHandler(
 		Long paymentId, String name, ManseryeokCalculationResponse response, Long subcategoryId
 	) {
-		return new ResultLifecycle<>() {
+		return new ResultStatusHandler<>() {
 			@Override
-			public Long begin() {
+			public Long markInProgress() {
 				return sajuResultService
 					.updateInitialStatus(paymentId, name, response, extractIlgan(response))
 					.getId();
 			}
 
 			@Override
-			public Result complete(Long resultId, GptSajuResponse gptData) {
+			public Result saveFinalResult(Long resultId, GptSajuResponse gptData) {
 				return sajuResultService.saveFinalResult(
 					resultId,
 					analysisNormalizer.normalizeAnalysis(subcategoryId, gptData.getFullAnalysis()),
@@ -324,21 +324,21 @@ public class ManseInterpretationService {
 			}
 
 			@Override
-			public void rollback(Long resultId) {
+			public void rollbackToInitialStatus(Long resultId) {
 				sajuResultService.rollbackStatus(resultId);
 			}
 		};
 	}
 
 	/** 궁합(CompatibilityResult) 의 시작·완료·롤백. 유료와 무료가 같은 것을 쓴다. */
-	private ResultLifecycle<GptCompatibilityResponse, CompatibilityResult> compatibilityLifecycle(
+	private ResultStatusHandler<GptCompatibilityResponse, CompatibilityResult> compatibilityResultStatusHandler(
 		Long paymentId,
 		String person1Name, ManseryeokCalculationResponse person1Response,
 		String person2Name, ManseryeokCalculationResponse person2Response
 	) {
-		return new ResultLifecycle<>() {
+		return new ResultStatusHandler<>() {
 			@Override
-			public Long begin() {
+			public Long markInProgress() {
 				return sajuResultService.updateCompatibilityInitialStatus(
 					paymentId,
 					person1Name, extractIlgan(person1Response),
@@ -347,14 +347,14 @@ public class ManseInterpretationService {
 			}
 
 			@Override
-			public CompatibilityResult complete(Long resultId, GptCompatibilityResponse gptData) {
+			public CompatibilityResult saveFinalResult(Long resultId, GptCompatibilityResponse gptData) {
 				return sajuResultService.saveCompatibilityFinalResult(
 					resultId, gptData.getInterpretation(), gptData.getScore(),
 					gptData.getSummary());
 			}
 
 			@Override
-			public void rollback(Long resultId) {
+			public void rollbackToInitialStatus(Long resultId) {
 				sajuResultService.rollbackCompatibilityStatus(resultId);
 			}
 		};
@@ -413,7 +413,7 @@ public class ManseInterpretationService {
 	 * 알림과 이메일이 같은 사용자를 보므로 조회를 한 번으로 묶는다.
 	 * 지연 조회라 조회 자체가 실패해도 그 단계에서만 걸리고 해석은 계속된다.
 	 */
-	private Supplier<User> lazyUser(String username) {
+	private Supplier<User> findUserOnce(String username) {
 		return new Supplier<>() {
 			private User cached;
 

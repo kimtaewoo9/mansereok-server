@@ -176,7 +176,7 @@ final class CharacterCompatibilityPrompts {
 
 			""");
 
-		PromptSections.appendCompatibilityJsonResponseFormat(prompt);
+		PromptSections.appendCompatibilityOutputFormat(prompt);
 
 		return prompt.toString();
 	}
@@ -333,7 +333,7 @@ final class CharacterCompatibilityPrompts {
 
 			""");
 
-		PromptSections.appendCompatibilityJsonResponseFormat(prompt);
+		PromptSections.appendCompatibilityOutputFormat(prompt);
 
 		return prompt.toString();
 	}

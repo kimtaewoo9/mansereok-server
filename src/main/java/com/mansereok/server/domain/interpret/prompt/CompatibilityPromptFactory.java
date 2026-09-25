@@ -26,7 +26,7 @@ public class CompatibilityPromptFactory {
 		userValues.put("두 번째 사람 이름", person2.name());
 		userValues.put("두 번째 사람 작품명", person2.sourceTitle());
 
-		return PromptSections.withSectionBoundary(userValues,
+		return PromptSections.prependUserInputSection(userValues,
 			createAnalysisPrompt(categoryId, person1, person2));
 	}
 

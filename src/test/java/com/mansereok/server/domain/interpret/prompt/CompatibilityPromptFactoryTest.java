@@ -66,7 +66,7 @@ class CompatibilityPromptFactoryTest {
 	}
 
 	/**
-	 * 라우팅이 뒤섞이는 변이를 골든 없이도 잡는 장치.
+	 * 라우팅이 뒤섞이는 변이를 기대 결과 파일 없이도 잡는 장치.
 	 *
 	 * <p>4, 6, 14 는 {@code CompatibilityPrompts.createLoveStoryPrompt} 를 같은 인자로 부르므로
 	 * 프롬프트가 바이트 단위로 같다. 그래서 "모든 상품이 다르다" 가 아니라

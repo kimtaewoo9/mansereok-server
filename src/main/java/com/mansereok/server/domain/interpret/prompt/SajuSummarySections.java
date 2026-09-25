@@ -124,7 +124,7 @@ final class SajuSummarySections {
 			일지(배우자궁):\s\
 			""");
 		if (saju.getDayGround() != null) {
-			SajuElementSections.appendJijangganDetailSimple(prompt, saju.getDayGround());
+			SajuElementSections.appendJijangganInline(prompt, saju.getDayGround());
 		} else {
 			prompt.append("정보 없음");
 		}
@@ -155,7 +155,7 @@ final class SajuSummarySections {
 
 			// [수정] birthYear 전달!
 			int birthYear = input.getSolarDate().getYear();
-			DaewoonSections.appendDaewoonSimple(prompt, saju, input.getGender(), birthYear, referenceYear);
+			DaewoonSections.appendDaewoonPeriods(prompt, saju, input.getGender(), birthYear, referenceYear);
 
 		} else if (saju.getBigFortuneNumberMin() != null && saju.getBigFortuneNumberMax() != null) {
 			prompt.append("""

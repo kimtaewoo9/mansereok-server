@@ -44,7 +44,7 @@ final class SajuElementSections {
 		return value != null ? value : "-";
 	}
 
-	static void appendJijangganDetail(StringBuilder prompt, String pillarName,
+	static void appendJijangganLine(StringBuilder prompt, String pillarName,
 		PillarElement pillar) {
 		if (pillar == null || pillar.getJijanggan() == null) {
 			return;
@@ -85,7 +85,7 @@ final class SajuElementSections {
 		prompt.append(String.join(", ", jijangganElements) + "\n");
 	}
 
-	static void appendJijangganDetailSimple(StringBuilder prompt, PillarElement pillar) {
+	static void appendJijangganInline(StringBuilder prompt, PillarElement pillar) {
 		if (pillar == null || pillar.getJijanggan() == null) {
 			prompt.append("정보 없음");
 			return;

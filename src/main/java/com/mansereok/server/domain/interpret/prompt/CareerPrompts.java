@@ -478,7 +478,7 @@ final class CareerPrompts {
 
 			""");
 
-		PromptSections.appendSajuJsonResponseFormat(prompt);
+		PromptSections.appendSajuOutputFormat(prompt);
 
 		return prompt.toString();
 	}
