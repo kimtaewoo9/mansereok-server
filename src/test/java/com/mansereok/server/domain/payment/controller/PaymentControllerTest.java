@@ -63,8 +63,8 @@ import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilde
  * </ul>
  *
  * <p>스프링 MVC 설정과 운영의 예외 처리기(GlobalExceptionHandler, RequestErrorExceptionHandler)는 그대로 띄운다. 서비스는
- * {@link MockitoBean} 으로 바꾸고, 웹훅 서명 검증기는 테스트용 시크릿으로 만든 진짜를 쓴다. 로그인·CSRF 규칙은
- * SecurityRulesTest 가 따로 보므로 여기서는 보안 필터를 끄고, JwtAuthenticationFilter 가 하던 인증 정보 넣기를 테스트가 대신한다.
+ * {@link MockitoBean} 으로 바꾸고, 웹훅 서명 검증기는 테스트용 시크릿으로 만든 진짜를 쓴다. 로그인·CSRF 규칙은 이 테스트가
+ * 보는 대상이 아니라 보안 필터를 끄고, JwtAuthenticationFilter 가 하던 인증 정보 넣기(요청자 이름)를 테스트가 대신한다.
  */
 @WebMvcTest(
 	controllers = PaymentController.class,
@@ -131,11 +131,13 @@ class PaymentControllerTest {
 			""")
 		@DisplayName("숫자 자리의 경로 변수가 숫자가 아니면 400 INVALID_PARAMETER 를 돌려주고 조회하지 않는다")
 		void pathVariableIsNotNumber(String path, String expectedMessage) throws Exception {
+			// when & then
 			mockMvc.perform(get(path))
 				.andExpect(status().isBadRequest())
 				.andExpect(jsonPath("$.errorCode").value("INVALID_PARAMETER"))
 				.andExpect(jsonPath("$.message").value(expectedMessage));
 
+			// then: 서비스까지 가지 않는다
 			then(paymentQueryService).shouldHaveNoInteractions();
 		}
 
@@ -143,34 +145,40 @@ class PaymentControllerTest {
 		@ValueSource(strings = {"{", ""})
 		@DisplayName("결제 완료 요청의 본문이 깨졌거나 비었으면 400 INVALID_REQUEST_BODY 를 돌려주고 결제를 확정하지 않는다")
 		void completeBodyIsUnreadable(String body) throws Exception {
+			// when & then
 			mockMvc.perform(post("/api/payment/complete").contentType(MediaType.APPLICATION_JSON).content(body))
 				.andExpect(status().isBadRequest())
 				.andExpect(jsonPath("$.errorCode").value("INVALID_REQUEST_BODY"))
 				.andExpect(jsonPath("$.message").value("요청 본문을 읽을 수 없습니다. JSON 형식을 확인해주세요."));
 
+			// then: 서비스까지 가지 않는다
 			then(paymentConfirmService).shouldHaveNoInteractions();
 		}
 
 		@Test
 		@DisplayName("결제 완료 요청의 결제 ID 가 공백이면 400 VALIDATION_ERROR 와 필드 메시지를 돌려주고 결제를 확정하지 않는다")
 		void blankPaymentId() throws Exception {
+			// when & then
 			mockMvc.perform(post("/api/payment/complete").contentType(MediaType.APPLICATION_JSON)
 					.content("{\"paymentId\": \" \", \"merchantUid\": \"order_1\"}"))
 				.andExpect(status().isBadRequest())
 				.andExpect(jsonPath("$.errorCode").value("VALIDATION_ERROR"))
 				.andExpect(jsonPath("$.errors.paymentId").value("결제 ID 형식이 올바르지 않습니다."));
 
+			// then: 서비스까지 가지 않는다
 			then(paymentConfirmService).shouldHaveNoInteractions();
 		}
 
 		@Test
 		@DisplayName("환불 주소에 GET 을 보내면 405 와 POST 만 받는다는 Allow 헤더를 돌려주고 환불하지 않는다")
 		void getOnCancel() throws Exception {
+			// when & then
 			mockMvc.perform(get("/api/payment/cancel"))
 				.andExpect(status().isMethodNotAllowed())
 				.andExpect(header().string(HttpHeaders.ALLOW, "POST"))
 				.andExpect(jsonPath("$.errorCode").value("METHOD_NOT_ALLOWED"));
 
+			// then: 서비스까지 가지 않는다
 			then(paymentRefundService).shouldHaveNoInteractions();
 		}
 	}
@@ -198,12 +206,14 @@ class PaymentControllerTest {
 		@Test
 		@DisplayName("서명이 맞지 않으면 401 WEBHOOK_SIGNATURE_INVALID 를 돌려주고 웹훅 처리를 부르지 않는다")
 		void invalidSignature() throws Exception {
+			// when & then
 			mockMvc.perform(webhookRequest(WEBHOOK_BODY)
 					.header("webhook-timestamp", nowEpochSeconds())
 					.header("webhook-signature", "v1,aW52YWxpZC1zaWduYXR1cmU="))
 				.andExpect(status().isUnauthorized())
 				.andExpect(jsonPath("$.errorCode").value("WEBHOOK_SIGNATURE_INVALID"));
 
+			// then: 서비스까지 가지 않는다
 			then(paymentWebhookService).shouldHaveNoInteractions();
 		}
 
@@ -227,12 +237,14 @@ class PaymentControllerTest {
 		@Test
 		@DisplayName("webhook-signature 헤더가 없으면 400 MISSING_HEADER 와 빠진 헤더 이름을 돌려주고 웹훅 처리를 부르지 않는다")
 		void missingSignatureHeader() throws Exception {
+			// when & then
 			mockMvc.perform(webhookRequest(WEBHOOK_BODY)
 					.header("webhook-timestamp", nowEpochSeconds()))
 				.andExpect(status().isBadRequest())
 				.andExpect(jsonPath("$.errorCode").value("MISSING_HEADER"))
 				.andExpect(jsonPath("$.message").value("webhook-signature 헤더가 필요합니다."));
 
+			// then: 서비스까지 가지 않는다
 			then(paymentWebhookService).shouldHaveNoInteractions();
 		}
 
@@ -302,12 +314,14 @@ class PaymentControllerTest {
 		@Test
 		@DisplayName("환불은 JSON 이 아니라 text/plain 안내 문구이고 요청자·결제 ID·사유를 그대로 넘겨 환불한다")
 		void cancelReturnsPlainText() throws Exception {
+			// when & then
 			mockMvc.perform(post("/api/payment/cancel").contentType(MediaType.APPLICATION_JSON)
 					.content("{\"paymentId\": \"pay_1\", \"reason\": \"단순 변심\"}"))
 				.andExpect(status().isOk())
 				.andExpect(header().string(HttpHeaders.CONTENT_TYPE, "text/plain;charset=UTF-8"))
 				.andExpect(content().string("환불이 정상적으로 처리되었습니다."));
 
+			// then: 포트원 취소로 이어지는 환불 명령을 받은 값 그대로 한 번 부른다
 			then(paymentRefundService).should().cancel(USERNAME, "pay_1", "단순 변심");
 		}
 
