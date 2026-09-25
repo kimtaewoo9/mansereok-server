@@ -93,12 +93,15 @@ class SecurityRulesTest {
 		GET,    /api/payments/me,               EXPIRED_USER, false,     401
 		GET,    /api/payments/me,               USER,         false,     200
 		GET,    /api/v1/users/me/profiles,      ANONYMOUS,    false,     401
+		# 리뷰 조회 중 공개는 목록과 페이지 목록뿐이다. 같은 주소 아래의 다른 GET(작성 자격 확인)은 로그인이 필요하다.
+		GET,    /api/v1/reviews/eligibility,    ANONYMOUS,    false,     401
 		# 할인 코드 확인은 로그인이 필요하다.
 		POST,   /api/payment/discount,          ANONYMOUS,    true,      401
 		POST,   /api/payment/discount,          USER,         true,      200
-		# 리뷰 삭제는 관리자만 한다.
+		# 리뷰 삭제는 관리자(ADMIN, SUPER_ADMIN)만 한다. 매니저도 삭제하지 못한다.
 		DELETE, /api/v1/reviews/7,              ANONYMOUS,    true,      401
 		DELETE, /api/v1/reviews/7,              USER,         true,      403
+		DELETE, /api/v1/reviews/7,              MANAGER,      true,      403
 		DELETE, /api/v1/reviews/7,              ADMIN,        true,      200
 		DELETE, /api/v1/reviews/7,              SUPER_ADMIN,  true,      200
 		# 로그인한 회원의 쓰기도 CSRF 토큰이 없으면 403.
@@ -176,7 +179,7 @@ class SecurityRulesTest {
 	 * 요청을 보내는 사람. 표에서 이름으로 적는다.
 	 */
 	enum Caller {
-		ANONYMOUS, EXPIRED_USER, USER, ADMIN, SUPER_ADMIN
+		ANONYMOUS, EXPIRED_USER, USER, MANAGER, ADMIN, SUPER_ADMIN
 	}
 
 	private RequestPostProcessor as(Caller caller) {
@@ -184,6 +187,7 @@ class SecurityRulesTest {
 			case ANONYMOUS -> request -> request;
 			case EXPIRED_USER -> bearer(expiredToken("member", "ROLE_USER"));
 			case USER -> bearer(tokenWithRole("member", "ROLE_USER"));
+			case MANAGER -> bearer(tokenWithRole("manager", "ROLE_MANAGER"));
 			case ADMIN -> bearer(tokenWithRole("admin", "ROLE_ADMIN"));
 			case SUPER_ADMIN -> bearer(tokenWithRole("super-admin", "ROLE_SUPER_ADMIN"));
 		};

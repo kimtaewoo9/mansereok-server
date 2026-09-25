@@ -124,6 +124,15 @@ class CorsPolicyTest {
 				.hasMessage("허용 출처는 와일드카드나 끝의 / 없이 정확한 주소로 적어야 합니다: " + origin);
 		}
 
+		@ParameterizedTest(name = "[{index}] \"{0}\"")
+		@ValueSource(strings = {"https://WWW.namedsaju.com", "HTTPS://www.namedsaju.com"})
+		@DisplayName("대문자가 섞인 출처를 받지 않는다(CORS 설정과 AllowedOriginFilter 의 판정이 달라지지 않게)")
+		void rejectsUppercaseOrigin(String origin) {
+			assertThatThrownBy(() -> new CorsProperties(List.of(origin)))
+				.isInstanceOf(IllegalArgumentException.class)
+				.hasMessage("허용 출처는 브라우저가 보내는 Origin 헤더처럼 소문자로 적어야 합니다: " + origin);
+		}
+
 		@ParameterizedTest
 		@NullAndEmptySource
 		@DisplayName("출처 목록이 없거나 비어 있으면 받지 않는다")

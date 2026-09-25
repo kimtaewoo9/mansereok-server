@@ -59,8 +59,10 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 		@NonNull HttpServletResponse response,
 		@NonNull FilterChain filterChain) throws ServletException, IOException {
 
-		// 토큰이 없으면 익명으로, 잘못된 토큰이면 예외를 요청 속성에 남기고 익명으로 넘긴다.
-		// 로그인 없이 여는 경로는 그대로 통과하고, 로그인이 필요한 경로는 진입점이 남긴 예외를 보고 401 로 답한다.
+		// 토큰이 없으면 익명으로, 잘못된 토큰이면 예외를 요청 속성(jwt.exception)에 남기고 익명으로 넘긴다.
+		// 로그인 없이 여는 경로는 그대로 통과한다. 로그인이 필요한 경로면 JwtAuthenticationEntryPoint 가 이 필터가 남긴 예외를 읽어
+		// 그 예외의 상태 코드로 답한다(만료·서명 불일치·빈 토큰은 401, 형식이 틀리거나 지원하지 않는 토큰은 400,
+		// 예상하지 못한 오류인 JWT_INTERNAL_ERROR 는 500).
 		try {
 			String jwtToken = extractJwtFromtRequest(request);
 

@@ -15,7 +15,7 @@ import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
 
 /**
- * 리프레시 토큰 쿠키로 동작하는 요청(재발급, 로그아웃, 소셜 로그인)을 허용한 출처에서 온 것만 받는지 확인한다.
+ * 리프레시 토큰 쿠키를 싣고 가거나 새로 심는 요청(재발급, 로그아웃, 소셜 로그인)을 허용한 출처에서 온 것만 받는지 확인한다.
  *
  * <p>막힌 요청은 다음 필터로 넘어가지 않고 403 CORS_ORIGIN_FORBIDDEN 으로 끝난다. 넘어간 요청은 MockFilterChain 이 받은 요청으로
  * 확인한다.

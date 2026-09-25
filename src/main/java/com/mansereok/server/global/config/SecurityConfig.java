@@ -78,7 +78,8 @@ public class SecurityConfig {
 				session.sessionCreationPolicy(SessionCreationPolicy.IF_REQUIRED))
 
 			// 로그인 없이 부를 수 있는 경로와 역할이 필요한 경로는 여기 한 곳에서만 정한다.
-			// JwtAuthenticationFilter 는 경로를 가리지 않고 토큰이 있으면 해석만 한다. 규칙은 SecurityRulesTest 의 표로 고정한다.
+			// JwtAuthenticationFilter 는 공개 여부를 따지지 않고(OPTIONS·actuator 요청만 건너뜀) 토큰이 있으면 해석만 한다.
+			// 규칙은 SecurityRulesTest 의 표로 고정한다.
 			.authorizeHttpRequests(auth -> auth
 				// 1. 인증 없이 접근 허용 (permitAll)
 				.requestMatchers(HttpMethod.OPTIONS, "/**").permitAll() // CORS Preflight 요청
