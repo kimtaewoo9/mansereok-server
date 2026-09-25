@@ -24,7 +24,7 @@ class LocalDatabaseGuardTest {
 			jdbc:mysql://localhost:3307/mansereok_test,                                    mansereok_test
 			# 호스트 이름은 대소문자를 가리지 않는다
 			jdbc:mysql://LOCALHOST:3307/mansereok_test,                                    mansereok_test
-			# 스택마다 따로 둔 테스트 스키마
+			# 브랜치·환경마다 따로 둔 테스트 스키마
 			jdbc:mysql://127.0.0.1:3307/mansereok_test_develop,                            mansereok_test_develop
 			""")
 		void acceptsLocalTestSchema(String jdbcUrl, String schemaName) {
@@ -33,7 +33,7 @@ class LocalDatabaseGuardTest {
 		}
 
 		@ParameterizedTest(name = "[{index}] {0} / {1}")
-		@DisplayName("호스트가 이 PC 가 아니거나 스키마 이름에 _test 가 없으면 테스트를 멈춘다")
+		@DisplayName("호스트가 이 PC 가 아니거나, 스키마 이름이 _test 로 끝나지도 _test_ 를 품지도 않거나, URL·스키마 이름을 읽을 수 없으면 멈춘다")
 		@CsvSource(nullValues = "NULL", textBlock = """
 			# 연결 URL, 스키마 이름
 			jdbc:mysql://10.0.0.5:3306/mansereok_test,                                            mansereok_test

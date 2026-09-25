@@ -1,13 +1,19 @@
 package com.mansereok.server.support;
 
+import static java.util.concurrent.TimeUnit.MILLISECONDS;
 import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.mansereok.server.support.ConcurrentCalls.CallResult;
+import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.Callable;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.CyclicBarrier;
+import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -91,11 +97,86 @@ class ConcurrentCallsTest {
 		}
 	}
 
+	@Nested
+	@DisplayName("결과 한도를 넘긴 요청이 있으면")
+	class WhenARequestRunsPastTheLimit {
+
+		@Test
+		@DisplayName("그 요청은 TimeoutException 결과가 되고, 중단 신호를 받고도 도는 그 요청이 끝날 때까지 기다렸다가 돌려준다")
+		void waitsForTimedOutRequestToFinish() {
+			// given: 요청 1은 결과 한도 동안 끝나지 않고, 중단 신호를 받은 뒤에도 200ms 더 돈 다음 끝난다
+			AtomicBoolean slowRequestFinished = new AtomicBoolean();
+			List<Callable<String>> tasks = List.of(
+				() -> "요청 0",
+				() -> {
+					keepRunningAfterInterrupt(Duration.ofMillis(200));
+					slowRequestFinished.set(true);
+					return "요청 1";
+				});
+
+			// when
+			List<CallResult<String>> results = ConcurrentCalls.runAtTheSameTime(2, tasks::get,
+				Duration.ofMillis(100), Duration.ofSeconds(10));
+
+			// then
+			assertThat(results.get(0).value()).isEqualTo("요청 0");
+			assertThat(results.get(1).error()).isInstanceOf(TimeoutException.class);
+			assertThat(slowRequestFinished)
+				.as("시간을 넘긴 요청이 끝난 뒤에 돌아와야 그 요청이 테스트의 뒤 정리보다 늦게 커밋하지 않는다")
+				.isTrue();
+		}
+
+		@Test
+		@DisplayName("그 요청이 멈춤 대기 한도 안에도 끝나지 않으면 행이 남을 수 있다고 알리는 예외를 던진다")
+		void failsWhenTimedOutRequestDoesNotStop() {
+			// given: 중단 신호를 받아도 멈추지 않고 테스트가 풀어 줄 때까지 도는 요청
+			CountDownLatch release = new CountDownLatch(1);
+			Callable<String> stuckRequest = () -> {
+				awaitIgnoringInterrupt(release);
+				return "요청 0";
+			};
+
+			try {
+				// when & then
+				assertThatThrownBy(() -> ConcurrentCalls.runAtTheSameTime(1, index -> stuckRequest,
+					Duration.ofMillis(100), Duration.ofMillis(100)))
+					.isInstanceOf(IllegalStateException.class)
+					.hasMessage("결과 한도를 넘긴 요청이 중단 신호를 보낸 뒤 100ms 안에 끝나지 않았다. "
+						+ "테스트의 뒤 정리가 끝난 뒤에 커밋해 행을 남길 수 있으니 DB 를 확인한다.");
+			} finally {
+				release.countDown();
+			}
+		}
+	}
+
 	@Test
 	@DisplayName("동시 요청 수가 1보다 작으면 스레드를 만들지 않고 거절한다")
 	void rejectsCountBelowOne() {
 		assertThatThrownBy(() -> ConcurrentCalls.runAtTheSameTime(0, () -> "요청"))
 			.isInstanceOf(IllegalArgumentException.class)
 			.hasMessage("동시 요청 수는 1 이상이어야 한다: 0");
+	}
+
+	/**
+	 * 중단 신호를 받기 전에는 끝나지 않고, 받은 뒤에도 extra 만큼 더 돈 다음 끝난다. JDBC 호출이 중단 신호로 바로 멈추지 않는
+	 * 것을 흉내 낸다.
+	 */
+	private static void keepRunningAfterInterrupt(Duration extra) throws InterruptedException {
+		try {
+			new CountDownLatch(1).await();
+		} catch (InterruptedException interrupted) {
+			CountDownLatch done = new CountDownLatch(1);
+			CompletableFuture.delayedExecutor(extra.toMillis(), MILLISECONDS).execute(done::countDown);
+			done.await();
+		}
+	}
+
+	/** 중단 신호를 한 번 무시하고 release 가 열릴 때까지 기다린다. */
+	private static void awaitIgnoringInterrupt(CountDownLatch release) throws InterruptedException {
+		try {
+			release.await();
+		} catch (InterruptedException interrupted) {
+			release.await();
+		}
 	}
 }
