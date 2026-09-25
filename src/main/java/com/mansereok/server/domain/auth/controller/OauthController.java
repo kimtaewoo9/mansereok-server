@@ -11,40 +11,36 @@ import com.mansereok.server.domain.auth.dto.response.oauth.XRedirectDto;
 import com.mansereok.server.domain.auth.service.oauth.GoogleService;
 import com.mansereok.server.domain.auth.service.oauth.KakaoService;
 import com.mansereok.server.domain.auth.service.oauth.NaverService;
+import com.mansereok.server.domain.auth.service.oauth.OauthLoginResult;
+import com.mansereok.server.domain.auth.service.oauth.OauthLoginService;
 import com.mansereok.server.domain.auth.service.oauth.XService;
 import com.mansereok.server.domain.auth.util.JwtUtil;
 import com.mansereok.server.domain.user.entity.RefreshToken;
-import com.mansereok.server.domain.user.entity.SocialType;
 import com.mansereok.server.domain.user.entity.User;
-import com.mansereok.server.domain.user.repository.UserRepository;
 import com.mansereok.server.domain.user.service.RefreshTokenService;
-import com.mansereok.server.domain.user.service.UserService;
-import com.mansereok.server.global.exception.DuplicateEmailException;
-import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletResponse;
 import java.util.Map;
-import java.util.UUID;
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseCookie;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 
+/**
+ * 소셜 로그인. 네 제공자 모두 "제공자에서 사용자 정보 받기 → OauthProfile 로 바꾸기 → 계정 찾기·가입 → 토큰 응답" 순서로 돈다.
+ * 계정 찾기·가입 규칙은 {@link OauthLoginService} 한 곳에 있다.
+ */
 @RestController
 @RequiredArgsConstructor
-@Slf4j
 public class OauthController {
 
-	private final UserService userService;
+	private final OauthLoginService oauthLoginService;
 	// Oauth
 	private final GoogleService googleService;
 	private final KakaoService kakaoService;
 	private final NaverService naverService;
 	private final XService xService;
-
-	private final UserRepository userRepository;
 
 	// Access Token, Refresh Token
 	private final JwtUtil jwtUtil;
@@ -55,40 +51,13 @@ public class OauthController {
 		@RequestBody RedirectDto redirectDto,
 		HttpServletResponse response) {
 
-		// access token 발급 .
 		AccessTokenDto accessTokenDto = googleService.getAccessToken(redirectDto.getCode());
-		// 사용자 정보 얻기 .
 		GoogleProfileDto googleProfileDto =
 			googleService.getGoogleProfile(accessTokenDto.getAccess_token());
 
-		// 회원가입이 되어 있지 않다면, 회원가입 해야함.
-		User user = userService.getUserBySocialId(googleProfileDto.getSub());
-
-		boolean isNewUser = false;
-
-		if (user == null) {
-			// 2. 구글로 가입 안 되어 있으면 → 이메일로 기존 가입 여부 확인
-			User existingUser = userRepository.findByEmail(googleProfileDto.getEmail())
-				.orElse(null);
-
-			if (existingUser != null) {
-				// 같은 이메일로 가입된 계정이 있으면 해당 계정으로 로그인
-				user = existingUser;
-				log.info("기존 계정({})으로 구글 로그인 연동: userId={}", existingUser.getSocialType(), existingUser.getId());
-			} else {
-				// 3. 신규 구글 회원가입
-				user = userService.registerWithOauth(
-					googleProfileDto.getSub(),
-					googleProfileDto.getEmail(),
-					googleProfileDto.getName(),
-					googleProfileDto.getSub(),
-					SocialType.GOOGLE
-				);
-				isNewUser = true;
-			}
-		}
-
-		return createTokenResponse(response, user, isNewUser);
+		OauthLoginResult loginResult =
+			oauthLoginService.loginOrRegister(googleProfileDto.toOauthProfile());
+		return createTokenResponse(response, loginResult);
 	}
 
 	@PostMapping("/member/kakao/doLogin")
@@ -96,145 +65,52 @@ public class OauthController {
 		@RequestBody RedirectDto redirectDto,
 		HttpServletResponse response) {
 
-		Cookie deleteCookie = new Cookie("REFRESH_TOKEN", null);
-		deleteCookie.setMaxAge(0);
-		deleteCookie.setPath("/");
-		response.addCookie(deleteCookie);
-
-		// 인가코드 받아서 access token 받아옴
 		AccessTokenDto accessTokenDto = kakaoService.getAccessTokenDto(redirectDto.getCode());
-
-		// access token 으로 사용자 정보 얻어오기.
 		KakaoProfileDto kakaoProfileDto = kakaoService.getKakaoProfileDto(
 			accessTokenDto.getAccess_token());
 
-		log.info("KakaoProfileDto: {} ", kakaoProfileDto);
-
-		User user = userService.getUserBySocialId(kakaoProfileDto.getId());
-
-		boolean isNewUser = false;
-
-		if (user == null) {
-			// 2. 카카오로 가입 안 되어 있으면 → 이메일로 기존 가입 여부 확인
-			User existingUser = userRepository
-				.findByEmail(kakaoProfileDto.getKakao_account().getEmail()).orElse(null);
-
-			if (existingUser != null) {
-				// 같은 이메일로 가입된 계정이 있으면 해당 계정으로 로그인
-				user = existingUser;
-				log.info("기존 계정({})으로 카카오 로그인 연동: userId={}", existingUser.getSocialType(), existingUser.getId());
-			} else {
-				// 3. 신규 카카오 회원가입
-				user = userService.registerWithOauth(
-					kakaoProfileDto.getId(),
-					kakaoProfileDto.getKakao_account().getEmail(),
-					kakaoProfileDto.getNickname(),
-					kakaoProfileDto.getId(),
-					SocialType.KAKAO
-				);
-				isNewUser = true;
-			}
-		}
-
-		return createTokenResponse(response, user, isNewUser);
+		OauthLoginResult loginResult =
+			oauthLoginService.loginOrRegister(kakaoProfileDto.toOauthProfile());
+		return createTokenResponse(response, loginResult);
 	}
 
-	// 네이버 로그인은 .. 인가코드 뿐만 아니라 state 값도 보내야함 .
-	// OauthController.java 수정 제안
-
+	// 네이버 로그인은 인가코드뿐 아니라 state 값도 보내야 한다.
 	@PostMapping("/member/naver/doLogin")
 	public ResponseEntity<?> naverLogin(
 		@RequestBody NaverRedirectDto redirectDto,
 		HttpServletResponse response
 	) {
 
-		// 1. 토큰 및 프로필 요청
 		AccessTokenDto accessTokenDto = naverService.getAccessTokenDto(redirectDto.getCode(),
 			redirectDto.getState());
 		NaverProfileDto naverProfileDto = naverService.getNaverProfileDto(
 			accessTokenDto.getAccess_token());
 
-		String socialId = naverProfileDto.getResponse().getId();
-		String email = naverProfileDto.getResponse().getEmail();
-
-		// 2. Social ID로 회원 조회
-		User user = userService.getUserBySocialId(socialId);
-		boolean isNewUser = false;
-
-		// 3. ID로 못 찾았을 경우 (현재 질문자님의 상황)
-		if (user == null) {
-			// 이메일로 다시 찾아봄
-			User existingUser = userRepository.findByEmail(email).orElse(null);
-
-			if (existingUser != null) {
-				// 같은 이메일이면 소셜 타입 상관없이 기존 계정으로 로그인
-				user = existingUser;
-			} else {
-				// 이메일도 없으면 -> 진짜 신규 가입
-				user = userService.registerWithOauth(
-					UUID.randomUUID().toString().substring(0, 10).toUpperCase(), // username 랜덤 생성
-					email,
-					naverProfileDto.getResponse().getName(),
-					socialId,
-					SocialType.NAVER
-				);
-				isNewUser = true;
-			}
-		}
-
-		// 4. 토큰 발급 및 응답 (기존 코드 동일)
-		return createTokenResponse(response, user, isNewUser);
+		OauthLoginResult loginResult =
+			oauthLoginService.loginOrRegister(naverProfileDto.toOauthProfile());
+		return createTokenResponse(response, loginResult);
 	}
 
+	// X 로그인은 PKCE 를 쓰므로 code_verifier 도 보내야 한다.
 	@PostMapping("/member/X/doLogin")
-	public ResponseEntity<?> XLogin(
+	public ResponseEntity<?> xLogin(
 		@RequestBody XRedirectDto redirectDto,
 		HttpServletResponse response) {
 
-		// access token 가져오기 .
 		AccessTokenDto accessTokenDto = xService.getAccessToken(
 			redirectDto.getCode(),
 			redirectDto.getCodeVerifier()
 		);
-		// profile 정보 가져오기 .
 		XProfileDto xProfileDto = xService.getXProfileDto(accessTokenDto.getAccess_token());
 
-		User user = userService.getUserBySocialId(xProfileDto.getId());
-
-		boolean isNewUser = false;
-
-		if (user == null) {
-			String email = xProfileDto.getEmail();
-
-			// 이메일이 있는 경우 기존 계정 확인
-			if (email != null && !email.isBlank()) {
-				User existingUser = userRepository.findByEmail(email).orElse(null);
-
-				if (existingUser != null) {
-					// 같은 이메일로 가입된 계정이 있으면 해당 계정으로 로그인
-					user = existingUser;
-					log.info("기존 계정({})으로 X 로그인 연동: userId={}", existingUser.getSocialType(), existingUser.getId());
-				}
-			}
-
-			// 기존 계정이 없으면 신규 회원가입
-			if (user == null) {
-				user = userService.registerWithOauth(
-					xProfileDto.getId(),
-					xProfileDto.getName(),
-					email != null ? email : "",
-					xProfileDto.getId(),
-					SocialType.X
-				);
-				isNewUser = true;
-			}
-		}
-
-		return createTokenResponse(response, user, isNewUser);
+		OauthLoginResult loginResult =
+			oauthLoginService.loginOrRegister(xProfileDto.toOauthProfile());
+		return createTokenResponse(response, loginResult);
 	}
 
-	private ResponseEntity<?> createTokenResponse(HttpServletResponse response, User user,
-		boolean isNewUser) {
+	private ResponseEntity<?> createTokenResponse(HttpServletResponse response,
+		OauthLoginResult loginResult) {
+		User user = loginResult.user();
 		Map<String, Object> claims = Map.of(
 			"role", user.getRole().getAuthority(),
 			"email", user.getEmail() != null ? user.getEmail() : "",
@@ -261,7 +137,7 @@ public class OauthController {
 		Map<String, Object> responseBody = Map.of(
 			"accessToken", accessToken,
 			"type", "Bearer",
-			"isNewUser", isNewUser,
+			"isNewUser", loginResult.newlyRegistered(),
 			"user", Map.of(
 				"username", user.getUsername(),
 				"email", user.getEmail() != null ? user.getEmail() : "",

@@ -2,11 +2,13 @@ package com.mansereok.server.domain.user.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 
 import com.mansereok.server.domain.interpret.repository.CompatibilityResultRepository;
 import com.mansereok.server.domain.interpret.repository.ResultRepository;
@@ -16,8 +18,10 @@ import com.mansereok.server.domain.order.repository.OrderRepository;
 import com.mansereok.server.domain.payment.repository.PaymentRepository;
 import com.mansereok.server.domain.review.repository.ReviewRepository;
 import com.mansereok.server.domain.auth.PasswordResetTokenRepository;
+import com.mansereok.server.domain.auth.service.oauth.OauthProfile;
 import com.mansereok.server.domain.user.dto.request.ProfileUpdateRequestDto;
 import com.mansereok.server.domain.user.entity.Gender;
+import com.mansereok.server.domain.user.entity.SocialType;
 import com.mansereok.server.domain.user.entity.User;
 import com.mansereok.server.domain.user.repository.RefreshTokenRepository;
 import com.mansereok.server.domain.user.repository.UserRepository;
@@ -27,6 +31,10 @@ import java.util.Optional;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.NullAndEmptySource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -283,5 +291,69 @@ public class UserServiceTest {
 		assertThatThrownBy(() -> userService.updateUserProfile(username, request))
 			.isInstanceOf(IllegalArgumentException.class)
 			.hasMessageContaining("태어난 장소는 공백일 수 없습니다.");
+	}
+
+	@ParameterizedTest(name = "[{index}] {0} 가입 → 가입 경로 [{1}]")
+	@CsvSource(textBlock = """
+		# 제공자, 디스코드·슬랙에 보낼 가입 경로
+		GOOGLE,   GOOGLE OAuth
+		KAKAO,    KAKAO OAuth
+		NAVER,    NAVER OAuth
+		X,        X OAuth
+		""")
+	@DisplayName("소셜 가입 알림은 디스코드와 슬랙에 같은 가입 경로로 보낸다")
+	void registerWithOauth_SendsSameSignupPathToDiscordAndSlack(SocialType socialType,
+		String expectedSignupPath) {
+		// given
+		givenSaveAssignsId(1L);
+
+		// when
+		User saved = userService.registerWithOauth(
+			new OauthProfile(socialType, "social-1", null, "소셜회원", false));
+
+		// then
+		verify(discordNotificationService).sendUserCreatedNotification(
+			"소셜회원", null, 1L, expectedSignupPath, saved.getCreatedAt());
+		verify(slackNotificationService).sendUserCreatedNotification(
+			"소셜회원", null, 1L, expectedSignupPath, saved.getCreatedAt());
+	}
+
+	@Test
+	@DisplayName("이메일 가입 알림은 디스코드와 슬랙에 '일반 회원가입' 으로 보낸다")
+	void createUser_SendsGeneralSignupPathToDiscordAndSlack() {
+		// given
+		given(passwordEncoder.encode("password123")).willReturn("encoded-password");
+		givenSaveAssignsId(2L);
+
+		// when
+		User saved = userService.createUser("테스트유저", "new@example.com", "password123",
+			LocalDate.of(1990, 1, 1), Gender.MALE, true, false);
+
+		// then
+		verify(discordNotificationService).sendUserCreatedNotification(
+			"테스트유저", "new@example.com", 2L, "일반 회원가입", saved.getCreatedAt());
+		verify(slackNotificationService).sendUserCreatedNotification(
+			"테스트유저", "new@example.com", 2L, "일반 회원가입", saved.getCreatedAt());
+	}
+
+	@ParameterizedTest(name = "[{index}] 이메일 [{0}]")
+	@NullAndEmptySource
+	@ValueSource(strings = {"   "})
+	@DisplayName("이메일이 null 이거나 공백이면 저장소를 조회하지 않고 빈 값을 돌려준다")
+	void findByEmail_ReturnsEmptyWithoutQueryForBlankEmail(String email) {
+		// when
+		Optional<User> found = userService.findByEmail(email);
+
+		// then
+		assertThat(found).isEmpty();
+		verifyNoInteractions(userRepository);
+	}
+
+	private void givenSaveAssignsId(Long id) {
+		given(userRepository.save(any(User.class))).willAnswer(invocation -> {
+			User user = invocation.getArgument(0);
+			user.setId(id);
+			return user;
+		});
 	}
 }
