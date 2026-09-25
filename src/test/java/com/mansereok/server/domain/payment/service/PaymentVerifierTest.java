@@ -13,6 +13,7 @@ import com.mansereok.server.global.exception.PaymentException;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.NullSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.http.converter.json.Jackson2ObjectMapperBuilder;
@@ -35,8 +36,13 @@ class PaymentVerifierTest {
 	}
 
 	private static PortOnePaymentResponse response(String status, long total, String customData) {
+		return response(PAYMENT_ID, status, total, customData);
+	}
+
+	private static PortOnePaymentResponse response(String paymentId, String status, long total,
+		String customData) {
 		PortOnePaymentResponse response = new PortOnePaymentResponse();
-		response.setId(PAYMENT_ID);
+		response.setId(paymentId);
 		response.setStatus(status);
 		PortOnePaymentResponse.Amount amount = new PortOnePaymentResponse.Amount();
 		amount.setTotal(total);
@@ -66,10 +72,46 @@ class PaymentVerifierTest {
 	@ParameterizedTest(name = "customData={0}")
 	@NullSource
 	@ValueSource(strings = {"", "  "})
-	@DisplayName("customData 가 비어 있으면 하위 호환으로 대조를 건너뛴다")
-	void assertCustomDataMatchesOrder_blank_passes(String customData) {
+	@DisplayName("customData 가 비어 있으면 대조를 건너뛰지 않고 '결제 정보에 주문 번호가 없습니다.' PaymentException 이 난다")
+	void assertCustomDataMatchesOrder_blank_throws(String customData) {
+		assertThatThrownBy(() -> paymentVerifier.assertCustomDataMatchesOrder(order(), PAYMENT_ID,
+			response("PAID", PRICE, customData)))
+			.isInstanceOf(PaymentException.class)
+			.hasMessage("결제 정보에 주문 번호가 없습니다.");
+	}
+
+	@Test
+	@DisplayName("customData 의 merchantUid 가 주문과 같으면 통과한다")
+	void assertCustomDataMatchesOrder_same_passes() {
 		assertThatCode(() -> paymentVerifier.assertCustomDataMatchesOrder(order(), PAYMENT_ID,
-			response("PAID", PRICE, customData))).doesNotThrowAnyException();
+			response("PAID", PRICE, "{\"merchantUid\":\"" + MERCHANT_UID + "\"}")))
+			.doesNotThrowAnyException();
+	}
+
+	@ParameterizedTest(name = "[{index}] 요청 {0}, 포트원 응답 {1}")
+	@DisplayName("포트원 응답의 결제 ID 가 요청한 결제 ID 와 한 글자라도 다르거나 없으면 '결제 정보의 결제 ID가 일치하지 않습니다.' PaymentException 이 난다")
+	@CsvSource(delimiter = '|', nullValues = "NULL", textBlock = """
+		# 요청한 결제 ID | 포트원 응답의 결제 ID
+		pay_A#1        | pay_A
+		pay_A?x=1      | pay_A
+		pay_a          | pay_A
+		pay_A          | NULL
+		""")
+	void assertPaymentIdMatches_different_throws(String requestedPaymentId, String responsePaymentId) {
+		// given
+		PortOnePaymentResponse response = response(responsePaymentId, "PAID", PRICE, null);
+
+		// when & then
+		assertThatThrownBy(() -> paymentVerifier.assertPaymentIdMatches(requestedPaymentId, response))
+			.isInstanceOf(PaymentException.class)
+			.hasMessage("결제 정보의 결제 ID가 일치하지 않습니다.");
+	}
+
+	@Test
+	@DisplayName("포트원 응답의 결제 ID 가 요청한 결제 ID 와 같으면 통과한다")
+	void assertPaymentIdMatches_same_passes() {
+		assertThatCode(() -> paymentVerifier.assertPaymentIdMatches(PAYMENT_ID,
+			response(PAYMENT_ID, "PAID", PRICE, null))).doesNotThrowAnyException();
 	}
 
 	@Test

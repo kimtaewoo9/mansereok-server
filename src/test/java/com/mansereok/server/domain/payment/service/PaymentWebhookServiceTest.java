@@ -104,8 +104,12 @@ class PaymentWebhookServiceTest {
 	}
 
 	private PortOnePaymentResponse portOneResponse(String status, long total) {
+		return portOneResponse(PAYMENT_ID, status, total);
+	}
+
+	private PortOnePaymentResponse portOneResponse(String paymentId, String status, long total) {
 		PortOnePaymentResponse response = new PortOnePaymentResponse();
-		response.setId(PAYMENT_ID);
+		response.setId(paymentId);
 		response.setStatus(status);
 		PortOnePaymentResponse.Amount amount = new PortOnePaymentResponse.Amount();
 		amount.setTotal(total);
@@ -120,7 +124,11 @@ class PaymentWebhookServiceTest {
 	}
 
 	private static String webhookBody(String status) {
-		return "{\"tx_id\":\"tx_1\",\"payment_id\":\"" + PAYMENT_ID + "\",\"status\":\"" + status
+		return webhookBody(PAYMENT_ID, status);
+	}
+
+	private static String webhookBody(String paymentId, String status) {
+		return "{\"tx_id\":\"tx_1\",\"payment_id\":\"" + paymentId + "\",\"status\":\"" + status
 			+ "\",\"timestamp\":\"2026-01-01T00:00:00Z\"}";
 	}
 
@@ -267,6 +275,23 @@ class PaymentWebhookServiceTest {
 			.hasMessage("결제 정보를 조회하는 중 일시적인 오류가 발생했습니다.");
 
 		verifyNoInteractions(orderRepository, paymentRepository, resultService);
+	}
+
+	@Test
+	@DisplayName("포트원 재조회 응답의 결제 ID 가 웹훅의 결제 ID 와 다르면 '결제 정보의 결제 ID가 일치하지 않습니다.' 로 거부하고 주문을 잠그거나 확정하지 않는다")
+	void processWebhook_responsePaymentIdDiffers_throwsWithoutTouchingOrder() {
+		// given: 'pay_A#1' 을 재조회했는데 포트원이 다른 결제(pay_A)를 돌려준 상황. 금액·customData 는 모두 맞다.
+		PortOnePaymentResponse otherPayment = portOneResponse("pay_A", "PAID", PRICE);
+		otherPayment.setCustomData(CUSTOM_DATA);
+		given(portOneClient.getPayment("pay_A#1")).willReturn(otherPayment);
+
+		// when & then
+		assertThatThrownBy(() -> paymentWebhookService.processWebhook(webhookBody("pay_A#1", "Paid")))
+			.isInstanceOf(PaymentException.class)
+			.hasMessage("결제 정보의 결제 ID가 일치하지 않습니다.");
+
+		verifyNoInteractions(orderRepository, paymentRepository, orderDiscountRestorer, resultService,
+			eventPublisher);
 	}
 
 	@Test

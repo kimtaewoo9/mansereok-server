@@ -32,6 +32,8 @@ import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
@@ -174,6 +176,29 @@ class PortOneRestClientTest {
 		server.verify();
 	}
 
+	@ParameterizedTest(name = "[{index}] 결제 ID {0} → {1}")
+	@DisplayName("결제 ID 에 '#'·'?'·'/' 가 섞여도 잘리지 않고 인코딩된 채 한 경로 조각으로 조회한다")
+	@CsvSource(delimiter = '|', textBlock = """
+		# 결제 ID    | 실제로 나가는 주소
+		pay_A#1      | https://api.portone.io/payments/pay_A%231
+		pay_A?x=1    | https://api.portone.io/payments/pay_A%3Fx%3D1
+		a/../b       | https://api.portone.io/payments/a%2F..%2Fb
+		""")
+	void getPayment_encodesReservedCharactersInPaymentId(String paymentId, String expectedUrl) {
+		// given: 인코딩된 주소로 나갈 때만 응답한다. 잘린 주소(/payments/pay_A)로 나가면 기대와 달라 실패한다.
+		server.expect(requestTo(expectedUrl))
+			.andExpect(method(HttpMethod.GET))
+			.andRespond(withSuccess("""
+				{"id": "pay_A", "status": "PAID", "amount": {"total": 10000}}
+				""", MediaType.APPLICATION_JSON));
+
+		// when
+		client.getPayment(paymentId);
+
+		// then
+		server.verify();
+	}
+
 	@Test
 	@DisplayName("결제 취소는 POST /payments/{id}/cancel 에 인증 헤더와 JSON 본문의 reason 을 보낸다")
 	void cancelPayment_sendsReasonAsJsonBody() {
@@ -226,6 +251,21 @@ class PortOneRestClientTest {
 		assertThatThrownBy(() -> client.cancelPayment(PAYMENT_ID, "단순 변심"))
 			.isInstanceOf(PaymentException.class)
 			.hasMessageStartingWith("결제 취소 연동 중 오류가 발생했습니다: ");
+		server.verify();
+	}
+
+	@Test
+	@DisplayName("취소도 결제 ID 를 인코딩해 보낸다. 'pay_A#1' 을 취소하려다 pay_A 를 취소하지 않는다")
+	void cancelPayment_encodesReservedCharactersInPaymentId() {
+		// given
+		server.expect(requestTo("https://api.portone.io/payments/pay_A%231/cancel"))
+			.andExpect(method(HttpMethod.POST))
+			.andRespond(withSuccess());
+
+		// when
+		client.cancelPayment("pay_A#1", "단순 변심");
+
+		// then
 		server.verify();
 	}
 

@@ -36,22 +36,39 @@ public class PaymentVerifier {
 	}
 
 	/**
+	 * 포트원 응답의 결제 ID 가 요청한 결제 ID 와 글자까지 같은지 확인한다. 조회 주소가 잘리거나 바뀌어 다른 결제를 받아 온
+	 * 경우("pay_A#1" 을 요청했는데 pay_A 가 온 경우)를 걸러, 결제 한 건이 여러 주문에 붙는 것을 막는다.
+	 *
+	 * <p>이 검사를 통과한 뒤에는 요청값이 아니라 응답의 결제 ID 를 중복 검사와 Payment.impUid 저장에 쓴다.
+	 *
+	 * @throws PaymentException 응답의 결제 ID 가 없거나 요청한 결제 ID 와 다른 경우
+	 */
+	public void assertPaymentIdMatches(String requestedPaymentId,
+		PortOnePaymentResponse paymentResponse) {
+		if (!Objects.equals(requestedPaymentId, paymentResponse.getId())) {
+			log.warn("결제 정보의 결제 ID 불일치: requestedPaymentId={}, responsePaymentId={}",
+				requestedPaymentId, paymentResponse.getId());
+			throw new PaymentException("결제 정보의 결제 ID가 일치하지 않습니다.");
+		}
+	}
+
+	/**
 	 * 포트원 응답 customData 의 merchantUid 를 잠근 주문의 merchantUid(요청값이 아니라 DB 값)와 대조한다.
 	 * 결제 한 건이 다른 주문에 붙는 것을 막는다.
 	 *
-	 * <p>customData 가 비어 있으면 하위 호환을 위해 warn 로그만 남기고 통과한다(customData 를 싣지 않는
-	 * 예전 클라이언트·수동 결제). 형식이 어긋난 customData 는 {@link WebhookCustomData#from} 의
-	 * PaymentException 이 그대로 전파된다.
+	 * <p>customData 가 비어 있으면 거부한다. customData 는 결제를 만드는 쪽(사용자 브라우저)이 정하는 값이라, 비어 있을 때
+	 * 통과시키면 customData 없이 만든 결제 한 건으로 대조를 건너뛸 수 있다. 형식이 어긋난 customData 는
+	 * {@link WebhookCustomData#from} 의 PaymentException 이 그대로 전파된다.
 	 *
-	 * @throws PaymentException customData 의 merchantUid 가 주문의 merchantUid 와 다른 경우
+	 * @throws PaymentException customData 가 비어 있거나, 그 merchantUid 가 주문의 merchantUid 와 다른 경우
 	 */
 	public void assertCustomDataMatchesOrder(Order order, String paymentId,
 		PortOnePaymentResponse paymentResponse) {
 		String customData = paymentResponse.getCustomData();
 		if (customData == null || customData.isBlank()) {
-			log.warn("포트원 응답에 customData 가 없어 주문 번호 대조를 건너뜁니다: orderId={}, paymentId={}",
+			log.warn("포트원 응답에 customData 가 없어 결제를 확정하지 않습니다: orderId={}, paymentId={}",
 				order.getId(), paymentId);
-			return;
+			throw new PaymentException("결제 정보에 주문 번호가 없습니다.");
 		}
 
 		String paidMerchantUid = merchantUidFromCustomData(paymentResponse);

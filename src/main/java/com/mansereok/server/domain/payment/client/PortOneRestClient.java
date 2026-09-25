@@ -33,6 +33,9 @@ import org.springframework.web.client.RestClientException;
  * 예외 분류: 네트워크 오류·타임아웃({@link ResourceAccessException})과 5xx({@link HttpServerErrorException})는
  * 재시도 가능한 일시 장애로 보고 {@link PortOneUnavailableException}(503)을, 4xx 와 응답 파싱 실패는
  * {@link PaymentException}(400)을 던진다.
+ * <p>
+ * 결제 ID 는 주소 문자열에 이어 붙이지 않고 URI 변수로 넘긴다. 그래야 '#'·'?'·'/' 가 퍼센트 인코딩되어 "pay_A#1" 이
+ * /payments/pay_A 로 잘려 나가지 않는다.
  */
 @Slf4j
 @Component
@@ -140,7 +143,7 @@ public class PortOneRestClient implements PortOneClient {
 	public void cancelPayment(String paymentId, String reason) {
 		try {
 			restClient.post()
-				.uri(properties.baseUrl() + "/payments/" + paymentId + "/cancel")
+				.uri(properties.baseUrl() + "/payments/{paymentId}/cancel", paymentId)
 				.header(HttpHeaders.AUTHORIZATION, authorizationHeader())
 				.contentType(MediaType.APPLICATION_JSON)
 				.body(new CancelRequest(reason))
@@ -157,7 +160,7 @@ public class PortOneRestClient implements PortOneClient {
 
 	private String requestPayment(String paymentId) {
 		return restClient.get()
-			.uri(properties.baseUrl() + "/payments/" + paymentId)
+			.uri(properties.baseUrl() + "/payments/{paymentId}", paymentId)
 			.header(HttpHeaders.AUTHORIZATION, authorizationHeader())
 			.accept(MediaType.APPLICATION_JSON)
 			.retrieve()

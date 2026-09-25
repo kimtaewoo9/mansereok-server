@@ -22,7 +22,9 @@ import org.springframework.transaction.annotation.Transactional;
 /**
  * 포트원 웹훅 처리. 서명 검증은 컨트롤러가 마친 뒤 호출한다.
  *
- * <p>순서: 페이로드 파싱 → Paid 이벤트 필터 → 포트원 재조회 → 주문 잠금과 멱등 검사 → 금액 검증 → 확정.
+ * <p>순서: 페이로드 파싱 → Paid 이벤트 필터 → 포트원 재조회 → 결제 ID 대조 → 주문 잠금과 멱등 검사 → 금액 검증 → 확정.
+ * 결제 ID 가 다르면 받아 온 결제를 믿을 수 없으므로 어느 주문도 건드리지 않고 PaymentException(400)을 던진다. 대조를 통과한
+ * 뒤에는 웹훅 본문의 값이 아니라 포트원 응답의 결제 ID 로 중복을 검사하고 Payment.impUid 에 저장한다.
  *
  * <p>금액 불일치와 결제 실패 상태는 재전송으로 해결되지 않는 최종 실패라서 예외 없이 주문을 FAILED 로 기록하고
  * 정상 반환한다. 예외를 던지면 같은 트랜잭션의 FAILED 저장이 롤백되고 포트원이 재시도를 반복하므로, 정상 반환으로
@@ -56,11 +58,13 @@ public class PaymentWebhookService {
 			return;
 		}
 
-		// 웹훅 본문은 신뢰하지 않고 포트원 API 로 재조회한다
+		// 웹훅 본문은 신뢰하지 않고 포트원 API 로 재조회한다. 받아 온 결제가 웹훅이 가리킨 결제인지부터 확인한다.
 		PortOnePaymentResponse paymentResponse = portOneClient.getPayment(paymentId);
+		paymentVerifier.assertPaymentIdMatches(paymentId, paymentResponse);
+		String verifiedPaymentId = paymentResponse.getId();
 		String merchantUid = paymentVerifier.merchantUidFromCustomData(paymentResponse);
 
-		Optional<Order> unprocessed = lockUnprocessedOrder(merchantUid, paymentId);
+		Optional<Order> unprocessed = lockUnprocessedOrder(merchantUid, verifiedPaymentId);
 		if (unprocessed.isEmpty()) {
 			return;
 		}
@@ -70,7 +74,7 @@ public class PaymentWebhookService {
 			return;
 		}
 
-		confirmByPortOneStatus(order, paymentId, paymentResponse);
+		confirmByPortOneStatus(order, verifiedPaymentId, paymentResponse);
 	}
 
 	private PortoneWebhookDto parseWebhookBody(String body) {
