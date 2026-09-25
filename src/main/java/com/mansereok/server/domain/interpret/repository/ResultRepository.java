@@ -40,17 +40,17 @@ public interface ResultRepository extends JpaRepository<Result, Long> {
 
 	/**
 	 * 결과 ID 로 행을 읽으며 쓰기 잠금(SELECT ... FOR UPDATE)을 건다. 해석 실행이 자기가 시작한 해석인지 확인하고
-	 * (Result.isProcessingStartedAt) 결과를 쓰거나 되돌리는 동안, 오래 멈춘 결과 되돌리기나 다른 요청의 해석 시작이 끼어들지 못하게
-	 * 한다. 잠금 조회는 스냅샷이 아니라 가장 최근에 커밋된 행을 읽는다. 호출자의 트랜잭션 안에서 부른다.
+	 * (Result.isProcessingStartedAt) 결과를 저장하는 동안, 오래 멈춘 결과 되돌리기나 다른 요청의 해석 시작이 끼어들지 못하게 한다.
+	 * 잠금 조회는 스냅샷이 아니라 가장 최근에 커밋된 행을 읽는다. 호출자의 트랜잭션 안에서 부른다.
 	 */
 	@Lock(LockModeType.PESSIMISTIC_WRITE)
 	@Query("SELECT r FROM Result r WHERE r.id = :id")
 	Optional<Result> findByIdForUpdate(@Param("id") Long id);
 
 	/**
-	 * 결제 ID 로 행을 읽으며 쓰기 잠금을 건다. findByIdForUpdate 와 같은 쓰임이고, 결과 ID 를 아직 모르는 입력 정보 채우기와 제출
-	 * 거부 뒤 되돌리기가 쓴다. uk_results_payment_id 로 그 결제의 행 하나만 잠근다. 결제 스택에도 같은 이름·같은 쿼리의 환불용
-	 * 메서드가 있어, 두 스택을 합칠 때 하나만 남긴다.
+	 * 결제 ID 로 행을 읽으며 쓰기 잠금을 건다. findByIdForUpdate 와 같은 쓰임이고, 결과 ID 를 모를 수 있는 세 곳이 쓴다. 입력 정보
+	 * 채우기, 제출 거부 뒤 되돌리기, 해석 실패 뒤 되돌리기(InterpretationPipeline)다. uk_results_payment_id 로 그 결제의 행 하나만
+	 * 잠근다. 결제 스택에도 같은 이름·같은 쿼리의 환불용 메서드가 있어, 두 스택을 합칠 때 하나만 남긴다.
 	 */
 	@Lock(LockModeType.PESSIMISTIC_WRITE)
 	@Query("SELECT r FROM Result r WHERE r.paymentId = :paymentId")

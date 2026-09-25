@@ -85,9 +85,6 @@ class ResultStartOnceMySqlTest extends InterpretationMySqlTest {
 	private ResultService resultService;
 
 	@Autowired
-	private SajuResultService sajuResultService;
-
-	@Autowired
 	private ResultRepository resultRepository;
 
 	@Autowired

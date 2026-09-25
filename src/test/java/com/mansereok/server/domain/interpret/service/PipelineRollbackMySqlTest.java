@@ -23,7 +23,6 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.CannotAcquireLockException;
-import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 
 /**
  * 비동기 해석의 첫 DB 단계(입력 정보 채우기)가 실패해도, 컨트롤러가 해석 중으로 바꿔 둔 결과가 실제 MySQL 에서 정보 입력 대기로
@@ -33,8 +32,8 @@ import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
  * 에 남았다. 이제는 결제 ID 로 되돌린다. 해석은 @Async 스레드(gptTaskExecutor)에서 돌므로 끝나기를 sleep 없이 Awaitility 로
  * 기다린다. 해석 중 행은 실제 해석 시작(startProcessing)으로 만들고, 그 시작이 돌려준 시각을 해석에 넘긴다.
  *
- * <p>SajuResultService 는 {@link MockitoSpyBean} 이다. 이번 실행의 결제 ID 로 부른 입력 정보 채우기만 DB 오류를 던지고, 나머지는
- * 진짜로 넘긴다. 스파이 때문에 이 클래스는 다른 해석 MySQL 테스트와 스프링 컨텍스트를 함께 쓰지 않는다.
+ * <p>SajuResultService 는 바탕 클래스가 올린 스파이다. 이번 실행의 결제 ID 로 부른 입력 정보 채우기만 DB 오류를 던지고, 나머지는
+ * 진짜로 넘긴다. 스파이가 바탕 클래스에 있어 다른 해석 MySQL 테스트와 스프링 컨텍스트를 함께 쓴다.
  *
  * <p>행은 이번 실행의 결제 ID 로 만들고 뒤 정리에서 그 결제 ID 로만 지운다. 결과 표는 결제 표를 참조하지 않으므로 결제 행은
  * 만들지 않는다.
@@ -43,9 +42,6 @@ class PipelineRollbackMySqlTest extends InterpretationMySqlTest {
 
 	// 되돌리기는 제출한 해석이 대기열 없이 바로 돌면 수백 밀리초 안에 끝난다. 되돌리지 못하면 행은 끝까지 PROCESSING 이다.
 	private static final Duration ROLLBACK_WAIT = Duration.ofSeconds(10);
-
-	@MockitoSpyBean
-	private SajuResultService sajuResultService;
 
 	@Autowired
 	private ManseInterpretationService manseInterpretationService;
