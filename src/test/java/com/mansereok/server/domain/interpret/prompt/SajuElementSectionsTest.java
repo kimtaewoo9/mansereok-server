@@ -24,7 +24,7 @@ class SajuElementSectionsTest {
 
 	@Test
 	@DisplayName("값이 없으면 물음표, 줄표 기본값을 쓴다")
-	void valueFallbacks() {
+	void usesQuestionMarkOrDashWhenValueMissing() {
 		assertThat(SajuElementSections.orUnknown("목")).isEqualTo("목");
 		assertThat(SajuElementSections.orUnknown(null)).isEqualTo("?");
 		assertThat(SajuElementSections.orDash("건록")).isEqualTo("건록");

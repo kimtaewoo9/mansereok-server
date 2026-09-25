@@ -67,7 +67,7 @@ final class FortunePrompts {
 		SajuKeywordSections.appendKeywords(prompt, response);
 		prompt.append("\n");
 
-		PromptSections.appendMoneyLuckJsonResponseFormat(prompt);
+		PromptSections.appendMoneyLuckOutputFormat(prompt);
 
 		return prompt.toString();
 	}
@@ -179,7 +179,7 @@ final class FortunePrompts {
 			.formatted(name));
 
 		// 출력 형식 꼬리
-		PromptSections.appendSajuJsonResponseFormat(prompt);
+		PromptSections.appendSajuOutputFormat(prompt);
 
 		return prompt.toString();
 	}
@@ -446,7 +446,7 @@ final class FortunePrompts {
 			""");
 
 		// ===== [6단계] 출력 형식 꼬리 =====
-		PromptSections.appendSajuJsonResponseFormat(prompt);
+		PromptSections.appendSajuOutputFormat(prompt);
 
 		return prompt.toString();
 	}

@@ -12,42 +12,42 @@ import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 /**
- * 골든 파일을 현재 구현의 출력으로 다시 뜨는 일회용 도구. 평소에는 꺼 두고,
+ * 기대 결과 파일을 현재 구현의 출력으로 다시 만드는 일회용 도구. 평소에는 꺼 두고,
  * 프롬프트를 의도적으로 바꾼 PR 에서만 {@code @Disabled} 를 떼고 한 번 돌린다.
  *
  * <p>시각에 따라 달라지는 값만 자리표시자로 되돌린다. 연도는 상품에 따라 다르게 다뤄야 한다.
  * 기준연도를 {@code LocalDate.now()} 에서 가져오는 상품(궁합 전체)은 해가 바뀌면 값이 달라지므로
  * 반드시 자리표시자로 되돌린다. 반대로 2026 이 코드에 박혀 있는 상품(18, 101, 102, 106)은
- * 되돌리면 안 된다. 자리표시자가 "오늘의 연도" 로 펼쳐지는 탓에 2027년에 골든이 깨지기 때문이다.
+ * 되돌리면 안 된다. 자리표시자가 "오늘의 연도" 로 펼쳐지는 탓에 2027년에 기대 결과 파일이 깨지기 때문이다.
  */
-@Disabled("골든을 의도적으로 다시 뜰 때만 수동으로 켠다")
-class GoldenRegenerator {
+@Disabled("기대 결과 파일을 의도적으로 다시 만들 때만 수동으로 켠다")
+class ExpectedPromptFileWriter {
 
-	private static final Path GOLDEN_DIR = Path.of("src/test/resources/prompt-golden");
+	private static final Path EXPECTED_PROMPTS_DIR = Path.of("src/test/resources/expected-prompts");
 
 	@Test
-	void regenerateNewVariants() throws Exception {
+	void writeExpectedFilesForAddedVariants() throws Exception {
 		// 18, 101, 106 은 기준연도 2026 이 코드에 박혀 있어 연도를 되돌리지 않는다.
-		write("18-reverse.txt", SajuPrompts.saju(18L, "강민호",
+		writeExpectedFile("18-reverse.txt", SajuPrompts.saju(18L, "강민호",
 			PromptFixtures.personReverseDaewoon(), "원피스"), false);
-		write("101-reverse.txt", SajuPrompts.free(101L, "강민호",
+		writeExpectedFile("101-reverse.txt", SajuPrompts.free(101L, "강민호",
 			PromptFixtures.personReverseDaewoon()), false);
-		write("106-reverse.txt", SajuPrompts.free(106L, "강민호",
+		writeExpectedFile("106-reverse.txt", SajuPrompts.free(106L, "강민호",
 			PromptFixtures.personReverseDaewoon()), false);
 		// 궁합은 기준연도를 오늘에서 가져오므로 연도를 되돌린다.
 		for (long id : new long[]{4L, 6L, 7L, 8L, 10L, 11L, 14L, 15L, 19L}) {
-			write(id + "-edge2.txt", SajuPrompts.compatibility(id, "박하늘",
+			writeExpectedFile(id + "-edge2.txt", SajuPrompts.compatibility(id, "박하늘",
 				PromptFixtures.personEdge(), "최서준", PromptFixtures.personEdge(), "", ""), true);
 		}
 	}
 
-	private void write(String fileName, String prompt, boolean maskYear) throws Exception {
-		Files.writeString(GOLDEN_DIR.resolve(fileName), maskTimeDependentValues(prompt, maskYear),
+	private void writeExpectedFile(String fileName, String prompt, boolean maskYear) throws Exception {
+		Files.writeString(EXPECTED_PROMPTS_DIR.resolve(fileName), maskTimeDependentValues(prompt, maskYear),
 			StandardCharsets.UTF_8);
 	}
 
 	/**
-	 * {@code PromptGoldenTest.expandTimeDependentValues} 의 역방향.
+	 * {@code PromptMatchesExpectedFileTest.expandTimeDependentValues} 의 역방향.
 	 * {@code maskYear} 는 기준연도를 오늘에서 가져오는 상품에만 켠다.
 	 */
 	private static String maskTimeDependentValues(String prompt, boolean maskYear) {
@@ -65,7 +65,7 @@ class GoldenRegenerator {
 			: masked;
 	}
 
-	/** 골든 테스트와 같은 방식으로 프롬프트를 만든다. */
+	/** 기대 결과 비교 테스트와 같은 방식으로 프롬프트를 만든다. */
 	private static final class SajuPrompts {
 
 		private static final SajuPromptFactory SAJU = new SajuPromptFactory();

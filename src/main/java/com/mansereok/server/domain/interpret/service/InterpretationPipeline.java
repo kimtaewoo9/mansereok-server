@@ -17,7 +17,7 @@ import org.springframework.stereotype.Component;
  * 궁합은 {@code CompatibilityResult} 를 저장해서 반환 타입이 갈리는데, 템플릿 메서드로 가면
  * 흐름마다 하위 클래스를 만들어 스프링 빈으로 올려야 하고 흐름 하나를 읽으려고 상위·하위 클래스를
  * 오가야 한다. 지금 방식은 호출부에 단계가 순서대로 나열돼 흐름이 한 화면에 남는다.
- * 저장 타입이 갈리는 부분만 {@link ResultLifecycle} 로 따로 뺐다.
+ * 저장 타입이 갈리는 부분만 {@link ResultStatusHandler} 로 따로 뺐다.
  */
 @Component
 @Slf4j
@@ -25,14 +25,14 @@ public class InterpretationPipeline {
 
 	/**
 	 * @param flowName    로그에 붙일 흐름 이름 (예: "유료 단일 사주 해석")
-	 * @param lifecycle   저장 대상 엔티티마다 다른 시작·완료·롤백
+	 * @param resultStatus   저장 대상 엔티티마다 다른 시작·완료·롤백
 	 * @param notification 알림 전송. 실패해도 해석은 계속한다
 	 * @param gptCall     프롬프트 생성 + GPT 호출 + 파싱 + 정규화
 	 * @param postSteps   결과 저장 뒤의 곁가지(OG 이미지, 이메일). 실패해도 결과를 되돌리지 않는다
 	 */
 	public <R, T> void run(
 		String flowName,
-		ResultLifecycle<R, T> lifecycle,
+		ResultStatusHandler<R, T> resultStatus,
 		Runnable notification,
 		GptCall<R> gptCall,
 		List<PostStep<T>> postSteps
@@ -41,36 +41,36 @@ public class InterpretationPipeline {
 
 		try {
 			// 1. [DB] 초기 정보 갱신 (커넥션 즉시 반납)
-			resultId = lifecycle.begin();
+			resultId = resultStatus.markInProgress();
 			log.info("[{}] 초기 정보 갱신 완료 - resultId: {}", flowName, resultId);
 
 			// 2. [Non-DB] 알림 전송
-			runQuietly(flowName, "알림 전송", notification);
+			runAndLogFailure(flowName, "알림 전송", notification);
 
 			// 3. GPT 호출 (DB 커넥션 사용 X)
 			R gptResult = gptCall.call();
 
 			// 4. [DB] 결과 저장
-			T saved = lifecycle.complete(resultId, gptResult);
+			T saved = resultStatus.saveFinalResult(resultId, gptResult);
 			log.info("[{}] 결과 저장 완료 - resultId: {}", flowName, resultId);
 
 			// 5. [Non-DB] 후처리
 			for (PostStep<T> step : postSteps) {
-				runQuietly(flowName, step.name(), () -> step.action().accept(saved));
+				runAndLogFailure(flowName, step.name(), () -> step.action().accept(saved));
 			}
 
 		} catch (JsonProcessingException e) {
 			// 스키마를 강제해도 파싱이 깨졌다면 응답 형식 쪽 문제라 따로 남긴다.
 			log.error("[{}] GPT 응답 파싱 실패 - resultId: {}", flowName, resultId, e);
-			lifecycle.rollback(resultId);
+			resultStatus.rollbackToInitialStatus(resultId);
 		} catch (OpenAiIncompleteResponseException e) {
 			// 토큰 상한 도달은 프롬프트·토큰 설정을 손봐야 한다는 신호라 따로 센다.
 			// @Async 라 예외가 HTTP 응답으로 나가지 않으므로 운영에서는 이 로그로 본다.
 			log.error("[{}] 해석 미완성 - reason: {}, resultId: {}", flowName, e.getReason(), resultId);
-			lifecycle.rollback(resultId);
+			resultStatus.rollbackToInitialStatus(resultId);
 		} catch (Exception e) {
 			log.error("[{}] 해석 중 오류 발생: {}", flowName, e.getMessage(), e);
-			lifecycle.rollback(resultId);
+			resultStatus.rollbackToInitialStatus(resultId);
 		}
 	}
 
@@ -78,7 +78,7 @@ public class InterpretationPipeline {
 	 * 알림·OG 이미지·이메일은 해석 결과와 무관한 곁가지다. 실패해도 해석을 멈추거나 되돌리지 않는다.
 	 * 다만 예외를 삼키지는 않고 반드시 남긴다 (Effective Java 아이템 77).
 	 */
-	private void runQuietly(String flowName, String stepName, Runnable action) {
+	private void runAndLogFailure(String flowName, String stepName, Runnable action) {
 		try {
 			action.run();
 		} catch (Exception e) {
@@ -92,16 +92,16 @@ public class InterpretationPipeline {
 	 * @param <R> GPT 응답 DTO
 	 * @param <T> 저장된 결과 엔티티
 	 */
-	public interface ResultLifecycle<R, T> {
+	public interface ResultStatusHandler<R, T> {
 
 		/** 초기 상태를 갱신하고 롤백에 쓸 결과 ID 를 돌려준다. */
-		Long begin();
+		Long markInProgress();
 
 		/** GPT 응답을 결과로 확정해 저장한다. */
-		T complete(Long resultId, R gptResult);
+		T saveFinalResult(Long resultId, R gptResult);
 
 		/** 실패 시 초기 상태로 되돌린다. resultId 가 null 이어도 안전해야 한다. */
-		void rollback(Long resultId);
+		void rollbackToInitialStatus(Long resultId);
 	}
 
 	/**

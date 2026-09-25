@@ -354,7 +354,7 @@ final class PromptSections {
 			""");
 	}
 
-	static void appendSajuJsonResponseFormat(StringBuilder prompt) {
+	static void appendSajuOutputFormat(StringBuilder prompt) {
 		prompt.append("""
 
 
@@ -381,7 +381,7 @@ final class PromptSections {
 	/**
 	 * 궁합 분석 프롬프트에 공통으로 붙는 출력 형식 꼬리.
 	 */
-	static void appendCompatibilityJsonResponseFormat(StringBuilder prompt) {
+	static void appendCompatibilityOutputFormat(StringBuilder prompt) {
 		prompt.append("""
 
 
@@ -411,7 +411,7 @@ final class PromptSections {
 			""");
 	}
 
-	static void appendBusinessJsonResponseFormat(StringBuilder prompt) {
+	static void appendBusinessOutputFormat(StringBuilder prompt) {
 		prompt.append("""
 
 
@@ -427,7 +427,7 @@ final class PromptSections {
 			""");
 	}
 
-	static void appendMoneyLuckJsonResponseFormat(StringBuilder prompt) {
+	static void appendMoneyLuckOutputFormat(StringBuilder prompt) {
 		prompt.append("""
 
 
@@ -443,9 +443,9 @@ final class PromptSections {
 	 * 정화된 사용자 입력 구획과 서버가 만든 분석 지시 구획을 한 프롬프트로 합친다.
 	 * 모델에게 "어디까지가 데이터이고 어디부터가 지시인지" 를 알려주는 유일한 조립 지점이다.
 	 */
-	static String withSectionBoundary(SequencedMap<String, String> userValues,
+	static String prependUserInputSection(SequencedMap<String, String> userValues,
 		String analysisPrompt) {
-		return UserInputSanitizer.userInputSection(userValues)
+		return UserInputSanitizer.buildUserInputSection(userValues)
 			+ "\n" + UserInputSanitizer.ANALYSIS_SECTION_HEADER + "\n"
 			+ analysisPrompt;
 	}

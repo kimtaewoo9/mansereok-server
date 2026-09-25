@@ -99,7 +99,7 @@ public final class UserInputSanitizer {
 	 * 순서가 타입에 드러나는 {@link SequencedMap} 을 받는다. (Effective Java 아이템 64 의
 	 * "적절한 인터페이스가 있을 때" 에 해당하는 인터페이스가 여기서는 SequencedMap 이다.)
 	 */
-	public static String userInputSection(SequencedMap<String, String> labeledValues) {
+	public static String buildUserInputSection(SequencedMap<String, String> labeledValues) {
 		StringBuilder body = new StringBuilder();
 		for (Map.Entry<String, String> entry : labeledValues.entrySet()) {
 			if (entry.getValue() == null) {

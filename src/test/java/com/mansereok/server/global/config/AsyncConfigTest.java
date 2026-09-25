@@ -124,7 +124,7 @@ class AsyncConfigTest {
 
 	@Test
 	@DisplayName("세 풀의 거부 핸들러는 모두 RejectedExecutionException 을 던진다")
-	void rejectsWhenSaturated() {
+	void everyPoolRejectionHandlerThrows() {
 		List<ThreadPoolTaskExecutor> executors = List.of(
 			register(asyncConfig.gptTaskExecutor()),
 			register(asyncConfig.threadPoolTaskExecutor()),

@@ -92,12 +92,12 @@ public class OpenAiResponsesRestClient implements OpenAiResponsesClient {
 	@Override
 	public String createResponse(Gpt5Request request) {
 		int maxAttempts = properties.maxAttempts();
-		TransientFailure lastFailure = null;
+		RetryableFailure lastFailure = null;
 
 		for (int attempt = 1; attempt <= maxAttempts; attempt++) {
 			try {
-				return extractOutputText(post(request), request.getModel());
-			} catch (TransientFailure e) {
+				return extractOutputText(sendOnce(request), request.getModel());
+			} catch (RetryableFailure e) {
 				lastFailure = e;
 				log.warn("OpenAI 호출 실패 (시도 {}/{}, model: {}): {}",
 					attempt, maxAttempts, request.getModel(), e.getMessage());
@@ -115,7 +115,7 @@ public class OpenAiResponsesRestClient implements OpenAiResponsesClient {
 	 * 직렬화된 본문에 문자열 치환을 하지 않는다. 그 방식은 프롬프트 본문에 모델명이 섞여 있으면 그것까지 바꾸고,
 	 * 애초에 다른 모델을 쓰던 경로에서는 아무것도 바꾸지 못한 채 같은 모델로 재호출한다.
 	 */
-	private String callFallback(Gpt5Request request, TransientFailure lastFailure) {
+	private String callFallback(Gpt5Request request, RetryableFailure lastFailure) {
 		// 후속 판단 거리: fallback 티어가 하나뿐이라 무료(light = gpt-5-mini / 8192) 경로도
 		// 5xx 가 이어지면 gpt-5.2 / 32768 토큰으로 올라간다. 기존 코드는 문자열 치환 버그 때문에
 		// 이 경로의 fallback 이 아무 일도 하지 않았으므로, 버그를 고친 결과로 새로 생기는 비용 노출이다.
@@ -126,17 +126,17 @@ public class OpenAiResponsesRestClient implements OpenAiResponsesClient {
 			lastFailure == null ? "알 수 없음" : lastFailure.getMessage(),
 			fallback.model());
 
-		Gpt5Request fallbackRequest = withTier(request, fallback);
+		Gpt5Request fallbackRequest = copyRequestForTier(request, fallback);
 		try {
-			return extractOutputText(post(fallbackRequest), fallback.model());
-		} catch (TransientFailure e) {
+			return extractOutputText(sendOnce(fallbackRequest), fallback.model());
+		} catch (RetryableFailure e) {
 			throw new OpenAiUnavailableException(
 				"OpenAI 호출이 최종 실패했습니다 (재시도 " + properties.maxAttempts()
 					+ "회 + fallback 1회). 마지막 원인: " + e.getMessage(), e.getCause());
 		}
 	}
 
-	private Gpt5Request withTier(Gpt5Request request, ModelTier tier) {
+	private Gpt5Request copyRequestForTier(Gpt5Request request, ModelTier tier) {
 		Map<String, Object> outputFormat =
 			request.getText() == null ? null : request.getText().getFormat();
 		return Gpt5Request.withSystemInstruction(
@@ -150,7 +150,7 @@ public class OpenAiResponsesRestClient implements OpenAiResponsesClient {
 		);
 	}
 
-	private String post(Gpt5Request request) {
+	private String sendOnce(Gpt5Request request) {
 		long startedAt = System.currentTimeMillis();
 		try {
 			String body = restClient.post()
@@ -168,17 +168,17 @@ public class OpenAiResponsesRestClient implements OpenAiResponsesClient {
 			// HttpClientErrorException·HttpServerErrorException 은 물론, HttpStatus.resolve() 가
 			// 실패하는 비표준 상태코드(프록시·CDN 이 내는 430·499 등)로 생기는
 			// UnknownHttpStatusCodeException 까지 여기서 상태코드 기준으로 갈린다.
-			throw classify(e.getStatusCode().value(), e, e.getResponseHeaders());
+			throw failureForStatusCode(e.getStatusCode().value(), e, e.getResponseHeaders());
 
 		} catch (UnknownContentTypeException e) {
 			// 에러 페이지가 text/html 로 오면 상태코드는 멀쩡한데 본문 변환에서 터진다. 분류는 같다.
-			throw classify(e.getStatusCode().value(), e, e.getResponseHeaders());
+			throw failureForStatusCode(e.getStatusCode().value(), e, e.getResponseHeaders());
 
 		} catch (ResourceAccessException e) {
-			throw new TransientFailure("연결·읽기 실패: " + e.getMessage(), e, null);
+			throw new RetryableFailure("연결·읽기 실패: " + e.getMessage(), e, null);
 
 		} catch (RestClientException e) {
-			throw new TransientFailure("호출 실패: " + e.getMessage(), e, null);
+			throw new RetryableFailure("호출 실패: " + e.getMessage(), e, null);
 		}
 	}
 
@@ -186,16 +186,16 @@ public class OpenAiResponsesRestClient implements OpenAiResponsesClient {
 	 * 상태코드로 재시도 대상과 즉시 실패를 가른다.
 	 * 429 와 5xx 만 재시도하고, 429 를 뺀 4xx 는 같은 요청을 다시 보내도 같은 답이 오므로 즉시 실패시킨다.
 	 */
-	private RuntimeException classify(int status, RestClientException cause, HttpHeaders headers) {
+	private RuntimeException failureForStatusCode(int status, RestClientException cause, HttpHeaders headers) {
 		if (status == HttpStatus.TOO_MANY_REQUESTS.value()) {
-			return new TransientFailure("요청 한도 초과 (429)", cause, parseRetryAfterMillis(headers));
+			return new RetryableFailure("요청 한도 초과 (429)", cause, parseRetryAfterMillis(headers));
 		}
 		// HttpStatus.valueOf 는 비표준 코드에서 예외를 던지므로 숫자 범위로 본다.
 		if (status >= 400 && status < 500) {
 			return new OpenAiRequestException(
 				"OpenAI 요청이 거절되었습니다. status: " + status, cause);
 		}
-		return new TransientFailure("서버 오류 (" + status + ")", cause, null);
+		return new RetryableFailure("서버 오류 (" + status + ")", cause, null);
 	}
 
 	private void sleepBeforeRetry(int attempt, Long retryAfterMillis) {
@@ -280,7 +280,7 @@ public class OpenAiResponsesRestClient implements OpenAiResponsesClient {
 			throw new OpenAiIncompleteResponseException(reason);
 		}
 
-		String outputText = extractFromContents(root);
+		String outputText = findOutputTextOrThrowRefusal(root);
 		if (outputText == null) {
 			throw new OpenAiUnavailableException(
 				"OpenAI 응답에서 output_text 를 찾지 못했습니다. status: " + status
@@ -309,9 +309,9 @@ public class OpenAiResponsesRestClient implements OpenAiResponsesClient {
 	 * content 배열을 한 번만 훑으면서 refusal 우선 규칙까지 한자리에서 본다.
 	 * refusal 은 뒤에 있어도 그 자리에서 던지므로 output_text 보다 항상 먼저 처리된다.
 	 */
-	private String extractFromContents(JsonNode root) {
+	private String findOutputTextOrThrowRefusal(JsonNode root) {
 		String outputText = null;
-		for (JsonNode content : messageContents(root)) {
+		for (JsonNode content : contentsOfMessageItems(root)) {
 			String type = content.path("type").asText();
 			if ("refusal".equals(type)) {
 				throw new OpenAiRefusalException(content.path("refusal").asText("사유 없음"));
@@ -324,7 +324,7 @@ public class OpenAiResponsesRestClient implements OpenAiResponsesClient {
 		return outputText;
 	}
 
-	private List<JsonNode> messageContents(JsonNode root) {
+	private List<JsonNode> contentsOfMessageItems(JsonNode root) {
 		List<JsonNode> contents = new ArrayList<>();
 		JsonNode output = root.path("output");
 		if (!output.isArray()) {
@@ -346,11 +346,11 @@ public class OpenAiResponsesRestClient implements OpenAiResponsesClient {
 	/**
 	 * 재시도 대상 실패를 감싸는 내부 신호. 이 클래스 밖으로 새어 나가지 않는다.
 	 */
-	private static final class TransientFailure extends RuntimeException {
+	private static final class RetryableFailure extends RuntimeException {
 
 		private final Long retryAfterMillis;
 
-		private TransientFailure(String message, Throwable cause, Long retryAfterMillis) {
+		private RetryableFailure(String message, Throwable cause, Long retryAfterMillis) {
 			super(message, cause);
 			this.retryAfterMillis = retryAfterMillis;
 		}

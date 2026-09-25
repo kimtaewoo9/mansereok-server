@@ -174,7 +174,7 @@ final class BusinessAndAcademicPrompts {
 
 		PromptSections.appendLongformAnalysisData(prompt, name, response);
 
-		PromptSections.appendBusinessJsonResponseFormat(prompt);
+		PromptSections.appendBusinessOutputFormat(prompt);
 		return prompt.toString();
 	}
 
@@ -315,7 +315,7 @@ final class BusinessAndAcademicPrompts {
 
 		PromptSections.appendLongformAnalysisData(prompt, name, response);
 
-		PromptSections.appendBusinessJsonResponseFormat(prompt);
+		PromptSections.appendBusinessOutputFormat(prompt);
 		return prompt.toString();
 	}
 }

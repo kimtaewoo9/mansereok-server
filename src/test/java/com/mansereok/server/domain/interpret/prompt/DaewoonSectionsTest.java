@@ -14,8 +14,8 @@ import org.junit.jupiter.params.provider.CsvSource;
 /**
  * 오늘 일진과 대운 방향을 <b>프로덕션 함수를 쓰지 않고</b> 손으로 계산한 값으로 고정한다.
  *
- * <p>PromptGoldenTest 는 기대값을 {@code DaewoonSections.calculateTodayDayPillar} 로 만들기 때문에
- * 그 함수 안을 어떻게 훼손해도 기대값과 실제값이 같이 틀려서 54개 골든이 전부 통과한다(자기참조 오라클).
+ * <p>PromptMatchesExpectedFileTest 는 기대값을 {@code DaewoonSections.calculateTodayDayPillar} 로 만들기 때문에
+ * 그 함수 안을 어떻게 훼손해도 기대값과 실제값이 같이 틀려서 54개 기대 결과 파일이 전부 통과한다(자기참조 오라클).
  * 그래서 일진의 진짜 오라클은 이 파일이다. 아래 기대값은 전부 손으로 계산했고 근거를 주석에 남겼으므로
  * 절대 프로덕션 함수로 다시 만들지 말 것.
  *

@@ -20,14 +20,14 @@ import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
 
 /**
- * 후처리 리팩토링의 안전망. 규칙을 서비스에서 떼어내기 전 구현이 만든 결과를 그대로 떠 둔
- * src/test/resources/normalize-golden/*.txt 와 현재 구현의 출력이 같은지 확인한다.
+ * 후처리 리팩토링의 안전망. 규칙을 서비스에서 떼어내기 전 구현이 만든 결과를 그대로 저장해 둔
+ * src/test/resources/expected-normalized-results/*.txt 와 현재 구현의 출력이 같은지 확인한다.
  *
- * <p>후처리에는 시각에 따라 달라지는 값이 없으므로 골든 파일을 전혀 가공하지 않고 통째로 비교한다.
+ * <p>후처리에는 시각에 따라 달라지는 값이 없으므로 기대 결과 파일을 전혀 가공하지 않고 통째로 비교한다.
  * 한 글자라도 달라지면 실패한다.
  */
-@DisplayName("후처리 골든 테스트")
-class NormalizeGoldenTest {
+@DisplayName("후처리 결과가 기대 결과 파일과 같은지")
+class NormalizedTextMatchesExpectedFileTest {
 
 	private final AnalysisNormalizer normalizer = new AnalysisNormalizer();
 
@@ -36,32 +36,33 @@ class NormalizeGoldenTest {
 			.map(entry -> Arguments.of(entry.getKey(), entry.getValue()));
 	}
 
-	@ParameterizedTest(name = "{0} 본문 후처리 결과는 골든 파일과 같다")
+	@ParameterizedTest(name = "{0} 본문 후처리 결과는 기대 결과 파일과 같다")
 	@MethodSource("cases")
-	void analysisMatchesGolden(String name, Sample sample) {
+	void analysisMatchesExpectedFile(String name, Sample sample) {
 		assertThat(normalizer.normalizeAnalysis(sample.subcategoryId(), sample.text()))
 			.as("%s 본문", name)
-			.isEqualTo(readGolden(name + ".analysis.txt"));
+			.isEqualTo(readExpectedFile(name + ".analysis.txt"));
 	}
 
-	@ParameterizedTest(name = "{0} 요약 후처리 결과는 골든 파일과 같다")
+	@ParameterizedTest(name = "{0} 요약 후처리 결과는 기대 결과 파일과 같다")
 	@MethodSource("cases")
-	void summaryMatchesGolden(String name, Sample sample) {
+	void summaryMatchesExpectedFile(String name, Sample sample) {
 		assertThat(normalizer.normalizeSummary(sample.subcategoryId(), sample.text()))
 			.as("%s 요약", name)
-			.isEqualTo(readGolden(name + ".summary.txt"));
+			.isEqualTo(readExpectedFile(name + ".summary.txt"));
 	}
 
 	/**
-	 * 표본과 골든 파일이 정확히 1:2 로 맞물리는지 본다. 표본만 늘리고 골든을 안 뜬 경우와,
-	 * 표본을 지웠는데 골든만 남은 경우를 모두 잡는다.
+	 * 표본과 기대 결과 파일이 정확히 1:2 로 맞물리는지 본다. 표본만 늘리고 기대 결과 파일을 만들지 않은 경우와,
+	 * 표본을 지웠는데 기대 결과 파일만 남은 경우를 모두 잡는다.
 	 */
-	@DisplayName("골든 파일과 표본은 빠짐없이 짝이 맞는다")
+	@DisplayName("기대 결과 파일과 표본은 빠짐없이 짝이 맞는다")
 	@Test
-	void goldenFilesMatchSamples() throws Exception {
+	void everySampleHasExactlyTwoExpectedFiles() throws Exception {
 		URL directory = Objects.requireNonNull(
-			NormalizeGoldenTest.class.getClassLoader().getResource("normalize-golden"),
-			"normalize-golden 디렉터리를 찾을 수 없습니다");
+			NormalizedTextMatchesExpectedFileTest.class.getClassLoader()
+				.getResource("expected-normalized-results"),
+			"expected-normalized-results 디렉터리를 찾을 수 없습니다");
 
 		List<String> actualFiles;
 		try (Stream<Path> files = Files.list(Path.of(directory.toURI()))) {
@@ -76,11 +77,11 @@ class NormalizeGoldenTest {
 		assertThat(actualFiles).containsExactlyElementsOf(expectedFiles);
 	}
 
-	private static String readGolden(String fileName) {
-		try (InputStream in = NormalizeGoldenTest.class.getClassLoader()
-			.getResourceAsStream("normalize-golden/" + fileName)) {
+	private static String readExpectedFile(String fileName) {
+		try (InputStream in = NormalizedTextMatchesExpectedFileTest.class.getClassLoader()
+			.getResourceAsStream("expected-normalized-results/" + fileName)) {
 			if (in == null) {
-				throw new IllegalStateException("골든 파일이 없습니다: " + fileName);
+				throw new IllegalStateException("기대 결과 파일이 없습니다: " + fileName);
 			}
 			return new String(in.readAllBytes(), StandardCharsets.UTF_8);
 		} catch (IOException e) {
