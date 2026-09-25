@@ -16,15 +16,6 @@ final class CareerPrompts {
 		ManseryeokCalculationResponse.SajuInfo saju = response.getSaju();
 		ManseryeokCalculationResponse.InputInfo input = response.getInput();
 
-		String solarDate = input.getSolarDate().toString();
-		String solarTime = input.getSolarTime().toString();
-
-		String formattedDate = solarDate.substring(0, 4) + "년 "
-			+ solarDate.substring(5, 7) + "월 "
-			+ solarDate.substring(8, 10) + "일";
-		String formattedTime = solarTime.substring(0, 2) + "시 "
-			+ solarTime.substring(3, 5) + "분";
-
 		// 1. 페르소나
 		PromptSections.appendHyeanPersonaHeader(prompt);
 
@@ -465,7 +456,8 @@ final class CareerPrompts {
 
 			"%s %s에 태어나신 %s님의 사주를 한번 같이 살펴보겠습니다." 이렇게 시작해서 호기심을 끌고,
 			"""
-			.formatted(formattedDate, formattedTime, name));
+			.formatted(SajuProfileSections.birthDateText(input.getSolarDate()),
+				SajuProfileSections.birthTimeText(input.getSolarTime()), name));
 
 		prompt.append("""
 			"%s님은 %s, 그러니까 %s의 기운을 타고나셨어요." 이렇게 자연스럽게 이어가주세요.

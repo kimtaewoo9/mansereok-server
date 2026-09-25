@@ -223,6 +223,28 @@ public final class PromptFixtures {
 		return ManseryeokCalculationResponse.builder().input(input).saju(saju).build();
 	}
 
+	/**
+	 * 출생시간을 비워 보낸 사람. 만세력 계산(ManseCalculationService)이 시간 미입력 요청에 돌려주는 모양을 따른다.
+	 * solarTime 과 시주가 null 이고, 대운 시작 나이는 확정값 없이 범위로만 있다.
+	 *
+	 * <p>{@link #personEdge()} 는 시간 모름 표시만 켜고 solarTime 에 00:00 을 넣어 두어서
+	 * 출생시간이 정말 null 인 경로를 한 번도 태우지 못했다. 이 샘플이 그 경로를 맡는다.
+	 */
+	public static ManseryeokCalculationResponse personTimeUnknown() {
+		ManseryeokCalculationResponse response = person1();
+		response.getInput().setSolarTime(null);
+		response.getInput().setTimeUnknown(Boolean.TRUE);
+
+		SajuInfo saju = response.getSaju();
+		saju.setTimeSky(null);
+		saju.setTimeGround(null);
+		saju.setBigFortuneNumber(null);
+		saju.setBigFortuneStartYear(null);
+		saju.setUncertaintyNotes(List.of("출생시간 미입력: 시주는 계산하지 않았습니다.",
+			"대운 시작 나이는 4~6세 범위입니다."));
+		return response;
+	}
+
 	private static YongsinResult yongsin() {
 		return new YongsinResult("신약", 32.5, 100.0, "금", "일간을 받쳐주는 금 기운이 필요합니다.", "R-04",
 			"억부용신");

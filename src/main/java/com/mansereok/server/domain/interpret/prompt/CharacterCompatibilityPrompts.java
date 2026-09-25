@@ -27,8 +27,8 @@ final class CharacterCompatibilityPrompts {
 			### ⚠️ '나'와 '최애'의 심층 연애 시뮬레이션 ###
 			""");
 		prompt.append(
-			String.format("사용자('%s')가 작품 **'%s'**의 캐릭터 **'%s'**와의 연애 궁합을 의뢰했습니다.\n", userName,
-				sourceTitle, charName));
+			String.format("사용자('%s')가 %s캐릭터 **'%s'**와의 연애 궁합을 의뢰했습니다.\n", userName,
+				PromptSections.sourceTitlePhrase(sourceTitle, "작품 **'%s'**의 "), charName));
 		prompt.append("""
 			단순한 분석글이 아니라, **사용자가 주인공이 된 한 편의 로맨스 소설**을 읽는 듯한 **엄청난 몰입감과 풍부한 분량**을 제공하세요.
 			""");
@@ -42,9 +42,9 @@ final class CharacterCompatibilityPrompts {
 		prompt.append("""
 
 			### 3. 분석 대상 정보 ###
-			--- 캐릭터 (최애): %s (%s) ---
+			--- 캐릭터 (최애): %s%s ---
 			"""
-			.formatted(charName, sourceTitle));
+			.formatted(charName, PromptSections.sourceTitlePhrase(sourceTitle, " (%s)")));
 		SajuProfileSections.appendPersonDetailInfo(prompt, charName, charSaju);
 
 		// 🔥 [추가 1] 캐릭터의 절대 기준(Fact) 주입
@@ -198,8 +198,9 @@ final class CharacterCompatibilityPrompts {
 			""");
 		prompt.append(
 			String.format(
-				"- 이 분석은 작품 **'%s'**의 **'%s'**와 작품 **'%s'**의 **'%s'** 간의 가상 궁합(Coupling)입니다.\n",
-				char1Source, char1Name, char2Source, char2Name));
+				"- 이 분석은 %s**'%s'**와 %s**'%s'** 간의 가상 궁합(Coupling)입니다.\n",
+				PromptSections.sourceTitlePhrase(char1Source, "작품 **'%s'**의 "), char1Name,
+				PromptSections.sourceTitlePhrase(char2Source, "작품 **'%s'**의 "), char2Name));
 		prompt.append("""
 			- 단순한 분석글이 아니라, **두 캐릭터의 서사(Narrative)를 완성하는 고퀄리티 관계 분석글**을 작성하세요.
 			- 팬들이 이 글을 읽고 '이 주식은 된다(This ship is real)'라고 느낄 수 있도록 **몰입감과 분량을 극대화**해야 합니다.
@@ -210,9 +211,9 @@ final class CharacterCompatibilityPrompts {
 		prompt.append("""
 
 			### 3. 분석 대상 캐릭터 정보 ###
-			--- 캐릭터 1: %s (%s) ---
+			--- 캐릭터 1: %s%s ---
 			"""
-			.formatted(char1Name, char1Source));
+			.formatted(char1Name, PromptSections.sourceTitlePhrase(char1Source, " (%s)")));
 		SajuProfileSections.appendPersonDetailInfo(prompt, char1Name, char1Saju);
 
 		// 🔥 [추가 1] 캐릭터 1의 팩트 주입
@@ -220,9 +221,9 @@ final class CharacterCompatibilityPrompts {
 
 		prompt.append("""
 
-			--- 캐릭터 2: %s (%s) ---
+			--- 캐릭터 2: %s%s ---
 			"""
-			.formatted(char2Name, char2Source));
+			.formatted(char2Name, PromptSections.sourceTitlePhrase(char2Source, " (%s)")));
 		SajuProfileSections.appendPersonDetailInfo(prompt, char2Name, char2Saju);
 
 		// 🔥 [추가 2] 캐릭터 2의 팩트 주입
@@ -232,12 +233,13 @@ final class CharacterCompatibilityPrompts {
 		prompt.append("""
 
 			### 4. [분석 구조] ###
-			1. %s (%s)의 연애관과 기질
-			2. %s (%s)의 연애관과 기질
+			1. %s%s의 연애관과 기질
+			2. %s%s의 연애관과 기질
 			3. 두 캐릭터의 '케미스트리'와 '관계 서사' (핵심)
 
 			"""
-			.formatted(char1Name, char1Source, char2Name, char2Source));
+			.formatted(char1Name, PromptSections.sourceTitlePhrase(char1Source, " (%s)"),
+				char2Name, PromptSections.sourceTitlePhrase(char2Source, " (%s)")));
 
 		// ===== 5. 1단계: 캐릭터 1 분석 =====
 		prompt.append("""

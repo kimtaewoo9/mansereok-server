@@ -42,7 +42,7 @@ final class SajuSummarySections {
 				name,
 				"MALE".equalsIgnoreCase(input.getGender()) ? "남성" : "여성",
 				input.getSolarDate(),
-				input.getSolarTime(),
+				SajuProfileSections.birthTimeShortText(input.getSolarTime()),
 				referenceYear));
 
 		// ===== 2. 사주팔자 =====

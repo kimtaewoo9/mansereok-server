@@ -2,7 +2,9 @@ package com.mansereok.server.domain.interpret.prompt;
 
 import com.mansereok.server.domain.interpret.dto.response.ManseryeokCalculationResponse;
 import com.mansereok.server.domain.interpret.dto.response.ManseryeokCalculationResponse.JijangganInfo;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
 import java.util.HashMap;
 import java.util.Map;
@@ -12,7 +14,35 @@ import java.util.Map;
  */
 final class SajuProfileSections {
 
+	/**
+	 * 출생시간을 비워 보낸 사람의 시각 자리에 쓰는 문구. 출생시간은 요청에서 선택값이라
+	 * 만세력 계산 결과의 solarTime 이 null 로 올 수 있다.
+	 */
+	private static final String UNKNOWN_BIRTH_TIME = "시간 모름";
+
+	private static final DateTimeFormatter BIRTH_DATE_FORMAT = DateTimeFormatter.ofPattern("yyyy년 MM월 dd일");
+	private static final DateTimeFormatter BIRTH_TIME_FORMAT = DateTimeFormatter.ofPattern("HH시 mm분");
+	private static final DateTimeFormatter BIRTH_TIME_SHORT_FORMAT = DateTimeFormatter.ofPattern("HH:mm");
+
 	private SajuProfileSections() {
+	}
+
+	/** 생년월일을 "2001년 06월 12일" 꼴로 쓴다. */
+	static String birthDateText(LocalDate solarDate) {
+		return solarDate.format(BIRTH_DATE_FORMAT);
+	}
+
+	/** 출생시각을 "11시 12분" 꼴로 쓴다. 출생시간을 모르면(null) {@value #UNKNOWN_BIRTH_TIME} 이라고 쓴다. */
+	static String birthTimeText(LocalTime solarTime) {
+		return solarTime == null ? UNKNOWN_BIRTH_TIME : solarTime.format(BIRTH_TIME_FORMAT);
+	}
+
+	/**
+	 * 출생시각을 데이터 줄에 쓰는 "11:12" 꼴로 쓴다. 출생시간을 모르면(null) {@value #UNKNOWN_BIRTH_TIME} 이라고 쓴다.
+	 * 기본 정보 줄처럼 생년월일을 "2001-06-12" 로 적는 곳과 짝을 맞춘다.
+	 */
+	static String birthTimeShortText(LocalTime solarTime) {
+		return solarTime == null ? UNKNOWN_BIRTH_TIME : solarTime.format(BIRTH_TIME_SHORT_FORMAT);
 	}
 
 	// ==================== 공통 유틸리티 메서드 (기존 유지) ====================
@@ -48,7 +78,7 @@ final class SajuProfileSections {
 				name,
 				"MALE".equalsIgnoreCase(input.getGender()) ? "남성" : "여성",
 				input.getSolarDate(),
-				input.getSolarTime(),
+				birthTimeShortText(input.getSolarTime()),
 				targetYear));
 
 		// 2. 사주 팔자
@@ -263,7 +293,8 @@ final class SajuProfileSections {
 			- 생년월일: %s %s (양력/음력 구분: %s)
 			- 성별: %s
 			"""
-			.formatted(input.getSolarDate(), input.getSolarTime(), input.getIsLunar() ? "음력" : "양력", input.getGender()));
+			.formatted(input.getSolarDate(), birthTimeShortText(input.getSolarTime()),
+				input.getIsLunar() ? "음력" : "양력", input.getGender()));
 
 		// 사주팔자 (천간/지지/십성/오행)
 		prompt.append("""

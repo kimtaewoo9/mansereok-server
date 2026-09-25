@@ -78,15 +78,6 @@ final class FortunePrompts {
 		ManseryeokCalculationResponse.SajuInfo saju = response.getSaju();
 		ManseryeokCalculationResponse.InputInfo input = response.getInput();
 
-		// 날짜 포맷팅
-		String solarDate = input.getSolarDate().toString();
-		String solarTime = input.getSolarTime().toString();
-		String formattedDate = solarDate.substring(0, 4) + "년 "
-			+ solarDate.substring(5, 7) + "월 "
-			+ solarDate.substring(8, 10) + "일";
-		String formattedTime = solarTime.substring(0, 2) + "시 "
-			+ solarTime.substring(3, 5) + "분";
-
 		// 1. '혜안' 공통 페르소나 주입
 		PromptSections.appendHyeanPersonaHeader(prompt);
 
@@ -129,7 +120,9 @@ final class FortunePrompts {
 			"%s님은 %s %s에 태어나신, [일간(%s) 자연물 비유]와 같은 사랑을 하시는군요." 로 시작해주세요.
 
 			"""
-			.formatted(name, formattedDate, formattedTime, saju.getDaySky().getKorean() + saju.getDaySky().getFiveCircle()));
+			.formatted(name, SajuProfileSections.birthDateText(input.getSolarDate()),
+				SajuProfileSections.birthTimeText(input.getSolarTime()),
+				saju.getDaySky().getKorean() + saju.getDaySky().getFiveCircle()));
 
 		prompt.append("""
 			## 타고난 연애 세포
