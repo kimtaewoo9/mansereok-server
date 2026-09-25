@@ -10,7 +10,8 @@ import java.util.Set;
  *
  * <p>실제 MySQL 테스트는 행을 만들고 지운다. 환경변수가 잘못 잡혀 개발·운영 DB 에 붙으면 그 DB 의 데이터를 건드리게 되므로,
  * 호스트가 127.0.0.1·localhost 이고 스키마 이름이 _test 로 끝나거나 중간에 _test_ 가 있을 때만 통과시킨다.
- * mansereok_test 와 스택마다 따로 둔 mansereok_test_develop 은 통과하고, mansereok·mysql·mansereok_latest 는 멈춘다.
+ * mansereok_test 와, 브랜치·환경마다 따로 둔 mansereok_test_develop 같은 스키마는 통과하고, mansereok·mysql·mansereok_latest 는
+ * 멈춘다.
  */
 public final class LocalDatabaseGuard {
 
