@@ -10,6 +10,7 @@ import com.mansereok.server.domain.interpret.dto.response.ManseryeokCalculationR
 import com.mansereok.server.domain.interpret.dto.response.ManseryeokCalculationResponse.SajuInfo;
 import com.mansereok.server.domain.interpret.entity.Manse;
 import com.mansereok.server.domain.interpret.repository.ManseRepository;
+import java.time.Clock;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
@@ -29,12 +30,17 @@ import org.springframework.stereotype.Service;
 @Slf4j
 public class ManseCalculationService {
 
+	// 월운의 "지금" 은 서버 시간대와 상관없이 한국 시각으로 센다.
+	private static final ZoneId SEOUL = ZoneId.of("Asia/Seoul");
+
 	private final ManseRepository manseRepository;
 	private final SajuDataService sajuDataService;
 	private final UnseongCalculator unseongCalculator;
 	private final SinsalCalculator sinsalCalculator;
 	private final RelationCalculator relationCalculator;
 	private final YongsinCalculator yongsinCalculator;
+	// 월운을 세기 시작할 "지금". 테스트는 Clock.fixed 로 절입 경계 시각을 고정한다.
+	private final Clock clock;
 
 	public ManseryeokCalculationResponse calculate(ManseryeokCalculationRequest request) {
 		try {
@@ -203,7 +209,7 @@ public class ManseCalculationService {
 	private List<ManseryeokCalculationResponse.MonthlyFortune> calculateMonthlyFortunes(
 		String daySky, String ilganChinese) {
 		List<ManseryeokCalculationResponse.MonthlyFortune> monthlyFortunes = new ArrayList<>();
-		LocalDateTime nowKst = LocalDateTime.now(ZoneId.of("Asia/Seoul"));
+		LocalDateTime nowKst = LocalDateTime.now(clock.withZone(SEOUL));
 
 		Manse currentBoundary = manseRepository
 			.findFirstBySeasonStartTimeLessThanEqualOrderBySeasonStartTimeDesc(nowKst)
