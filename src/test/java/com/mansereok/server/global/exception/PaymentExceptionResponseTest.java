@@ -37,6 +37,7 @@ class PaymentExceptionResponseTest {
 		""")
 	@DisplayName("결제 예외와 그 하위인 주문 상태 예외는 400 PAYMENT_ERROR 와 예외 메시지를 돌려준다")
 	void paymentErrorIsBadRequest(String path, String expectedMessage) throws Exception {
+		// when & then
 		mockMvc.perform(get(path))
 			.andExpect(status().isBadRequest())
 			.andExpect(jsonPath("$.status").value(400))

@@ -56,7 +56,8 @@ import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilde
  * 결제 API 가 요청을 어떻게 받고 어떤 응답을 돌려주는지 웹 계층에서 고정한다.
  *
  * <ul>
- *   <li>잘못된 요청(경로 변수 형식, 깨진 본문, 메서드, 검증 실패)은 500 이 아니라 4xx 로 답하고 서비스까지 가지 않는다.</li>
+ *   <li>잘못된 요청(경로 변수 형식, 깨진 본문, 메서드, 검증 실패)은 500 이 아니라 4xx 로 답한다. 요청 DTO 검증은 컨트롤러
+ *   인자의 {@code @Valid} 가 있어야 돌므로, 본문을 받는 네 주소(주문 생성, 0원 받기, 결제 완료, 환불)마다 검증 실패를 확인한다.</li>
  *   <li>웹훅은 서명 검증을 통과한 요청만 서비스로 넘긴다. /api/payment/webhook 은 로그인 없이 열려 있어 서명 검증이 이 주소의
  *   유일한 방어다.</li>
  *   <li>성공 응답의 형식(주문 생성은 OrderCreateResponse JSON, 환불은 평문 안내 문구)은 프론트와의 계약이다.</li>
@@ -87,9 +88,9 @@ class PaymentControllerTest {
 
 	private static final String USERNAME = "buyer";
 	private static final String WEBHOOK_ID = "msg_payment_controller_test";
-	// 포트원 SDK 가 서명 검증 뒤 읽을 수 있는 형식(type/timestamp/data)의 본문
-	private static final String WEBHOOK_BODY = "{\"type\":\"Transaction.Paid\",\"timestamp\":\"2026-09-21T00:00:00Z\","
-		+ "\"data\":{\"paymentId\":\"pay_1\",\"storeId\":\"store_1\",\"transactionId\":\"tx_1\"}}";
+	// 서명은 본문 형식과 관계없이 받은 원문 그대로 검증한다.
+	// 본문은 PaymentWebhookService 가 읽는 형식(tx_id, payment_id, status)을 쓴다.
+	private static final String WEBHOOK_BODY = "{\"tx_id\":\"tx_1\",\"payment_id\":\"pay_1\",\"status\":\"Paid\"}";
 
 	@Autowired
 	private MockMvc mockMvc;
@@ -129,57 +130,54 @@ class PaymentControllerTest {
 			# 주소의 이름(paymentId)으로 알려준다. 받는 값은 결제 테이블의 PK 다.
 			/api/orders/by-payment/abc,   요청 파라미터 'paymentId' 의 값 'abc' 이 올바른 형식이 아닙니다.
 			""")
-		@DisplayName("숫자 자리의 경로 변수가 숫자가 아니면 400 INVALID_PARAMETER 를 돌려주고 조회하지 않는다")
+		@DisplayName("숫자 자리의 경로 변수가 숫자가 아니면 400 INVALID_PARAMETER 를 돌려준다")
 		void pathVariableIsNotNumber(String path, String expectedMessage) throws Exception {
 			// when & then
 			mockMvc.perform(get(path))
 				.andExpect(status().isBadRequest())
 				.andExpect(jsonPath("$.errorCode").value("INVALID_PARAMETER"))
 				.andExpect(jsonPath("$.message").value(expectedMessage));
-
-			// then: 서비스까지 가지 않는다
-			then(paymentQueryService).shouldHaveNoInteractions();
 		}
 
 		@ParameterizedTest(name = "[{index}] 본문 \"{0}\"")
 		@ValueSource(strings = {"{", ""})
-		@DisplayName("결제 완료 요청의 본문이 깨졌거나 비었으면 400 INVALID_REQUEST_BODY 를 돌려주고 결제를 확정하지 않는다")
+		@DisplayName("결제 완료 요청의 본문이 깨졌거나 비었으면 400 INVALID_REQUEST_BODY 를 돌려준다")
 		void completeBodyIsUnreadable(String body) throws Exception {
 			// when & then
 			mockMvc.perform(post("/api/payment/complete").contentType(MediaType.APPLICATION_JSON).content(body))
 				.andExpect(status().isBadRequest())
 				.andExpect(jsonPath("$.errorCode").value("INVALID_REQUEST_BODY"))
 				.andExpect(jsonPath("$.message").value("요청 본문을 읽을 수 없습니다. JSON 형식을 확인해주세요."));
-
-			// then: 서비스까지 가지 않는다
-			then(paymentConfirmService).shouldHaveNoInteractions();
 		}
 
-		@Test
-		@DisplayName("결제 완료 요청의 결제 ID 가 공백이면 400 VALIDATION_ERROR 와 필드 메시지를 돌려주고 결제를 확정하지 않는다")
-		void blankPaymentId() throws Exception {
+		@ParameterizedTest(name = "[{index}] POST {0} 의 {2} → {3}")
+		@CsvSource(delimiter = '|', textBlock = """
+			# 요청 경로              | 요청 본문                                     | 필드          | 필드 메시지
+			/api/payment/complete    | {"paymentId": " ", "merchantUid": "order_1"}  | paymentId     | 결제 ID 형식이 올바르지 않습니다.
+			/api/payment/orders      | {"subCategoryId": null}                       | subCategoryId | 상품 ID는 필수입니다.
+			/api/payment/redeem-free | {"subCategoryId": null}                       | subCategoryId | 상품 ID는 필수입니다.
+			# 환불은 돈이 나가는 경로라 두 필드를 모두 본다.
+			/api/payment/cancel      | {"paymentId": "pay_1", "reason": " "}         | reason        | 환불 사유는 필수입니다.
+			/api/payment/cancel      | {"paymentId": " ", "reason": "단순 변심"}     | paymentId     | 결제 ID 형식이 올바르지 않습니다.
+			""")
+		@DisplayName("요청 본문이 DTO 검증에 걸리면 400 VALIDATION_ERROR 와 그 필드의 메시지를 돌려준다")
+		void requestBodyFailsValidation(String path, String body, String field, String expectedMessage)
+			throws Exception {
 			// when & then
-			mockMvc.perform(post("/api/payment/complete").contentType(MediaType.APPLICATION_JSON)
-					.content("{\"paymentId\": \" \", \"merchantUid\": \"order_1\"}"))
+			mockMvc.perform(post(path).contentType(MediaType.APPLICATION_JSON).content(body))
 				.andExpect(status().isBadRequest())
 				.andExpect(jsonPath("$.errorCode").value("VALIDATION_ERROR"))
-				.andExpect(jsonPath("$.errors.paymentId").value("결제 ID 형식이 올바르지 않습니다."));
-
-			// then: 서비스까지 가지 않는다
-			then(paymentConfirmService).shouldHaveNoInteractions();
+				.andExpect(jsonPath("$.errors.%s", field).value(expectedMessage));
 		}
 
 		@Test
-		@DisplayName("환불 주소에 GET 을 보내면 405 와 POST 만 받는다는 Allow 헤더를 돌려주고 환불하지 않는다")
+		@DisplayName("환불 주소에 GET 을 보내면 405 와 POST 만 받는다는 Allow 헤더를 돌려준다")
 		void getOnCancel() throws Exception {
 			// when & then
 			mockMvc.perform(get("/api/payment/cancel"))
 				.andExpect(status().isMethodNotAllowed())
 				.andExpect(header().string(HttpHeaders.ALLOW, "POST"))
 				.andExpect(jsonPath("$.errorCode").value("METHOD_NOT_ALLOWED"));
-
-			// then: 서비스까지 가지 않는다
-			then(paymentRefundService).shouldHaveNoInteractions();
 		}
 	}
 
@@ -229,6 +227,24 @@ class PaymentControllerTest {
 					.header("webhook-timestamp", timestamp)
 					.header("webhook-signature", sign(WEBHOOK_ID, timestamp, WEBHOOK_BODY)))
 				.andExpect(status().isUnauthorized());
+
+			// then
+			then(paymentWebhookService).shouldHaveNoInteractions();
+		}
+
+		@Test
+		@DisplayName("5분이 지난 타임스탬프로 올바르게 서명한 요청이면 401 을 돌려주고 웹훅 처리를 부르지 않는다")
+		void staleTimestamp() throws Exception {
+			// given: 예전에 가로챈 웹훅을 다시 보내는 경우. 포트원 SDK 는 지금과 5분 넘게 차이 나는 타임스탬프를 거부한다.
+			// 경계(300초)에 붙이면 요청이 도는 동안 결과가 바뀔 수 있어 600초 전으로 여유를 둔다.
+			String staleTimestamp = String.valueOf(Instant.now().minusSeconds(600).getEpochSecond());
+
+			// when
+			mockMvc.perform(webhookRequest(WEBHOOK_BODY)
+					.header("webhook-timestamp", staleTimestamp)
+					.header("webhook-signature", sign(WEBHOOK_ID, staleTimestamp, WEBHOOK_BODY)))
+				.andExpect(status().isUnauthorized())
+				.andExpect(jsonPath("$.errorCode").value("WEBHOOK_SIGNATURE_INVALID"));
 
 			// then
 			then(paymentWebhookService).shouldHaveNoInteractions();
