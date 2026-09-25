@@ -79,10 +79,16 @@ public class CouponService {
 		return new DiscountValidationResult(finalAmount, coupon.getName(), null);
 	}
 
-	// 쿠폰 사용 처리 (결제 완료 후 호출)
+	/**
+	 * 주문을 만들 때 쿠폰을 사용 처리한다.
+	 *
+	 * <p>쿠폰 행을 스스로 잠가(SELECT ... FOR UPDATE) 읽는다. 같은 쿠폰으로 동시에 들어온 두 요청이 둘 다 미사용으로 읽고 둘 다
+	 * 사용 처리하지 않게 하기 위해서다. 같은 트랜잭션에서 {@link #validateAndCalculateCoupon} 이 이미 잠갔다면 이미 쥔 잠금이라
+	 * 더 기다리지 않는다. 잠금은 호출자의 트랜잭션이 끝날 때 풀린다.
+	 */
 	@Transactional
 	public void useCoupon(Long couponId) {
-		Coupon coupon = couponRepository.findById(couponId)
+		Coupon coupon = couponRepository.findByIdWithLock(couponId)
 			.orElseThrow(() -> new PaymentException("쿠폰 없음"));
 		coupon.use();
 	}

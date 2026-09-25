@@ -12,6 +12,7 @@ import java.time.LocalDateTime;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
@@ -65,8 +66,8 @@ public class DiscountCodeService {
 			return new DiscountValidationResult(originalAmount, null, null);
 		}
 
-		// 2. 락을 거는 findByCode 사용
-		DiscountCode discountCode = discountCodeRepository.findByCode(code)
+		// 2. 행을 잠가 조회한다. 잠금은 이 트랜잭션(주문 생성)이 끝날 때까지 이어져 incrementUsage 까지 덮는다.
+		DiscountCode discountCode = discountCodeRepository.findByCodeForUpdate(code)
 			.orElseThrow(() -> new PaymentException("유효하지 않은 코드입니다."));
 
 		// 3. 최종 검증 (락이 걸린 상태에서)
@@ -82,12 +83,21 @@ public class DiscountCodeService {
 		return new DiscountValidationResult(finalAmount, code, discountCode);
 	}
 
+	/**
+	 * 주문을 만들 때 할인 코드 사용 횟수를 1 올린다.
+	 *
+	 * <p>이 메서드는 스스로 잠그지 않는다. 호출자가 같은 트랜잭션에서 {@link #validateAndCalculateDiscountForPayment} 로 행을 잠가
+	 * 받은 엔티티를 넘겨야 한다. 그래야 검증(최대 횟수 확인)과 증가 사이에 다른 주문이 끼어들지 못한다. 트랜잭션 밖에서 부르면
+	 * 잠금이 이미 풀린 뒤라 이 전제가 깨지므로, {@link Propagation#MANDATORY} 로 진행 중인 트랜잭션이 없으면
+	 * IllegalTransactionStateException 을 던진다.
+	 */
+	@Transactional(propagation = Propagation.MANDATORY)
 	public void incrementUsage(DiscountCode discountCode) {
 		if (discountCode == null) {
 			return;
 		}
 
-		// 락이 걸린 엔티티의 횟수 증가
+		// 호출자가 잠가 둔 엔티티의 횟수 증가
 		discountCode.incrementUsage();
 		discountCodeRepository.save(discountCode); // 변경 감지(Dirty checking)
 	}
@@ -122,7 +132,7 @@ public class DiscountCodeService {
 			return;
 		}
 
-		DiscountCode discountCode = discountCodeRepository.findByCode(code)
+		DiscountCode discountCode = discountCodeRepository.findByCodeForUpdate(code)
 			.orElseThrow(() -> new PaymentException("존재하지 않는 할인 코드입니다."));
 
 		discountCode.decreaseUsage();
