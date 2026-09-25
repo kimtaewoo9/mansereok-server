@@ -10,6 +10,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mansereok.server.domain.interpret.service.ResultService;
 import com.mansereok.server.domain.order.entity.Order;
@@ -295,11 +296,12 @@ class PaymentWebhookServiceTest {
 	}
 
 	@Test
-	@DisplayName("웹훅 본문이 JSON 이 아니면 '웹훅 페이로드 파싱 실패' PaymentException 이 나고 포트원은 호출하지 않는다")
+	@DisplayName("웹훅 본문이 JSON 이 아니면 '웹훅 페이로드 파싱 실패' PaymentException 이 나고, JSON 예외를 원인으로 이으며 포트원은 호출하지 않는다")
 	void processWebhook_malformedBody_throwsPaymentException() {
 		assertThatThrownBy(() -> paymentWebhookService.processWebhook("not-json"))
 			.isInstanceOf(PaymentException.class)
-			.hasMessage("웹훅 페이로드 파싱 실패");
+			.hasMessage("웹훅 페이로드 파싱 실패")
+			.hasCauseInstanceOf(JsonProcessingException.class);
 
 		verifyNoInteractions(portOneClient, orderRepository);
 	}

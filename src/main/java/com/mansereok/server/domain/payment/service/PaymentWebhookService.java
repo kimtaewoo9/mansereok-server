@@ -82,7 +82,7 @@ public class PaymentWebhookService {
 			return objectMapper.readValue(body, PortoneWebhookDto.class);
 		} catch (JsonProcessingException e) {
 			log.error("웹훅 페이로드 파싱 실패", e);
-			throw new PaymentException("웹훅 페이로드 파싱 실패");
+			throw new PaymentException("웹훅 페이로드 파싱 실패", e);
 		}
 	}
 

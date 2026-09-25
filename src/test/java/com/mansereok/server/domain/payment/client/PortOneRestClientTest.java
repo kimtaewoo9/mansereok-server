@@ -40,6 +40,7 @@ import org.springframework.http.MediaType;
 import org.springframework.http.converter.json.Jackson2ObjectMapperBuilder;
 import org.springframework.test.web.client.ExpectedCount;
 import org.springframework.test.web.client.MockRestServiceServer;
+import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestClient;
 
 class PortOneRestClientTest {
@@ -163,7 +164,7 @@ class PortOneRestClientTest {
 	}
 
 	@Test
-	@DisplayName("응답이 4xx 이면 기존처럼 '조회 중 오류' 메시지의 PaymentException 을 던진다")
+	@DisplayName("응답이 4xx 이면 '조회 중 오류' 메시지의 PaymentException 을 던지고 HTTP 예외를 원인으로 잇는다")
 	void getPayment_clientError_throwsPaymentException() {
 		server.expect(requestTo(PAYMENT_URL))
 			.andExpect(method(HttpMethod.GET))
@@ -172,7 +173,8 @@ class PortOneRestClientTest {
 		assertThatThrownBy(() -> client.getPayment(PAYMENT_ID))
 			.isInstanceOf(PaymentException.class)
 			.isNotInstanceOf(PortOneUnavailableException.class)
-			.hasMessage("결제 정보를 조회하는 중 오류가 발생했습니다.");
+			.hasMessage("결제 정보를 조회하는 중 오류가 발생했습니다.")
+			.hasCauseInstanceOf(HttpClientErrorException.BadRequest.class);
 		server.verify();
 	}
 
@@ -242,15 +244,22 @@ class PortOneRestClientTest {
 	}
 
 	@Test
-	@DisplayName("취소 응답이 4xx 이면 기존 메시지 형식의 PaymentException 을 던진다")
-	void cancelPayment_clientError_throwsPaymentException() {
+	@DisplayName("취소 응답이 4xx 면 포트원 응답 본문을 뺀 고정 문구의 PaymentException 을 던지고, 본문이 담긴 HTTP 예외는 원인으로 잇는다")
+	void cancelPayment_clientError_hidesPortOneBodyFromMessage() {
+		// given
 		server.expect(requestTo(CANCEL_URL))
 			.andExpect(method(HttpMethod.POST))
-			.andRespond(withBadRequest());
+			.andRespond(withBadRequest()
+				.contentType(MediaType.APPLICATION_JSON)
+				.body("{\"type\":\"INVALID_REQUEST\",\"message\":\"PG-internal\"}"));
 
+		// when & then
 		assertThatThrownBy(() -> client.cancelPayment(PAYMENT_ID, "단순 변심"))
 			.isInstanceOf(PaymentException.class)
-			.hasMessageStartingWith("결제 취소 연동 중 오류가 발생했습니다: ");
+			.hasMessage("결제 취소 연동 중 오류가 발생했습니다.")
+			.hasCauseInstanceOf(HttpClientErrorException.BadRequest.class)
+			.cause()
+			.hasMessageContaining("PG-internal");
 		server.verify();
 	}
 

@@ -32,7 +32,8 @@ import org.springframework.web.client.RestClientException;
  * <p>
  * 예외 분류: 네트워크 오류·타임아웃({@link ResourceAccessException})과 5xx({@link HttpServerErrorException})는
  * 재시도 가능한 일시 장애로 보고 {@link PortOneUnavailableException}(503)을, 4xx 와 응답 파싱 실패는
- * {@link PaymentException}(400)을 던진다.
+ * {@link PaymentException}(400)을 던진다. HTTP·JSON 예외를 바꿔 던질 때는 원래 예외를 원인으로 잇고, 사용자에게 가는
+ * 메시지에는 포트원 응답 본문을 넣지 않는다(본문은 로그와 원인 예외에만 남는다).
  * <p>
  * 결제 ID 는 주소 문자열에 이어 붙이지 않고 URI 변수로 넘긴다. 그래야 '#'·'?'·'/' 가 퍼센트 인코딩되어 "pay_A#1" 이
  * /payments/pay_A 로 잘려 나가지 않는다.
@@ -93,7 +94,7 @@ public class PortOneRestClient implements PortOneClient {
 			throw new PortOneUnavailableException("결제 정보를 조회하는 중 일시적인 오류가 발생했습니다.", e);
 		} catch (RestClientException e) {
 			log.error("PortOne API 호출 실패: paymentId={}", paymentId, e);
-			throw new PaymentException("결제 정보를 조회하는 중 오류가 발생했습니다.");
+			throw new PaymentException("결제 정보를 조회하는 중 오류가 발생했습니다.", e);
 		}
 
 		PortOnePaymentResponse response = parsePayment(rawJsonResponse, paymentId);
@@ -114,7 +115,7 @@ public class PortOneRestClient implements PortOneClient {
 			throw new PortOneUnavailableException("결제 정보를 조회하는 중 일시적인 오류가 발생했습니다.", e);
 		} catch (RestClientException e) {
 			log.error("PortOne API 호출 실패: paymentId={}", paymentId, e);
-			throw new PaymentException("결제 정보를 조회하는 중 오류가 발생했습니다.");
+			throw new PaymentException("결제 정보를 조회하는 중 오류가 발생했습니다.", e);
 		}
 
 		return Optional.of(parsePayment(rawJsonResponse, paymentId));
@@ -153,8 +154,9 @@ public class PortOneRestClient implements PortOneClient {
 			log.error("포트원 결제 취소 API 일시 장애(네트워크/타임아웃/5xx): paymentId={}", paymentId, e);
 			throw new PortOneUnavailableException("결제 취소 연동 중 일시적인 오류가 발생했습니다.", e);
 		} catch (RestClientException e) {
+			// 4xx 예외 메시지에는 포트원 응답 본문이 들어 있어 사용자 메시지에 붙이지 않는다. 본문은 로그와 원인 예외에 남는다.
 			log.error("포트원 결제 취소 API 호출 실패: paymentId={}", paymentId, e);
-			throw new PaymentException("결제 취소 연동 중 오류가 발생했습니다: " + e.getMessage());
+			throw new PaymentException("결제 취소 연동 중 오류가 발생했습니다.", e);
 		}
 	}
 
@@ -181,7 +183,7 @@ public class PortOneRestClient implements PortOneClient {
 			response = objectMapper.readValue(rawJsonResponse, PortOnePaymentResponse.class);
 		} catch (JsonProcessingException e) {
 			log.error("PortOne API 응답 JSON 파싱 중 오류 발생. paymentId={}", paymentId, e);
-			throw new PaymentException("결제 정보 응답 처리 중 오류 발생 (JSON 파싱 실패)");
+			throw new PaymentException("결제 정보 응답 처리 중 오류 발생 (JSON 파싱 실패)", e);
 		}
 
 		if (response == null) {
@@ -207,7 +209,7 @@ public class PortOneRestClient implements PortOneClient {
 			throw new PortOneUnavailableException("결제 목록을 조회하는 중 일시적인 오류가 발생했습니다.", e);
 		} catch (RestClientException e) {
 			log.error("PortOne 결제 목록 API 호출 실패: page={}", pageNumber, e);
-			throw new PaymentException("결제 목록을 조회하는 중 오류가 발생했습니다.");
+			throw new PaymentException("결제 목록을 조회하는 중 오류가 발생했습니다.", e);
 		}
 
 		return parsePaymentPage(rawJsonResponse, pageNumber);
@@ -222,7 +224,7 @@ public class PortOneRestClient implements PortOneClient {
 			return objectMapper.writeValueAsString(request);
 		} catch (JsonProcessingException e) {
 			log.error("PortOne 결제 목록 요청 JSON 을 만들지 못했습니다. page={}", pageNumber, e);
-			throw new PaymentException("결제 목록 조회 요청을 만드는 중 오류가 발생했습니다.");
+			throw new PaymentException("결제 목록 조회 요청을 만드는 중 오류가 발생했습니다.", e);
 		}
 	}
 
@@ -237,7 +239,7 @@ public class PortOneRestClient implements PortOneClient {
 			page = objectMapper.readValue(rawJsonResponse, PortOnePaymentPage.class);
 		} catch (JsonProcessingException e) {
 			log.error("PortOne 결제 목록 응답 JSON 파싱 중 오류 발생. page={}", pageNumber, e);
-			throw new PaymentException("결제 목록 응답 처리 중 오류 발생 (JSON 파싱 실패)");
+			throw new PaymentException("결제 목록 응답 처리 중 오류 발생 (JSON 파싱 실패)", e);
 		}
 
 		if (page == null || page.getPage() == null) {
