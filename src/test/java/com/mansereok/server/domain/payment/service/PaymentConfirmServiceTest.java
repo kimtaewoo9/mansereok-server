@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.BDDMockito.willThrow;
 import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.lenient;
@@ -25,6 +26,7 @@ import com.mansereok.server.domain.payment.dto.request.PaymentCompleteRequest;
 import com.mansereok.server.domain.payment.dto.response.PortOnePaymentResponse;
 import com.mansereok.server.domain.payment.entity.Payment;
 import com.mansereok.server.domain.payment.entity.PaymentStatus;
+import com.mansereok.server.domain.payment.event.PaymentAnomalyEvent;
 import com.mansereok.server.domain.payment.event.PaymentCompletedEvent;
 import com.mansereok.server.domain.payment.repository.PaymentRepository;
 import com.mansereok.server.domain.user.entity.Gender;
@@ -35,11 +37,13 @@ import com.mansereok.server.global.exception.PaymentException;
 import com.mansereok.server.global.exception.PortOneUnavailableException;
 import java.sql.SQLIntegrityConstraintViolationException;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.Optional;
 import org.hibernate.exception.ConstraintViolationException;
 import org.hibernate.exception.ConstraintViolationException.ConstraintKind;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -79,6 +83,7 @@ class PaymentConfirmServiceTest {
 	private static final Long PAYMENT_PK_ID = 100L;
 	private static final String MERCHANT_UID = "order_test_001";
 	private static final String PAYMENT_ID = "pay_test_001";
+	private static final String SECOND_PAYMENT_ID = "pay_test_002";
 	private static final int PRICE = 10000;
 	private static final String CUSTOM_DATA = "{\"merchantUid\":\"" + MERCHANT_UID
 		+ "\",\"subCategoryId\":1}";
@@ -112,13 +117,15 @@ class PaymentConfirmServiceTest {
 			.thenAnswer(invocation -> new SimpleTransactionStatus(true));
 		PaidOrderFinalizer paidOrderFinalizer = new PaidOrderFinalizer(orderRepository,
 			paymentRepository, resultService, orderDiscountRestorer, eventPublisher);
+		PaymentVerifier paymentVerifier = new PaymentVerifier(objectMapper);
 		paymentConfirmService = new PaymentConfirmService(
 			userRepository,
 			orderRepository,
 			paymentRepository,
 			portOneClient,
-			new PaymentVerifier(objectMapper),
+			paymentVerifier,
 			paidOrderFinalizer,
+			new DuplicatePaymentCanceller(portOneClient, paymentVerifier, eventPublisher),
 			transactionManager
 		);
 	}
@@ -136,6 +143,13 @@ class PaymentConfirmServiceTest {
 		Order order = Order.create(MERCHANT_UID, USER_ID, SUB_CATEGORY_ID, PRICE, PRICE,
 			null, null, status, BUYER_NAME, BUYER_EMAIL);
 		ReflectionTestUtils.setField(order, "id", ORDER_ID);
+		return order;
+	}
+
+	/** 결제 recordedPaymentId 로 이미 확정된 주문. */
+	private Order paidOrder(String recordedPaymentId) {
+		Order order = createOrder(OrderStatus.PENDING);
+		order.markPaid(recordedPaymentId, LocalDateTime.of(2026, 9, 26, 12, 0));
 		return order;
 	}
 
@@ -405,10 +419,10 @@ class PaymentConfirmServiceTest {
 	}
 
 	@Test
-	@DisplayName("이미 PAID 인 주문은 포트원 응답과 무관하게 그대로 반환하고 중복 검사·저장을 하지 않는다")
-	void complete_alreadyPaid_returnsOrderWithoutSaving() {
+	@DisplayName("이미 같은 결제로 PAID 가 된 주문에 같은 결제 ID 로 다시 요청하면 그대로 반환하고 중복 검사·저장·취소·알림을 하지 않는다")
+	void complete_alreadyPaidWithSamePayment_returnsOrderWithoutSaving() {
 		// given
-		Order order = createOrder(OrderStatus.PAID);
+		Order order = paidOrder(PAYMENT_ID);
 		givenRequester();
 		givenLockedOrder(order);
 		givenPortOneReturns(portOneResponse("PAID", PRICE));
@@ -421,6 +435,7 @@ class PaymentConfirmServiceTest {
 		assertThat(result.getStatus()).isEqualTo(OrderStatus.PAID);
 		verifyNoInteractions(paymentRepository, resultService, eventPublisher);
 		verify(orderRepository, never()).save(any(Order.class));
+		verify(portOneClient, never()).cancelPayment(any(), any());
 	}
 
 	@Test
@@ -712,5 +727,148 @@ class PaymentConfirmServiceTest {
 		// then
 		verify(portOneClient, times(1)).getPayment(PAYMENT_ID);
 		verifyNoMoreInteractions(portOneClient);
+	}
+
+	// ===== 이미 다른 결제로 확정된 주문에 결제가 또 옴 =====
+
+	@Nested
+	@DisplayName("결제 pay_test_001 로 이미 PAID 가 된 주문에 다른 결제 pay_test_002 로 결제 완료 요청이 오면")
+	class WhenSecondPaymentArrivesForPaidOrder {
+
+		private final Order order = paidOrder(PAYMENT_ID);
+
+		@BeforeEach
+		void givenPaidOrderAndRequester() {
+			givenRequester();
+			givenLockedOrder(order);
+		}
+
+		@Test
+		@DisplayName("포트원에서 승인된 결제면 그 결제를 취소하고 알림을 한 번 보낸 뒤 '이미 결제가 끝난 주문입니다.' 로 거부하며 주문은 첫 결제 그대로 둔다")
+		void cancelsSecondPaymentAndRejects() {
+			// given
+			given(portOneClient.getPayment(SECOND_PAYMENT_ID)).willReturn(
+				portOneResponse(SECOND_PAYMENT_ID, "PAID", PRICE));
+
+			// when & then
+			assertThatThrownBy(() -> paymentConfirmService.complete(USERNAME, completeRequest(SECOND_PAYMENT_ID)))
+				.isInstanceOf(PaymentException.class)
+				.hasMessage("이미 결제가 끝난 주문입니다. 중복 결제는 자동으로 취소됩니다.");
+
+			verify(portOneClient, times(1)).cancelPayment(SECOND_PAYMENT_ID, "같은 주문의 중복 결제 자동 취소");
+			PaymentAnomalyEvent alert = capturedAnomalyEvent();
+			assertThat(alert.summary()).contains("자동으로 취소했습니다");
+			assertThat(alert.details())
+				.containsEntry("주문 번호", MERCHANT_UID)
+				.containsEntry("주문에 기록된 결제 ID", PAYMENT_ID)
+				.containsEntry("한 번 더 온 결제 ID", SECOND_PAYMENT_ID);
+			assertThat(order.getStatus()).isEqualTo(OrderStatus.PAID);
+			assertThat(order.getPaymentId()).isEqualTo(PAYMENT_ID);
+			verifyNoInteractions(paymentRepository, resultService);
+			verify(orderRepository, never()).save(any(Order.class));
+		}
+
+		@Test
+		@DisplayName("두 번째 결제의 취소는 주문을 잠근 트랜잭션이 커밋된 뒤에 부른다")
+		void cancelsAfterTransactionCommits() {
+			// given
+			given(portOneClient.getPayment(SECOND_PAYMENT_ID)).willReturn(
+				portOneResponse(SECOND_PAYMENT_ID, "PAID", PRICE));
+
+			// when
+			assertThatThrownBy(() -> paymentConfirmService.complete(USERNAME, completeRequest(SECOND_PAYMENT_ID)))
+				.isInstanceOf(PaymentException.class);
+
+			// then
+			InOrder inOrder = inOrder(orderRepository, transactionManager, portOneClient);
+			inOrder.verify(orderRepository).findByMerchantUidWithLock(MERCHANT_UID);
+			inOrder.verify(transactionManager).commit(any(TransactionStatus.class));
+			inOrder.verify(portOneClient).cancelPayment(SECOND_PAYMENT_ID, "같은 주문의 중복 결제 자동 취소");
+		}
+
+		@Test
+		@DisplayName("포트원 취소가 실패해도 같은 안내로 거부하고, 손으로 취소하라는 알림을 한 번 보낸다")
+		void rejectsWithSameMessageWhenCancelFails() {
+			// given
+			given(portOneClient.getPayment(SECOND_PAYMENT_ID)).willReturn(
+				portOneResponse(SECOND_PAYMENT_ID, "PAID", PRICE));
+			willThrow(new PortOneUnavailableException("결제 취소 연동 중 일시적인 오류가 발생했습니다."))
+				.given(portOneClient).cancelPayment(SECOND_PAYMENT_ID, "같은 주문의 중복 결제 자동 취소");
+			given(portOneClient.findPayment(SECOND_PAYMENT_ID)).willReturn(
+				Optional.of(portOneResponse(SECOND_PAYMENT_ID, "PAID", PRICE)));
+
+			// when & then
+			assertThatThrownBy(() -> paymentConfirmService.complete(USERNAME, completeRequest(SECOND_PAYMENT_ID)))
+				.isInstanceOf(PaymentException.class)
+				.hasMessage("이미 결제가 끝난 주문입니다. 중복 결제는 자동으로 취소됩니다.");
+
+			assertThat(capturedAnomalyEvent().summary()).contains("자동 취소에 실패했습니다");
+			verifyNoInteractions(paymentRepository, resultService);
+		}
+
+		@Test
+		@DisplayName("두 번째 결제의 customData 가 다른 주문을 가리키면 취소하지 않고 '결제 정보의 주문 번호가 일치하지 않습니다.' 로 거부한다")
+		void doesNotCancelPaymentMadeForAnotherOrder() {
+			// given
+			PortOnePaymentResponse forAnotherOrder = portOneResponse(SECOND_PAYMENT_ID, "PAID", PRICE);
+			forAnotherOrder.setCustomData("{\"merchantUid\":\"order_other_999\"}");
+			given(portOneClient.getPayment(SECOND_PAYMENT_ID)).willReturn(forAnotherOrder);
+
+			// when & then
+			assertThatThrownBy(() -> paymentConfirmService.complete(USERNAME, completeRequest(SECOND_PAYMENT_ID)))
+				.isInstanceOf(PaymentException.class)
+				.hasMessage("결제 정보의 주문 번호가 일치하지 않습니다.");
+
+			verify(portOneClient, never()).cancelPayment(any(), any());
+			verifyNoInteractions(eventPublisher, paymentRepository, resultService);
+		}
+
+		@ParameterizedTest(name = "포트원 상태 {0}")
+		@ValueSource(strings = {"READY", "FAILED", "CANCELLED"})
+		@DisplayName("두 번째 결제가 포트원에서 승인된 상태가 아니면 돈이 빠져나가지 않았으므로 취소·알림 없이 주문을 그대로 돌려준다")
+		void returnsOrderWhenSecondPaymentIsNotPaid(String status) {
+			// given
+			given(portOneClient.getPayment(SECOND_PAYMENT_ID)).willReturn(
+				portOneResponse(SECOND_PAYMENT_ID, status, PRICE));
+
+			// when
+			Order result = paymentConfirmService.complete(USERNAME, completeRequest(SECOND_PAYMENT_ID));
+
+			// then
+			assertThat(result).isSameAs(order);
+			assertThat(result.getPaymentId()).isEqualTo(PAYMENT_ID);
+			verify(portOneClient, never()).cancelPayment(any(), any());
+			verifyNoInteractions(eventPublisher, paymentRepository, resultService);
+		}
+	}
+
+	@Test
+	@DisplayName("결제 ID 가 기록되지 않은 예전 PAID 주문에 승인된 결제로 요청이 오면 같은 결제인지 가릴 수 없어 취소하지 않고 알림만 한 번 보낸 뒤 주문을 돌려준다")
+	void complete_paidOrderWithoutRecordedPaymentId_alertsWithoutCancel() {
+		// given
+		Order order = createOrder(OrderStatus.PAID);
+		givenRequester();
+		givenLockedOrder(order);
+		givenPortOneReturns(portOneResponse("PAID", PRICE));
+
+		// when
+		Order result = paymentConfirmService.complete(USERNAME, completeRequest());
+
+		// then
+		assertThat(result).isSameAs(order);
+		verify(portOneClient, never()).cancelPayment(any(), any());
+		PaymentAnomalyEvent alert = capturedAnomalyEvent();
+		assertThat(alert.summary()).contains("자동 취소는 하지 않았습니다");
+		assertThat(alert.details())
+			.containsEntry("주문에 기록된 결제 ID", "없음")
+			.containsEntry("한 번 더 온 결제 ID", PAYMENT_ID);
+		verifyNoInteractions(paymentRepository, resultService);
+	}
+
+	/** eventPublisher 에 한 번 발행된 결제 이상 이벤트를 꺼낸다. 두 번 이상 발행됐으면 verify 가 실패한다. */
+	private PaymentAnomalyEvent capturedAnomalyEvent() {
+		ArgumentCaptor<PaymentAnomalyEvent> captor = ArgumentCaptor.forClass(PaymentAnomalyEvent.class);
+		verify(eventPublisher, times(1)).publishEvent(captor.capture());
+		return captor.getValue();
 	}
 }
