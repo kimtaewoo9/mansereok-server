@@ -1,13 +1,15 @@
 package com.mansereok.server.global.config;
 
+import com.mansereok.server.domain.auth.filter.AllowedOriginFilter;
 import com.mansereok.server.domain.auth.filter.JwtAuthenticationFilter;
 import com.mansereok.server.domain.auth.security.JwtAccessDeniedHandler;
 import com.mansereok.server.domain.auth.security.JwtAuthenticationEntryPoint;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
-import java.util.Arrays;
+import java.util.List;
 import java.util.function.Supplier;
 import lombok.RequiredArgsConstructor;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
@@ -30,16 +32,19 @@ import org.springframework.util.StringUtils;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
+import org.springframework.web.filter.CorsFilter;
 
 @Configuration
 @EnableWebSecurity
 @EnableMethodSecurity(prePostEnabled = true)
+@EnableConfigurationProperties(CorsProperties.class)
 @RequiredArgsConstructor
 public class SecurityConfig {
 
 	private final JwtAuthenticationFilter jwtAuthenticationFilter;
 	private final JwtAuthenticationEntryPoint jwtAuthenticationEntryPoint;
 	private final JwtAccessDeniedHandler jwtAccessDeniedHandler;
+	private final CorsProperties corsProperties;
 
 	@Bean
 	public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
@@ -126,6 +131,9 @@ public class SecurityConfig {
 			.headers(headers -> headers
 				.frameOptions(HeadersConfigurer.FrameOptionsConfig::disable))
 
+			// 쿠키로 동작하는 재발급·로그아웃·소셜 로그인은 허용 출처가 아니면 CORS 처리 전에 막는다.
+			.addFilterBefore(new AllowedOriginFilter(corsProperties.allowedOrigins()), CorsFilter.class)
+
 			// JWT 인증 필터 추가
 			.addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
 
@@ -166,25 +174,16 @@ public class SecurityConfig {
 	public CorsConfigurationSource corsConfigurationSource() {
 		CorsConfiguration configuration = new CorsConfiguration();
 
-		configuration.setAllowCredentials(true);
-		configuration.setAllowedOriginPatterns(Arrays.asList(
-			"http://localhost:3000",
-			"https://namedsaju.com",
-			"https://www.namedsaju.com",
-			"https://dev-front.namedsaju.com",
-			"https://manselab-front.vercel.app",
-			"https://*.vercel.app"
-		));
-
+		// 허용할 출처. 환경마다 yml 의 app.cors.allowed-origins 에 정확한 주소로 적는다(와일드카드 없음).
+		configuration.setAllowedOrigins(corsProperties.allowedOrigins());
 		// 허용할 HTTP 메서드
-		configuration.setAllowedMethods(
-			Arrays.asList("GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"));
+		configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"));
 		// 허용할 헤더
-		configuration.setAllowedHeaders(Arrays.asList("*"));
+		configuration.setAllowedHeaders(List.of("*"));
 		// 자격증명 허용 (쿠키, Authorization 헤더 등)
 		configuration.setAllowCredentials(true);
 		// 브라우저에서 접근할 수 있는 응답 헤더
-		configuration.setExposedHeaders(Arrays.asList("Authorization"));
+		configuration.setExposedHeaders(List.of("Authorization"));
 		// preflight 요청 캐시 시간 (초)
 		configuration.setMaxAge(3600L);
 
