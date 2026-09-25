@@ -110,9 +110,12 @@ CREATE TABLE `refresh_tokens` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- 개인 사주 해석 결과 저장 테이블
--- 아래 두 표는 엔티티(Result, CompatibilityResult) 매핑에 [해석 4] 운영 DDL(payment_id UNIQUE 이름 고정, (status, updated_at) 인덱스,
--- 궁합 updated_at, 본문 MEDIUMTEXT, idx_results_saju 삭제)을 적용한 모습을 SHOW CREATE TABLE 형식으로 적었다.
--- idx_*_user_id 는 엔티티에 선언이 없고 이전 schema.sql 에서 이어 왔다. 운영 표를 바꾸면 운영 SHOW CREATE TABLE 결과로 통째로 바꾼다.
+-- 아래 두 표(results, compatibility_results)는 운영 SHOW CREATE TABLE 결과가 아니다. 로컬 MySQL 8.0 에서 ddl-auto 로 만든 표를
+-- 엔티티 필드 순서로 옮겨 적고, 이전 파일에 있던 user_id 인덱스(idx_results_user_id, idx_compatibility_results_user_id)를 남긴 것이다.
+-- user_id 인덱스는 [해석 4] 에서 엔티티에도 선언했다.
+-- 운영에서 확인하지 않은 짐작: 컬럼 순서(로컬 SHOW CREATE TABLE 은 알파벳 순서다), 표 collation(utf8mb4_unicode_ci, 컬럼마다 붙는
+-- COLLATE 는 뺐다), 모든 컬럼의 NULL 허용, status 의 enum 타입, user_id 인덱스가 운영에 있는지.
+-- [해석 4] 운영 DDL 을 적용한 뒤 운영의 SHOW CREATE TABLE results / compatibility_results 결과로 두 블록을 통째로 바꾼다.
 CREATE TABLE `results` (
   `id` bigint NOT NULL AUTO_INCREMENT,
   `user_id` bigint DEFAULT NULL,

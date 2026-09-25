@@ -23,7 +23,11 @@ import lombok.ToString;
 @Table(
 	name = "compatibility_results",
 	uniqueConstraints = @UniqueConstraint(name = "uk_compatibility_results_payment_id", columnNames = "payment_id"),
-	indexes = @Index(name = "idx_compatibility_results_status_updated_at", columnList = "status, updated_at")
+	indexes = {
+		@Index(name = "idx_compatibility_results_status_updated_at", columnList = "status, updated_at"),
+		// 탈퇴 벌크 DELETE 가 그 사용자의 행만 잠그게 한다(Result 의 idx_results_user_id 와 같은 이유).
+		@Index(name = "idx_compatibility_results_user_id", columnList = "user_id")
+	}
 )
 @Getter
 @ToString
@@ -72,6 +76,8 @@ public class CompatibilityResult {
 	private LocalDateTime createdAt;
 
 	// 엔티티를 고쳐 저장할 때마다 바뀐다. JPQL 벌크 UPDATE(updateOgImageUrl 등)는 엔티티 콜백을 거치지 않아 바꾸지 않는다.
+	// 운영에서 컬럼을 더하기 전의 행과, created_at 으로 채운 뒤 이 코드가 배포되기 전까지 옛 코드가 쓴 행은 NULL 일 수 있다.
+	// 그래서 배포 뒤에 같은 채우기 UPDATE(WHERE updated_at IS NULL)를 한 번 더 돌린다.
 	private LocalDateTime updatedAt;
 
 	@PrePersist

@@ -43,11 +43,14 @@ class ResultSchemaSqlTest {
 			Arguments.of(CompatibilityResult.class, "compatibility_results", "uk_compatibility_results_payment_id"));
 	}
 
-	static Stream<Arguments> statusIndexNames() {
+	static Stream<Arguments> namedIndexes() {
 		return Stream.of(
-			Arguments.of(Result.class, "results", "idx_results_status_updated_at"),
+			Arguments.of(Result.class, "results", "idx_results_status_updated_at", List.of("status", "updated_at")),
 			Arguments.of(CompatibilityResult.class, "compatibility_results",
-				"idx_compatibility_results_status_updated_at"));
+				"idx_compatibility_results_status_updated_at", List.of("status", "updated_at")),
+			Arguments.of(Result.class, "results", "idx_results_user_id", List.of("user_id")),
+			Arguments.of(CompatibilityResult.class, "compatibility_results", "idx_compatibility_results_user_id",
+				List.of("user_id")));
 	}
 
 	@ParameterizedTest(name = "[{index}] {1}")
@@ -69,28 +72,28 @@ class ResultSchemaSqlTest {
 		UniqueConstraint[] declared = entity.getAnnotation(Table.class).uniqueConstraints();
 
 		// then
-		assertThat(declared).as("엔티티 @Table 의 UNIQUE").singleElement().satisfies(constraint -> {
-			assertThat(constraint.name()).isEqualTo(uniqueName);
-			assertThat(constraint.columnNames()).containsExactly("payment_id");
-		});
+		assertThat(declared).as("엔티티 @Table 의 UNIQUE %s", uniqueName)
+			.filteredOn(constraint -> constraint.name().equals(uniqueName))
+			.singleElement()
+			.satisfies(constraint -> assertThat(constraint.columnNames()).containsExactly("payment_id"));
 		assertThat(schema.mentions(table, uniqueName)).as("schema.sql 에 %s 가 있다", uniqueName).isTrue();
 		assertThat(schema.isUniqueColumn(table, "payment_id")).as("schema.sql 에서 payment_id 가 UNIQUE 다").isTrue();
 	}
 
 	@ParameterizedTest(name = "[{index}] {1}.{2}")
-	@MethodSource("statusIndexNames")
-	@DisplayName("(status, updated_at) 인덱스를 엔티티와 schema.sql 이 같은 이름과 컬럼 순서로 선언한다")
-	void statusIndexHasSameNameAndOrder(Class<?> entity, String table, String indexName) {
+	@MethodSource("namedIndexes")
+	@DisplayName("(status, updated_at) 인덱스와 user_id 인덱스를 엔티티와 schema.sql 이 같은 이름과 컬럼 순서로 선언한다")
+	void namedIndexHasSameNameAndOrder(Class<?> entity, String table, String indexName, List<String> columns) {
 		// when
 		Index[] declared = entity.getAnnotation(Table.class).indexes();
 
 		// then
-		assertThat(declared).as("엔티티 @Table 의 인덱스").singleElement().satisfies(index -> {
-			assertThat(index.name()).isEqualTo(indexName);
-			assertThat(columnsOf(index.columnList())).containsExactly("status", "updated_at");
-		});
+		assertThat(declared).as("엔티티 @Table 의 인덱스 %s", indexName)
+			.filteredOn(index -> index.name().equals(indexName))
+			.singleElement()
+			.satisfies(index -> assertThat(columnsOf(index.columnList())).containsExactlyElementsOf(columns));
 		assertThat(indexColumnsInSchema(table, indexName)).as("schema.sql 의 %s 컬럼", indexName)
-			.containsExactly("status", "updated_at");
+			.containsExactlyElementsOf(columns);
 	}
 
 	@ParameterizedTest(name = "[{index}] {1}")

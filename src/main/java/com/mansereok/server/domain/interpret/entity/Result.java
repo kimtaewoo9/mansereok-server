@@ -27,8 +27,14 @@ import lombok.ToString;
 	name = "results",
 	// 결제 하나에 결과 하나. 결제 ID 로 찾을 때 이 인덱스로 한 행만 본다.
 	uniqueConstraints = @UniqueConstraint(name = "uk_results_payment_id", columnNames = "payment_id"),
-	// 오래 해석 중(PROCESSING)에 머문 결과를 되돌릴 때 상태와 마지막 변경 시각으로 찾는다.
-	indexes = @Index(name = "idx_results_status_updated_at", columnList = "status, updated_at")
+	indexes = {
+		// 오래 해석 중(PROCESSING)에 머문 결과를 되돌릴 때 상태와 마지막 변경 시각으로 찾는다.
+		@Index(name = "idx_results_status_updated_at", columnList = "status, updated_at"),
+		// 탈퇴 벌크 DELETE(deleteAllByUserId)가 그 사용자의 행만 잠그게 한다. 없으면 REPEATABLE READ 에서 표 전체를 훑으며
+		// 모든 행과 표 끝을 잠가, 탈퇴 트랜잭션이 끝날 때까지 다른 사용자의 결과 저장이 멈춘다. 결과 목록 조회도 이 인덱스를 쓴다.
+		// user_id 로 시작하는 복합 인덱스(예: (user_id, created_at))가 들어오면 이 인덱스는 지운다.
+		@Index(name = "idx_results_user_id", columnList = "user_id")
+	}
 )
 @Getter
 @ToString
