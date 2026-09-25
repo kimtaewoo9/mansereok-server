@@ -15,6 +15,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.core.task.TaskRejectedException;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
+import org.springframework.test.util.ReflectionTestUtils;
 
 /**
  * 스레드 풀 설정값이 의도한 대로 잡히는지 본다. ThreadPoolExecutor 는 큐가 꽉 찬 뒤에야
@@ -71,6 +72,31 @@ class AsyncConfigTest {
 		assertThat(executor.getCorePoolSize()).isEqualTo(50);
 		assertThat(executor.getMaxPoolSize()).isEqualTo(50);
 		assertThat(queueCapacityOf(executor)).isEqualTo(200);
+	}
+
+	/**
+	 * 배포로 애플리케이션이 내려갈 때 두 GPT 풀은 진행 중이던 해석과 대기열의 해석을 120초까지 기다린다. 그 안에 끝나지 못한 해석의
+	 * 결과 행은 PROCESSING 에 남고, StaleProcessingResultScheduler 가 staleAfter(기본 60분) 뒤에 정보 입력 대기로 되돌린다.
+	 * ThreadPoolTaskExecutor 는 두 값을 읽는 메서드가 없어 필드를 직접 읽는다.
+	 */
+	@Test
+	@DisplayName("유료·무료 GPT 풀은 종료할 때 남은 해석을 120초까지 기다린다")
+	void gptPoolsWaitForTasksOnShutdown() {
+		ThreadPoolTaskExecutor paid = register(asyncConfig.gptTaskExecutor());
+		ThreadPoolTaskExecutor free = register(asyncConfig.gptFreeTaskExecutor());
+
+		assertThat(shutdownSettingsOf(paid)).as("유료 GPT 풀").isEqualTo(new ShutdownSettings(true, 120_000L));
+		assertThat(shutdownSettingsOf(free)).as("무료 GPT 풀").isEqualTo(new ShutdownSettings(true, 120_000L));
+	}
+
+	private record ShutdownSettings(Object waitForTasksToComplete, Object awaitTerminationMillis) {
+
+	}
+
+	private static ShutdownSettings shutdownSettingsOf(ThreadPoolTaskExecutor executor) {
+		return new ShutdownSettings(
+			ReflectionTestUtils.getField(executor, "waitForTasksToCompleteOnShutdown"),
+			ReflectionTestUtils.getField(executor, "awaitTerminationMillis"));
 	}
 
 	@Test

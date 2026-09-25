@@ -33,6 +33,20 @@ public interface CompatibilityResultRepository extends JpaRepository<Compatibili
 
 	boolean existsByPaymentId(Long paymentId);
 
+	/**
+	 * staleBefore 보다 전에 마지막으로 바뀐 뒤 해석 중(PROCESSING)에 머문 궁합 결과를 정보 입력 대기(INPUT_REQUIRED)로 되돌리고,
+	 * 되돌린 행 수를 돌려준다. ResultRepository.revertProcessingUpdatedBefore 와 같은 규칙이다. updated_at 이 NULL 인 행(컬럼을
+	 * 더하기 전의 행을 채우지 않은 경우)은 비교가 참이 되지 않아 되돌리지 않는다.
+	 */
+	@Transactional
+	@Modifying(flushAutomatically = true, clearAutomatically = true)
+	@Query("UPDATE CompatibilityResult c"
+		+ " SET c.status = com.mansereok.server.domain.interpret.entity.ResultStatus.INPUT_REQUIRED, c.updatedAt = :now"
+		+ " WHERE c.status = com.mansereok.server.domain.interpret.entity.ResultStatus.PROCESSING"
+		+ " AND c.updatedAt < :staleBefore")
+	int revertProcessingUpdatedBefore(@Param("staleBefore") LocalDateTime staleBefore,
+		@Param("now") LocalDateTime now);
+
 	@Transactional
 	@Modifying(clearAutomatically = true)
 	@Query("UPDATE CompatibilityResult c SET c.ogImageUrl = :ogImageUrl WHERE c.id = :id")

@@ -35,6 +35,23 @@ public interface ResultRepository extends JpaRepository<Result, Long> {
 
 	boolean existsByPaymentId(Long paymentId);
 
+	/**
+	 * staleBefore 보다 전에 마지막으로 바뀐 뒤 해석 중(PROCESSING)에 머문 결과를 정보 입력 대기(INPUT_REQUIRED)로 되돌리고, 되돌린
+	 * 행 수를 돌려준다. 배포로 잘리거나 대기열에서 버려진 해석을 사용자가 다시 시작하거나 환불받을 수 있게 한다.
+	 *
+	 * <p>상태 조건을 UPDATE 에 함께 걸어, 그사이 해석이 끝나 완료(COMPLETED)가 된 행은 건드리지 않는다. 해석 저장과 겹치면 그 행
+	 * 잠금이 풀리기를 기다린 뒤 최신 상태로 다시 판단한다. idx_results_status_updated_at 으로 해당 범위만 훑는다. 따로 불려도 되도록
+	 * 자기 트랜잭션을 연다.
+	 */
+	@Transactional
+	@Modifying(flushAutomatically = true, clearAutomatically = true)
+	@Query("UPDATE Result r"
+		+ " SET r.status = com.mansereok.server.domain.interpret.entity.ResultStatus.INPUT_REQUIRED, r.updatedAt = :now"
+		+ " WHERE r.status = com.mansereok.server.domain.interpret.entity.ResultStatus.PROCESSING"
+		+ " AND r.updatedAt < :staleBefore")
+	int revertProcessingUpdatedBefore(@Param("staleBefore") LocalDateTime staleBefore,
+		@Param("now") LocalDateTime now);
+
 	@Transactional
 	@Modifying(clearAutomatically = true)
 	@Query("UPDATE Result r SET r.ogImageUrl = :ogImageUrl WHERE r.id = :id")
