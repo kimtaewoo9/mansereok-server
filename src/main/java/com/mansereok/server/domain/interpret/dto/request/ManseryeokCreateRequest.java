@@ -1,11 +1,18 @@
 package com.mansereok.server.domain.interpret.dto.request;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
 import lombok.Data;
 
 @Data
 public class ManseryeokCreateRequest {
 
+	// 무료 궁합 경로도 이 이름을 그대로 LLM 프롬프트에 넣는다.
+	// 유료 경로(ManseCompatibilityAnalysisRequest.PersonInfo)와 같은 규칙을 걸어
+	// 빈 이름이 비동기 처리 중 예외가 아니라 컨트롤러 입구에서 400 으로 끝나게 한다.
+	@NotBlank(message = "이름은 필수입니다.")
+	@Size(max = 30, message = "이름은 30자를 넘을 수 없습니다.")
 	private String name;            //
 	private String gender;          // "MALE" or "FEMALE" (M/F also accepted)
 	private String calendar;        // "S" (S=양력, L=음력)
