@@ -3,7 +3,6 @@ package com.mansereok.server.domain.payment.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.BDDMockito.given;
-import static org.mockito.Mockito.verifyNoInteractions;
 
 import com.mansereok.server.domain.payment.entity.Payment;
 import com.mansereok.server.domain.payment.entity.PaymentStatus;
@@ -22,6 +21,7 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
@@ -34,12 +34,16 @@ import org.springframework.test.util.ReflectionTestUtils;
  *
  * <p>결제 조회 스텁은 행 잠금 조회(findByIdWithLock)에 정확한 PK 로 건다. 코드가 잠그지 않는 findById 로 읽거나 다른 PK 로
  * 읽으면 strict stubs 가 테스트를 실패시킨다. 결과 변경은 목 대신 부른 결제 PK 를 모으는 람다로 받아, 불렸는지를 값으로 확인한다.
+ *
+ * <p>사용자 id 는 Long 캐시(-128~127) 밖의 값을 쓴다. 운영 사용자 id 도 대부분 그렇다. Long.valueOf(자동 박싱)는 캐시 밖 값이면
+ * 부를 때마다 새 객체를 만들어, 소유자 비교를 equals 대신 참조 비교로 바꾸면 본인 결제도 거부되어 테스트가 실패한다.
  */
 @ExtendWith(MockitoExtension.class)
 class PaymentEntitlementServiceTest {
 
 	private static final String USERNAME = "testUser";
-	private static final Long USER_ID = 1L;
+	// 박싱은 쓰는 곳마다 따로 한다(사용자 엔티티의 id 와 결제의 소유자 id 가 값은 같고 객체는 다르다).
+	private static final long USER_ID = 1000L;
 	private static final Long PAYMENT_PK_ID = 100L;
 	private static final Long PAID_PRODUCT_ID = 3L;
 	private static final String REJECTED_MESSAGE = "유효한 결제 정보가 아닙니다.";
@@ -103,20 +107,27 @@ class PaymentEntitlementServiceTest {
 		@DisplayName("다른 사용자의 결제면 존재 여부를 드러내지 않는 같은 메시지로 거부하고 결과를 바꾸지 않는다")
 		void rejectsWhenOtherUsersPayment() {
 			// given
-			givenLockedPayment(payment(PaymentStatus.PAID, 999L, PAID_PRODUCT_ID));
+			givenLockedPayment(payment(PaymentStatus.PAID, 2000L, PAID_PRODUCT_ID));
 
 			// when & then
 			assertRejectedWithoutStarting(PAYMENT_PK_ID, PAID_PRODUCT_ID);
 		}
 
-		@Test
-		@DisplayName("상품 3 을 결제하고 상품 5 로 해석하려 하면 같은 메시지로 거부하고 결과를 바꾸지 않는다")
-		void rejectsWhenProductDiffersFromPaidProduct() {
+		// 결제한 상품과 같은 상품으로 해석하는 경우는 맨 위의 허용 테스트가 본다.
+		@ParameterizedTest(name = "[{index}] 해석하려는 상품 {0}, 결제한 상품 {1}")
+		@CsvSource(nullValues = "null", textBlock = """
+			# 해석하려는 상품(경로), 결제한 상품
+			   5,    3
+			null,    3
+			   3, null
+			""")
+		@DisplayName("해석하려는 상품이 결제한 상품과 다르거나 어느 쪽이든 비어 있으면 같은 메시지로 거부하고 결과를 바꾸지 않는다")
+		void rejectsWhenProductDoesNotMatchPaidProduct(Long requestedProductId, Long paidProductId) {
 			// given
-			givenLockedPayment(payment(PaymentStatus.PAID, USER_ID, 3L));
+			givenLockedPayment(payment(PaymentStatus.PAID, USER_ID, paidProductId));
 
 			// when & then
-			assertRejectedWithoutStarting(PAYMENT_PK_ID, 5L);
+			assertRejectedWithoutStarting(PAYMENT_PK_ID, requestedProductId);
 		}
 
 		@Test
@@ -130,11 +141,10 @@ class PaymentEntitlementServiceTest {
 		}
 
 		@Test
-		@DisplayName("paymentId 가 null 이면 결제를 조회하지 않고 같은 메시지로 거부한다")
-		void rejectsNullPaymentIdWithoutLookup() {
+		@DisplayName("paymentId 가 null 이면 같은 메시지로 거부하고 결과를 바꾸지 않는다")
+		void rejectsNullPaymentId() {
 			// when & then
 			assertRejectedWithoutStarting(null, PAID_PRODUCT_ID);
-			verifyNoInteractions(paymentRepository);
 		}
 
 		private void assertRejectedWithoutStarting(Long paymentPkId, Long subCategoryId) {
@@ -147,8 +157,8 @@ class PaymentEntitlementServiceTest {
 	}
 
 	@Test
-	@DisplayName("요청자를 찾을 수 없으면 결제를 조회하지 않고 PaymentException 으로 거부한다")
-	void rejectsUnknownUserWithoutLookup() {
+	@DisplayName("요청자를 찾을 수 없으면 PaymentException 으로 거부하고 결과를 바꾸지 않는다")
+	void rejectsUnknownUser() {
 		// given
 		given(userRepository.findByUsername(USERNAME)).willReturn(Optional.empty());
 
@@ -157,8 +167,7 @@ class PaymentEntitlementServiceTest {
 			PAID_PRODUCT_ID, startedPaymentIds::add))
 			.isInstanceOf(PaymentException.class)
 			.hasMessage("사용자를 찾을 수 없습니다.");
-		assertThat(startedPaymentIds).isEmpty();
-		verifyNoInteractions(paymentRepository);
+		assertThat(startedPaymentIds).as("결과 변경이 불린 결제 PK").isEmpty();
 	}
 
 	// ===== 테스트 데이터 =====

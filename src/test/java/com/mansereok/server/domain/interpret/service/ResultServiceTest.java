@@ -45,23 +45,16 @@ class ResultServiceTest {
 		return result;
 	}
 
-	private CompatibilityResult compatibilityResult(ResultStatus status) {
-		CompatibilityResult result = CompatibilityResult.createInitial(USER_ID, PAYMENT_PK_ID,
-			"궁합");
-		if (status == ResultStatus.COMPLETED) {
-			result.completeInterpretation("해석", 80, "요약");
-		} else if (status == ResultStatus.PROCESSING) {
-			result.setStatus(ResultStatus.PROCESSING);
-		}
-		return result;
-	}
+	// 행이 없는 표를 잠그지 않는지(REPEATABLE READ 의 간격 잠금)는 목으로 볼 수 없어 실제 MySQL 테스트
+	// (RefundAndInterpretationStartMySqlTest)가 본다. 여기서는 어느 표에 행이 있느냐에 따라 무엇을 돌려주고 던지는지만 본다.
 
 	// ===== findStatusByPaymentId =====
 
 	@Test
-	@DisplayName("findStatusByPaymentId: Result 가 있으면 잠금 조회로 읽은 그 상태를 돌려주고 CompatibilityResult 는 조회하지 않는다")
+	@DisplayName("findStatusByPaymentId: Result 행이 있으면 그 행을 잠가 읽은 상태를 돌려준다")
 	void findStatusByPaymentId_resultExists_returnsResultStatus() {
 		// given
+		given(resultRepository.existsByPaymentId(PAYMENT_PK_ID)).willReturn(true);
 		given(resultRepository.findByPaymentIdForUpdate(PAYMENT_PK_ID)).willReturn(
 			Optional.of(result(ResultStatus.PROCESSING)));
 
@@ -70,16 +63,16 @@ class ResultServiceTest {
 
 		// then
 		assertThat(status).contains(ResultStatus.PROCESSING);
-		verify(compatibilityResultRepository, never()).findByPaymentIdForUpdate(any());
 	}
 
 	@Test
-	@DisplayName("findStatusByPaymentId: Result 가 없고 CompatibilityResult 만 있으면 궁합 쪽 상태를 돌려준다")
+	@DisplayName("findStatusByPaymentId: Result 행이 없고 CompatibilityResult 행만 있으면 궁합 쪽을 잠가 읽은 상태를 돌려준다")
 	void findStatusByPaymentId_onlyCompatibility_returnsCompatibilityStatus() {
 		// given
-		given(resultRepository.findByPaymentIdForUpdate(PAYMENT_PK_ID)).willReturn(Optional.empty());
+		given(resultRepository.existsByPaymentId(PAYMENT_PK_ID)).willReturn(false);
+		given(compatibilityResultRepository.existsByPaymentId(PAYMENT_PK_ID)).willReturn(true);
 		given(compatibilityResultRepository.findByPaymentIdForUpdate(PAYMENT_PK_ID)).willReturn(
-			Optional.of(compatibilityResult(ResultStatus.INPUT_REQUIRED)));
+			Optional.of(CompatibilityResult.createInitial(USER_ID, PAYMENT_PK_ID, "궁합")));
 
 		// when
 		Optional<ResultStatus> status = resultService.findStatusByPaymentId(PAYMENT_PK_ID);
@@ -92,9 +85,7 @@ class ResultServiceTest {
 	@DisplayName("findStatusByPaymentId: 둘 다 없으면 빈 Optional 을 돌려준다")
 	void findStatusByPaymentId_neither_returnsEmpty() {
 		// given
-		given(resultRepository.findByPaymentIdForUpdate(PAYMENT_PK_ID)).willReturn(Optional.empty());
-		given(compatibilityResultRepository.findByPaymentIdForUpdate(PAYMENT_PK_ID)).willReturn(
-			Optional.empty());
+		givenNoResultRow();
 
 		// when & then
 		assertThat(resultService.findStatusByPaymentId(PAYMENT_PK_ID)).isEmpty();
@@ -103,13 +94,14 @@ class ResultServiceTest {
 	// ===== deleteInitialResult =====
 
 	@Nested
-	@DisplayName("deleteInitialResult: INPUT_REQUIRED 일 때만 지우는 조건부 DELETE 가")
+	@DisplayName("deleteInitialResult: 결과 행이 있는 표에만 INPUT_REQUIRED 일 때 지우는 조건부 DELETE 를 보내")
 	class DeleteInitialResult {
 
 		@Test
 		@DisplayName("Result 를 한 행 지우면 끝나고 궁합 결과는 지우지 않는다")
 		void deletesInputRequiredResult() {
 			// given
+			given(resultRepository.existsByPaymentId(PAYMENT_PK_ID)).willReturn(true);
 			given(resultRepository.deleteByPaymentIdAndStatus(PAYMENT_PK_ID, ResultStatus.INPUT_REQUIRED))
 				.willReturn(1);
 
@@ -121,11 +113,11 @@ class ResultServiceTest {
 		}
 
 		@Test
-		@DisplayName("Result 는 0 행이고 궁합 결과를 한 행 지우면 예외 없이 끝난다")
+		@DisplayName("Result 행이 없고 궁합 결과를 한 행 지우면 예외 없이 끝난다")
 		void deletesInputRequiredCompatibilityResult() {
 			// given
-			given(resultRepository.deleteByPaymentIdAndStatus(PAYMENT_PK_ID, ResultStatus.INPUT_REQUIRED))
-				.willReturn(0);
+			given(resultRepository.existsByPaymentId(PAYMENT_PK_ID)).willReturn(false);
+			given(compatibilityResultRepository.existsByPaymentId(PAYMENT_PK_ID)).willReturn(true);
 			given(compatibilityResultRepository.deleteByPaymentIdAndStatus(PAYMENT_PK_ID,
 				ResultStatus.INPUT_REQUIRED)).willReturn(1);
 
@@ -134,13 +126,12 @@ class ResultServiceTest {
 		}
 
 		@Test
-		@DisplayName("둘 다 0 행이고 Result 가 남아 있으면 해석이 이미 진행됐다는 IllegalStateException 을 던진다")
+		@DisplayName("Result 행이 있는데 0 행을 지우면(INPUT_REQUIRED 가 아니면) 해석이 이미 진행됐다는 IllegalStateException 을 던진다")
 		void throwsWhenResultIsNoLongerInputRequired() {
-			// given: 스텁한 엔티티의 상태는 INPUT_REQUIRED 다. open-in-view 로 남은 낡은 엔티티처럼, 상태가 아니라 지운 행 수로
-			//        판단하는지 본다.
-			givenNothingDeleted();
-			given(resultRepository.findByPaymentIdForUpdate(PAYMENT_PK_ID)).willReturn(
-				Optional.of(result(ResultStatus.INPUT_REQUIRED)));
+			// given
+			given(resultRepository.existsByPaymentId(PAYMENT_PK_ID)).willReturn(true);
+			given(resultRepository.deleteByPaymentIdAndStatus(PAYMENT_PK_ID, ResultStatus.INPUT_REQUIRED))
+				.willReturn(0);
 
 			// when & then
 			assertThatThrownBy(() -> resultService.deleteInitialResult(PAYMENT_PK_ID))
@@ -150,13 +141,13 @@ class ResultServiceTest {
 		}
 
 		@Test
-		@DisplayName("둘 다 0 행이고 궁합 결과만 남아 있으면 궁합 결과의 해석이 이미 진행됐다는 IllegalStateException 을 던진다")
+		@DisplayName("궁합 결과 행만 있는데 0 행을 지우면 궁합 결과의 해석이 이미 진행됐다는 IllegalStateException 을 던진다")
 		void throwsWhenCompatibilityResultIsNoLongerInputRequired() {
 			// given
-			givenNothingDeleted();
-			given(resultRepository.findByPaymentIdForUpdate(PAYMENT_PK_ID)).willReturn(Optional.empty());
-			given(compatibilityResultRepository.findByPaymentIdForUpdate(PAYMENT_PK_ID)).willReturn(
-				Optional.of(compatibilityResult(ResultStatus.COMPLETED)));
+			given(resultRepository.existsByPaymentId(PAYMENT_PK_ID)).willReturn(false);
+			given(compatibilityResultRepository.existsByPaymentId(PAYMENT_PK_ID)).willReturn(true);
+			given(compatibilityResultRepository.deleteByPaymentIdAndStatus(PAYMENT_PK_ID,
+				ResultStatus.INPUT_REQUIRED)).willReturn(0);
 
 			// when & then
 			assertThatThrownBy(() -> resultService.deleteInitialResult(PAYMENT_PK_ID))
@@ -166,25 +157,20 @@ class ResultServiceTest {
 		}
 
 		@Test
-		@DisplayName("둘 다 0 행이고 결과가 하나도 없으면 삭제할 초기 결과가 없다는 IllegalStateException 을 던진다")
+		@DisplayName("결과 행이 어느 표에도 없으면 삭제할 초기 결과가 없다는 IllegalStateException 을 던진다")
 		void throwsWhenNoResult() {
 			// given
-			givenNothingDeleted();
-			given(resultRepository.findByPaymentIdForUpdate(PAYMENT_PK_ID)).willReturn(Optional.empty());
-			given(compatibilityResultRepository.findByPaymentIdForUpdate(PAYMENT_PK_ID)).willReturn(
-				Optional.empty());
+			givenNoResultRow();
 
 			// when & then
 			assertThatThrownBy(() -> resultService.deleteInitialResult(PAYMENT_PK_ID))
 				.isInstanceOf(IllegalStateException.class)
 				.hasMessage("삭제할 초기 결과가 없습니다. paymentId(PK)=100");
 		}
+	}
 
-		private void givenNothingDeleted() {
-			given(resultRepository.deleteByPaymentIdAndStatus(PAYMENT_PK_ID, ResultStatus.INPUT_REQUIRED))
-				.willReturn(0);
-			given(compatibilityResultRepository.deleteByPaymentIdAndStatus(PAYMENT_PK_ID,
-				ResultStatus.INPUT_REQUIRED)).willReturn(0);
-		}
+	private void givenNoResultRow() {
+		given(resultRepository.existsByPaymentId(PAYMENT_PK_ID)).willReturn(false);
+		given(compatibilityResultRepository.existsByPaymentId(PAYMENT_PK_ID)).willReturn(false);
 	}
 }

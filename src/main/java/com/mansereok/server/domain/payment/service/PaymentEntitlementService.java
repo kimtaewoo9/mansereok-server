@@ -7,6 +7,7 @@ import com.mansereok.server.domain.user.entity.User;
 import com.mansereok.server.domain.user.repository.UserRepository;
 import com.mansereok.server.global.exception.PaymentException;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.function.Consumer;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -27,8 +28,8 @@ public class PaymentEntitlementService {
 	/**
 	 * 결제 행을 잠근 채 해석을 시작해도 되는지 확인하고, 같은 트랜잭션에서 결과를 해석 중으로 바꾼다.
 	 *
-	 * <p>허용 조건은 셋이다. 결제가 PAID 이고, 요청자 본인의 결제이고, 결제한 상품이 해석하려는 상품(경로의 subCategoryId)과
-	 * 같아야 한다. 존재하지 않음 · 미결제 · 타인 소유 · 다른 상품을 모두 같은 메시지로 거부해 paymentId 열거로 상태를 알아낼 수
+	 * <p>허용 조건은 셋이다. 요청자 본인의 결제이고, 결제가 PAID 이고, 결제한 상품이 해석하려는 상품(경로의 subCategoryId)과
+	 * 같아야 한다. 존재하지 않음 · 타인 소유 · 미결제 · 다른 상품을 모두 같은 메시지로 거부해 paymentId 열거로 상태를 알아낼 수
 	 * 없게 한다. 어긋난 조건은 로그에만 남긴다.
 	 *
 	 * <p>확인과 결과 변경을 결제 행 잠금 아래 한 트랜잭션에서 한다. 환불(PaymentRefundService 의 트랜잭션 A)도 같은 결제 행을
@@ -54,10 +55,10 @@ public class PaymentEntitlementService {
 		Payment payment = paymentPkId == null ? null
 			: paymentRepository.findByIdWithLock(paymentPkId).orElse(null);
 
-		String unmetCondition = findUnmetCondition(payment, user.getId(), subCategoryId);
-		if (unmetCondition != null) {
+		Optional<String> unmetCondition = findUnmetCondition(payment, user.getId(), subCategoryId);
+		if (unmetCondition.isPresent()) {
 			log.warn("유효하지 않은 결제로 해석 요청: username={}, paymentPkId={}, subCategoryId={}, 어긋난 조건={}",
-				username, paymentPkId, subCategoryId, unmetCondition);
+				username, paymentPkId, subCategoryId, unmetCondition.get());
 			throw new PaymentException("유효한 결제 정보가 아닙니다.");
 		}
 
@@ -65,22 +66,25 @@ public class PaymentEntitlementService {
 	}
 
 	/**
-	 * 해석을 허용할 수 없는 이유를 돌려준다. 모든 조건을 지키면 null 이다.
+	 * 해석을 허용할 수 없는 이유를 돌려준다. 모든 조건을 지키면 빈 Optional 이다.
+	 *
+	 * <p>소유자를 상태보다 먼저 본다. 남의 결제 번호를 넣은 요청은 그 결제의 상태와 상관없이 늘 '다른 사용자의 결제' 로 로그에 남아,
+	 * 결제 번호를 하나씩 넣어 보는 시도를 로그로 찾을 수 있다.
 	 */
-	private static String findUnmetCondition(Payment payment, Long userId, Long subCategoryId) {
+	private static Optional<String> findUnmetCondition(Payment payment, Long userId, Long subCategoryId) {
 		if (payment == null) {
-			return "결제 없음";
-		}
-		if (payment.getStatus() != PaymentStatus.PAID) {
-			return "결제 상태 " + payment.getStatus();
+			return Optional.of("결제 없음");
 		}
 		// 탈퇴 처리로 결제의 userId 가 비었으면 누구의 결제도 아니다.
 		if (payment.getUserId() == null || !payment.getUserId().equals(userId)) {
-			return "다른 사용자의 결제(결제 userId=" + payment.getUserId() + ")";
+			return Optional.of("다른 사용자의 결제(결제 userId=" + payment.getUserId() + ")");
+		}
+		if (payment.getStatus() != PaymentStatus.PAID) {
+			return Optional.of("결제 상태 " + payment.getStatus());
 		}
 		if (subCategoryId == null || !subCategoryId.equals(payment.getSubCategoryId())) {
-			return "결제한 상품과 다름(결제 subCategoryId=" + payment.getSubCategoryId() + ")";
+			return Optional.of("결제한 상품과 다름(결제 subCategoryId=" + payment.getSubCategoryId() + ")");
 		}
-		return null;
+		return Optional.empty();
 	}
 }

@@ -9,7 +9,9 @@ import static org.mockito.BDDMockito.then;
 import static org.mockito.BDDMockito.willAnswer;
 import static org.mockito.Mockito.never;
 
+import com.mansereok.server.domain.interpret.entity.CompatibilityResult;
 import com.mansereok.server.domain.interpret.entity.Result;
+import com.mansereok.server.domain.interpret.repository.CompatibilityResultRepository;
 import com.mansereok.server.domain.interpret.repository.ResultRepository;
 import com.mansereok.server.domain.interpret.service.ResultService;
 import com.mansereok.server.domain.order.entity.Order;
@@ -33,16 +35,23 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.orm.jpa.EntityManagerHolder;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 /**
  * 같은 결제에 환불과 해석 시작이 겹칠 때, 결제 행을 먼저 잡은 쪽만 성공하는지 실제 MySQL 로 확인한다.
@@ -56,14 +65,16 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
  * 경우는 넘긴 결과 변경 안에서 래치로 멈춰 결제 행 잠금을 쥔 채로 두고, 환불이 그 잠금을 기다리기 시작한 것을
  * performance_schema 로 확인한 뒤 풀어 준다.
  *
- * <p>결제·주문·초기 결과는 결제 확정을 거치지 않고 저장소로 바로 만든다. 결제 확정은 상품 id 에 따라 결과를 results 와
- * compatibility_results 중 한 곳에 만드는데, 테스트 상품의 id 는 실행마다 달라진다. 여기서는 늘 일반 사주 결과(results)를 쓴다.
+ * <p>초기 결과는 상품에 따라 results(일반 사주)와 compatibility_results(궁합) 중 한 곳에만 있어, 같은 경우를 두 표에서 모두
+ * 돌린다({@link ResultTable}). 궁합 결제는 환불이 결과 행이 없는 results 표를 잠그지 않는지도 본다. 잠그면 다른 결제의 초기 결과
+ * INSERT 가 환불이 끝날 때까지 기다린다.
+ *
+ * <p>결제·주문·초기 결과는 결제 확정을 거치지 않고 저장소로 바로 만든다. 결제 확정은 상품 행을 읽어 표를 고르는데, 여기서는 상품 행
+ * 없이 결제·주문에 상품 id 만 적는다.
  */
-class RefundVsInterpretationOrderTest extends PaymentMySqlTest {
+class RefundAndInterpretationStartMySqlTest extends PaymentMySqlTest {
 
 	private static final int PRICE = 10000;
-	// 결제한 상품. 해석 시작의 상품 대조에만 쓰이고 상품 행은 필요 없다.
-	private static final Long PAID_PRODUCT_ID = 3L;
 	private static final String REFUND_REASON = "단순 변심";
 
 	@Autowired
@@ -81,7 +92,11 @@ class RefundVsInterpretationOrderTest extends PaymentMySqlTest {
 	@Autowired
 	private ResultRepository resultRepository;
 	@Autowired
+	private CompatibilityResultRepository compatibilityResultRepository;
+	@Autowired
 	private EntityManagerFactory entityManagerFactory;
+	@Autowired
+	private PlatformTransactionManager transactionManager;
 
 	// 실행마다 다른 값이라 이전 실행이 남긴 데이터와 부딪히지 않는다.
 	private final String runId = UUID.randomUUID().toString().substring(0, 8);
@@ -98,14 +113,9 @@ class RefundVsInterpretationOrderTest extends PaymentMySqlTest {
 	private Long paymentPkId;
 
 	@BeforeEach
-	void createPaidPaymentWithInitialResult() {
+	void createRequester() {
 		userId = userRepository.save(User.create(username, "환불해석", "password", username + "@example.com",
 			LocalDate.of(1990, 1, 1), Gender.MALE, true, true, false)).getId();
-		Long orderId = orderRepository.save(Order.create(merchantUid, userId, PAID_PRODUCT_ID, PRICE, PRICE, null,
-			null, OrderStatus.PAID, "환불해석", username + "@example.com")).getId();
-		paymentPkId = paymentRepository.save(Payment.create(impUid, merchantUid, (long) PRICE, PaymentStatus.PAID,
-			orderId, userId, PAID_PRODUCT_ID)).getId();
-		resultRepository.save(Result.createInitial(userId, paymentPkId, "환불 해석 순서 테스트 상품"));
 	}
 
 	@AfterEach
@@ -115,7 +125,9 @@ class RefundVsInterpretationOrderTest extends PaymentMySqlTest {
 		executor.shutdown();
 		assertThat(executor.awaitTermination(60, SECONDS)).as("작업 스레드가 모두 끝났다").isTrue();
 
-		jdbcTemplate.update("DELETE FROM results WHERE payment_id = ?", paymentPkId);
+		// 결과 행은 모두 이 실행의 사용자로 만든다(잠금 범위를 보는 테스트가 다음 결제 자리에 만든 행 포함).
+		jdbcTemplate.update("DELETE FROM results WHERE user_id = ?", userId);
+		jdbcTemplate.update("DELETE FROM compatibility_results WHERE user_id = ?", userId);
 		jdbcTemplate.update("DELETE FROM payments WHERE imp_uid = ?", impUid);
 		jdbcTemplate.update("DELETE FROM orders WHERE merchant_uid = ?", merchantUid);
 		userRepository.deleteById(userId);
@@ -125,13 +137,15 @@ class RefundVsInterpretationOrderTest extends PaymentMySqlTest {
 	@DisplayName("환불이 먼저 결제 행을 잡으면")
 	class RefundFirst {
 
-		@Test
+		@ParameterizedTest(name = "[{index}] 초기 결과 표 {0}")
+		@EnumSource(ResultTable.class)
 		@DisplayName("환불이 CANCEL_REQUESTED 를 커밋하고 포트원 취소를 기다리는 동안 해석을 시작하면 거부되고, 환불은 CANCELLED 로 끝나 초기 결과가 지워진다")
-		void interpretationDuringPortOneCancelIsRejected() {
+		void interpretationDuringPortOneCancelIsRejected(ResultTable table) {
 			// given: 포트원 취소 호출 안에서, 즉 환불 A 가 커밋한 뒤 B 가 시작하기 전에 해석을 시작한다
+			givenPaidPaymentWithInitialResult(table);
 			AtomicReference<Throwable> startDuringCancel = new AtomicReference<>();
 			willAnswer(invocation -> {
-				startDuringCancel.set(catchThrowable(() -> startInterpretation(resultService::updateStatusToProcessing)));
+				startDuringCancel.set(catchThrowable(() -> startInterpretation(table, markProcessing(table))));
 				return null;
 			}).given(portOneClient).cancelPayment(impUid, REFUND_REASON);
 
@@ -146,7 +160,7 @@ class RefundVsInterpretationOrderTest extends PaymentMySqlTest {
 				.hasMessage("유효한 결제 정보가 아닙니다.");
 			assertThat(paymentStatus()).isEqualTo("CANCELLED");
 			assertThat(orderStatus()).isEqualTo("CANCELLED");
-			assertThat(resultRows()).as("초기 결과 행").isZero();
+			assertThat(resultRows(table)).as("초기 결과 행").isZero();
 		}
 	}
 
@@ -154,13 +168,15 @@ class RefundVsInterpretationOrderTest extends PaymentMySqlTest {
 	@DisplayName("해석 시작이 먼저 결제 행을 잡으면")
 	class InterpretationFirst {
 
-		@Test
+		@ParameterizedTest(name = "[{index}] 초기 결과 표 {0}")
+		@EnumSource(ResultTable.class)
 		@DisplayName("해석 시작이 커밋할 때까지 환불은 결제 행 잠금을 기다리고, 커밋 뒤에는 해석이 진행됐다는 이유로 거부되어 포트원 취소를 부르지 않는다")
-		void refundWaitsForPaymentRowThenIsRejected() throws Exception {
+		void refundWaitsForPaymentRowThenIsRejected(ResultTable table) throws Exception {
 			// given: 해석 시작이 결제 행을 잠그고 결과를 PROCESSING 으로 바꾼 뒤, 커밋하기 전에 멈췄다
+			givenPaidPaymentWithInitialResult(table);
 			Future<Boolean> interpretation = executor.submit(() -> {
-				startInterpretation(paymentPk -> {
-					resultService.updateStatusToProcessing(paymentPk);
+				startInterpretation(table, paymentPk -> {
+					markProcessing(table).accept(paymentPk);
 					interpretationHoldsPaymentLock.countDown();
 					awaitRelease();
 				});
@@ -186,7 +202,7 @@ class RefundVsInterpretationOrderTest extends PaymentMySqlTest {
 			then(portOneClient).should(never()).cancelPayment(any(), any());
 			assertThat(paymentStatus()).isEqualTo("PAID");
 			assertThat(orderStatus()).isEqualTo("PAID");
-			assertThat(resultStatus()).isEqualTo("PROCESSING");
+			assertThat(resultStatus(table)).isEqualTo("PROCESSING");
 		}
 	}
 
@@ -194,12 +210,19 @@ class RefundVsInterpretationOrderTest extends PaymentMySqlTest {
 	@DisplayName("open-in-view 처럼 환불의 두 트랜잭션이 EntityManager 하나를 함께 쓰면")
 	class RefundWithOneEntityManager {
 
-		@Test
+		@ParameterizedTest(name = "[{index}] 초기 결과 표 {0}")
+		@CsvSource(textBlock = """
+			# 초기 결과 표,        삭제를 거부하는 결과 이름
+			RESULTS,               Result
+			COMPATIBILITY_RESULTS, CompatibilityResult
+			""")
 		@DisplayName("포트원 취소를 기다리는 사이 결과가 COMPLETED 로 커밋되면, B 는 A 에서 읽어 둔 낡은 INPUT_REQUIRED 가 아니라 DB 상태를 보고 결과를 지우지 않는다")
-		void finalizeStepJudgesByDatabaseNotStaleEntity() {
+		void finalizeStepJudgesByDatabaseNotStaleEntity(ResultTable table, String resultName) {
 			// given: 포트원 취소를 기다리는 사이 다른 경로(예: INPUT_REQUIRED 인 채 돌던 해석)가 결과를 COMPLETED 로 커밋한다
+			givenPaidPaymentWithInitialResult(table);
 			willAnswer(invocation -> {
-				jdbcTemplate.update("UPDATE results SET status = 'COMPLETED' WHERE payment_id = ?", paymentPkId);
+				jdbcTemplate.update("UPDATE " + table.tableName + " SET status = 'COMPLETED' WHERE payment_id = ?",
+					paymentPkId);
 				return null;
 			}).given(portOneClient).cancelPayment(impUid, REFUND_REASON);
 
@@ -210,9 +233,9 @@ class RefundVsInterpretationOrderTest extends PaymentMySqlTest {
 			assertThat(refundError)
 				.as("환불 예외")
 				.isInstanceOf(IllegalStateException.class)
-				.hasMessage("정보 입력 전(INPUT_REQUIRED)의 Result 만 삭제할 수 있습니다. 해석이 이미 진행됐습니다. paymentId(PK)="
-					+ paymentPkId);
-			assertThat(resultStatus()).as("결과 행이 남아 있다").isEqualTo("COMPLETED");
+				.hasMessage("정보 입력 전(INPUT_REQUIRED)의 %s 만 삭제할 수 있습니다. 해석이 이미 진행됐습니다. paymentId(PK)=%s",
+					resultName, paymentPkId);
+			assertThat(resultStatus(table)).as("결과 행이 남아 있다").isEqualTo("COMPLETED");
 			assertThat(paymentStatus()).isEqualTo("CANCEL_REQUESTED");
 			assertThat(orderStatus()).isEqualTo("PAID");
 		}
@@ -233,8 +256,115 @@ class RefundVsInterpretationOrderTest extends PaymentMySqlTest {
 		}
 	}
 
-	private void startInterpretation(Consumer<Long> markResultProcessing) {
-		paymentEntitlementService.startInterpretation(paymentPkId, username, PAID_PRODUCT_ID, markResultProcessing);
+	@Nested
+	@DisplayName("궁합 결제를 환불하는 트랜잭션이 커밋하기 전이면")
+	class CompatibilityRefundLockScope {
+
+		@Test
+		@DisplayName("환불 A 가 궁합 결과의 상태를 잠가 읽은 뒤에도 다음 결제의 초기 결과 INSERT 는 results 표에서 기다리지 않는다")
+		void readingStatusLeavesResultsTableUnlocked() {
+			// given
+			givenPaidPaymentWithInitialResult(ResultTable.COMPATIBILITY_RESULTS);
+
+			// when
+			boolean inserted = nextPaymentResultInsertedWhileRefundStepHoldsLocks(
+				() -> resultService.findStatusByPaymentId(paymentPkId));
+
+			// then
+			assertThat(inserted).as("환불 단계가 커밋하기 전에 다음 결제의 초기 결과 INSERT 가 5초 안에 끝났다").isTrue();
+		}
+
+		@Test
+		@DisplayName("환불 B 가 궁합 초기 결과를 지운 뒤에도 다음 결제의 초기 결과 INSERT 는 results 표에서 기다리지 않는다")
+		void deletingInitialResultLeavesResultsTableUnlocked() {
+			// given
+			givenPaidPaymentWithInitialResult(ResultTable.COMPATIBILITY_RESULTS);
+
+			// when
+			boolean inserted = nextPaymentResultInsertedWhileRefundStepHoldsLocks(
+				() -> resultService.deleteInitialResult(paymentPkId));
+
+			// then
+			assertThat(inserted).as("환불 단계가 커밋하기 전에 다음 결제의 초기 결과 INSERT 가 5초 안에 끝났다").isTrue();
+		}
+
+		/**
+		 * 테스트가 연 트랜잭션에서 환불 단계(refundStep)를 부르고, 커밋하기 전에 다른 스레드에서 다음 결제의 초기 결과를 results 에
+		 * 넣어 본다. 환불 단계가 건 잠금은 이 트랜잭션이 끝날 때까지 남는다. INSERT 가 5초 안에 끝났는지를 돌려준다.
+		 *
+		 * <p>트랜잭션은 늘 되돌린다. 되돌리면 잠금이 풀려, 기다리던 INSERT 도 끝난 뒤 뒤 정리에서 지워진다.
+		 */
+		private boolean nextPaymentResultInsertedWhileRefundStepHoldsLocks(Runnable refundStep) {
+			return new TransactionTemplate(transactionManager).execute(status -> {
+				status.setRollbackOnly();
+				refundStep.run();
+				Future<Result> insert = executor.submit(() -> resultRepository.save(
+					Result.createInitial(userId, nextPaymentPkId(), "다음 결제의 일반 사주 상품")));
+				try {
+					insert.get(5, SECONDS);
+					return true;
+				} catch (TimeoutException e) {
+					return false;
+				} catch (InterruptedException e) {
+					Thread.currentThread().interrupt();
+					throw new IllegalStateException("다음 결제의 초기 결과 INSERT 를 기다리다 중단됐다", e);
+				} catch (ExecutionException e) {
+					throw new IllegalStateException("다음 결제의 초기 결과 INSERT 가 실패했다", e.getCause());
+				}
+			});
+		}
+
+		/**
+		 * 다음 결제가 받을 PK 자리. results.payment_id 에는 외래 키가 없어 결제 행 없이 초기 결과만 만든다. payment_id 는 UNIQUE 라,
+		 * 행이 없는 paymentPkId 를 잠가 읽거나 조건부로 지우면 REPEATABLE READ 에서 이 자리까지 간격이 잠긴다.
+		 */
+		private Long nextPaymentPkId() {
+			return paymentPkId + 1;
+		}
+	}
+
+	/**
+	 * 초기 결과가 생기는 표. 결제 확정은 궁합 상품(4, 6, 7, 10, 11, 14, 15, 19)이면 compatibility_results 에, 나머지 상품이면
+	 * results 에 초기 결과를 만든다.
+	 */
+	enum ResultTable {
+		RESULTS("results", 3L, ResultService::updateStatusToProcessing),
+		COMPATIBILITY_RESULTS("compatibility_results", 19L, ResultService::updateCompatibilityStatusToProcessing);
+
+		private final String tableName;
+		// 결제·주문에 적는 결제 상품. 해석 시작의 상품 대조에만 쓰이고 상품 행은 필요 없다.
+		private final Long productId;
+		// 해석 시작이 넘기는 결과 변경. 컨트롤러가 상품 종류에 따라 고르는 메서드와 같다.
+		private final BiConsumer<ResultService, Long> markProcessing;
+
+		ResultTable(String tableName, Long productId, BiConsumer<ResultService, Long> markProcessing) {
+			this.tableName = tableName;
+			this.productId = productId;
+			this.markProcessing = markProcessing;
+		}
+	}
+
+	/**
+	 * 요청자의 결제 완료 주문·결제와 정보 입력 전(INPUT_REQUIRED) 초기 결과를 만든다. 초기 결과는 상품에 맞는 표 한 곳에만 둔다.
+	 */
+	private void givenPaidPaymentWithInitialResult(ResultTable table) {
+		Long orderId = orderRepository.save(Order.create(merchantUid, userId, table.productId, PRICE, PRICE, null,
+			null, OrderStatus.PAID, "환불해석", username + "@example.com")).getId();
+		paymentPkId = paymentRepository.save(Payment.create(impUid, merchantUid, (long) PRICE, PaymentStatus.PAID,
+			orderId, userId, table.productId)).getId();
+		switch (table) {
+			case RESULTS -> resultRepository.save(Result.createInitial(userId, paymentPkId, "일반 사주 상품"));
+			case COMPATIBILITY_RESULTS -> compatibilityResultRepository.save(
+				CompatibilityResult.createInitial(userId, paymentPkId, "궁합 상품"));
+		}
+	}
+
+	private void startInterpretation(ResultTable table, Consumer<Long> markResultProcessing) {
+		paymentEntitlementService.startInterpretation(paymentPkId, username, table.productId, markResultProcessing);
+	}
+
+	private Consumer<Long> markProcessing(ResultTable table) {
+		return paymentPk -> table.markProcessing.accept(resultService, paymentPk);
 	}
 
 	private boolean refund() {
@@ -279,13 +409,13 @@ class RefundVsInterpretationOrderTest extends PaymentMySqlTest {
 			merchantUid);
 	}
 
-	private String resultStatus() {
-		return jdbcTemplate.queryForObject("SELECT status FROM results WHERE payment_id = ?", String.class,
-			paymentPkId);
+	private String resultStatus(ResultTable table) {
+		return jdbcTemplate.queryForObject("SELECT status FROM " + table.tableName + " WHERE payment_id = ?",
+			String.class, paymentPkId);
 	}
 
-	private int resultRows() {
-		Integer rows = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM results WHERE payment_id = ?",
+	private int resultRows(ResultTable table) {
+		Integer rows = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM " + table.tableName + " WHERE payment_id = ?",
 			Integer.class, paymentPkId);
 		return rows == null ? 0 : rows;
 	}

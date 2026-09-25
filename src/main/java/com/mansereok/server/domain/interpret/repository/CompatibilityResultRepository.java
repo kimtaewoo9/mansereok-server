@@ -50,4 +50,11 @@ public interface CompatibilityResultRepository extends JpaRepository<Compatibili
 	@Lock(LockModeType.PESSIMISTIC_WRITE)
 	@Query("SELECT c FROM CompatibilityResult c WHERE c.paymentId = :paymentId")
 	Optional<CompatibilityResult> findByPaymentIdForUpdate(@Param("paymentId") Long paymentId);
+
+	/**
+	 * 환불용 존재 확인. 잠그지 않고 읽는다. 환불은 이 결과로 결과 행이 있는 표를 먼저 가린 뒤 그 표에서만 잠금 조회·조건부 삭제를
+	 * 한다. payment_id 가 UNIQUE 라, 행이 없는 값을 잠가 읽거나 조건부로 지우면 REPEATABLE READ 에서 그 자리의 간격이 잠겨 다른
+	 * 결제의 초기 결과 INSERT 가 기다린다.
+	 */
+	boolean existsByPaymentId(Long paymentId);
 }

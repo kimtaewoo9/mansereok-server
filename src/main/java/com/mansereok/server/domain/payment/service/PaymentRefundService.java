@@ -39,6 +39,8 @@ import org.springframework.transaction.support.TransactionTemplate;
  * <p>잠금 순서는 A·B 모두 결제 행 → 주문 행 → 결과 행이다. 순서가 다르면 포트원 취소 직후 도착한 두 번째 환불 요청과
  * 데드락이 날 수 있고, B 가 희생되면 포트원 환불은 끝났는데 DB 는 CANCEL_REQUESTED 로 남는다. 해석 시작
  * (PaymentEntitlementService#startInterpretation)도 결제 행을 먼저 잠그므로 환불 A 와 해석 시작은 결제 행에서 줄을 선다.
+ * 결과 행은 일반 사주(results)와 궁합(compatibility_results) 중 행이 있는 표에서만 잠근다. 행이 없는 표를 잠그면 간격 잠금이
+ * 걸려 다른 결제의 결제 확정(초기 결과 INSERT)이 기다리고, 그 확정이 할인 코드 행을 먼저 쥐었다면 B 와 교착이 난다.
  */
 @Service
 @Slf4j
