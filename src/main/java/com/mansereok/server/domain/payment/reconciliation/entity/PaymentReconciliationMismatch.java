@@ -35,6 +35,8 @@ public class PaymentReconciliationMismatch {
 
 	private static final String UNKNOWN_PG_STATUS = "조회되지 않음";
 
+	private static final String UNREADABLE_MERCHANT_UID = "customData 에서 주문 번호를 읽지 못했습니다.";
+
 	@Id
 	@GeneratedValue(strategy = GenerationType.IDENTITY)
 	private Long id;
@@ -60,12 +62,18 @@ public class PaymentReconciliationMismatch {
 
 	private LocalDateTime detectedAt;
 
+	/**
+	 * @param merchantUid PG 결제의 customData 에서 꺼낸 주문 번호. 포트원 V2 응답에는 주문 번호 필드가 따로 없다. 읽지
+	 *                    못했으면 null 이고, 그 사실을 detail 에 적는다.
+	 */
 	public static PaymentReconciliationMismatch missingInDb(Long runId,
-		PortOnePaymentResponse pgPayment, LocalDateTime detectedAt) {
-		return create(runId, MismatchType.MISSING_IN_DB, pgPayment.getId(),
-			pgPayment.getMerchantUid(), statusOf(pgPayment), amountOf(pgPayment), null, null,
-			"PG 에 %s 상태의 거래가 있는데 DB 에 결제 기록이 없습니다.".formatted(statusOf(pgPayment)),
-			detectedAt);
+		PortOnePaymentResponse pgPayment, String merchantUid, LocalDateTime detectedAt) {
+		String detail = "PG 에 %s 상태의 거래가 있는데 DB 에 결제 기록이 없습니다.".formatted(statusOf(pgPayment));
+		if (merchantUid == null) {
+			detail += " " + UNREADABLE_MERCHANT_UID;
+		}
+		return create(runId, MismatchType.MISSING_IN_DB, pgPayment.getId(), merchantUid,
+			statusOf(pgPayment), amountOf(pgPayment), null, null, detail, detectedAt);
 	}
 
 	public static PaymentReconciliationMismatch missingInPg(Long runId, Payment dbPayment,
@@ -113,6 +121,21 @@ public class PaymentReconciliationMismatch {
 		return create(runId, MismatchType.PG_LOOKUP_FAILED, dbPayment.getImpUid(),
 			dbPayment.getMerchantUid(), null, null, dbPayment.getStatus(), dbPayment.getAmount(),
 			"PG 단건 조회에 실패해 대조하지 못했습니다. 원인=%s".formatted(failureMessage), detectedAt);
+	}
+
+	/**
+	 * DB 결제 ID 로 단건 조회했는데 다른 ID 의 PG 결제가 돌아온 경우. 돌아온 결제는 이 DB 결제의 것이 아니라서 pg* 칸은
+	 * 비우고, 돌아온 결제 ID 는 detail 에 남긴다.
+	 *
+	 * @param pgPayment 단건 조회가 돌려준 PG 결제
+	 */
+	public static PaymentReconciliationMismatch pgIdMismatch(Long runId,
+		PortOnePaymentResponse pgPayment, Payment dbPayment, LocalDateTime detectedAt) {
+		return create(runId, MismatchType.PG_ID_MISMATCH, dbPayment.getImpUid(),
+			dbPayment.getMerchantUid(), null, null, dbPayment.getStatus(), dbPayment.getAmount(),
+			("PG 단건 조회가 다른 결제 ID(%s)의 거래를 돌려줘 대조하지 않았습니다. "
+				+ "한 PG 결제에 DB 결제가 여러 건 붙었을 수 있습니다.").formatted(pgPayment.getId()),
+			detectedAt);
 	}
 
 	private static PaymentReconciliationMismatch create(Long runId, MismatchType type,

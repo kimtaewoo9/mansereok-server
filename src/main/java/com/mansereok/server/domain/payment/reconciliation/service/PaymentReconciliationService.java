@@ -5,6 +5,7 @@ import com.mansereok.server.domain.payment.client.PortOneClient;
 import com.mansereok.server.domain.payment.dto.response.PortOnePaymentResponse;
 import com.mansereok.server.domain.payment.entity.Payment;
 import com.mansereok.server.domain.payment.entity.PaymentStatus;
+import com.mansereok.server.domain.payment.reconciliation.entity.MismatchType;
 import com.mansereok.server.domain.payment.reconciliation.entity.PaymentReconciliationMismatch;
 import com.mansereok.server.domain.payment.reconciliation.entity.PaymentReconciliationRun;
 import com.mansereok.server.domain.payment.reconciliation.repository.PaymentReconciliationMismatchRepository;
@@ -36,7 +37,8 @@ import org.springframework.transaction.support.TransactionTemplate;
  *
  * <p>클래스 수준 {@code @Transactional} 을 쓰지 않고 {@link TransactionTemplate} 으로 경계를 명시한다. 포트원
  * 호출은 응답이 느릴 수 있어 DB 트랜잭션 안에서 하면 커넥션을 오래 쥐기 때문이다. 그래서 순서도
- * "run 시작 커밋 → (트랜잭션 밖) 포트원 조회 → 짧은 DB 읽기 → (트랜잭션 밖) 단건 조회 → 결과 커밋" 이다.
+ * "run 시작 커밋 → (트랜잭션 밖) 포트원 조회 → 짧은 DB 읽기 → (트랜잭션 밖) 단건 조회 → 환불 도중에만 보이는 불일치 재확인
+ * → 결과 커밋" 이다.
  */
 @Service
 @Slf4j
@@ -115,8 +117,10 @@ public class PaymentReconciliationService {
 
 		Map<String, PgLookup> pgLookups =
 			lookUpDbOnlyPayments(pgPayments, dbPayments, cancelRequestedPayments);
-		List<PaymentReconciliationMismatch> mismatches = reconciler.reconcile(run.getId(),
+		List<PaymentReconciliationMismatch> firstReadMismatches = reconciler.reconcile(run.getId(),
 			pgPayments, dbPayments, cancelRequestedPayments, pgLookups, now());
+		List<PaymentReconciliationMismatch> mismatches =
+			recheckMismatchesSeenDuringRefund(firstReadMismatches);
 
 		int dbPaymentCount =
 			PaymentReconciler.indexDbPayments(dbPayments, cancelRequestedPayments).size();
@@ -169,6 +173,53 @@ public class PaymentReconciliationService {
 			pgLookups.put(impUid, lookUp(impUid));
 		}
 		return pgLookups;
+	}
+
+	/**
+	 * 환불 도중에만 잠깐 보일 수 있는 불일치를 저장 직전에 다시 읽어 확인한다.
+	 *
+	 * <p>CANCEL_REQUESTED 는 환불이 몇 초 동안 정상적으로 거치는 상태이고, PG 목록과 DB 는 서로 다른 순간에 읽힌다. 그래서
+	 * 대사가 환불 도중에 돌면 CANCEL_REQUESTED_STALE 이나 STATUS_MISMATCH(PG=PAID, DB=CANCELLED)가 보였다가 환불이 끝나면
+	 * 사라진다. 이 두 타입의 DB 결제를 impUid 로 다시 읽고, STATUS_MISMATCH 는 PG 도 단건 조회로 다시 읽는다. 무엇을 남길지는
+	 * {@link PaymentReconciler#keepStillMismatched} 가 정한다. CANCEL_REQUESTED_STALE 은 DB 상태만 보므로 PG 를 다시
+	 * 조회하지 않는다.
+	 *
+	 * <p>이 클래스에는 트랜잭션이 없어 리포지토리 호출마다 영속성 컨텍스트가 새로 열린다. 그래서 다시 읽으면 첫 읽기 뒤에 커밋된
+	 * 상태가 보인다. 호출을 한 트랜잭션으로 묶으면 첫 읽기의 엔티티가 그대로 돌아와 재확인이 소용없어진다.
+	 */
+	private List<PaymentReconciliationMismatch> recheckMismatchesSeenDuringRefund(
+		List<PaymentReconciliationMismatch> firstReadMismatches) {
+		Set<String> dbRecheckImpUids = impUidsOfType(firstReadMismatches,
+			Set.of(MismatchType.CANCEL_REQUESTED_STALE, MismatchType.STATUS_MISMATCH));
+		if (dbRecheckImpUids.isEmpty()) {
+			return firstReadMismatches;
+		}
+
+		Map<String, Payment> freshDbPayments = new HashMap<>();
+		for (Payment payment : paymentRepository.findAllByImpUidIn(dbRecheckImpUids)) {
+			freshDbPayments.putIfAbsent(payment.getImpUid(), payment);
+		}
+		Map<String, PgLookup> freshPgLookups = new HashMap<>();
+		for (String impUid : impUidsOfType(firstReadMismatches,
+			Set.of(MismatchType.STATUS_MISMATCH))) {
+			freshPgLookups.put(impUid, lookUp(impUid));
+		}
+
+		List<PaymentReconciliationMismatch> mismatches =
+			reconciler.keepStillMismatched(firstReadMismatches, freshDbPayments, freshPgLookups);
+		if (mismatches.size() < firstReadMismatches.size()) {
+			log.info("다시 읽어 보니 사라진 불일치를 기록에서 뺐습니다: {}건",
+				firstReadMismatches.size() - mismatches.size());
+		}
+		return mismatches;
+	}
+
+	private Set<String> impUidsOfType(List<PaymentReconciliationMismatch> mismatches,
+		Set<MismatchType> types) {
+		return mismatches.stream()
+			.filter(mismatch -> types.contains(mismatch.getType()))
+			.map(PaymentReconciliationMismatch::getImpUid)
+			.collect(Collectors.toSet());
 	}
 
 	private Set<String> impUidsOf(List<PortOnePaymentResponse> pgPayments) {

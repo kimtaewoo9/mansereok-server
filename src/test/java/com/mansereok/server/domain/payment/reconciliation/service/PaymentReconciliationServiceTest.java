@@ -10,6 +10,7 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mansereok.server.domain.notification.service.DiscordNotificationService;
 import com.mansereok.server.domain.payment.client.PortOneClient;
 import com.mansereok.server.domain.payment.dto.response.PortOnePaymentResponse;
@@ -33,6 +34,7 @@ import java.util.Optional;
 import java.util.Set;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -98,7 +100,8 @@ class PaymentReconciliationServiceTest {
 			});
 
 		paymentReconciliationService = new PaymentReconciliationService(portOneClient,
-			paymentRepository, runRepository, mismatchRepository, new PaymentReconciler(),
+			paymentRepository, runRepository, mismatchRepository,
+			new PaymentReconciler(new ObjectMapper()),
 			discordNotificationService, FIXED_CLOCK, transactionManager);
 	}
 
@@ -256,5 +259,121 @@ class PaymentReconciliationServiceTest {
 		assertThat(run.getFinishedAt()).isEqualTo(NOW);
 		verify(discordNotificationService).sendPaymentReconciliationReport(run, List.of());
 		verifyNoInteractions(mismatchRepository);
+	}
+
+	// ===== 환불 도중에만 보이는 불일치의 저장 직전 재확인 =====
+
+	@Nested
+	@DisplayName("첫 읽기에서 CANCEL_REQUESTED 로 보인 결제는 저장 직전에 DB 를 다시 읽어")
+	class WhenCancelRequestedOnFirstRead {
+
+		@BeforeEach
+		void givenCancelRequestedPaymentOutsidePgList() {
+			givenPgPayments();
+			given(paymentRepository.findAllByCreatedAtGreaterThanEqualAndCreatedAtLessThan(
+				DB_WINDOW_FROM, DB_WINDOW_UNTIL)).willReturn(List.of());
+			given(paymentRepository.findAllByStatus(PaymentStatus.CANCEL_REQUESTED))
+				.willReturn(List.of(dbPayment(IMP_UID, PaymentStatus.CANCEL_REQUESTED, PRICE)));
+			given(portOneClient.findPayment(IMP_UID))
+				.willReturn(Optional.of(pgPayment(IMP_UID, "CANCELLED", PRICE)));
+		}
+
+		@Test
+		@DisplayName("그 사이 환불이 끝나 CANCELLED 면 CANCEL_REQUESTED_STALE 을 기록하지 않고 Discord 로도 알리지 않는다")
+		void refundFinishedBeforeSave_isNotRecorded() {
+			// given
+			given(paymentRepository.findAllByImpUidIn(Set.of(IMP_UID)))
+				.willReturn(List.of(dbPayment(IMP_UID, PaymentStatus.CANCELLED, PRICE)));
+
+			// when
+			PaymentReconciliationRun run = paymentReconciliationService.reconcile(TARGET_DATE);
+
+			// then
+			assertThat(savedMismatches()).isEmpty();
+			assertThat(run.getMismatchCount()).isZero();
+			verifyNoInteractions(discordNotificationService);
+		}
+
+		@Test
+		@DisplayName("다시 읽어도 CANCEL_REQUESTED 면 CANCEL_REQUESTED_STALE 한 건을 기록하고 알린다")
+		void stillCancelRequested_isRecorded() {
+			// given
+			given(paymentRepository.findAllByImpUidIn(Set.of(IMP_UID)))
+				.willReturn(List.of(dbPayment(IMP_UID, PaymentStatus.CANCEL_REQUESTED, PRICE)));
+
+			// when
+			PaymentReconciliationRun run = paymentReconciliationService.reconcile(TARGET_DATE);
+
+			// then
+			List<PaymentReconciliationMismatch> mismatches = savedMismatches();
+			assertThat(mismatches).extracting(PaymentReconciliationMismatch::getType)
+				.containsExactly(MismatchType.CANCEL_REQUESTED_STALE);
+			assertThat(run.getMismatchCount()).isEqualTo(1);
+			verify(discordNotificationService).sendPaymentReconciliationReport(run, mismatches);
+		}
+	}
+
+	@Nested
+	@DisplayName("첫 읽기에서 PG=PAID, DB=CANCELLED 로 어긋나 보인 결제는 저장 직전에 DB 와 PG 를 다시 읽어")
+	class WhenStatusMismatchOnFirstRead {
+
+		@BeforeEach
+		void givenPgPaidAndDbCancelled() {
+			givenPgPayments(pgPayment(IMP_UID, "PAID", PRICE));
+			givenDbPayments();
+			// 첫 읽기(PG 목록의 impUid 로 찾기)와 재확인 모두 CANCELLED 를 읽는다
+			given(paymentRepository.findAllByImpUidIn(Set.of(IMP_UID)))
+				.willReturn(List.of(dbPayment(IMP_UID, PaymentStatus.CANCELLED, PRICE)));
+		}
+
+		@Test
+		@DisplayName("그 사이 PG 도 CANCELLED 가 됐으면 STATUS_MISMATCH 를 기록하지 않고 Discord 로도 알리지 않는다")
+		void pgCaughtUpBeforeSave_isNotRecorded() {
+			// given
+			given(portOneClient.findPayment(IMP_UID))
+				.willReturn(Optional.of(pgPayment(IMP_UID, "CANCELLED", PRICE)));
+
+			// when
+			PaymentReconciliationRun run = paymentReconciliationService.reconcile(TARGET_DATE);
+
+			// then
+			assertThat(savedMismatches()).isEmpty();
+			assertThat(run.getMismatchCount()).isZero();
+			verifyNoInteractions(discordNotificationService);
+		}
+
+		@Test
+		@DisplayName("다시 조회해도 PG 가 PAID 면 STATUS_MISMATCH 한 건을 기록하고 알린다")
+		void stillDifferent_isRecorded() {
+			// given
+			given(portOneClient.findPayment(IMP_UID))
+				.willReturn(Optional.of(pgPayment(IMP_UID, "PAID", PRICE)));
+
+			// when
+			PaymentReconciliationRun run = paymentReconciliationService.reconcile(TARGET_DATE);
+
+			// then
+			List<PaymentReconciliationMismatch> mismatches = savedMismatches();
+			assertThat(mismatches).extracting(PaymentReconciliationMismatch::getType)
+				.containsExactly(MismatchType.STATUS_MISMATCH);
+			assertThat(mismatches.get(0).getPgStatus()).isEqualTo("PAID");
+			verify(discordNotificationService).sendPaymentReconciliationReport(run, mismatches);
+		}
+
+		@Test
+		@DisplayName("PG 재조회가 일시 장애로 실패하면 사라졌다고 확인하지 못했으므로 첫 판단대로 STATUS_MISMATCH 를 기록한다")
+		void secondLookupFailure_keepsFirstJudgement() {
+			// given
+			willThrow(new PortOneUnavailableException("결제 정보를 조회하는 중 일시적인 오류가 발생했습니다."))
+				.given(portOneClient).findPayment(IMP_UID);
+
+			// when
+			PaymentReconciliationRun run = paymentReconciliationService.reconcile(TARGET_DATE);
+
+			// then
+			assertThat(savedMismatches()).extracting(PaymentReconciliationMismatch::getType)
+				.containsExactly(MismatchType.STATUS_MISMATCH);
+			assertThat(run.getStatus()).isEqualTo(ReconciliationStatus.COMPLETED);
+		}
 	}
 }

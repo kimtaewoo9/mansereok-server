@@ -252,7 +252,7 @@ CREATE TABLE payment_reconciliation_mismatches
     id            BIGINT AUTO_INCREMENT PRIMARY KEY,
     run_id        BIGINT       NOT NULL,
 
-    -- MismatchType enum ('MISSING_IN_DB', 'MISSING_IN_PG', 'AMOUNT_MISMATCH', 'STATUS_MISMATCH', 'CANCEL_REQUESTED_STALE', 'PG_LOOKUP_FAILED')
+    -- MismatchType enum ('MISSING_IN_DB', 'MISSING_IN_PG', 'AMOUNT_MISMATCH', 'STATUS_MISMATCH', 'CANCEL_REQUESTED_STALE', 'PG_LOOKUP_FAILED', 'PG_ID_MISMATCH')
     type          VARCHAR(255) NOT NULL,
 
     imp_uid       VARCHAR(255) NOT NULL,

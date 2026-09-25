@@ -19,6 +19,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mansereok.server.domain.payment.dto.response.PortOnePaymentResponse;
+import com.mansereok.server.domain.payment.dto.response.WebhookCustomData;
 import com.mansereok.server.global.exception.PaymentException;
 import com.mansereok.server.global.exception.PortOneUnavailableException;
 import java.io.IOException;
@@ -109,6 +110,45 @@ class PortOneRestClientTest {
 		assertThat(response.getStatus()).isEqualTo("PAID");
 		assertThat(response.getAmount().getTotal()).isEqualTo(10000L);
 		assertThat(response.getCustomData()).isEqualTo("{\"merchantUid\":\"order_1\"}");
+		server.verify();
+	}
+
+	@Test
+	@DisplayName("포트원 V2 결제 응답에는 merchant_uid 가 없고, 주문 번호는 파싱한 customData 에서 얻는다")
+	void getPayment_v2ResponseWithoutMerchantUid_carriesOrderNumberInCustomData() {
+		// given: V2 결제 객체의 모양. 주문 번호 필드가 없고 가맹점 ID(merchantId)·거래 ID(transactionId)만 있다
+		String body = """
+			{
+			  "status": "PAID",
+			  "id": "pay_test_001",
+			  "transactionId": "tx_test_001",
+			  "merchantId": "merchant-test",
+			  "storeId": "store-test",
+			  "version": "V2",
+			  "requestedAt": "2026-09-23T01:00:00Z",
+			  "updatedAt": "2026-09-23T01:00:05Z",
+			  "statusChangedAt": "2026-09-23T01:00:05Z",
+			  "orderName": "인생 총운",
+			  "amount": {"total": 10000, "taxFree": 0, "vat": 909, "supply": 9091, "discount": 0,
+			             "paid": 10000, "cancelled": 0, "cancelledTaxFree": 0},
+			  "currency": "KRW",
+			  "customData": "{\\"merchantUid\\":\\"order_1\\",\\"subCategoryId\\":3}",
+			  "paidAt": "2026-09-23T01:00:05Z",
+			  "pgTxId": "pg_tx_test_001"
+			}
+			""";
+		server.expect(requestTo(PAYMENT_URL))
+			.andExpect(method(HttpMethod.GET))
+			.andRespond(withSuccess(body, MediaType.APPLICATION_JSON));
+
+		// when
+		PortOnePaymentResponse response = client.getPayment(PAYMENT_ID);
+
+		// then
+		assertThat(response.getId()).isEqualTo(PAYMENT_ID);
+		assertThat(response.getAmount().getTotal()).isEqualTo(10000L);
+		assertThat(WebhookCustomData.tryParse(response.getCustomData(), OBJECT_MAPPER))
+			.map(WebhookCustomData::merchantUid).contains("order_1");
 		server.verify();
 	}
 

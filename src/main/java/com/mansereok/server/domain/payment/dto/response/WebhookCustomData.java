@@ -6,13 +6,16 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mansereok.server.global.exception.PaymentException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import lombok.extern.slf4j.Slf4j;
 
 /**
  * 포트원 결제 조회 응답의 customData 에 프론트가 실어 보낸 값.
  *
- * <p>customData 는 JSON 문자열이며 주문 조회 키인 merchantUid 를 담는다. 형식이 어긋나면 재전송으로
- * 해결되지 않는 최종 실패이므로 {@link PaymentException}(400)을 던진다.
+ * <p>customData 는 JSON 문자열이며 주문 조회 키인 merchantUid 를 담는다. 포트원 V2 결제 객체에는 주문 번호 필드가 따로 없어
+ * 주문 번호는 여기서만 얻는다. 결제 확정과 웹훅에서는 형식이 어긋나면 재전송으로 해결되지 않는 최종 실패이므로
+ * {@link #from} 이 {@link PaymentException}(400)을 던진다. 형식이 어긋나도 멈추지 않고 사유만 남기면 되는 곳(대사)은
+ * {@link #tryParse} 를 쓴다. 두 메서드는 같은 규칙으로 주문 번호를 읽는다.
  *
  * @param merchantUid 주문 번호. 비어 있지 않음이 보장된다.
  */
@@ -41,18 +44,43 @@ public record WebhookCustomData(String merchantUid) {
 			throw new PaymentException("결제 API 응답의 customData 파싱 중 오류 발생", e);
 		}
 
-		JsonNode merchantUidNode = json.get(MERCHANT_UID_FIELD);
-		String merchantUid = merchantUidNode == null || merchantUidNode.isNull()
-			? null : merchantUidNode.asText();
-		if (merchantUid == null || merchantUid.isBlank()) {
+		return merchantUidIn(json).map(WebhookCustomData::new).orElseThrow(() -> {
 			log.error("customData JSON 안에 'merchantUid' 필드가 없거나 비어있습니다! fields={}. "
 				+ "프론트엔드 customData 형식을 확인하세요. 예: { \"merchantUid\": \"order_...\", ... }",
 				fieldNames(json));
-			throw new PaymentException(
+			return new PaymentException(
 				"결제 API 응답의 customData에서 유효한 주문 번호(merchantUid)를 추출할 수 없습니다.");
+		});
+	}
+
+	/**
+	 * {@link #from} 과 같은 규칙으로 customData 를 읽되, 형식이 어긋나면 예외 대신 빈 Optional 을 돌려준다. 로그도 남기지 않는다.
+	 * 사유를 어떻게 남길지는 호출자가 정한다.
+	 *
+	 * @return customData 가 비어 있거나, JSON 이 아니거나, merchantUid 가 없거나 빈 값이면 빈 Optional
+	 */
+	public static Optional<WebhookCustomData> tryParse(String customData, ObjectMapper objectMapper) {
+		if (customData == null || customData.isBlank()) {
+			return Optional.empty();
 		}
 
-		return new WebhookCustomData(merchantUid);
+		JsonNode json;
+		try {
+			json = objectMapper.readTree(customData);
+		} catch (JsonProcessingException e) {
+			return Optional.empty();
+		}
+		return merchantUidIn(json).map(WebhookCustomData::new);
+	}
+
+	/** JSON 의 merchantUid 필드 값. 필드가 없거나 null 이거나 공백뿐이면 빈 Optional 이다. */
+	private static Optional<String> merchantUidIn(JsonNode json) {
+		JsonNode merchantUidNode = json.get(MERCHANT_UID_FIELD);
+		if (merchantUidNode == null || merchantUidNode.isNull()) {
+			return Optional.empty();
+		}
+		String merchantUid = merchantUidNode.asText();
+		return merchantUid.isBlank() ? Optional.empty() : Optional.of(merchantUid);
 	}
 
 	/** 값은 빼고 필드 이름만 이어 붙인다. 디버깅에는 어떤 키가 왔는지로 충분하다. */
