@@ -16,6 +16,7 @@ import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
+import org.hibernate.annotations.DynamicUpdate;
 
 // 제약 이름을 고정해 엔티티, schema.sql, 운영 DB 가 같은 이름을 쓰게 한다. 운영은 ddl-auto: validate 라 UNIQUE 를 검사하지
 // 않으므로, 바꿀 때는 운영 DDL 과 schema.sql 을 함께 고친다.
@@ -32,6 +33,10 @@ import lombok.Setter;
 		@UniqueConstraint(name = "uk_users_social_id_type", columnNames = {"social_id", "social_type"})
 	}
 )
+// 바뀐 컬럼만 UPDATE 한다. 예전처럼 모든 컬럼을 UPDATE 하면, 사용자 행을 읽고 이름만 바꾼 프로필 수정이 커밋할 때 그사이 커밋된
+// 비밀번호 재설정을 읽어 둔 옛 비밀번호 해시로 덮어 되돌린다. 이제 서로 다른 컬럼을 바꾸는 두 수정은 서로를 덮지 않는다. 같은 컬럼을
+// 동시에 바꾸면 여전히 나중에 커밋한 쪽이 남는다.
+@DynamicUpdate
 @Entity
 @Getter
 @Setter
@@ -43,6 +48,8 @@ public class User {
 	private Long id;
 	private String username; // 사용자 아이디
 	private String name; // 사용자 본명
+	// 비밀번호는 changePassword 로만 바꾼다.
+	@Setter(AccessLevel.NONE)
 	private String password;
 	private String email;
 	@Enumerated(EnumType.STRING)
@@ -100,6 +107,15 @@ public class User {
 		user.socialType = socialType;
 		user.marketingAgreed = false;
 		return user;
+	}
+
+	/**
+	 * 비밀번호를 바꾼다. 비밀번호를 바꾸는 길은 이 메서드 하나다.
+	 *
+	 * @param encodedPassword 암호화(BCrypt)를 마친 새 비밀번호. 평문을 넘기지 않는다.
+	 */
+	public void changePassword(String encodedPassword) {
+		this.password = encodedPassword;
 	}
 
 	@PreUpdate // 엔티티 업데이트 될때마다 자동으로 updateAt 필드를 현재시간으로 설정 .
