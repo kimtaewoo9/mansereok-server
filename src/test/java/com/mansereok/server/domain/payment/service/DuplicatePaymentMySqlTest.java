@@ -31,6 +31,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.RepeatedTest;
+import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
 
@@ -41,6 +42,7 @@ import org.springframework.beans.factory.annotation.Autowired;
  * <p>사용자가 같은 주문을 두 번 결제하면(모바일 리다이렉트 뒤 뒤로 가기, 탭 두 개 등) 결제 ID 가 다른 두 결제가 모두 승인된다.
  * 주문 행 잠금 때문에 두 요청은 차례로 확정을 시도하고, 뒤에 온 요청은 이미 다른 결제로 PAID 가 된 주문을 본다. 예전에는 이 요청이
  * 성공으로 끝나 두 번째 결제가 취소도 기록도 없이 남았다. 어느 요청이 먼저 잠금을 잡을지는 매번 달라서 여러 번 되풀이한다.
+ * 완료 요청과 웹훅이 겹칠 때는 웹훅이 먼저 잠금을 잡는 일이 많아, 웹훅이 뒤에 와서 취소하는 경우는 순서를 고정한 테스트로 따로 본다.
  *
  * <p>포트원은 목이다. 두 결제 모두 customData 에 이 주문을 담은 승인 결제로 답하고, 취소는 성공한다. DB 에 남은 사실은 JPA 캐시를
  * 거치지 않고 SQL 로 센다. 데이터는 실행마다 다른 키(runId)로 만들고 그 키로만 지운다.
@@ -162,6 +164,25 @@ class DuplicatePaymentMySqlTest extends PaymentMySqlTest {
 		assertThat(completeResult.succeeded())
 			.as("완료 요청은 자기 결제(첫 결제)가 확정됐을 때만 성공한다. 오류: %s", completeResult.error())
 			.isEqualTo(firstPaymentId.equals(confirmedPaymentId));
+		await().atMost(Duration.ofSeconds(5)).untilAsserted(() ->
+			then(discordNotificationService).should(times(1))
+				.sendPaymentAnomalyNotification(eq(CANCELLED_ALERT), anyMap()));
+	}
+
+	@Test
+	@DisplayName("첫 결제로 확정된 주문에 두 번째 결제의 웹훅이 오면 예외 없이 끝나고, 결제 행은 첫 결제 하나로 남으며 두 번째 결제는 한 번 취소되고 운영 채널에 알림이 간다")
+	void webhookOfSecondPaymentAfterFirstIsConfirmed() {
+		// given
+		Order confirmed = paymentConfirmService.complete(username, completeRequest(firstPaymentId));
+		assertThat(confirmed.getStatus()).as("준비 단계: 첫 결제로 확정").isEqualTo(OrderStatus.PAID);
+
+		// when
+		paymentWebhookService.processWebhook(paidWebhookBody(secondPaymentId));
+
+		// then
+		assertThat(confirmedPaymentIdInDb()).isEqualTo(firstPaymentId);
+		assertThat(paymentIdsInDb()).as("결제 행").containsExactly(firstPaymentId);
+		assertThat(paymentIdCancelledOnce()).isEqualTo(secondPaymentId);
 		await().atMost(Duration.ofSeconds(5)).untilAsserted(() ->
 			then(discordNotificationService).should(times(1))
 				.sendPaymentAnomalyNotification(eq(CANCELLED_ALERT), anyMap()));
