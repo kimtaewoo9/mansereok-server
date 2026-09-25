@@ -82,6 +82,21 @@ dependencies {
     implementation 'io.micrometer:micrometer-registry-prometheus'
 }
 
+// 기본 test 는 빠르고 외부 준비물이 없는 테스트만 돌린다.
+// 실제 MySQL 에 N 개 스레드로 동시에 붙는 테스트는 @Tag("concurrency") 로 표시하고 concurrencyTest 로 따로 돌린다.
 tasks.named('test') {
-    useJUnitPlatform()
+    useJUnitPlatform {
+        excludeTags 'concurrency'
+    }
+}
+
+tasks.register('concurrencyTest', Test) {
+    description = '로컬 MySQL 에 붙어 동시 요청을 재현하는 테스트(@Tag("concurrency"))만 돌린다.'
+    group = 'verification'
+    testClassesDirs = sourceSets.test.output.classesDirs
+    classpath = sourceSets.test.runtimeClasspath
+    useJUnitPlatform {
+        includeTags 'concurrency'
+    }
+    shouldRunAfter tasks.named('test')
 }
