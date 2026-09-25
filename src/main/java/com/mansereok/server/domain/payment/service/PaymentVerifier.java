@@ -41,13 +41,17 @@ public class PaymentVerifier {
 	 *
 	 * <p>이 검사를 통과한 뒤에는 요청값이 아니라 응답의 결제 ID 를 중복 검사와 Payment.impUid 저장에 쓴다.
 	 *
+	 * <p>응답의 결제 ID 가 없으면 요청값과 상관없이 거부한다. 웹훅 본문에는 payment_id 검증이 없어 요청값이 null 로 올 수
+	 * 있는데, 둘 다 null 인 것을 같은 값으로 보고 통과시키지 않기 위해서다.
+	 *
 	 * @throws PaymentException 응답의 결제 ID 가 없거나 요청한 결제 ID 와 다른 경우
 	 */
 	public void assertPaymentIdMatches(String requestedPaymentId,
 		PortOnePaymentResponse paymentResponse) {
-		if (!Objects.equals(requestedPaymentId, paymentResponse.getId())) {
+		String responsePaymentId = paymentResponse.getId();
+		if (responsePaymentId == null || !responsePaymentId.equals(requestedPaymentId)) {
 			log.warn("결제 정보의 결제 ID 불일치: requestedPaymentId={}, responsePaymentId={}",
-				requestedPaymentId, paymentResponse.getId());
+				requestedPaymentId, responsePaymentId);
 			throw new PaymentException("결제 정보의 결제 ID가 일치하지 않습니다.");
 		}
 	}

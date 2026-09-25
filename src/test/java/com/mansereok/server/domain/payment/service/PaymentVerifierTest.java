@@ -96,6 +96,9 @@ class PaymentVerifierTest {
 		pay_A?x=1      | pay_A
 		pay_a          | pay_A
 		pay_A          | NULL
+		# 웹훅 본문에 payment_id 가 없으면 요청값이 null 로 온다. 둘 다 null 이어도 같은 결제로 보지 않는다.
+		NULL           | NULL
+		NULL           | pay_A
 		""")
 	void assertPaymentIdMatches_different_throws(String requestedPaymentId, String responsePaymentId) {
 		// given

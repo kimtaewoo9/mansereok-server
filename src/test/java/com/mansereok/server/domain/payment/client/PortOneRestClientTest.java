@@ -15,6 +15,7 @@ import static org.springframework.test.web.client.response.MockRestResponseCreat
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withServerError;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mansereok.server.domain.payment.dto.response.PortOnePaymentResponse;
@@ -125,7 +126,7 @@ class PortOneRestClientTest {
 	}
 
 	@Test
-	@DisplayName("응답이 깨진 JSON 이면 'JSON 파싱 실패' 메시지의 PaymentException 을 던진다")
+	@DisplayName("응답이 깨진 JSON 이면 'JSON 파싱 실패' 메시지의 PaymentException 을 던지고 JSON 예외를 원인으로 잇는다")
 	void getPayment_malformedJson_throwsParseFailureMessage() {
 		server.expect(requestTo(PAYMENT_URL))
 			.andExpect(method(HttpMethod.GET))
@@ -133,7 +134,8 @@ class PortOneRestClientTest {
 
 		assertThatThrownBy(() -> client.getPayment(PAYMENT_ID))
 			.isInstanceOf(PaymentException.class)
-			.hasMessage("결제 정보 응답 처리 중 오류 발생 (JSON 파싱 실패)");
+			.hasMessage("결제 정보 응답 처리 중 오류 발생 (JSON 파싱 실패)")
+			.hasCauseInstanceOf(JsonProcessingException.class);
 		server.verify();
 	}
 
@@ -322,7 +324,7 @@ class PortOneRestClientTest {
 	}
 
 	@Test
-	@DisplayName("findPayment 는 404 가 아닌 4xx 면 PaymentException 을 던진다")
+	@DisplayName("findPayment 는 404 가 아닌 4xx 면 '조회 중 오류' 메시지의 PaymentException 을 던지고 HTTP 예외를 원인으로 잇는다")
 	void findPayment_clientError_throwsPaymentException() {
 		server.expect(requestTo(PAYMENT_URL))
 			.andExpect(method(HttpMethod.GET))
@@ -330,7 +332,9 @@ class PortOneRestClientTest {
 
 		assertThatThrownBy(() -> client.findPayment(PAYMENT_ID))
 			.isInstanceOf(PaymentException.class)
-			.isNotInstanceOf(PortOneUnavailableException.class);
+			.isNotInstanceOf(PortOneUnavailableException.class)
+			.hasMessage("결제 정보를 조회하는 중 오류가 발생했습니다.")
+			.hasCauseInstanceOf(HttpClientErrorException.BadRequest.class);
 		server.verify();
 	}
 
@@ -381,6 +385,35 @@ class PortOneRestClientTest {
 		assertThatThrownBy(() -> client.listPaymentsChangedBetween(WINDOW_FROM, WINDOW_UNTIL))
 			.isInstanceOf(PortOneUnavailableException.class)
 			.hasMessage("결제 목록을 조회하는 중 일시적인 오류가 발생했습니다.");
+		server.verify();
+	}
+
+	@Test
+	@DisplayName("결제 목록 조회가 4xx 면 '목록 조회 중 오류' 메시지의 PaymentException 을 던지고 HTTP 예외를 원인으로 잇는다")
+	void listPaymentsChangedBetween_clientError_throwsPaymentExceptionWithCause() {
+		server.expect(requestTo(startsWith(LIST_URL_PREFIX)))
+			.andExpect(method(HttpMethod.GET))
+			.andRespond(withBadRequest());
+
+		assertThatThrownBy(() -> client.listPaymentsChangedBetween(WINDOW_FROM, WINDOW_UNTIL))
+			.isInstanceOf(PaymentException.class)
+			.isNotInstanceOf(PortOneUnavailableException.class)
+			.hasMessage("결제 목록을 조회하는 중 오류가 발생했습니다.")
+			.hasCauseInstanceOf(HttpClientErrorException.BadRequest.class);
+		server.verify();
+	}
+
+	@Test
+	@DisplayName("결제 목록 응답이 깨진 JSON 이면 'JSON 파싱 실패' 메시지의 PaymentException 을 던지고 JSON 예외를 원인으로 잇는다")
+	void listPaymentsChangedBetween_malformedJson_throwsPaymentExceptionWithCause() {
+		server.expect(requestTo(startsWith(LIST_URL_PREFIX)))
+			.andExpect(method(HttpMethod.GET))
+			.andRespond(withSuccess("not-json", MediaType.APPLICATION_JSON));
+
+		assertThatThrownBy(() -> client.listPaymentsChangedBetween(WINDOW_FROM, WINDOW_UNTIL))
+			.isInstanceOf(PaymentException.class)
+			.hasMessage("결제 목록 응답 처리 중 오류 발생 (JSON 파싱 실패)")
+			.hasCauseInstanceOf(JsonProcessingException.class);
 		server.verify();
 	}
 
