@@ -14,7 +14,6 @@ import com.mansereok.server.domain.order.repository.OrderRepository;
 import com.mansereok.server.domain.payment.event.PaymentAnomalyEvent;
 import java.util.EnumSet;
 import java.util.LinkedHashMap;
-import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import org.junit.jupiter.api.DisplayName;
@@ -67,10 +66,9 @@ class OrderDiscountRestorerTest {
 		return order;
 	}
 
-	/** 이 주문 말고 쿠폰을 쥔 다른 주문의 id 를 공유 잠금 읽기로 찾으면 otherHolderIds 가 나온다. */
-	private void givenOtherOrdersHoldingCoupon(Long couponId, Long orderId, Long... otherHolderIds) {
-		given(orderRepository.findIdsByCouponIdAndStatusInAndIdNotForShare(couponId, HOLDING_STATUSES, orderId))
-			.willReturn(List.of(otherHolderIds));
+	private void givenOtherOrderHoldingCoupon(Long couponId, Long orderId, boolean holding) {
+		given(orderRepository.existsByCouponIdAndStatusInAndIdNot(couponId, HOLDING_STATUSES, orderId))
+			.willReturn(holding);
 	}
 
 	@Nested
@@ -81,7 +79,7 @@ class OrderDiscountRestorerTest {
 		@DisplayName("쿠폰을 쓴 주문은 다른 주문이 그 쿠폰을 쥐고 있지 않으면 쿠폰만 복구하고 할인코드는 건드리지 않는다")
 		void restore_couponOrder_restoresCouponOnly() {
 			Order order = createOrder(1L, null, 100L);
-			givenOtherOrdersHoldingCoupon(100L, 1L);
+			givenOtherOrderHoldingCoupon(100L, 1L, false);
 
 			restorer.restore(order);
 
@@ -93,7 +91,7 @@ class OrderDiscountRestorerTest {
 		@DisplayName("쿠폰과 할인코드가 둘 다 있으면 쿠폰만 복구한다")
 		void restore_couponAndCode_prefersCoupon() {
 			Order order = createOrder(2L, "SALE10", 100L);
-			givenOtherOrdersHoldingCoupon(100L, 2L);
+			givenOtherOrderHoldingCoupon(100L, 2L, false);
 
 			restorer.restore(order);
 
@@ -106,7 +104,7 @@ class OrderDiscountRestorerTest {
 		void restore_couponHeldByAnotherActiveOrder_isLeftUsed() {
 			// given: 만료 뒤 늦게 결제된 주문 1 을 환불하는데, 쿠폰 100 은 그사이 주문 9 가 쓰고 있다
 			Order order = createOrder(1L, null, 100L);
-			givenOtherOrdersHoldingCoupon(100L, 1L, 9L);
+			givenOtherOrderHoldingCoupon(100L, 1L, true);
 
 			// when
 			restorer.restore(order);

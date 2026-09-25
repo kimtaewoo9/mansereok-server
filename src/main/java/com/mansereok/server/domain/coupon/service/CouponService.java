@@ -170,9 +170,9 @@ public class CouponService {
 	 * <p>쿠폰 행을 잠가(SELECT ... FOR UPDATE) 가장 최근에 커밋된 상태를 읽는다. 잠그지 않고 읽으면 트랜잭션 스냅샷의 값을 읽고,
 	 * 그사이 다른 트랜잭션이 바꾼 쿠폰을 덮어쓴다.
 	 *
-	 * <p>호출자(OrderDiscountRestorer.restore)는 같은 트랜잭션에서 이 쿠폰을 쥔 다른 주문이 없음을 잠금 읽기로 먼저 확인한다. 그
-	 * 확인이 되돌리기까지 이어지려면 두 잠금이 같은 트랜잭션에 있어야 하므로 {@link Propagation#MANDATORY} 로 진행 중인 트랜잭션이
-	 * 없으면 IllegalTransactionStateException 을 던진다.
+	 * <p>호출자(OrderDiscountRestorer.restore)는 주문 행을 잠그고 주문 상태를 바꾼 트랜잭션 안에서, 이 쿠폰을 쥔 다른 주문이
+	 * 없음을 확인한 뒤 부른다. 주문 상태 변경과 쿠폰 되돌리기가 함께 커밋·롤백되고 쿠폰 행 잠금이 그 트랜잭션 끝까지 남도록
+	 * {@link Propagation#MANDATORY} 로 진행 중인 트랜잭션이 없으면 IllegalTransactionStateException 을 던진다.
 	 *
 	 * @throws PaymentException 쿠폰이 없을 때
 	 */
