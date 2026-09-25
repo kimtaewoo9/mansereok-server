@@ -36,8 +36,9 @@ import org.springframework.transaction.support.TransactionTemplate;
  * 메서드 호출은 프록시를 타지 않아 {@code @Transactional} 로는 단계를 나눌 수 없기 때문이다. 전파 속성은
  * {@code REQUIRES_NEW} 로 고정해, 바깥 트랜잭션 안에서 호출되더라도 세 단계가 한 트랜잭션으로 합쳐지지 않게 한다.
  *
- * <p>잠금 순서는 A·B 모두 결제 행 → 주문 행이다. 순서가 다르면 포트원 취소 직후 도착한 두 번째 환불 요청과
- * 데드락이 날 수 있고, B 가 희생되면 포트원 환불은 끝났는데 DB 는 CANCEL_REQUESTED 로 남는다.
+ * <p>잠금 순서는 A·B 모두 결제 행 → 주문 행 → 결과 행이다. 순서가 다르면 포트원 취소 직후 도착한 두 번째 환불 요청과
+ * 데드락이 날 수 있고, B 가 희생되면 포트원 환불은 끝났는데 DB 는 CANCEL_REQUESTED 로 남는다. 해석 시작
+ * (PaymentEntitlementService#startInterpretation)도 결제 행을 먼저 잠그므로 환불 A 와 해석 시작은 결제 행에서 줄을 선다.
  */
 @Service
 @Slf4j
@@ -154,6 +155,7 @@ public class PaymentRefundService {
 		}
 
 		// 8. 결과 상태 검증 (핵심: 사주 정보를 입력하기 전인가?). 일반 사주(Result)와 궁합(CompatibilityResult) 모두 본다.
+		//    결과 행을 잠가 읽어, 결제 행 잠금을 기다리는 동안 해석 시작이 커밋한 PROCESSING 도 본다.
 		Optional<ResultStatus> resultStatus = resultService.findStatusByPaymentId(payment.getId());
 		if (resultStatus.isEmpty()) {
 			throw new PaymentException("해당 결제에 대한 결과 정보를 찾을 수 없습니다.");
@@ -208,6 +210,7 @@ public class PaymentRefundService {
 		order.markCancelled();
 
 		// 3. 초기 Result 삭제 (정보 입력 전이므로 삭제). 일반 사주·궁합 중 존재하는 쪽을 지운다.
+		//    조건부 DELETE 로 DB 현재 상태를 본다. open-in-view 로 A 에서 읽어 둔 결과 엔티티의 낡은 상태를 보지 않는다.
 		resultService.deleteInitialResult(payment.getId());
 
 		// 4. 쿠폰 또는 할인 코드 복구 (규칙은 OrderDiscountRestorer 가 소유)

@@ -54,13 +54,9 @@ public class ManseryeokController {
 	) {
 		log.info("만세력 해석 요청 username: " + username);
 
-		// 0. 결제 검증: 본인의 결제 완료 건만 해석에 쓸 수 있다
-		// TODO: paymentId 의 상품(subCategoryId)이 경로의 subcategoryId 와 일치하는지도 검사해야 하지만,
-		//       프론트 흐름 확인이 필요해 이번에는 소유권·결제 상태만 본다.
-		paymentEntitlementService.verifyPaidOwnership(request.getPaymentId(), username);
-
-		// 1. 상태 변경 (공통)
-		resultService.updateStatusToProcessing(request.getPaymentId());
+		// 1. 결제 행을 잠근 채 본인의 결제 완료 건이고 결제한 상품이 경로의 상품과 같은지 확인한 뒤 상태 변경
+		paymentEntitlementService.startInterpretation(request.getPaymentId(), username, subcategoryId,
+			resultService::updateStatusToProcessing);
 
 		// 2. 만세력 계산 (공통)
 		ManseryeokCalculationResponse manse = manseCalculationService.calculate(
@@ -110,12 +106,9 @@ public class ManseryeokController {
 		ManseCompatibilityAnalysisRequest.PersonInfo person1 = request.getPerson1();
 		ManseCompatibilityAnalysisRequest.PersonInfo person2 = request.getPerson2();
 
-		// 결제 검증: 본인의 결제 완료 건만 해석에 쓸 수 있다
-		// TODO: paymentId 의 상품(subCategoryId)이 경로의 subcategoryId 와 일치하는지도 검사해야 하지만,
-		//       프론트 흐름 확인이 필요해 이번에는 소유권·결제 상태만 본다.
-		paymentEntitlementService.verifyPaidOwnership(request.getPaymentId(), username);
-
-		resultService.updateCompatibilityStatusToProcessing(request.getPaymentId());
+		// 결제 행을 잠근 채 본인의 결제 완료 건이고 결제한 상품이 경로의 상품과 같은지 확인한 뒤 상태 변경
+		paymentEntitlementService.startInterpretation(request.getPaymentId(), username, subcategoryId,
+			resultService::updateCompatibilityStatusToProcessing);
 
 		ManseryeokCalculationResponse person1Response = manseCalculationService.calculate(
 				new ManseryeokCalculationRequest(
@@ -180,8 +173,9 @@ public class ManseryeokController {
 				)
 			);
 
-		// 3. 상태 변경 INPUT_REQUIRED -> PROCESSING
-		resultService.updateStatusToProcessing(payment.getId());
+		// 3. 상태 변경 INPUT_REQUIRED -> PROCESSING (유료 해석과 같은 결제 확인을 거친다)
+		paymentEntitlementService.startInterpretation(payment.getId(), username, subcategoryId,
+			resultService::updateStatusToProcessing);
 
 		// 4. [비동기] 무료 전용 해석 메서드 호출 (별도 스레드 풀)
 		manseInterpretationService.interpretFree(
@@ -217,8 +211,9 @@ public class ManseryeokController {
 			ManseryeokCalculationRequest.from(request.getPerson2())
 		);
 
-		// 3. 상태 변경
-		resultService.updateCompatibilityStatusToProcessing(payment.getId());
+		// 3. 상태 변경 (유료 해석과 같은 결제 확인을 거친다)
+		paymentEntitlementService.startInterpretation(payment.getId(), username, subcategoryId,
+			resultService::updateCompatibilityStatusToProcessing);
 
 		// 4. [비동기] 무료 궁합 해석 서비스 호출
 		manseInterpretationService.analyzeCompatibilityFree(
