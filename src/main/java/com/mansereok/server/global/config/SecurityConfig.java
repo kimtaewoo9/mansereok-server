@@ -18,7 +18,6 @@ import org.springframework.security.config.annotation.authentication.configurati
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
-import org.springframework.security.config.annotation.web.configurers.HeadersConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -28,7 +27,6 @@ import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
 import org.springframework.security.web.csrf.CsrfToken;
 import org.springframework.security.web.csrf.CsrfTokenRequestAttributeHandler;
 import org.springframework.security.web.csrf.CsrfTokenRequestHandler;
-import org.springframework.util.StringUtils;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
@@ -56,23 +54,21 @@ public class SecurityConfig {
 		);
 
 		http
-//			 CSRF 설정
-
-			// 일단 모두 허용 .
-//			.csrf(csrf -> csrf.disable())
-
-				.csrf(csrf -> csrf
-					.csrfTokenRepository(repo)
-					.csrfTokenRequestHandler(spaCsrfTokenRequestHandler())
-					.ignoringRequestMatchers("/api/payment/webhook",
-						"/member/**",
-						"/api/auth/**",
-						"/swagger-ui/**",
-						"/v3/api-docs/**",
-						"/actuator/**",
-						"/api/v1/manseryeok/calculate"
-					)
+			// CSRF: XSRF-TOKEN 쿠키로 내려준 토큰을 X-XSRF-TOKEN 헤더로 돌려받아야 쓰기 요청이 통과한다.
+			// 아래 경로는 토큰을 확인하지 않는다. 그중 쿠키로 동작하는 재발급·로그아웃·소셜 로그인은 AllowedOriginFilter 가
+			// 요청을 보낸 출처를 대신 확인한다.
+			.csrf(csrf -> csrf
+				.csrfTokenRepository(repo)
+				.csrfTokenRequestHandler(new SpaCsrfTokenRequestHandler())
+				.ignoringRequestMatchers("/api/payment/webhook",
+					"/member/**",
+					"/api/auth/**",
+					"/swagger-ui/**",
+					"/v3/api-docs/**",
+					"/actuator/**",
+					"/api/v1/manseryeok/calculate"
 				)
+			)
 
 			// CORS 설정 적용
 			.cors(cors -> cors.configurationSource(corsConfigurationSource()))
@@ -81,6 +77,8 @@ public class SecurityConfig {
 			.sessionManagement(session ->
 				session.sessionCreationPolicy(SessionCreationPolicy.IF_REQUIRED))
 
+			// 로그인 없이 부를 수 있는 경로와 역할이 필요한 경로는 여기 한 곳에서만 정한다.
+			// JwtAuthenticationFilter 는 경로를 가리지 않고 토큰이 있으면 해석만 한다. 규칙은 SecurityRulesTest 의 표로 고정한다.
 			.authorizeHttpRequests(auth -> auth
 				// 1. 인증 없이 접근 허용 (permitAll)
 				.requestMatchers(HttpMethod.OPTIONS, "/**").permitAll() // CORS Preflight 요청
@@ -94,18 +92,16 @@ public class SecurityConfig {
 				// ProductController: 상품 목록 및 상세 정보 조회 (GET 요청만 허용)
 				.requestMatchers(HttpMethod.GET, "/api/v1/products", "/api/v1/products/{productId}")
 				.permitAll()
-				.requestMatchers(HttpMethod.GET, "/api/v1/reviews").permitAll()
+				// ReviewController: 리뷰 목록과 페이지 단위 목록 조회 (GET 요청만 허용)
+				.requestMatchers(HttpMethod.GET, "/api/v1/reviews", "/api/v1/reviews/pagination")
+				.permitAll()
+				// ManseryeokController: 만세력 계산
+				.requestMatchers("/api/v1/manseryeok/calculate").permitAll()
 				// Swagger UI 접근 (개발/테스트 환경용)
 				.requestMatchers("/swagger-ui/**", "/v3/api-docs/**").permitAll()
-				.requestMatchers(
-					"/api/v1/manseryeok/interpretation/{subcategoryId}/posteller",
-					"/api/v1/manseryeok/compatibility/{subcategoryId}/posteller"
-				).permitAll()
-				.requestMatchers("/api/v1/manseryeok/daeun", "/api/v1/manseryeok/chart",
-					"/api/v1/manseryeok/points").permitAll()
 				.requestMatchers("/actuator/**").permitAll()
-				.requestMatchers("/api/payment/discount").permitAll()
 
+				// 2. 로그인한 회원만 접근 허용 (여기 없는 경로도 4번 기본 규칙에 따라 로그인이 필요하다)
 				// ProfileController: 내 정보 관련 모든 API
 				.requestMatchers("/api/v1/users/me/**").authenticated()
 				// PaymentController: 내 결제 내역, 특정 주문/결제 조회, 주문 생성, 결제 완료 확인
@@ -115,21 +111,23 @@ public class SecurityConfig {
 				.authenticated() // Payment PK로 조회하는 API들
 				.requestMatchers("/api/payment/orders/**").authenticated()
 				.requestMatchers("/api/payment/complete").authenticated()
-				// ManseryeokController: 만세력 계산, 사주/궁합 해석 요청
-				.requestMatchers("/api/v1/manseryeok/calculate").permitAll()
+				// DiscountController: 할인 코드 확인
+				.requestMatchers("/api/payment/discount").authenticated()
+				// ManseryeokController: 사주/궁합 해석 요청
 				.requestMatchers("/api/v1/manseryeok/interpret/**").authenticated()
 
-				// 3. 그 외 모든 요청은 인증 필요 (기본 규칙)
+				// 3. 관리자만 접근 허용
+				// ReviewController: 리뷰 삭제 (ReviewService 도 요청자의 역할을 한 번 더 확인한다)
+				.requestMatchers(HttpMethod.DELETE, "/api/v1/reviews/**")
+				.hasAnyRole("ADMIN", "SUPER_ADMIN")
+
+				// 4. 그 외 모든 요청은 인증 필요 (기본 규칙)
 				.anyRequest().authenticated()
 			)
 			// JWT 인증 예외 처리
 			.exceptionHandling(ex -> ex
 				.authenticationEntryPoint(jwtAuthenticationEntryPoint)
 				.accessDeniedHandler(jwtAccessDeniedHandler))
-
-			// H2 콘솔을 위한 헤더 설정
-			.headers(headers -> headers
-				.frameOptions(HeadersConfigurer.FrameOptionsConfig::disable))
 
 			// 쿠키로 동작하는 재발급·로그아웃·소셜 로그인은 허용 출처가 아니면 CORS 처리 전에 막는다.
 			.addFilterBefore(new AllowedOriginFilter(corsProperties.allowedOrigins()), CorsFilter.class)
@@ -140,15 +138,17 @@ public class SecurityConfig {
 		return http.build();
 	}
 
-	private CsrfTokenRequestHandler spaCsrfTokenRequestHandler() {
-		return new SpaCsrfTokenRequestHandler();
-	}
-
 	/**
-	 * SPA 환경에서 X-XSRF-TOKEN 헤더를 우선 사용하고,
-	 * 그 외 요청은 XOR 토큰 처리도 호환되도록 하는 핸들러.
+	 * CSRF 토큰을 원문 그대로 주고받는 처리기. 프론트엔드가 XSRF-TOKEN 쿠키 값을 읽어 X-XSRF-TOKEN 헤더(또는 _csrf
+	 * 파라미터)에 그대로 담아 보내면 통과한다.
+	 *
+	 * <p>스프링 시큐리티 기본 처리기(XorCsrfTokenRequestAttributeHandler)와 달리 토큰을 XOR 로 가려 내려주지도, 가려진 값을
+	 * 풀지도 않는다. 그래서 XOR 로 가린 토큰을 보내면 쿠키 값과 달라 403 CSRF_FORBIDDEN 이 된다.
+	 *
+	 * <p>CookieCsrfTokenRepository 는 토큰을 처음 꺼낼 때 XSRF-TOKEN 쿠키를 만든다. handle 에서 토큰을 한 번 꺼내 두어, 쿠키가
+	 * 없던 사용자도 첫 응답에서 쿠키를 받게 한다.
 	 */
-	private static final class SpaCsrfTokenRequestHandler implements CsrfTokenRequestHandler {
+	static final class SpaCsrfTokenRequestHandler implements CsrfTokenRequestHandler {
 
 		private final CsrfTokenRequestHandler plainHandler = new CsrfTokenRequestAttributeHandler();
 
@@ -156,16 +156,12 @@ public class SecurityConfig {
 		public void handle(HttpServletRequest request, HttpServletResponse response,
 			Supplier<CsrfToken> csrfToken) {
 			this.plainHandler.handle(request, response, csrfToken);
-			// 토큰 생성을 강제해 쿠키(XSRF-TOKEN)가 안정적으로 내려가게 한다.
+			// 토큰을 꺼내야 저장소가 XSRF-TOKEN 쿠키를 응답에 싣는다.
 			csrfToken.get();
 		}
 
 		@Override
 		public String resolveCsrfTokenValue(HttpServletRequest request, CsrfToken csrfToken) {
-			String tokenFromHeader = request.getHeader(csrfToken.getHeaderName());
-			if (StringUtils.hasText(tokenFromHeader)) {
-				return this.plainHandler.resolveCsrfTokenValue(request, csrfToken);
-			}
 			return this.plainHandler.resolveCsrfTokenValue(request, csrfToken);
 		}
 	}

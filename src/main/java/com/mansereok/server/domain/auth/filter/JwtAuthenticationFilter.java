@@ -17,19 +17,21 @@ import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
-import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.web.authentication.WebAuthenticationDetailsSource;
+import org.springframework.security.web.servlet.util.matcher.PathPatternRequestMatcher;
+import org.springframework.security.web.util.matcher.OrRequestMatcher;
+import org.springframework.security.web.util.matcher.RequestMatcher;
 import org.springframework.stereotype.Component;
-import org.springframework.util.AntPathMatcher;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 @Component
@@ -37,29 +39,19 @@ import org.springframework.web.filter.OncePerRequestFilter;
 @Slf4j
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
+	// 토큰을 해석하지 않고 넘기는 요청. CORS 사전 요청(OPTIONS)과, 회원 로그인과 무관한 운영 경로(actuator)다.
+	// 어느 경로를 로그인 없이 열지는 여기서 정하지 않고 SecurityConfig 한 곳에서만 정한다.
+	private static final RequestMatcher SKIPPED_REQUESTS = new OrRequestMatcher(
+		PathPatternRequestMatcher.withDefaults().matcher(HttpMethod.OPTIONS, "/**"),
+		PathPatternRequestMatcher.withDefaults().matcher("/actuator/**")
+	);
+
 	private final JwtUtil jwtUtil;
 
-	private final AntPathMatcher pathMatcher = new AntPathMatcher();
-
-	private static final List<String> PERMIT_ALL_PATHS = Arrays.asList(
-		"/",
-		"/error",
-		"/favicon.ico",
-		"/member/**",
-		"/api/auth/**",
-		"/swagger-ui/**",
-		"/v3/api-docs/**",
-		"/actuator/health",
-		"/api/payment/webhook",
-		// --- SecurityConfig에 있는 permitAll 경로들 ---
-		"/api/v1/manseryeok/daeun",
-		"/api/v1/manseryeok/chart",
-		"/api/v1/manseryeok/points",
-		"/api/v1/products", // GET이지만 일단 추가
-		"/api/v1/products/{productId}", // GET이지만 일단 추가
-		"/api/v1/manseryeok/interpretation/{subcategoryId}/posteller",
-		"/api/v1/manseryeok/compatibility/{subcategoryId}/posteller"
-	);
+	@Override
+	protected boolean shouldNotFilter(@NonNull HttpServletRequest request) {
+		return SKIPPED_REQUESTS.matches(request);
+	}
 
 	@Override
 	protected void doFilterInternal(
@@ -67,23 +59,8 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 		@NonNull HttpServletResponse response,
 		@NonNull FilterChain filterChain) throws ServletException, IOException {
 
-		String path = request.getRequestURI();
-		String method = request.getMethod();
-
-		if (method.equals("OPTIONS")) {
-			filterChain.doFilter(request, response);
-			return;
-		}
-
-		boolean isPermitAll = PERMIT_ALL_PATHS.stream()
-			.anyMatch(pattern -> pathMatcher.match(pattern, path));
-
-		if (isPermitAll) {
-			filterChain.doFilter(request, response);
-			return;
-		}
-
-		// ⭐ 여기서부터만 예외 처리
+		// 토큰이 없으면 익명으로, 잘못된 토큰이면 예외를 요청 속성에 남기고 익명으로 넘긴다.
+		// 로그인 없이 여는 경로는 그대로 통과하고, 로그인이 필요한 경로는 진입점이 남긴 예외를 보고 401 로 답한다.
 		try {
 			String jwtToken = extractJwtFromtRequest(request);
 
