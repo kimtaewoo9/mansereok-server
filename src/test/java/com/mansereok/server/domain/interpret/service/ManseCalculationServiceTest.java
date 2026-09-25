@@ -432,6 +432,35 @@ class ManseCalculationServiceTest {
 					tuple("입추", LocalDateTime.of(2027, 8, 8, 3, 2), LocalDateTime.of(2027, 9, 8, 5, 53, 59), "戊申"));
 		}
 
+		@ParameterizedTest(name = "[{index}] 지금 {0} → {1}개월, 마지막 달 {2} {3} ~ {4}")
+		@DisplayName("표 끝(2100-12-07 대설)에 가까우면 남은 절입만큼만 월운을 세고, 다음 절입이 없는 마지막 달은 끝을 비운다")
+		@CsvSource(textBlock = """
+			# 지금(서울),        달 수, 마지막 달 절기, 마지막 달 시작,     마지막 달 끝(다음 절입이 없으면 비움)
+			# 대설 2099 부터 대설 2100 까지 절입 13개가 남아 12개월을 모두 채운다
+			2099-12-07T04:15, 12,    입동,          2100-11-07T17:14, 2100-12-07T10:03:59
+			# 소한 2100 부터는 12개만 남아 12번째 달(대설 2100)의 끝이 없다
+			2100-01-05T15:28, 12,    대설,          2100-12-07T10:04,
+			2100-06-01T12:00, 8,     대설,          2100-12-07T10:04,
+			2100-12-31T12:00, 1,     대설,          2100-12-07T10:04,
+			""")
+		void countsOnlyRemainingSeasonsNearEndOfTable(LocalDateTime nowInSeoul, int months, String lastSeason,
+			LocalDateTime lastPeriodStart, LocalDateTime lastPeriodEnd) {
+			// given
+			ManseCalculationService serviceAtNow = serviceWith(realTable,
+				Clock.fixed(nowInSeoul.atZone(SEOUL).toInstant(), SEOUL));
+
+			// when
+			List<MonthlyFortune> monthlyFortunes = serviceAtNow
+				.calculate(solarRequest(LocalDate.of(1998, 9, 2), LocalTime.of(12, 2), "MALE"))
+				.getSaju().getMonthlyFortunes();
+
+			// then
+			assertThat(monthlyFortunes).hasSize(months);
+			assertThat(monthlyFortunes).last()
+				.extracting(MonthlyFortune::getSeason, MonthlyFortune::getPeriodStart, MonthlyFortune::getPeriodEnd)
+				.containsExactly(lastSeason, lastPeriodStart, lastPeriodEnd);
+		}
+
 		@ParameterizedTest(name = "[{index}] 시계 {0} ({1}) → 첫 달 {2}")
 		@DisplayName("월운의 첫 달은 서버 시간대와 상관없이 서울 시각으로 절입 시각에 이른 절기다(한로 2026-10-08 15:41)")
 		@CsvSource(textBlock = """
