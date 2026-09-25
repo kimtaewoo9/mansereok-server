@@ -1,7 +1,7 @@
 package com.mansereok.server.support.fixture;
 
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.withSettings;
 
 import com.mansereok.server.domain.interpret.entity.Manse;
@@ -14,6 +14,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -23,7 +24,9 @@ import java.util.NavigableMap;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.TreeMap;
+import org.mockito.Answers;
 import org.mockito.Mockito;
+import org.mockito.invocation.InvocationOnMock;
 import org.mockito.quality.Strictness;
 import org.springframework.beans.BeanUtils;
 import org.springframework.core.io.ClassPathResource;
@@ -32,8 +35,11 @@ import org.springframework.core.io.ClassPathResource;
  * 만세력 표(manses)를 메모리에 올려, 목 ManseRepository 의 조회 메서드가 DB 대신 이 표로 답하게 한다.
  *
  * <p>{@link #realTable()} 은 운영 DB 에 넣는 실데이터 src/main/resources/data/manses.sql(약 9MB, 73,414행)을 JVM 에서 처음
- * 부를 때 한 번만 읽고, 그 뒤로는 같은 색인을 돌려준다. 표는 읽기 전용이라 테스트끼리 나눠 써도 값이 섞이지 않는다.
- * {@link #of(Manse...)} 는 손으로 만든 몇 행으로 같은 모양의 표를 만든다.
+ * 부를 때 한 번만 읽고, 그 뒤로는 같은 색인을 돌려준다. {@link #of(Manse...)} 는 손으로 만든 몇 행으로 같은 모양의 표를 만든다.
+ *
+ * <p>Manse 는 setter 로 값을 바꿀 수 있는 엔티티라, 표는 들고 있는 행을 밖으로 그대로 내주지 않는다. 목 저장소의 조회 답과
+ * {@link #rows()} 는 모두 행의 복사본이고, {@link #of(Manse...)} 도 받은 행을 복사해 둔다. 그래서 테스트가 돌려받은 행을 바꿔도
+ * 표와 같은 JVM 의 다른 테스트에는 번지지 않는다.
  *
  * <p>DB 와 같은 답을 내도록 다음을 맞춘다.
  * <ul>
@@ -44,7 +50,7 @@ import org.springframework.core.io.ClassPathResource;
  * </ul>
  *
  * <p>Manse 는 생성자가 protected 라 리플렉션이 필요한데, 그 우회를 이 클래스 한 곳에만 둔다. 손으로 만든 행이 필요한 테스트도
- * {@link #manse} 를 쓴다.
+ * {@link ManseRow} 를 쓴다.
  */
 public final class ManseTableFixture {
 
@@ -85,64 +91,63 @@ public final class ManseTableFixture {
 	}
 
 	/**
-	 * 손으로 만든 행으로 만든 표. 절입 경계 몇 개만으로 월운처럼 여러 번 조회하는 계산을 확인할 때 쓴다.
+	 * 손으로 만든 행으로 만든 표. 절입 경계 몇 개만으로 월운처럼 여러 번 조회하는 계산을 확인할 때 쓴다. 받은 행은 복사해 두므로
+	 * 표를 만든 뒤 테스트가 그 행을 바꿔도 표에는 번지지 않는다.
 	 */
 	public static ManseTableFixture of(Manse... rows) {
-		return new ManseTableFixture(List.of(rows));
+		return new ManseTableFixture(Arrays.stream(rows).map(ManseTableFixture::copyOf).toList());
 	}
 
 	/**
-	 * 손으로 만든 만세력 한 행. 음력 날짜는 양력 날짜와 같게 두고 윤달이 아닌 것으로 둔다.
-	 *
-	 * @param season 절기 이름. 절입일이 아니면 null
-	 * @param seasonStartTime 절입 시각. 절입일이 아니면 null
+	 * 표의 모든 행의 복사본. 실데이터는 덤프에 적힌 순서(양력 날짜 순)다. 부를 때마다 모든 행을 복사하므로 테스트에서는 한 번 받아
+	 * 쓴다.
 	 */
-	public static Manse manse(LocalDate solarDate, String yearSky, String yearGround, String monthSky,
-		String monthGround, String daySky, String dayGround, String season, LocalDateTime seasonStartTime) {
-		Manse manse = BeanUtils.instantiateClass(Manse.class);
-		manse.setSolarDate(solarDate);
-		manse.setLunarDate(solarDate);
-		manse.setLeapMonth(false);
-		manse.setYearSky(yearSky);
-		manse.setYearGround(yearGround);
-		manse.setMonthSky(monthSky);
-		manse.setMonthGround(monthGround);
-		manse.setDaySky(daySky);
-		manse.setDayGround(dayGround);
-		manse.setSeason(season);
-		manse.setSeasonStartTime(seasonStartTime);
-		return manse;
-	}
-
-	/** 표의 모든 행. 실데이터는 덤프에 적힌 순서(양력 날짜 순)다. */
 	public List<Manse> rows() {
-		return rows;
+		return rows.stream().map(ManseTableFixture::copyOf).toList();
 	}
 
 	/**
 	 * 만세력 계산이 쓰는 조회 메서드 여섯 개가 이 표로 답하는 새 목 저장소. 부를 때마다 새 목을 만들어 테스트끼리 호출 기록이
-	 * 섞이지 않는다.
+	 * 섞이지 않는다. 조회 답은 행의 복사본이다.
 	 *
 	 * <p>이 목은 쓰지 않는 스텁을 실패로 보는 검사(strict stubs)를 끈다. 표 전체를 흉내 내는 스텁이라 테스트마다 부르는 조회가
 	 * 다르기 때문이다(양력으로 입력하면 음력 조회를 부르지 않는다). 인자가 틀리면 표가 다른 행을 돌려주므로 계산 결과 단언에서
 	 * 드러난다.
+	 *
+	 * <p>여섯 개 밖의 메서드(findByLunarDate, findAllBySeason, findById, findAll 등)를 부르면 Mockito 기본값(빈 Optional, 빈
+	 * 목록, null)을 조용히 돌려주지 않고, 메서드 이름을 담은 UnsupportedOperationException 을 던진다. 서비스가 다른 조회를 쓰게
+	 * 되면 "데이터를 찾을 수 없습니다" 같은 엉뚱한 실패 대신 이 목에 그 조회의 답이 없다는 사실이 드러난다. 기본 답이 예외라서
+	 * when(목.조회(...)) 대신 doAnswer(...).when(목).조회(...) 로 스텁한다.
 	 */
 	public ManseRepository newRepository() {
 		ManseRepository repository = Mockito.mock(ManseRepository.class,
-			withSettings().strictness(Strictness.LENIENT));
-		when(repository.findBySolarDate(any()))
-			.thenAnswer(call -> Optional.ofNullable(bySolarDate.get(call.<LocalDate>getArgument(0))));
-		when(repository.findAllByLunarDateOrderBySolarDateAsc(any()))
-			.thenAnswer(call -> List.copyOf(lunarRows(call.getArgument(0))));
-		when(repository.findByLunarDateAndLeapMonth(any(), any()))
-			.thenAnswer(call -> findByLunarDateAndLeapMonth(call.getArgument(0), call.getArgument(1)));
-		when(repository.findFirstBySeasonStartTimeGreaterThanEqualOrderBySeasonStartTimeAsc(any()))
-			.thenAnswer(call -> valueOf(bySeasonStartTime.ceilingEntry(call.getArgument(0))));
-		when(repository.findFirstBySeasonStartTimeGreaterThanOrderBySeasonStartTimeAsc(any()))
-			.thenAnswer(call -> valueOf(bySeasonStartTime.higherEntry(call.getArgument(0))));
-		when(repository.findFirstBySeasonStartTimeLessThanEqualOrderBySeasonStartTimeDesc(any()))
-			.thenAnswer(call -> valueOf(bySeasonStartTime.floorEntry(call.getArgument(0))));
+			withSettings().strictness(Strictness.LENIENT).defaultAnswer(ManseTableFixture::rejectUnmodeledCall));
+		doAnswer(call -> Optional.ofNullable(bySolarDate.get(call.<LocalDate>getArgument(0)))
+			.map(ManseTableFixture::copyOf))
+			.when(repository).findBySolarDate(any());
+		doAnswer(call -> lunarRows(call.getArgument(0)).stream().map(ManseTableFixture::copyOf).toList())
+			.when(repository).findAllByLunarDateOrderBySolarDateAsc(any());
+		doAnswer(call -> findByLunarDateAndLeapMonth(call.getArgument(0), call.getArgument(1)))
+			.when(repository).findByLunarDateAndLeapMonth(any(), any());
+		doAnswer(call -> valueCopyOf(bySeasonStartTime.ceilingEntry(call.getArgument(0))))
+			.when(repository).findFirstBySeasonStartTimeGreaterThanEqualOrderBySeasonStartTimeAsc(any());
+		doAnswer(call -> valueCopyOf(bySeasonStartTime.higherEntry(call.getArgument(0))))
+			.when(repository).findFirstBySeasonStartTimeGreaterThanOrderBySeasonStartTimeAsc(any());
+		doAnswer(call -> valueCopyOf(bySeasonStartTime.floorEntry(call.getArgument(0))))
+			.when(repository).findFirstBySeasonStartTimeLessThanEqualOrderBySeasonStartTimeDesc(any());
 		return repository;
+	}
+
+	/**
+	 * 흉내 내지 않는 조회를 막는 기본 답. toString 같은 Object 메서드는 Mockito 기본값을 그대로 써서, 디버거나 오류 메시지가 목을
+	 * 글자로 바꿀 때 실패하지 않게 한다.
+	 */
+	private static Object rejectUnmodeledCall(InvocationOnMock call) throws Throwable {
+		if (call.getMethod().getDeclaringClass() == Object.class) {
+			return Answers.RETURNS_DEFAULTS.answer(call);
+		}
+		throw new UnsupportedOperationException("ManseTableFixture 의 목 저장소는 " + call.getMethod().getName()
+			+ " 를 흉내 내지 않는다. 서비스가 이 조회를 쓰게 됐다면 newRepository() 에 답을 더한다");
 	}
 
 	private List<Manse> lunarRows(LocalDate lunarDate) {
@@ -160,11 +165,23 @@ public final class ManseTableFixture {
 			throw new IllegalStateException("음력 " + lunarDate + ", 윤달 " + leapMonth + " 에 맞는 행이 "
 				+ matches.size() + "개다");
 		}
-		return matches.stream().findFirst();
+		return matches.stream().findFirst().map(ManseTableFixture::copyOf);
 	}
 
-	private static Optional<Manse> valueOf(Map.Entry<LocalDateTime, Manse> entry) {
-		return entry == null ? Optional.empty() : Optional.of(entry.getValue());
+	private static Optional<Manse> valueCopyOf(Map.Entry<LocalDateTime, Manse> entry) {
+		return entry == null ? Optional.empty() : Optional.of(copyOf(entry.getValue()));
+	}
+
+	/** 표 밖으로 내보내거나 표에 넣을 행의 복사본. 모든 필드를 getter·setter 로 옮긴다. */
+	private static Manse copyOf(Manse row) {
+		Manse copy = newManse();
+		BeanUtils.copyProperties(row, copy);
+		return copy;
+	}
+
+	/** Manse 의 protected 생성자를 리플렉션으로 부른다. 이 우회는 이 클래스에만 둔다. */
+	private static Manse newManse() {
+		return BeanUtils.instantiateClass(Manse.class);
 	}
 
 	private static <K> void putOnce(Map<K, Manse> index, K key, Manse row, String keyName) {
@@ -196,7 +213,7 @@ public final class ManseTableFixture {
 
 	/**
 	 * {@code (값,...),(값,...);} 를 문장 끝(;)까지 읽어 행으로 바꾸고, 문장 끝 다음 위치를 돌려준다. 작은따옴표 안의 쉼표·괄호는
-	 * 글자로 보고, 백슬래시 이스케이프는 MySQL 덤프 형식대로 읽는다.
+	 * 글자로 본다. 따옴표 안의 백슬래시는 다음 글자를 그대로 쓴다(\n 을 줄바꿈으로 풀지 않는다. 이 덤프에는 백슬래시가 없다).
 	 */
 	private static int parseRows(String dump, int from, List<Manse> rows) {
 		int position = from;
@@ -259,7 +276,7 @@ public final class ManseTableFixture {
 		if (values.size() != COLUMN_COUNT) {
 			throw new IllegalStateException("manses 행의 값이 " + COLUMN_COUNT + "개가 아니다: " + values);
 		}
-		Manse manse = BeanUtils.instantiateClass(Manse.class);
+		Manse manse = newManse();
 		manse.setId(Long.valueOf(values.get(0)));
 		manse.setSolarDate(LocalDate.parse(values.get(1)));
 		manse.setLunarDate(toDate(values.get(2)));
@@ -289,5 +306,78 @@ public final class ManseTableFixture {
 	private static final class RealTableHolder {
 
 		private static final ManseTableFixture TABLE = loadRealTable();
+	}
+
+	/**
+	 * 손으로 만든 만세력 한 행을 만든다. 테스트는 결과를 좌우하는 기둥과 절입만 바꾸고 나머지는 기본값을 쓴다.
+	 *
+	 * <p>기본값은 연주 甲子, 월주 丙子, 일주 甲子, 절입 없음, 윤달 아님이고, 음력 날짜는 양력 날짜와 같게 둔다. 호출할 때마다 새
+	 * 빌더를 돌려주므로 테스트끼리 값이 섞이지 않는다. 쓰는 쪽은 아래처럼 쓴다.
+	 * <pre>
+	 * ManseRow.on(LocalDate.of(2026, 9, 25)).monthPillar("丙", "寅")
+	 * 	.season("입춘", LocalDateTime.of(2026, 9, 25, 12, 0)).build()
+	 * </pre>
+	 */
+	public static final class ManseRow {
+
+		private final LocalDate solarDate;
+		private String yearSky = "甲";
+		private String yearGround = "子";
+		private String monthSky = "丙";
+		private String monthGround = "子";
+		private String daySky = "甲";
+		private String dayGround = "子";
+		private String season;
+		private LocalDateTime seasonStartTime;
+
+		private ManseRow(LocalDate solarDate) {
+			this.solarDate = solarDate;
+		}
+
+		/** 양력 날짜가 solarDate 인 행. */
+		public static ManseRow on(LocalDate solarDate) {
+			return new ManseRow(solarDate);
+		}
+
+		public ManseRow yearPillar(String sky, String ground) {
+			this.yearSky = sky;
+			this.yearGround = ground;
+			return this;
+		}
+
+		public ManseRow monthPillar(String sky, String ground) {
+			this.monthSky = sky;
+			this.monthGround = ground;
+			return this;
+		}
+
+		public ManseRow dayPillar(String sky, String ground) {
+			this.daySky = sky;
+			this.dayGround = ground;
+			return this;
+		}
+
+		/** 이 날이 절입일이면 절기 이름과 절입 시각을 둔다. */
+		public ManseRow season(String name, LocalDateTime startTime) {
+			this.season = name;
+			this.seasonStartTime = startTime;
+			return this;
+		}
+
+		public Manse build() {
+			Manse manse = newManse();
+			manse.setSolarDate(solarDate);
+			manse.setLunarDate(solarDate);
+			manse.setLeapMonth(false);
+			manse.setYearSky(yearSky);
+			manse.setYearGround(yearGround);
+			manse.setMonthSky(monthSky);
+			manse.setMonthGround(monthGround);
+			manse.setDaySky(daySky);
+			manse.setDayGround(dayGround);
+			manse.setSeason(season);
+			manse.setSeasonStartTime(seasonStartTime);
+			return manse;
+		}
 	}
 }

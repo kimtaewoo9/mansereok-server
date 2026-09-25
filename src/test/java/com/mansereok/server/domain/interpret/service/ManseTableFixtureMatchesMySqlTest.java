@@ -36,21 +36,27 @@ import org.springframework.beans.factory.annotation.Autowired;
  * <p>manses 기초 데이터가 없는 DB(1000행 미만)에서는 건너뛴다. 로컬 테스트 DB 에 데이터를 넣을 때는 컬럼 목록을 붙여 넣는다.
  * ddl-auto 가 만든 manses 는 컬럼이 알파벳 순서라, 컬럼 목록 없는 덤프(INSERT INTO `manses` VALUES ...)를 그대로 넣으면 값이
  * 엉뚱한 컬럼에 들어간다.
+ *
+ * <p>다시 넣는 방법은 아래 두 단계다. 덤프에는 TRUNCATE·DROP·CREATE 문이 없어서, 행이 이미 있는 표에 바로 넣으면 id 1 에서
+ * PRIMARY KEY 중복 오류(1062)가 난다. 그래서 먼저 비운다. 비우는 일은 로컬 테스트 스키마(127.0.0.1:3307 의
+ * mansereok_test_* 같은 곳)에서만 한다. 운영 DB 에서는 하지 않는다.
  * <pre>
+ * mysql -h127.0.0.1 -P3307 -uroot -proot 스키마이름 -e 'TRUNCATE TABLE manses'
  * sed 's/INSERT INTO `manses` VALUES /INSERT INTO `manses` (`id`,`solar_date`,`lunar_date`,`season`,`season_start_time`,
  * `leap_month`,`year_sky`,`year_ground`,`month_sky`,`month_ground`,`day_sky`,`day_ground`,`created_at`,`updated_at`) VALUES /'
  * src/main/resources/data/manses.sql | mysql -h127.0.0.1 -P3307 -uroot -proot 스키마이름
  * </pre>
  * (sed 인자는 한 줄로 붙여 쓴다)
  */
-class ManseBaselineMySqlTest extends InterpretationMySqlTest {
+class ManseTableFixtureMatchesMySqlTest extends InterpretationMySqlTest {
 
 	private static final int MIN_MANSE_ROWS = 1000;
 	// 2026-09-26 12:00 (서울). 대표 사주 표와 같은 시각이다.
 	private static final Clock FIXED_CLOCK = Clock.fixed(Instant.parse("2026-09-26T03:00:00Z"),
 		ZoneId.of("Asia/Seoul"));
-	private static final String RELOAD_HINT = "manses 의 값이 덤프와 다른 컬럼에 들어 있다. 컬럼 목록 없이 덤프를 넣었는지 확인하고, "
-		+ "이 클래스 설명의 방법으로 다시 넣는다";
+	private static final String RELOAD_HINT = "manses 의 1993-06-06 행이 덤프와 다르다(값이 다른 컬럼에 들어 있을 수 있다). "
+		+ "컬럼 목록 없이 덤프를 넣었는지 확인한다. 로컬 테스트 스키마에서만 TRUNCATE TABLE manses 로 먼저 비운 뒤, "
+		+ "ManseTableFixtureMatchesMySqlTest 클래스 설명의 sed 명령으로 다시 넣는다";
 
 	@Autowired
 	private ManseRepository manseRepository;
@@ -59,9 +65,9 @@ class ManseBaselineMySqlTest extends InterpretationMySqlTest {
 	void requireManseData() {
 		Integer rowCount = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM manses", Integer.class);
 		assumeThat(rowCount).as("manses 기초 데이터가 없어 건너뛴다").isGreaterThanOrEqualTo(MIN_MANSE_ROWS);
-		assertThat(manseRepository.findBySolarDate(LocalDate.of(1993, 6, 6)))
+		// AssertJ 의 Optional 단언에서 map 은 설명(as)을 버린 새 단언을 만든다. 그래서 map 은 단언 밖에서 한다.
+		assertThat(manseRepository.findBySolarDate(LocalDate.of(1993, 6, 6)).map(Manse::getSeasonStartTime))
 			.as(RELOAD_HINT)
-			.map(Manse::getSeasonStartTime)
 			.hasValue(LocalDateTime.of(1993, 6, 6, 1, 12));
 	}
 

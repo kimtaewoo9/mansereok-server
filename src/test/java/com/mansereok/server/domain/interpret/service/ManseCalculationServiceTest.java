@@ -1,6 +1,5 @@
 package com.mansereok.server.domain.interpret.service;
 
-import static com.mansereok.server.support.fixture.ManseTableFixture.manse;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.tuple;
@@ -21,6 +20,7 @@ import com.mansereok.server.domain.interpret.dto.response.ManseryeokCalculationR
 import com.mansereok.server.domain.interpret.entity.Manse;
 import com.mansereok.server.domain.interpret.repository.ManseRepository;
 import com.mansereok.server.support.fixture.ManseTableFixture;
+import com.mansereok.server.support.fixture.ManseTableFixture.ManseRow;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -45,7 +45,9 @@ import org.mockito.junit.jupiter.MockitoExtension;
  * <p>두 묶음으로 나눈다.
  * <ul>
  *   <li>손으로 만든 행: 조회 인자를 정확한 값으로 스텁한다. 코드가 다른 조회 메서드나 다른 시각으로 조회하면 MockitoExtension 의
- *   strict stubs 가 테스트를 실패시킨다. 대운 순행은 절입 시각과 같은 시각을 빼는 GreaterThan 조회를 쓴다.</li>
+ *   strict stubs 가 테스트를 실패시킨다. 대운 순행은 절입 시각과 같은 시각을 빼는 GreaterThan 조회를 쓴다. 이 행들의 간지와
+ *   절입 시각은 조회 경로를 보려고 지어낸 값이라 같은 날짜의 실데이터와 다르다(예: 1990-01-01 의 연주는 실데이터로 己巳 인데 여기서는
+ *   庚午 로 둔다).</li>
  *   <li>실데이터: 운영 DB 에 넣는 manses.sql 을 {@link ManseTableFixture} 로 읽어 대표 사주를 계산하고, 지금 코드가 내는 값을 그대로
  *   고정한다. 뒤 정리 PR 이 계산 결과를 바꾸면 이 표가 실패한다. 기대값은 외부 만세력과 대조한 값이 아니라 지금 출력이므로, 틀린
  *   계산도 함께 고정돼 있을 수 있다.</li>
@@ -90,6 +92,10 @@ class ManseCalculationServiceTest {
 		return element == null ? "-" : element.getChinese();
 	}
 
+	/**
+	 * 간지와 절입 시각은 조회 경로를 보려고 지어낸 값이며 실데이터와 다르다. 실데이터로 본 같은 날짜의 결과는 {@link WithRealTable}
+	 * 에 있다.
+	 */
 	@Nested
 	@DisplayName("손으로 만든 행으로 계산하면")
 	class WithHandMadeRows {
@@ -109,11 +115,11 @@ class ManseCalculationServiceTest {
 		void shouldSkipTimePillarWhenSolarTimeIsMissing() {
 			// given
 			LocalDate birthDate = LocalDate.of(1990, 1, 1);
-			Manse nextSeason = manse(LocalDate.of(1990, 1, 4), "庚", "午", "戊", "子", "丁", "卯", "소한",
-				LocalDateTime.of(1990, 1, 4, 0, 0));
+			Manse nextSeason = ManseRow.on(LocalDate.of(1990, 1, 4))
+				.season("소한", LocalDateTime.of(1990, 1, 4, 0, 0)).build();
 			given(manseRepository.findBySolarDate(birthDate))
-				.willReturn(Optional.of(manse(birthDate, "庚", "午", "戊", "子", "甲", "子", null, null)));
-			// 시간을 모르면 그날 00:00:00 과 23:59:59 두 시각으로 다음 절입을 찾는다(庚 양간 남자라 순행)
+				.willReturn(Optional.of(ManseRow.on(birthDate).yearPillar("庚", "午").build()));
+			// 시간을 모르면 그날 00:00:00 과 23:59:59 두 시각으로 다음 절입을 찾는다(연간을 庚 양간으로 지어 두어 남자라 순행)
 			given(manseRepository.findFirstBySeasonStartTimeGreaterThanOrderBySeasonStartTimeAsc(
 				LocalDateTime.of(1990, 1, 1, 0, 0))).willReturn(Optional.of(nextSeason));
 			given(manseRepository.findFirstBySeasonStartTimeGreaterThanOrderBySeasonStartTimeAsc(
@@ -140,13 +146,13 @@ class ManseCalculationServiceTest {
 			LocalDate lunarDate = LocalDate.of(1990, 1, 1);
 			LocalDate civilSolarDate = LocalDate.of(1990, 1, 27);
 			given(manseRepository.findAllByLunarDateOrderBySolarDateAsc(lunarDate)).willReturn(List.of(
-				manse(civilSolarDate, "庚", "午", "己", "丑", "甲", "子", null, null)));
+				ManseRow.on(civilSolarDate).yearPillar("庚", "午").monthPillar("己", "丑").dayPillar("甲", "子").build()));
+			// 다음 날 행은 일주만 바꾼다. 연주·월주를 이 행에서 읽으면 기본값(甲子 丙子)이 나와 실패한다.
 			given(manseRepository.findBySolarDate(civilSolarDate.plusDays(1))).willReturn(Optional.of(
-				manse(civilSolarDate.plusDays(1), "庚", "午", "己", "丑", "乙", "丑", null, null)));
+				ManseRow.on(civilSolarDate.plusDays(1)).dayPillar("乙", "丑").build()));
 			given(manseRepository.findFirstBySeasonStartTimeGreaterThanOrderBySeasonStartTimeAsc(
 				LocalDateTime.of(civilSolarDate, LocalTime.of(23, 40)))).willReturn(Optional.of(
-				manse(LocalDate.of(1990, 1, 31), "庚", "午", "庚", "寅", "戊", "午", "입춘",
-					LocalDateTime.of(1990, 1, 31, 0, 0))));
+				ManseRow.on(LocalDate.of(1990, 1, 31)).season("입춘", LocalDateTime.of(1990, 1, 31, 0, 0)).build()));
 			ManseryeokCalculationRequest request = new ManseryeokCalculationRequest("테스트", lunarDate,
 				LocalTime.of(23, 40), "MALE", true, false);
 
@@ -162,12 +168,11 @@ class ManseCalculationServiceTest {
 		void shouldReturnExpandedGwiinForReportedCase() {
 			// given
 			LocalDate birthDate = LocalDate.of(1998, 9, 2);
-			given(manseRepository.findBySolarDate(birthDate))
-				.willReturn(Optional.of(manse(birthDate, "戊", "寅", "庚", "申", "壬", "子", null, null)));
+			given(manseRepository.findBySolarDate(birthDate)).willReturn(Optional.of(
+				ManseRow.on(birthDate).yearPillar("戊", "寅").monthPillar("庚", "申").dayPillar("壬", "子").build()));
 			given(manseRepository.findFirstBySeasonStartTimeGreaterThanOrderBySeasonStartTimeAsc(
 				LocalDateTime.of(1998, 9, 2, 12, 2))).willReturn(Optional.of(
-				manse(LocalDate.of(1998, 9, 7), "戊", "寅", "辛", "酉", "丁", "巳", "백로",
-					LocalDateTime.of(1998, 9, 7, 0, 0))));
+				ManseRow.on(LocalDate.of(1998, 9, 7)).season("백로", LocalDateTime.of(1998, 9, 7, 0, 0)).build()));
 
 			// when
 			SajuInfo saju = service.calculate(solarRequest(birthDate, LocalTime.of(12, 2), "MALE")).getSaju();
@@ -177,17 +182,21 @@ class ManseCalculationServiceTest {
 			assertThat(saju.getSinsalInfo().get("일주")).contains("월덕귀인");
 		}
 
+		/**
+		 * 제보 사례. 이 테스트의 원래 기대값은 대운수 2, 대운 시작 1995년이었다. fdd4ac2(대운수 경계값, 절입 정각 수정)가 절입까지
+		 * 4일 미만이면 나머지 보정 없이 대운수 1 로 바로 돌려주게 바꾼 뒤로는 1, 1994년이 나온다. 바뀐 값이 맞는지는 아직 도메인
+		 * 담당자에게 확인받지 않았다.
+		 */
 		@Test
 		@DisplayName("1993-06-03 10:30 여자(癸 음간, 순행)는 망종(06-06 01:12)까지 4일 미만(2일 14시간)이라 대운수 1, 대운 시작 1994년이다")
 		void shouldCalculateExpectedBigFortuneForFemale19930603Case() {
 			// given
 			LocalDate birthDate = LocalDate.of(1993, 6, 3);
 			given(manseRepository.findBySolarDate(birthDate))
-				.willReturn(Optional.of(manse(birthDate, "癸", "酉", "丁", "巳", "乙", "卯", null, null)));
+				.willReturn(Optional.of(ManseRow.on(birthDate).yearPillar("癸", "酉").build()));
 			given(manseRepository.findFirstBySeasonStartTimeGreaterThanOrderBySeasonStartTimeAsc(
 				LocalDateTime.of(1993, 6, 3, 10, 30))).willReturn(Optional.of(
-				manse(LocalDate.of(1993, 6, 6), "癸", "酉", "戊", "午", "戊", "午", "망종",
-					LocalDateTime.of(1993, 6, 6, 1, 12))));
+				ManseRow.on(LocalDate.of(1993, 6, 6)).season("망종", LocalDateTime.of(1993, 6, 6, 1, 12)).build()));
 
 			// when
 			SajuInfo saju = service.calculate(solarRequest(birthDate, LocalTime.of(10, 30), "FEMALE"))
@@ -204,13 +213,13 @@ class ManseCalculationServiceTest {
 			// given: 지금(2026-09-26 12:00)보다 앞선 절입 하나와 뒤의 절입 둘만 있는 표
 			LocalDate birthDate = LocalDate.of(2026, 9, 24);
 			ManseRepository threeBoundaries = ManseTableFixture.of(
-				manse(birthDate, "甲", "子", "乙", "丑", "甲", "子", null, null),
-				manse(LocalDate.of(2026, 9, 25), "甲", "子", "丙", "寅", "乙", "丑", "입춘",
-					LocalDateTime.of(2026, 9, 25, 12, 0)),
-				manse(LocalDate.of(2026, 10, 25), "甲", "子", "丁", "卯", "丙", "寅", "경칩",
-					LocalDateTime.of(2026, 10, 25, 12, 0)),
-				manse(LocalDate.of(2026, 11, 24), "甲", "子", "戊", "辰", "丁", "卯", "청명",
-					LocalDateTime.of(2026, 11, 24, 12, 0))
+				ManseRow.on(birthDate).build(),
+				ManseRow.on(LocalDate.of(2026, 9, 25)).monthPillar("丙", "寅")
+					.season("입춘", LocalDateTime.of(2026, 9, 25, 12, 0)).build(),
+				ManseRow.on(LocalDate.of(2026, 10, 25)).monthPillar("丁", "卯")
+					.season("경칩", LocalDateTime.of(2026, 10, 25, 12, 0)).build(),
+				ManseRow.on(LocalDate.of(2026, 11, 24)).monthPillar("戊", "辰")
+					.season("청명", LocalDateTime.of(2026, 11, 24, 12, 0)).build()
 			).newRepository();
 
 			// when
@@ -252,6 +261,7 @@ class ManseCalculationServiceTest {
 			음력 윤달 여부를 비우면 평달로 본다                       | true  | 2020-04-15 | 12:00 |       | MALE   | 庚子 辛巳 庚戌 壬午 | 10     | 2030
 			戊 양간 해 남자는 순행(백로 1998-09-08 05:13 까지 5일)     | false | 1998-09-02 | 12:02 |       | MALE   | 戊寅 庚申 壬子 丙午 | 2      | 2000
 			戊 양간 해 여자는 역행(입추 1998-08-08 02:21 부터 25일)    | false | 1998-09-02 | 12:02 |       | FEMALE | 戊寅 庚申 壬子 丙午 | 8      | 2006
+			# 제보 사례의 원래 기대값은 대운수 2, 시작 1995 였다. fdd4ac2 의 "4일 미만이면 대운수 1" 이후 값이며 도메인 담당자 확인 전이다
 			癸 음간 해 여자는 순행(망종까지 2일, 제보 사례)            | false | 1993-06-03 | 10:30 |       | FEMALE | 癸酉 丁巳 乙卯 辛巳 | 1      | 1994
 			癸 음간 해 남자는 역행(입하 1993-05-05 20:59 부터 28일)    | false | 1993-06-03 | 10:30 |       | MALE   | 癸酉 丁巳 乙卯 辛巳 | 9      | 2002
 			표 첫날 1900-01-01 여자(순행, 소한 1900-01-06 까지 4일)   | false | 1900-01-01 | 12:00 |       | FEMALE | 己亥 丙子 甲戌 庚午 | 1      | 1901
