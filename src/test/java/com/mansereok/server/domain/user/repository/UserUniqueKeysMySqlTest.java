@@ -29,6 +29,10 @@ import org.springframework.dao.DataIntegrityViolationException;
  * 적용한다. 그래서 여기서 보는 이름과 컬럼 순서가 운영에 적용할 DDL 과 schema.sql 의 기준이 된다. schema.sql 과 엔티티가 같은
  * 이름을 쓰는지는 AuthSchemaSqlTest 가 DB 없이 본다.
  *
+ * <p>update 는 없는 이름만 만든다. 엔티티에서 지운 이름은 테스트 DB 에 그대로 남고, 같은 이름의 컬럼 구성을 바꿔도 다시 만들지
+ * 않는다. 그래서 이 테스트는 "선언한 이름이 그 컬럼 순서로 있다" 만 보고, 이름을 바꾸거나 지웠을 때 테스트 DB 를 고치는 것은 사람이
+ * 한다.
+ *
  * <p>모든 행은 이번 실행의 runId 를 username 끝에 넣어 만들고, 뒤 정리에서 그 행만 지운다.
  */
 class UserUniqueKeysMySqlTest extends LocalMySqlTest {
@@ -71,9 +75,11 @@ class UserUniqueKeysMySqlTest extends LocalMySqlTest {
 		// then
 		assertThat(rows)
 			.as("%s 에 %s 가 없다. 엔티티 @Table 선언이 있는데도 없다면, 표에 중복 행이 있어 ddl-auto: update 가 UNIQUE 를 만들지"
-				+ " 못한 것이다(오류 없이 넘어간다). 테스트 DB 의 %s 에서 중복 행을 지우고 다시 돌린다.", table, keyName, table)
+				+ " 못한 것이다(기동은 멈추지 않는다). 테스트 DB 의 %s 에서 중복 행을 지우고 다시 돌린다.", table, keyName, table)
 			.isNotEmpty();
-		assertThat(rows).as("%s 의 컬럼 순서", keyName)
+		assertThat(rows)
+			.as("%s 의 컬럼 순서. 같은 이름이 이미 있으면 ddl-auto: update 는 다시 만들지 않으므로, 선언을 바꿨다면 테스트 DB 에서"
+				+ " 그 이름을 지우고 다시 돌린다.", keyName)
 			.extracting(row -> row.get("COLUMN_NAME"))
 			.containsExactlyElementsOf(columns);
 		assertThat(rows).as("%s 의 NON_UNIQUE", keyName)
