@@ -16,13 +16,11 @@ import java.time.LocalTime;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
-import lombok.Setter;
 import lombok.ToString;
 
 @Entity
 @Table(name = "results")
 @Getter
-@Setter
 @ToString
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class Result {
@@ -103,5 +101,32 @@ public class Result {
 		this.interpretation = interpretation;
 		this.summary = summary;
 		this.status = ResultStatus.COMPLETED;
+	}
+
+	/**
+	 * 정보 입력 대기(INPUT_REQUIRED)인 결과만 해석 중(PROCESSING)으로 바꾼다.
+	 *
+	 * @return 바꿨으면 true. 이미 해석 중이거나 완료된 결과는 그대로 두고 false.
+	 */
+	public boolean markProcessing() {
+		if (status != ResultStatus.INPUT_REQUIRED) {
+			return false;
+		}
+		this.status = ResultStatus.PROCESSING;
+		return true;
+	}
+
+	/**
+	 * 해석 중(PROCESSING)인 결과만 정보 입력 대기(INPUT_REQUIRED)로 되돌린다. 해석이 실패했거나 시작하지 못했을 때 부른다.
+	 * 입력 대기로 돌아가야 사용자가 다시 요청하거나 환불받을 수 있다.
+	 *
+	 * @return 되돌렸으면 true. 입력 대기이거나 이미 완료된 결과는 그대로 두고 false.
+	 */
+	public boolean revertToInputRequired() {
+		if (status != ResultStatus.PROCESSING) {
+			return false;
+		}
+		this.status = ResultStatus.INPUT_REQUIRED;
+		return true;
 	}
 }
