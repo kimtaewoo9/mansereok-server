@@ -227,6 +227,10 @@ public final class PromptFixtures {
 	 * 출생시간을 비워 보낸 사람. 만세력 계산(ManseCalculationService)이 시간 미입력 요청에 돌려주는 모양을 따른다.
 	 * solarTime 과 시주가 null 이고, 대운 시작 나이는 확정값 없이 범위로만 있다.
 	 *
+	 * <p>시주가 없으면 만세력 계산은 시주 신살(SinsalCalculator.analyzeAllSinsal)과 시지가 낀 지지 관계를 만들지 않고,
+	 * 삼합도 시지를 빼고 찾는다. person1 의 "사유축 금국" 은 시지 酉 가 있어야 성립하므로 여기서는 없다.
+	 * 불확정 안내 문구도 ManseCalculationService 가 시간 미입력일 때 넣는 문구 그대로다.
+	 *
 	 * <p>{@link #personEdge()} 는 시간 모름 표시만 켜고 solarTime 에 00:00 을 넣어 두어서
 	 * 출생시간이 정말 null 인 경로를 한 번도 태우지 못했다. 이 샘플이 그 경로를 맡는다.
 	 */
@@ -238,10 +242,37 @@ public final class PromptFixtures {
 		SajuInfo saju = response.getSaju();
 		saju.setTimeSky(null);
 		saju.setTimeGround(null);
+		saju.getSinsalInfo().remove("시주");
+		saju.setGroundRelations(List.of("년지-월지: 충"));
+		saju.setSamhap(List.of());
 		saju.setBigFortuneNumber(null);
 		saju.setBigFortuneStartYear(null);
-		saju.setUncertaintyNotes(List.of("출생시간 미입력: 시주는 계산하지 않았습니다.",
+		saju.setUncertaintyNotes(List.of(
+			"출생시간 미입력: 시주는 계산하지 않았습니다.",
+			"출생시간 미입력: 야자시(23:30 이후) 보정은 적용하지 않았습니다.",
 			"대운 시작 나이는 4~6세 범위입니다."));
+		return response;
+	}
+
+	/**
+	 * 절입일에 태어나 출생시간을 비워 보낸 사람. 태어난 시각에 따라 연주·월주가 갈릴 수 있어서 만세력 계산이
+	 * 대운 시작 나이를 범위로도 내지 않고 대운 필드를 모두 null 로 둔다(ManseCalculationService.calculateBigFortuneRange).
+	 * 프롬프트는 "대운 정보 없음" 가지를 탄다. 생년월일은 person1 의 절입 시각(1990-01-06 05:33)과 같은 날로 둔다.
+	 */
+	public static ManseryeokCalculationResponse personTimeUnknownOnSeasonStartDay() {
+		ManseryeokCalculationResponse response = personTimeUnknown();
+		response.getInput().setSolarDate(LocalDate.of(1990, 1, 6));
+
+		SajuInfo saju = response.getSaju();
+		saju.setBigFortuneNumberMin(null);
+		saju.setBigFortuneNumberMax(null);
+		saju.setBigFortuneStartYearMin(null);
+		saju.setBigFortuneStartYearMax(null);
+		saju.setUncertaintyNotes(List.of(
+			"출생시간 미입력: 시주는 계산하지 않았습니다.",
+			"출생시간 미입력: 야자시(23:30 이후) 보정은 적용하지 않았습니다.",
+			"절입일 출생 + 시간 미입력으로 연주/월주 경계가 불확정입니다.",
+			"출생시간 미입력으로 대운 시작 나이는 확정할 수 없습니다."));
 		return response;
 	}
 

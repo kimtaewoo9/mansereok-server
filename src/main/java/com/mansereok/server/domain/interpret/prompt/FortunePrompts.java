@@ -117,11 +117,11 @@ final class FortunePrompts {
 
 		prompt.append("""
 			--- [분석 시작] ---
-			"%s님은 %s %s에 태어나신, [일간(%s) 자연물 비유]와 같은 사랑을 하시는군요." 로 시작해주세요.
+			"%s님은 %s에 태어나신, [일간(%s) 자연물 비유]와 같은 사랑을 하시는군요." 로 시작해주세요.
 
 			"""
-			.formatted(name, SajuProfileSections.birthDateText(input.getSolarDate()),
-				SajuProfileSections.birthTimeText(input.getSolarTime()),
+			.formatted(name,
+				SajuProfileSections.birthDateTimePhrase(input.getSolarDate(), input.getSolarTime()),
 				saju.getDaySky().getKorean() + saju.getDaySky().getFiveCircle()));
 
 		prompt.append("""

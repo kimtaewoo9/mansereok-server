@@ -53,11 +53,11 @@ final class CharacterPrompts {
 
 		prompt.append("""
 			--- [분석 시작] ---
-			"%s님은 %s %s에 태어나신, [일간(%s) 자연물 비유]와 같은 기운을 지니셨습니다."와 같이 자연스럽게 분석을 시작해주세요.
+			"%s님은 %s에 태어나신, [일간(%s) 자연물 비유]와 같은 기운을 지니셨습니다."와 같이 자연스럽게 분석을 시작해주세요.
 
 			"""
-			.formatted(name, SajuProfileSections.birthDateText(input.getSolarDate()),
-				SajuProfileSections.birthTimeText(input.getSolarTime()),
+			.formatted(name,
+				SajuProfileSections.birthDateTimePhrase(input.getSolarDate(), input.getSolarTime()),
 				saju.getDaySky().getKorean() + saju.getDaySky().getFiveCircle()));
 
 		prompt.append("""
@@ -139,11 +139,11 @@ final class CharacterPrompts {
 
 		prompt.append("""
 			--- [분석 시작] ---
-			"%s님은 %s %s에 태어나신, [일간(%s) 자연물 비유]와 같은 기운을 지니셨습니다."와 같이 자연스럽게 분석을 시작해주세요.
+			"%s님은 %s에 태어나신, [일간(%s) 자연물 비유]와 같은 기운을 지니셨습니다."와 같이 자연스럽게 분석을 시작해주세요.
 
 			"""
-			.formatted(name, SajuProfileSections.birthDateText(input.getSolarDate()),
-				SajuProfileSections.birthTimeText(input.getSolarTime()),
+			.formatted(name,
+				SajuProfileSections.birthDateTimePhrase(input.getSolarDate(), input.getSolarTime()),
 				saju.getDaySky().getKorean() + saju.getDaySky().getFiveCircle()));
 
 		prompt.append("""
@@ -194,11 +194,11 @@ final class CharacterPrompts {
 		// 2. 캐릭터 설정 주입
 		prompt.append("""
 			### ⚠️ 캐릭터 분석 모드 ###
-			이 사주는 작품 **'%s'**에 등장하는 캐릭터 **'%s'**의 사주입니다.
+			이 사주는 %s캐릭터 **'%s'**의 사주입니다.
 			캐릭터의 원작 설정(성격, 작중 행적)과 사주 풀이를 연결하여, '이 캐릭터가 왜 이런 운명을 가졌는지' 설명해주세요.
 
 			"""
-			.formatted(sourceTitle != null ? sourceTitle : "알 수 없는 작품", name));
+			.formatted(PromptSections.sourceTitlePhrase(sourceTitle, "작품 **'%s'**에 등장하는 "), name));
 
 		// 3. 사주 정보
 		prompt.append("""

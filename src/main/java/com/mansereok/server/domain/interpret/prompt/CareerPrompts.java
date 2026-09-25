@@ -454,10 +454,10 @@ final class CareerPrompts {
 		prompt.append("""
 			=== 시작 멘트 ===
 
-			"%s %s에 태어나신 %s님의 사주를 한번 같이 살펴보겠습니다." 이렇게 시작해서 호기심을 끌고,
+			"%s에 태어나신 %s님의 사주를 한번 같이 살펴보겠습니다." 이렇게 시작해서 호기심을 끌고,
 			"""
-			.formatted(SajuProfileSections.birthDateText(input.getSolarDate()),
-				SajuProfileSections.birthTimeText(input.getSolarTime()), name));
+			.formatted(SajuProfileSections.birthDateTimePhrase(input.getSolarDate(), input.getSolarTime()),
+				name));
 
 		prompt.append("""
 			"%s님은 %s, 그러니까 %s의 기운을 타고나셨어요." 이렇게 자연스럽게 이어가주세요.

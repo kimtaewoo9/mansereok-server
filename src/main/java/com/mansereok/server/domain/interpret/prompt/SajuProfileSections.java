@@ -16,7 +16,7 @@ final class SajuProfileSections {
 
 	/**
 	 * 출생시간을 비워 보낸 사람의 시각 자리에 쓰는 문구. 출생시간은 요청에서 선택값이라
-	 * 만세력 계산 결과의 solarTime 이 null 로 올 수 있다.
+	 * 만세력 계산 결과의 solarTime 이 null 로 올 수 있다. 데이터 줄에만 쓰고 문장에는 넣지 않는다.
 	 */
 	private static final String UNKNOWN_BIRTH_TIME = "시간 모름";
 
@@ -27,14 +27,23 @@ final class SajuProfileSections {
 	private SajuProfileSections() {
 	}
 
-	/** 생년월일을 "2001년 06월 12일" 꼴로 쓴다. */
-	static String birthDateText(LocalDate solarDate) {
-		return solarDate.format(BIRTH_DATE_FORMAT);
+	/**
+	 * 시작 문장("…에 태어나신")에 넣는 출생 일시를 "2001년 06월 12일 11시 12분" 꼴로 쓴다.
+	 * 출생시간을 모르면(null) 날짜만 써서 "2001년 06월 12일에 태어나신" 으로 이어지게 한다.
+	 * 모델이 이 문장을 결과 첫 문장으로 그대로 옮기므로 데이터 줄과 달리 {@value #UNKNOWN_BIRTH_TIME} 을 넣지 않는다.
+	 */
+	static String birthDateTimePhrase(LocalDate solarDate, LocalTime solarTime) {
+		String date = solarDate.format(BIRTH_DATE_FORMAT);
+		return solarTime == null ? date : date + " " + solarTime.format(BIRTH_TIME_FORMAT);
 	}
 
-	/** 출생시각을 "11시 12분" 꼴로 쓴다. 출생시간을 모르면(null) {@value #UNKNOWN_BIRTH_TIME} 이라고 쓴다. */
-	static String birthTimeText(LocalTime solarTime) {
-		return solarTime == null ? UNKNOWN_BIRTH_TIME : solarTime.format(BIRTH_TIME_FORMAT);
+	/**
+	 * 시작 문장에 넣는 출생 일시를 숫자 꼴 "2001-06-12 11:12" 로 쓴다. 성격 분석(2)의 시작 문장이 이 꼴을 쓴다.
+	 * 출생시간을 모르면(null) 날짜만 쓴다. 이유는 {@link #birthDateTimePhrase} 와 같다.
+	 */
+	static String birthDateTimeDigitPhrase(LocalDate solarDate, LocalTime solarTime) {
+		String date = solarDate.format(DateTimeFormatter.ISO_LOCAL_DATE);
+		return solarTime == null ? date : date + " " + solarTime.format(BIRTH_TIME_SHORT_FORMAT);
 	}
 
 	/**
