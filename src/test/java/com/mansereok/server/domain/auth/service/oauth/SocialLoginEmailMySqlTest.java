@@ -173,7 +173,7 @@ class SocialLoginEmailMySqlTest extends LocalMySqlTest {
 		boolean emailVerified) {
 		KakaoProfileDto kakaoProfileDto = new KakaoProfileDto();
 		kakaoProfileDto.setId(kakaoId);
-		kakaoProfileDto.setKakao_account(
+		kakaoProfileDto.setKakaoAccount(
 			new KakaoProfileDto.KakaoAccount(email, null, true, emailVerified));
 		return kakaoProfileDto;
 	}

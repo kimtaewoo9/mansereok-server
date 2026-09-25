@@ -1,18 +1,14 @@
 package com.mansereok.server.domain.auth.controller;
 
-import com.mansereok.server.domain.auth.dto.response.AccessTokenDto;
-import com.mansereok.server.domain.auth.dto.response.oauth.GoogleProfileDto;
-import com.mansereok.server.domain.auth.dto.response.oauth.KakaoProfileDto;
-import com.mansereok.server.domain.auth.dto.response.oauth.NaverProfileDto;
 import com.mansereok.server.domain.auth.dto.response.oauth.NaverRedirectDto;
 import com.mansereok.server.domain.auth.dto.response.oauth.RedirectDto;
-import com.mansereok.server.domain.auth.dto.response.oauth.XProfileDto;
 import com.mansereok.server.domain.auth.dto.response.oauth.XRedirectDto;
 import com.mansereok.server.domain.auth.service.oauth.GoogleService;
 import com.mansereok.server.domain.auth.service.oauth.KakaoService;
 import com.mansereok.server.domain.auth.service.oauth.NaverService;
 import com.mansereok.server.domain.auth.service.oauth.OauthLoginResult;
 import com.mansereok.server.domain.auth.service.oauth.OauthLoginService;
+import com.mansereok.server.domain.auth.service.oauth.OauthProfile;
 import com.mansereok.server.domain.auth.service.oauth.XService;
 import com.mansereok.server.domain.auth.util.JwtUtil;
 import com.mansereok.server.domain.user.entity.RefreshToken;
@@ -28,8 +24,12 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * 소셜 로그인. 네 제공자 모두 "제공자에서 사용자 정보 받기 → OauthProfile 로 바꾸기 → 계정 찾기·가입 → 토큰 응답" 순서로 돈다.
- * 계정 찾기·가입 규칙은 {@link OauthLoginService} 한 곳에 있다.
+ * 소셜 로그인. 네 제공자 모두 "제공자에서 사용자 정보 받기(OauthProfile) → 계정 찾기·가입 → 토큰 응답" 순서로 돈다.
+ * 제공자 호출(토큰 교환·프로필 조회)은 각 제공자 서비스의 authenticate 안에서 끝나고, 계정 찾기·가입 규칙은
+ * {@link OauthLoginService} 한 곳에 있다.
+ *
+ * <p>제공자가 요청을 거절하면 401, 제공자에 닿지 못하거나 시간 안에 답이 없으면 503 으로 답한다
+ * ({@link com.mansereok.server.global.exception.OauthExceptionHandler}).
  */
 @RestController
 @RequiredArgsConstructor
@@ -51,12 +51,9 @@ public class OauthController {
 		@RequestBody RedirectDto redirectDto,
 		HttpServletResponse response) {
 
-		AccessTokenDto accessTokenDto = googleService.getAccessToken(redirectDto.getCode());
-		GoogleProfileDto googleProfileDto =
-			googleService.getGoogleProfile(accessTokenDto.getAccess_token());
+		OauthProfile profile = googleService.authenticate(redirectDto.getCode());
 
-		OauthLoginResult loginResult =
-			oauthLoginService.loginOrRegister(googleProfileDto.toOauthProfile());
+		OauthLoginResult loginResult = oauthLoginService.loginOrRegister(profile);
 		return createTokenResponse(response, loginResult);
 	}
 
@@ -65,12 +62,9 @@ public class OauthController {
 		@RequestBody RedirectDto redirectDto,
 		HttpServletResponse response) {
 
-		AccessTokenDto accessTokenDto = kakaoService.getAccessTokenDto(redirectDto.getCode());
-		KakaoProfileDto kakaoProfileDto = kakaoService.getKakaoProfileDto(
-			accessTokenDto.getAccess_token());
+		OauthProfile profile = kakaoService.authenticate(redirectDto.getCode());
 
-		OauthLoginResult loginResult =
-			oauthLoginService.loginOrRegister(kakaoProfileDto.toOauthProfile());
+		OauthLoginResult loginResult = oauthLoginService.loginOrRegister(profile);
 		return createTokenResponse(response, loginResult);
 	}
 
@@ -81,13 +75,9 @@ public class OauthController {
 		HttpServletResponse response
 	) {
 
-		AccessTokenDto accessTokenDto = naverService.getAccessTokenDto(redirectDto.getCode(),
-			redirectDto.getState());
-		NaverProfileDto naverProfileDto = naverService.getNaverProfileDto(
-			accessTokenDto.getAccess_token());
+		OauthProfile profile = naverService.authenticate(redirectDto.getCode(), redirectDto.getState());
 
-		OauthLoginResult loginResult =
-			oauthLoginService.loginOrRegister(naverProfileDto.toOauthProfile());
+		OauthLoginResult loginResult = oauthLoginService.loginOrRegister(profile);
 		return createTokenResponse(response, loginResult);
 	}
 
@@ -97,14 +87,10 @@ public class OauthController {
 		@RequestBody XRedirectDto redirectDto,
 		HttpServletResponse response) {
 
-		AccessTokenDto accessTokenDto = xService.getAccessToken(
-			redirectDto.getCode(),
-			redirectDto.getCodeVerifier()
-		);
-		XProfileDto xProfileDto = xService.getXProfileDto(accessTokenDto.getAccess_token());
+		OauthProfile profile = xService.authenticate(redirectDto.getCode(),
+			redirectDto.getCodeVerifier());
 
-		OauthLoginResult loginResult =
-			oauthLoginService.loginOrRegister(xProfileDto.toOauthProfile());
+		OauthLoginResult loginResult = oauthLoginService.loginOrRegister(profile);
 		return createTokenResponse(response, loginResult);
 	}
 
