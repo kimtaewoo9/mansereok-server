@@ -88,7 +88,7 @@ class AuthSchemaSqlTest {
 
 	@ParameterizedTest(name = "[{index}] {1}.{2}")
 	@MethodSource("namedIndexes")
-	@DisplayName("인덱스를 엔티티와 schema.sql 이 같은 이름과 컬럼 순서로 선언한다")
+	@DisplayName("UNIQUE 가 아닌 일반 인덱스를 엔티티와 schema.sql 이 같은 이름과 컬럼 순서로 선언한다")
 	void indexHasSameNameAndOrder(Class<?> entity, String table, String indexName, List<String> columns) {
 		// when
 		Index[] declared = entity.getAnnotation(Table.class).indexes();
@@ -97,7 +97,11 @@ class AuthSchemaSqlTest {
 		assertThat(declared).as("엔티티 @Table 의 인덱스 %s", indexName)
 			.filteredOn(index -> index.name().equals(indexName))
 			.singleElement()
-			.satisfies(index -> assertThat(columnsOf(index.columnList())).containsExactlyElementsOf(columns));
+			.satisfies(index -> {
+				assertThat(columnsOf(index.columnList())).containsExactlyElementsOf(columns);
+				assertThat(index.unique()).as("엔티티 인덱스 %s 의 unique", indexName).isFalse();
+			});
+		// 정의 첫머리가 INDEX 여야 찾으므로, schema.sql 에서 UNIQUE INDEX 로 바뀌면 여기서 실패한다.
 		assertThat(keyColumnsInSchema(table, "INDEX", indexName)).as("schema.sql 의 INDEX %s 컬럼", indexName)
 			.containsExactlyElementsOf(columns);
 	}
@@ -138,10 +142,14 @@ class AuthSchemaSqlTest {
 		return Arrays.stream(columnList.split(",")).map(String::trim).toList();
 	}
 
-	/** CREATE TABLE 블록에서 "종류 이름 (컬럼, ...)" 정의를 찾아 컬럼을 적힌 순서대로 꺼낸다. 종류는 정규식(UNIQUE KEY, INDEX)이다. */
+	/**
+	 * CREATE TABLE 블록에서 "종류 이름 (컬럼, ...)" 정의를 찾아 컬럼을 적힌 순서대로 꺼낸다. 종류는 정규식(UNIQUE KEY, INDEX)이다.
+	 *
+	 * <p>종류는 정의의 첫머리(여는 괄호나 쉼표 바로 뒤)에 있어야 찾는다. 그래서 INDEX 로 찾을 때 UNIQUE INDEX 정의는 걸리지 않는다.
+	 */
 	private List<String> keyColumnsInSchema(String table, String kindPattern, String name) {
 		Matcher matcher = Pattern.compile(
-				"(?i)" + kindPattern + "\\s+`?" + Pattern.quote(name) + "`?\\s*\\(([^)]*)\\)")
+				"(?i)[(,]\\s*" + kindPattern + "\\s+`?" + Pattern.quote(name) + "`?\\s*\\(([^)]*)\\)")
 			.matcher(schema.createTableBlock(table));
 		assertThat(matcher.find()).as("schema.sql 의 %s 에 %s 정의가 있다", table, name).isTrue();
 		return columnsOf(matcher.group(1).replace("`", ""));
