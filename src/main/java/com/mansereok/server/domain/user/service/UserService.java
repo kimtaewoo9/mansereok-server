@@ -49,7 +49,7 @@ import org.springframework.util.StringUtils;
  *
  * <p>가입·탈퇴 알림(Discord·Slack)은 여기서 직접 보내지 않는다. 가입·탈퇴 트랜잭션 안에서 {@link UserRegisteredEvent},
  * {@link UserWithdrawnEvent} 를 발행하고, UserNotificationListener 가 커밋된 뒤에 보낸다. 그래서 알림을 기다리는 동안 행 잠금을
- * 쥐지 않고, 롤백된 가입·탈퇴에는 알림이 가지 않는다.
+ * 쥐지 않고, 롤백된 가입·탈퇴에는 알림이 가지 않는다. 다만 알림이 끝날 때까지 DB 커넥션은 아직 쥔다(UserNotificationListener 참고).
  *
  * <p>가입은 메서드에 {@code @Transactional} 을 붙이지 않고 {@link TransactionTemplate} 으로 저장 구간만 트랜잭션으로 묶는다.
  * 비밀번호 암호화(BCrypt)를 트랜잭션 전에 끝내고, 트랜잭션이 끝난 뒤 밖에서 UNIQUE 위반을 DuplicateEmailException 으로 바꾸기

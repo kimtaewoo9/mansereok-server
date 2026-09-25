@@ -2,6 +2,7 @@ package com.mansereok.server.domain.user.service;
 
 import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.awaitility.Awaitility.await;
 import static org.mockito.BDDMockito.then;
 import static org.mockito.BDDMockito.willAnswer;
@@ -32,6 +33,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
@@ -43,9 +45,11 @@ import org.springframework.transaction.support.TransactionTemplate;
  *   남는다. password_reset_tokens·refresh_tokens 의 외래 키는 실제 DB 에만 있어 목으로는 볼 수 없다.</li>
  *   <li>탈퇴 알림은 커밋 뒤에 나간다. 알림을 보내는 동안 다른 트랜잭션이 탈퇴 결과를 보고, 탈퇴한 회원의 주문 행을 기다리지 않고
  *   잠근다.</li>
+ *   <li>탈퇴 커밋이 실패하면 회원 행이 남고 탈퇴 알림은 가지 않는다.</li>
  * </ol>
  *
- * <p>모든 행은 이번 실행의 runId 로 만든 이메일, 주문 번호, 리뷰의 주문 번호로 만들고, 뒤 정리에서 그 행만 지운다.
+ * <p>모든 행은 이번 실행의 runId 로 만든 이메일, 주문 번호, 리뷰의 주문 번호로 만들고, 뒤 정리에서 그 행만 지운다. 커밋 실패를
+ * 만들려고 세 번째 테스트가 만드는 표도 runId 를 이름에 넣고 뒤 정리에서 지운다.
  */
 class WithdrawalMySqlTest extends LocalMySqlTest {
 
@@ -71,6 +75,8 @@ class WithdrawalMySqlTest extends LocalMySqlTest {
 	// reviews.order_id 는 UNIQUE 라 실행마다 다른 번호를 쓴다. 실제 주문 번호와 겹치지 않게 큰 수에서 시작한다.
 	private final long withdrawingReviewOrderId = 9_100_000_000L + Long.parseLong(runId, 16);
 	private final long stayingReviewOrderId = 9_200_000_000L + Long.parseLong(runId, 16);
+	// 탈퇴가 지우지 않는 표. runId 는 UUID 의 16진수 8자리라 표 이름에 그대로 쓸 수 있다.
+	private final String tableReferencingMember = "test_member_ref_" + runId;
 
 	private Long withdrawingUserId;
 	private Long stayingUserId;
@@ -83,6 +89,8 @@ class WithdrawalMySqlTest extends LocalMySqlTest {
 
 	@AfterEach
 	void deleteRowsOfThisRun() {
+		// users 를 외래 키로 가리키므로 users 행보다 먼저 지운다
+		jdbcTemplate.execute("DROP TABLE IF EXISTS " + tableReferencingMember);
 		jdbcTemplate.update("DELETE FROM password_reset_tokens WHERE user_id IN (?, ?)", withdrawingUserId,
 			stayingUserId);
 		jdbcTemplate.update("DELETE FROM refresh_tokens WHERE user_id IN (?, ?)", withdrawingUserId, stayingUserId);
@@ -163,6 +171,27 @@ class WithdrawalMySqlTest extends LocalMySqlTest {
 			releaseNotification.countDown();
 			executor.shutdownNow();
 		}
+	}
+
+	@Test
+	@DisplayName("탈퇴가 지우지 않는 표의 행이 회원을 가리켜 커밋 때 users 삭제가 막히면, 탈퇴는 롤백되어 회원 행이 남고 탈퇴 알림은 가지 않는다")
+	void withdrawalNotificationIsNotSentWhenCommitFails() {
+		// given: 탈퇴가 모르는 표가 회원을 외래 키로 가리킨다. 재설정 토큰을 지우지 않던 예전 탈퇴와 같은 상황이다.
+		// users 삭제는 커밋할 때 flush 로 나가므로, 탈퇴 이벤트를 발행한 뒤 커밋에서 실패한다.
+		jdbcTemplate.execute("CREATE TABLE " + tableReferencingMember
+			+ " (user_id BIGINT NOT NULL, FOREIGN KEY (user_id) REFERENCES users (id))");
+		jdbcTemplate.update("INSERT INTO " + tableReferencingMember + " (user_id) VALUES (?)", withdrawingUserId);
+
+		// when & then
+		assertThatThrownBy(() -> userService.deleteUser(withdrawingEmail))
+			.isInstanceOf(DataIntegrityViolationException.class);
+
+		// then
+		assertThat(countRowsOfUser("SELECT COUNT(*) FROM users WHERE id = ?", withdrawingUserId))
+			.as("롤백되어 남은 탈퇴 회원 행").isEqualTo(1);
+		// then: 알림 전용 스레드 풀로 옮긴 뒤에도 뒤늦게 나가는 알림을 놓치지 않도록, 0.5초 동안 알림이 없는지 계속 본다
+		await().during(Duration.ofMillis(500)).atMost(Duration.ofSeconds(2)).untilAsserted(() ->
+			then(discordNotificationService).shouldHaveNoInteractions());
 	}
 
 	private User saveEmailSignupMember(String email, String name) {

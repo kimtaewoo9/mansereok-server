@@ -9,7 +9,12 @@ import java.util.Optional;
 
 public interface PasswordResetTokenRepository extends JpaRepository<PasswordResetToken, Long> {
 	Optional<PasswordResetToken> findByToken(String token);
-	void deleteByUserId(Long userId); // 기존 토큰 삭제용
+
+	/**
+	 * 비밀번호 재설정을 다시 요청할 때 기존 토큰을 지운다(requestPasswordReset). 파생 삭제라 토큰을 조회한 뒤 한 건씩 지운다. 회원
+	 * 탈퇴는 {@link #deleteAllByUserId} 를 쓴다.
+	 */
+	void deleteByUserId(Long userId);
 
 	/**
 	 * 사용자의 재설정 토큰을 DELETE 한 번으로 지운다. 회원 탈퇴가 users 행을 지우기 전에 부른다.

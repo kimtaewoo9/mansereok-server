@@ -16,6 +16,7 @@ import com.mansereok.server.domain.auth.service.oauth.OauthProfile;
 import com.mansereok.server.domain.user.entity.Gender;
 import com.mansereok.server.domain.user.entity.SocialType;
 import com.mansereok.server.domain.user.entity.User;
+import com.mansereok.server.domain.user.event.UserRegisteredEvent;
 import com.mansereok.server.global.exception.DuplicateEmailException;
 import com.mansereok.server.support.ConcurrentCalls;
 import com.mansereok.server.support.ConcurrentCalls.CallResult;
@@ -34,8 +35,11 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.orm.jpa.support.OpenEntityManagerInViewInterceptor;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.context.request.ServletWebRequest;
 import org.springframework.web.context.request.WebRequest;
 
@@ -47,6 +51,9 @@ import org.springframework.web.context.request.WebRequest;
  * 어떤 예외가 되는지도 DB 와 방언에 달린 일이라 목으로는 확인할 수 없다. 테스트 DB 는 ddl-auto: update 로 엔티티의 UNIQUE 가
  * 걸려 있다(UserUniqueKeysMySqlTest 가 확인한다). DuplicateEmailException 이 409 가 되는 것은 GlobalExceptionHandlerBaselineTest
  * 가 본다.
+ *
+ * <p>가입 알림이 커밋된 가입에만 가는지도 함께 본다. 알림을 보내는 동안 다른 트랜잭션이 새 회원 행을 보는지, 가입 이벤트를 발행한
+ * 트랜잭션이 롤백되면 알림이 가지 않는지 확인한다.
  *
  * <p>모든 행은 이번 실행의 runId 를 넣은 이메일·카카오 번호로 만들고, 뒤 정리에서 그 행만 지운다.
  */
@@ -62,6 +69,10 @@ class SignupConcurrencyMySqlTest extends LocalMySqlTest {
 	private OauthLoginService oauthLoginService;
 	@Autowired
 	private EntityManagerFactory entityManagerFactory;
+	@Autowired
+	private PlatformTransactionManager transactionManager;
+	@Autowired
+	private ApplicationEventPublisher eventPublisher;
 
 	private final String runId = UUID.randomUUID().toString().substring(0, 8);
 	private final String email = "signup-" + runId + "@example.com";
@@ -131,6 +142,25 @@ class SignupConcurrencyMySqlTest extends LocalMySqlTest {
 			releaseNotification.countDown();
 			executor.shutdownNow();
 		}
+	}
+
+	@Test
+	@DisplayName("가입 이벤트를 발행한 트랜잭션이 롤백되면 가입 알림은 Discord·Slack 어디로도 가지 않는다")
+	void signupNotificationIsNotSentWhenTransactionRollsBack() {
+		// given: 지금 가입은 롤백이 모두 이벤트 발행 전에 일어나므로, 발행한 뒤 롤백되는 트랜잭션을 직접 만든다
+		UserRegisteredEvent eventOfRolledBackSignup = new UserRegisteredEvent(null, "롤백가입", email, "일반 회원가입", null);
+
+		// when
+		new TransactionTemplate(transactionManager).executeWithoutResult(status -> {
+			eventPublisher.publishEvent(eventOfRolledBackSignup);
+			status.setRollbackOnly();
+		});
+
+		// then: 알림 전용 스레드 풀로 옮긴 뒤에도 뒤늦게 나가는 알림을 놓치지 않도록, 0.5초 동안 알림이 없는지 계속 본다
+		await().during(Duration.ofMillis(500)).atMost(Duration.ofSeconds(2)).untilAsserted(() -> {
+			then(discordNotificationService).shouldHaveNoInteractions();
+			then(slackNotificationService).shouldHaveNoInteractions();
+		});
 	}
 
 	@Test
