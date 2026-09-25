@@ -16,7 +16,8 @@ import org.springframework.http.converter.json.Jackson2ObjectMapperBuilder;
  */
 class ReviewResponseTest {
 
-	// 스프링 MVC 가 응답을 쓸 때와 같은 방식으로 만든 ObjectMapper.
+	// 스프링 기본 빌더(Jackson2ObjectMapperBuilder)로 만든 ObjectMapper. 운영 응답은 Spring Boot 가 spring.jackson.* 설정을
+	// 얹은 ObjectMapper 로 쓰지만, 여기서는 그 설정을 반영하지 않는다.
 	private final ObjectMapper objectMapper = Jackson2ObjectMapperBuilder.json().build();
 
 	@Test

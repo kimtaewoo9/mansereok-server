@@ -26,7 +26,8 @@ import org.springframework.security.access.AccessDeniedException;
  * <p>deleteReview 는 save 를 따로 부르지 않고 트랜잭션 안에서 조회한 엔티티의 값만 바꾼다. 그 값이 커밋 때 DB 에 쓰이는지는
  * 트랜잭션 설정(메서드의 {@code @Transactional}, 클래스의 readOnly)에 달려 있어 목으로는 확인할 수 없다.
  *
- * <p>모든 행은 이번 실행의 runId 로 만든 아이디와 주문 번호로 만들고, 뒤 정리에서 그 행만 지운다.
+ * <p>모든 행은 이번 실행의 runId 로 만든 아이디, 주문 번호, 상품 번호로 만들고, 뒤 정리에서 그 행만 지운다. 목록 확인도 이번
+ * 실행의 상품 번호로 좁혀서, 같은 DB 에 있는 다른 리뷰를 읽지 않는다.
  */
 class ReviewDeleteMySqlTest extends LocalMySqlTest {
 
@@ -42,6 +43,8 @@ class ReviewDeleteMySqlTest extends LocalMySqlTest {
 	private final String memberUsername = "review_member_" + runId;
 	// reviews.order_id 는 UNIQUE 라 실행마다 다른 번호를 쓴다. 실제 주문 번호와 겹치지 않게 큰 수에서 시작한다.
 	private final long orderId = 9_000_000_000L + Long.parseLong(runId, 16);
+	// 상품별 목록에 이번 실행의 리뷰만 나오게 상품 번호도 같은 방식으로 정한다. reviews.sub_category_id 에는 외래 키가 없다.
+	private final long subCategoryId = 9_000_000_000L + Long.parseLong(runId, 16);
 
 	private Long reviewId;
 
@@ -52,6 +55,7 @@ class ReviewDeleteMySqlTest extends LocalMySqlTest {
 		reviewId = reviewRepository.save(ReviewFixture.review().forSaving()
 			.userId(member.getId())
 			.orderId(orderId)
+			.subCategoryId(subCategoryId)
 			.build()).getId();
 	}
 
@@ -62,24 +66,31 @@ class ReviewDeleteMySqlTest extends LocalMySqlTest {
 	}
 
 	@Test
-	@DisplayName("관리자가 지우면 DB 의 is_deleted 가 true 로 바뀌고 리뷰 목록에서 빠진다")
+	@DisplayName("관리자가 지우면 DB 의 is_deleted 가 true 로 바뀌고 상품별 리뷰 목록에서 빠진다")
 	void adminDeleteIsWrittenToDatabase() {
+		// given: 지우기 전에는 상품별 목록에 이 리뷰가 나온다
+		assertThat(reviewService.getReviewsBySubCategory(subCategoryId))
+			.as("삭제 전 상품별 리뷰 목록")
+			.extracting(ReviewResponse::reviewId)
+			.containsExactly(reviewId);
+
 		// when
 		reviewService.deleteReview(reviewId, adminUsername);
 
 		// then
 		assertThat(isDeletedInDatabase()).isTrue();
-		assertThat(reviewService.getAllReviewsSortedByLatest())
-			.extracting(ReviewResponse::reviewId)
-			.doesNotContain(reviewId);
+		assertThat(reviewService.getReviewsBySubCategory(subCategoryId))
+			.as("삭제 후 상품별 리뷰 목록")
+			.isEmpty();
 	}
 
 	@Test
-	@DisplayName("관리자가 아닌 회원이 지우려 하면 403 이 나고 DB 의 is_deleted 는 false 로 남는다")
+	@DisplayName("관리자가 아닌 회원이 지우려 하면 AccessDeniedException 을 내고 DB 의 is_deleted 는 false 로 남는다")
 	void memberDeleteLeavesDatabaseUnchanged() {
 		// when & then
 		assertThatThrownBy(() -> reviewService.deleteReview(reviewId, memberUsername))
-			.isInstanceOf(AccessDeniedException.class);
+			.isInstanceOf(AccessDeniedException.class)
+			.hasMessage("리뷰는 관리자만 삭제할 수 있습니다.");
 		assertThat(isDeletedInDatabase()).isFalse();
 	}
 
