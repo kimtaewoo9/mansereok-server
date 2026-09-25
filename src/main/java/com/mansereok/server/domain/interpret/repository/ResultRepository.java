@@ -22,6 +22,10 @@ public interface ResultRepository extends JpaRepository<Result, Long> {
 	@Query("UPDATE Result r SET r.ogImageUrl = :ogImageUrl WHERE r.id = :id")
 	void updateOgImageUrl(@Param("id") Long id, @Param("ogImageUrl") String ogImageUrl);
 
+	// 회원 탈퇴 때 부른다. 엔티티를 읽지 않고 DELETE 한 번으로 지운다. 결과 표에는 삭제 콜백도 연관도 없어 엔티티를 거칠 이유가 없다.
+	// 트랜잭션은 부르는 쪽(UserService.deleteUser)의 것을 쓰고, 그 안에서 앞서 바꾼 내용은 먼저 DB 로 보낸다.
+	@Modifying(flushAutomatically = true)
+	@Query("DELETE FROM Result r WHERE r.userId = :userId")
 	void deleteAllByUserId(Long userId);
 
 	List<Result> findByPaymentIdIn(List<Long> paymentIds);

@@ -7,16 +7,24 @@ import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.Index;
 import jakarta.persistence.PrePersist;
+import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
+import jakarta.persistence.UniqueConstraint;
 import java.time.LocalDateTime;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.ToString;
 
+// 제약·인덱스 이름은 Result 와 같은 규칙으로 고정한다. 바꿀 때는 운영 DDL 과 schema.sql 을 함께 고친다.
 @Entity
-@Table(name = "compatibility_results")
+@Table(
+	name = "compatibility_results",
+	uniqueConstraints = @UniqueConstraint(name = "uk_compatibility_results_payment_id", columnNames = "payment_id"),
+	indexes = @Index(name = "idx_compatibility_results_status_updated_at", columnList = "status, updated_at")
+)
 @Getter
 @ToString
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
@@ -28,7 +36,7 @@ public class CompatibilityResult {
 
 	private Long userId;
 
-	@Column(name = "payment_id", unique = true)
+	@Column(name = "payment_id") // 하나의 결제에 하나의 결과만 연결(uk_compatibility_results_payment_id)
 	private Long paymentId;
 
 	@Column(name = "person1_name")
@@ -46,8 +54,8 @@ public class CompatibilityResult {
 	@Column(name = "compatibility_score")
 	private Integer compatibilityScore;
 
-	@Column(columnDefinition = "TEXT")
-	private String interpretation;  // GPT 생성 궁합 분석
+	@Column(columnDefinition = "MEDIUMTEXT")
+	private String interpretation;  // GPT 생성 궁합 분석. 긴 본문도 담도록 MEDIUMTEXT
 
 	@Column(columnDefinition = "TEXT")
 	private String summary;
@@ -63,11 +71,20 @@ public class CompatibilityResult {
 
 	private LocalDateTime createdAt;
 
+	// 엔티티를 고쳐 저장할 때마다 바뀐다. JPQL 벌크 UPDATE(updateOgImageUrl 등)는 엔티티 콜백을 거치지 않아 바꾸지 않는다.
+	private LocalDateTime updatedAt;
+
 	@PrePersist
 	protected void onCreate() {
-		createdAt = LocalDateTime.now();
+		LocalDateTime now = LocalDateTime.now();
+		createdAt = now;
+		updatedAt = now;
 	}
 
+	@PreUpdate
+	protected void onUpdate() {
+		updatedAt = LocalDateTime.now();
+	}
 
 	public static CompatibilityResult createInitial(Long userId, Long paymentId,
 		String productName) {
