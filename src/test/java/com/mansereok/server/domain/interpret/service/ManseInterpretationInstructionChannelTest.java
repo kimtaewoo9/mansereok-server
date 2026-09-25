@@ -13,6 +13,7 @@ import com.mansereok.server.domain.interpret.client.OpenAiResponsesClient;
 import com.mansereok.server.domain.interpret.client.TestOpenAiProperties;
 import com.mansereok.server.domain.interpret.dto.request.Gpt5Request;
 import com.mansereok.server.domain.interpret.entity.CompatibilityResult;
+import com.mansereok.server.domain.interpret.postprocess.AnalysisNormalizer;
 import com.mansereok.server.domain.interpret.prompt.CompatibilityPromptFactory;
 import com.mansereok.server.domain.interpret.prompt.PromptFixtures;
 import com.mansereok.server.domain.interpret.prompt.SajuPromptFactory;
@@ -78,7 +79,8 @@ class ManseInterpretationInstructionChannelTest {
 			emailService,
 			sajuResultService,
 			new SajuPromptFactory(),
-			new CompatibilityPromptFactory()
+			new CompatibilityPromptFactory(),
+			new AnalysisNormalizer()
 		);
 	}
 

@@ -11,6 +11,7 @@ import com.mansereok.server.domain.interpret.dto.response.ManseryeokCalculationR
 import com.mansereok.server.domain.interpret.dto.response.ManseryeokCalculationResponse.PillarElement;
 import com.mansereok.server.domain.interpret.entity.CompatibilityResult;
 import com.mansereok.server.domain.interpret.entity.Result;
+import com.mansereok.server.domain.interpret.postprocess.AnalysisNormalizer;
 import com.mansereok.server.domain.interpret.prompt.CompatibilityPromptContext;
 import com.mansereok.server.domain.interpret.prompt.CompatibilityPromptFactory;
 import com.mansereok.server.domain.interpret.prompt.PromptContext;
@@ -23,13 +24,8 @@ import com.mansereok.server.domain.user.service.EmailService;
 import com.mansereok.server.domain.user.service.UserService;
 import com.mansereok.server.global.exception.OpenAiIncompleteResponseException;
 import java.time.LocalDateTime;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
@@ -51,6 +47,7 @@ public class ManseInterpretationService {
 
 	private final SajuPromptFactory sajuPromptFactory;
 	private final CompatibilityPromptFactory compatibilityPromptFactory;
+	private final AnalysisNormalizer analysisNormalizer;
 
 	/**
 	 * 사용자 입력과 서버 지시의 경계 규칙. 시스템 지시를 갈아끼우는 상품(재회운 등)에서도
@@ -116,57 +113,6 @@ public class ManseInterpretationService {
 			"required", List.of("score", "interpretation", "summary"),
 			"additionalProperties", false));
 
-	private static final Pattern BUSINESS_PAGE_BREAK_PATTERN = Pattern.compile(
-		"(?i)\\[\\s*PAGE_BREAK\\s*\\]");
-	private static final Pattern BRACKET_SECTION_TITLE_PATTERN = Pattern.compile(
-		"(?m)^\\s*\\[[0-9]+\\.[^\\]]*\\]\\s*\\n?");
-	private static final Pattern NUMBERED_SUBSECTION_PATTERN = Pattern.compile(
-		"(?m)^\\s*\\d+[-.]\\d+\\s+");
-	private static final Pattern NUMBERED_LIST_PATTERN = Pattern.compile(
-		"(?m)^\\s*\\d+\\s*[-.)]\\s+");
-	private static final Pattern HASH_HEADER_PATTERN = Pattern.compile(
-		"(?m)^\\s*#+\\s*");
-	private static final Pattern ISO_LOCAL_DATETIME_WITH_OPTIONAL_SECONDS_PATTERN = Pattern.compile(
-		"(\\d{4}-\\d{2}-\\d{2})T(\\d{2}:\\d{2})(?::\\d{2})?");
-	private static final Pattern DATETIME_WITH_SPACE_PATTERN = Pattern.compile(
-		"(\\d{4})-(\\d{2})-(\\d{2})\\s+(\\d{2}:\\d{2})(?::\\d{2})?");
-	private static final Pattern DATE_WITH_DAY_PATTERN = Pattern.compile(
-		"(\\d{4})-(\\d{2})-(\\d{2})");
-	private static final Pattern YEAR_MONTH_PATTERN = Pattern.compile(
-		"\\b(\\d{4})-(0[1-9]|1[0-2])\\b");
-	private static final Pattern THREE_OR_MORE_NEWLINES_PATTERN = Pattern.compile(
-		"\\n{3,}");
-	private static final Pattern MONEY_LUCK_LETTERED_SECTION_PATTERN = Pattern.compile(
-		"(?m)^\\s*\\[?[A-H]\\s*[.)]\\s*[^\\n]*\\n?");
-	private static final Pattern MONEY_LUCK_BRACKET_OPEN_FRAGMENT_PATTERN = Pattern.compile(
-		"(?m)^\\s*\\[\\s*([^\\]\\n]{1,120})\\s*$");
-	private static final Pattern MONEY_LUCK_BRACKET_CLOSE_FRAGMENT_PATTERN = Pattern.compile(
-		"(?m)^\\s*([^\\[\\]\\n]{1,120})\\s*\\]\\s*$");
-	private static final Pattern MONEY_LUCK_BRACKET_ONLY_HEADING_PATTERN = Pattern.compile(
-		"(?m)^\\s*\\[[^\\]\\n]{1,120}\\]\\s*$");
-	private static final Pattern ARABIC_OR_CYRILLIC_PATTERN = Pattern.compile(
-		"[\\p{IsArabic}\\p{IsCyrillic}]+");
-	private static final Pattern MULTI_SPACE_PATTERN = Pattern.compile(
-		"[ \\t]{2,}");
-	private static final Pattern KEYWORD_TITLE_LINE_PATTERN = Pattern.compile(
-		"^\\s*\\[[^\\]\\n]{1,120}\\]");
-	private static final List<String> FREE_PARAGRAPH_TRANSITIONS = List.of(
-		"다만", "반면", "또한", "그리고", "한편", "특히", "무엇보다", "이때", "여기서", "정리하면",
-		"결론적으로", "요약하면", "반대로");
-	private static final int BUSINESS_SUMMARY_MAX_LINES = 5;
-	private static final int BUSINESS_SUMMARY_MAX_CHARS = 280;
-	private static final int MARCH_MONTHLY_SECTION_MAX_CHARS = 230;
-	private static final List<String> MARCH_MONTHLY_SECTION_TITLES = List.of(
-		"3월 핵심 키워드",
-		"금전운",
-		"연애운",
-		"학업운",
-		"직장/일운",
-		"건강운",
-		"주의할 점과 조언",
-		"3월운 총평"
-	);
-
 	public ManseInterpretationService(
 		ObjectMapper objectMapper,
 		OpenAiResponsesClient openAiResponsesClient,
@@ -178,7 +124,8 @@ public class ManseInterpretationService {
 		EmailService emailService,
 		SajuResultService sajuResultService,
 		SajuPromptFactory sajuPromptFactory,
-		CompatibilityPromptFactory compatibilityPromptFactory
+		CompatibilityPromptFactory compatibilityPromptFactory,
+		AnalysisNormalizer analysisNormalizer
 	) {
 		this.objectMapper = objectMapper;
 		this.openAiResponsesClient = openAiResponsesClient;
@@ -190,6 +137,7 @@ public class ManseInterpretationService {
 		this.sajuResultService = sajuResultService;
 		this.sajuPromptFactory = sajuPromptFactory;
 		this.compatibilityPromptFactory = compatibilityPromptFactory;
+		this.analysisNormalizer = analysisNormalizer;
 	}
 
 	@Async("gptTaskExecutor")
@@ -249,9 +197,9 @@ public class ManseInterpretationService {
 				GptSajuResponse.class
 			);
 
-			String normalizedFullAnalysis = normalizeAnalysisBySubcategory(subcategoryId,
+			String normalizedFullAnalysis = analysisNormalizer.normalizeAnalysis(subcategoryId,
 				gptData.getFullAnalysis());
-			String normalizedSummary = normalizeSummaryBySubcategory(subcategoryId,
+			String normalizedSummary = analysisNormalizer.normalizeSummary(subcategoryId,
 				gptData.getSummary());
 
 			// 4. [DB] 결과 저장 (DB 커넥션 사용 O -> 즉시 반납)
@@ -422,9 +370,9 @@ public class ManseInterpretationService {
 			GptSajuResponse gptData = objectMapper.readValue(
 				outputText, GptSajuResponse.class);
 
-			String normalizedFullAnalysis = normalizeAnalysisBySubcategory(subcategoryId,
+			String normalizedFullAnalysis = analysisNormalizer.normalizeAnalysis(subcategoryId,
 				gptData.getFullAnalysis());
-			String normalizedSummary = normalizeSummaryBySubcategory(subcategoryId,
+			String normalizedSummary = analysisNormalizer.normalizeSummary(subcategoryId,
 				gptData.getSummary());
 
 			// 3. [DB] 결과 저장
@@ -523,629 +471,6 @@ public class ManseInterpretationService {
 				sajuResultService.rollbackCompatibilityStatus(resultId);
 			}
 		}
-	}
-
-	// ==================== GPT 응답 후처리 ====================
-
-	private String normalizeAnalysisBySubcategory(Long subcategoryId, String fullAnalysis) {
-		if (fullAnalysis == null) {
-			return null;
-		}
-		if (subcategoryId != null && subcategoryId == 20L) {
-			return normalizeMoneyLuckText(fullAnalysis);
-		}
-		if (subcategoryId != null && (subcategoryId == 21L || subcategoryId == 22L || subcategoryId == 23L)) {
-			return normalizeBusinessText(fullAnalysis);
-		}
-		if (isFreeFortuneSubcategory(subcategoryId)) {
-			return normalizeFreeFortuneText(subcategoryId, fullAnalysis);
-		}
-		return fullAnalysis;
-	}
-
-	private String normalizeSummaryBySubcategory(Long subcategoryId, String summary) {
-		if (summary == null) {
-			return null;
-		}
-		if (subcategoryId != null && (subcategoryId == 21L || subcategoryId == 22L || subcategoryId == 23L)) {
-			return limitBusinessSummaryLength(normalizeBusinessSummary(summary));
-		}
-		if (isFreeFortuneSubcategory(subcategoryId)) {
-			return normalizeFreeFortuneSummary(subcategoryId, summary);
-		}
-		return summary;
-	}
-
-	private boolean isFreeFortuneSubcategory(Long subcategoryId) {
-		if (subcategoryId == null) {
-			return false;
-		}
-		return subcategoryId == 101L
-			|| subcategoryId == 102L
-			|| subcategoryId == 103L
-			|| subcategoryId == 104L
-			|| subcategoryId == 105L
-			|| subcategoryId == 106L;
-	}
-
-	private String normalizeFreeFortuneText(Long subcategoryId, String text) {
-		String normalized = text
-			.replace("\r\n", "\n")
-			.replace("\r", "\n");
-		normalized = BUSINESS_PAGE_BREAK_PATTERN.matcher(normalized).replaceAll("\n\n");
-		normalized = BRACKET_SECTION_TITLE_PATTERN.matcher(normalized).replaceAll("");
-		normalized = NUMBERED_SUBSECTION_PATTERN.matcher(normalized).replaceAll("");
-		normalized = NUMBERED_LIST_PATTERN.matcher(normalized).replaceAll("");
-		normalized = HASH_HEADER_PATTERN.matcher(normalized).replaceAll("");
-		normalized = ISO_LOCAL_DATETIME_WITH_OPTIONAL_SECONDS_PATTERN.matcher(normalized)
-			.replaceAll("$1 $2");
-		normalized = DATETIME_WITH_SPACE_PATTERN.matcher(normalized).replaceAll("$1-$2");
-		normalized = DATE_WITH_DAY_PATTERN.matcher(normalized).replaceAll("$1-$2");
-		normalized = convertYearMonthToKorean(normalized);
-		normalized = mergeSingleLineBreaksWithinParagraph(normalized);
-
-		if (subcategoryId == 101L) {
-			normalized = ensureContextAwareParagraphBreaks(
-				normalized,
-				List.of("환경의 변화", "인간관계의 변화", "연애와 애정운", "학업 및 성취운", "건강 및 컨디션"),
-				150,
-				250
-			);
-		} else if (subcategoryId == 102L) {
-			normalized = removeKeywordMetaPhrases(normalized);
-			normalized = ensureKeywordParagraphBreaks(normalized);
-		} else if (subcategoryId == 103L) {
-			normalized = ensureContextAwareParagraphBreaks(
-				normalized,
-				List.of("당신의 매력 포인트", "나만의 플러팅 비법", "이것만은 주의하세요"),
-				140,
-				230
-			);
-		} else if (subcategoryId == 104L) {
-			normalized = normalized.replaceAll(
-				"\\[(아이돌\\s*추천|배우\\s*추천|캐릭터\\s*추천)\\]\\s*",
-				"");
-			normalized = ensureChemistryParagraphBreaks(normalized);
-		} else if (subcategoryId == 105L) {
-			normalized = ensureContextAwareParagraphBreaks(
-				normalized,
-				List.of("오늘의 총운", "재물운", "금전운", "애정운", "성취운"),
-				130,
-				220
-			);
-		} else if (subcategoryId == 106L) {
-			normalized = normalizeMarchMonthlyText(normalized);
-		}
-
-		normalized = THREE_OR_MORE_NEWLINES_PATTERN.matcher(normalized).replaceAll("\n\n");
-		return normalized.trim();
-	}
-
-	private String normalizeFreeFortuneSummary(Long subcategoryId, String text) {
-		String normalized = text
-			.replace("\r\n", "\n")
-			.replace("\r", "\n");
-		if (subcategoryId == 102L) {
-			normalized = removeKeywordMetaPhrases(normalized);
-		}
-		normalized = THREE_OR_MORE_NEWLINES_PATTERN.matcher(normalized).replaceAll("\n\n");
-		return normalized.trim();
-	}
-
-	private String normalizeMoneyLuckText(String text) {
-		String normalized = text
-			.replace("\r\n", "\n")
-			.replace("\r", "\n");
-
-		normalized = BUSINESS_PAGE_BREAK_PATTERN.matcher(normalized).replaceAll("\n\n");
-		normalized = MONEY_LUCK_LETTERED_SECTION_PATTERN.matcher(normalized).replaceAll("");
-		normalized = BRACKET_SECTION_TITLE_PATTERN.matcher(normalized).replaceAll("");
-		normalized = NUMBERED_SUBSECTION_PATTERN.matcher(normalized).replaceAll("");
-		normalized = NUMBERED_LIST_PATTERN.matcher(normalized).replaceAll("");
-		normalized = HASH_HEADER_PATTERN.matcher(normalized).replaceAll("");
-
-		// 깨진 대괄호 제목 조각 정리 ([주의할 점과 / 조언] 같은 케이스)
-		normalized = MONEY_LUCK_BRACKET_OPEN_FRAGMENT_PATTERN.matcher(normalized).replaceAll("$1");
-		normalized = MONEY_LUCK_BRACKET_CLOSE_FRAGMENT_PATTERN.matcher(normalized).replaceAll("$1");
-		normalized = MONEY_LUCK_BRACKET_ONLY_HEADING_PATTERN.matcher(normalized).replaceAll("");
-
-		// 대표 깨짐 토큰 보정
-		normalized = normalized.replace("جذب力", "흡인력");
-		normalized = normalized.replace("جذب 력", "흡인력");
-		normalized = normalized.replace(" جذب", " 흡인력");
-		normalized = normalized.replace("جذب", "흡인력");
-
-		normalized = ISO_LOCAL_DATETIME_WITH_OPTIONAL_SECONDS_PATTERN.matcher(normalized)
-			.replaceAll("$1 $2");
-		normalized = DATETIME_WITH_SPACE_PATTERN.matcher(normalized).replaceAll("$1-$2");
-		normalized = DATE_WITH_DAY_PATTERN.matcher(normalized).replaceAll("$1-$2");
-		normalized = convertYearMonthToKorean(normalized);
-
-		// 비정상 유니코드(아랍/키릴) 제거
-		normalized = ARABIC_OR_CYRILLIC_PATTERN.matcher(normalized).replaceAll("");
-
-		normalized = mergeSingleLineBreaksWithinParagraph(normalized);
-		normalized = MULTI_SPACE_PATTERN.matcher(normalized).replaceAll(" ");
-		normalized = normalized.replaceAll("[ \\t]+\\n", "\n");
-		normalized = THREE_OR_MORE_NEWLINES_PATTERN.matcher(normalized).replaceAll("\n\n");
-		return normalized.trim();
-	}
-
-	private String normalizeBusinessText(String text) {
-		String normalized = text
-			.replace("\r\n", "\n")
-			.replace("\r", "\n");
-
-		// UI 페이지 구분은 반드시 빈 줄 1개(\n\n)로 통일
-		normalized = BUSINESS_PAGE_BREAK_PATTERN.matcher(normalized).replaceAll("\n\n");
-
-		// 요구하지 않은 라벨/목차 제거
-		normalized = BRACKET_SECTION_TITLE_PATTERN.matcher(normalized).replaceAll("");
-		normalized = NUMBERED_SUBSECTION_PATTERN.matcher(normalized).replaceAll("");
-		normalized = NUMBERED_LIST_PATTERN.matcher(normalized).replaceAll("");
-		normalized = HASH_HEADER_PATTERN.matcher(normalized).replaceAll("");
-
-		// 기간 표기 통일: 2026-02-04T04:38:00 / 2026-02-04 04:38 / 2026-02-04 -> 2026-02
-		normalized = ISO_LOCAL_DATETIME_WITH_OPTIONAL_SECONDS_PATTERN.matcher(normalized)
-			.replaceAll("$1 $2");
-		normalized = DATETIME_WITH_SPACE_PATTERN.matcher(normalized).replaceAll("$1-$2");
-		normalized = DATE_WITH_DAY_PATTERN.matcher(normalized).replaceAll("$1-$2");
-		normalized = convertYearMonthToKorean(normalized);
-		normalized = expandBusinessJargonForReadability(normalized);
-		normalized = removeBusinessForbiddenAdviceLines(normalized);
-		normalized = normalized.replaceAll("(?m)^.*(오행 점수|내 세력|남의 세력).*$\\n?", "");
-		normalized = normalized.replaceAll("(?m)([목화토금수])\\s*\\d+\\.\\d+", "$1 기운");
-		normalized = normalized.replaceAll("\\(\\p{IsHan}+\\)", "");
-
-		// 문장 단위 줄바꿈을 문단 줄글로 정리
-		normalized = mergeSingleLineBreaksWithinParagraph(normalized);
-
-		// 과도한 공백 정리
-		normalized = THREE_OR_MORE_NEWLINES_PATTERN.matcher(normalized).replaceAll("\n\n");
-		return normalized.trim();
-	}
-
-	private String normalizeBusinessSummary(String text) {
-		String normalized = text
-			.replace("\r\n", "\n")
-			.replace("\r", "\n");
-		normalized = BUSINESS_PAGE_BREAK_PATTERN.matcher(normalized).replaceAll("\n\n");
-		normalized = BRACKET_SECTION_TITLE_PATTERN.matcher(normalized).replaceAll("");
-		normalized = NUMBERED_SUBSECTION_PATTERN.matcher(normalized).replaceAll("");
-		normalized = NUMBERED_LIST_PATTERN.matcher(normalized).replaceAll("");
-		normalized = HASH_HEADER_PATTERN.matcher(normalized).replaceAll("");
-		normalized = ISO_LOCAL_DATETIME_WITH_OPTIONAL_SECONDS_PATTERN.matcher(normalized)
-			.replaceAll("$1 $2");
-		normalized = DATETIME_WITH_SPACE_PATTERN.matcher(normalized).replaceAll("$1-$2");
-		normalized = DATE_WITH_DAY_PATTERN.matcher(normalized).replaceAll("$1-$2");
-		normalized = convertYearMonthToKorean(normalized);
-		normalized = expandBusinessJargonForReadability(normalized);
-		normalized = removeBusinessForbiddenAdviceLines(normalized);
-		normalized = normalized.replaceAll("(?m)^.*(오행 점수|내 세력|남의 세력).*$\\n?", "");
-		normalized = normalized.replaceAll("(?m)([목화토금수])\\s*\\d+\\.\\d+", "$1 기운");
-		normalized = normalized.replaceAll("\\(\\p{IsHan}+\\)", "");
-		normalized = THREE_OR_MORE_NEWLINES_PATTERN.matcher(normalized).replaceAll("\n\n");
-		return normalized.trim();
-	}
-
-	private String normalizeKeywordText(String text) {
-		String normalized = text
-			.replace("\r\n", "\n")
-			.replace("\r", "\n");
-		normalized = BUSINESS_PAGE_BREAK_PATTERN.matcher(normalized).replaceAll("\n\n");
-		normalized = BRACKET_SECTION_TITLE_PATTERN.matcher(normalized).replaceAll("");
-		normalized = NUMBERED_SUBSECTION_PATTERN.matcher(normalized).replaceAll("");
-		normalized = NUMBERED_LIST_PATTERN.matcher(normalized).replaceAll("");
-		normalized = HASH_HEADER_PATTERN.matcher(normalized).replaceAll("");
-		normalized = removeKeywordMetaPhrases(normalized);
-		normalized = ISO_LOCAL_DATETIME_WITH_OPTIONAL_SECONDS_PATTERN.matcher(normalized)
-			.replaceAll("$1 $2");
-		normalized = DATETIME_WITH_SPACE_PATTERN.matcher(normalized).replaceAll("$1-$2");
-		normalized = DATE_WITH_DAY_PATTERN.matcher(normalized).replaceAll("$1-$2");
-		normalized = convertYearMonthToKorean(normalized);
-		normalized = mergeSingleLineBreaksWithinParagraph(normalized);
-		normalized = ensureKeywordParagraphBreaks(normalized);
-		normalized = THREE_OR_MORE_NEWLINES_PATTERN.matcher(normalized).replaceAll("\n\n");
-		return normalized.trim();
-	}
-
-	private String normalizeKeywordSummary(String text) {
-		String normalized = text
-			.replace("\r\n", "\n")
-			.replace("\r", "\n");
-		normalized = removeKeywordMetaPhrases(normalized);
-		normalized = THREE_OR_MORE_NEWLINES_PATTERN.matcher(normalized).replaceAll("\n\n");
-		return normalized.trim();
-	}
-
-	private String normalizeMarchMonthlyText(String text) {
-		String normalized = text == null ? "" : text;
-
-		// 1) 섹션 제목 변형(대괄호, 줄바꿈 분리, 콜론 표기)을 표준 제목으로 통일
-		normalized = normalized.replaceAll("(?is)\\[\\s*3월\\s*핵심\\s*키워드\\s*\\]", "3월 핵심 키워드");
-		normalized = normalized.replaceAll("(?is)\\[\\s*금전\\s*운\\s*\\]", "금전운");
-		normalized = normalized.replaceAll("(?is)\\[\\s*연애\\s*운\\s*\\]", "연애운");
-		normalized = normalized.replaceAll("(?is)\\[\\s*학업\\s*운\\s*\\]", "학업운");
-		normalized = normalized.replaceAll("(?is)\\[\\s*학업\\s*/\\s*일\\s*운\\s*\\]", "학업운");
-		normalized = normalized.replaceAll("(?is)\\[\\s*직장\\s*운\\s*\\]", "직장/일운");
-		normalized = normalized.replaceAll("(?is)\\[\\s*직장\\s*/\\s*일\\s*운\\s*\\]", "직장/일운");
-		normalized = normalized.replaceAll("(?is)\\[\\s*건강\\s*운\\s*\\]", "건강운");
-		normalized = normalized.replaceAll("(?is)\\[\\s*주의할\\s*점과\\s*조언\\s*\\]", "주의할 점과 조언");
-		normalized = normalized.replaceAll("(?is)\\[\\s*3월운\\s*총평\\s*\\]", "3월운 총평");
-
-		normalized = normalized.replaceAll("(?m)^\\s*3월\\s*핵심\\s*키워드\\s*[:：-]?\\s*",
-			"\n\n3월 핵심 키워드\n");
-		normalized = normalized.replaceAll("(?m)^\\s*금전\\s*운\\s*[:：-]?\\s*", "\n\n금전운\n");
-		normalized = normalized.replaceAll("(?m)^\\s*연애\\s*운\\s*[:：-]?\\s*", "\n\n연애운\n");
-		normalized = normalized.replaceAll("(?m)^\\s*학업\\s*운\\s*[:：-]?\\s*", "\n\n학업운\n");
-		normalized = normalized.replaceAll("(?m)^\\s*학업\\s*/\\s*일\\s*운\\s*[:：-]?\\s*", "\n\n학업운\n");
-		normalized = normalized.replaceAll("(?m)^\\s*직장\\s*운\\s*[:：-]?\\s*", "\n\n직장/일운\n");
-		normalized = normalized.replaceAll("(?m)^\\s*직장\\s*/\\s*일\\s*운\\s*[:：-]?\\s*",
-			"\n\n직장/일운\n");
-		normalized = normalized.replaceAll("(?m)^\\s*건강\\s*운\\s*[:：-]?\\s*", "\n\n건강운\n");
-		normalized = normalized.replaceAll("(?m)^\\s*주의할\\s*점과\\s*조언\\s*[:：-]?\\s*",
-			"\n\n주의할 점과 조언\n");
-		normalized = normalized.replaceAll("(?m)^\\s*3월운\\s*총평\\s*[:：-]?\\s*", "\n\n3월운 총평\n");
-		normalized = THREE_OR_MORE_NEWLINES_PATTERN.matcher(normalized).replaceAll("\n\n").trim();
-
-		// 2) 섹션 단위로 재조립해 제목이 분리되는 문제 방지 + 섹션당 길이 상한 적용
-		Map<String, StringBuilder> sectionBodies = new LinkedHashMap<>();
-		for (String title : MARCH_MONTHLY_SECTION_TITLES) {
-			sectionBodies.put(title, new StringBuilder());
-		}
-
-		String currentTitle = null;
-		List<String> blocks = Arrays.stream(normalized.split("\\n\\s*\\n"))
-			.map(String::trim)
-			.filter(block -> !block.isEmpty())
-			.toList();
-
-		for (String block : blocks) {
-			if (MARCH_MONTHLY_SECTION_TITLES.contains(block)) {
-				currentTitle = block;
-				continue;
-			}
-
-			boolean consumed = false;
-			for (String title : MARCH_MONTHLY_SECTION_TITLES) {
-				if (block.startsWith(title + "\n")) {
-					currentTitle = title;
-					String body = block.substring(title.length()).trim();
-					appendSectionBody(sectionBodies.get(title), body);
-					consumed = true;
-					break;
-				}
-			}
-			if (consumed) {
-				continue;
-			}
-
-			if (currentTitle != null) {
-				appendSectionBody(sectionBodies.get(currentTitle), block);
-			}
-		}
-
-		List<String> rebuilt = new ArrayList<>();
-		for (String title : MARCH_MONTHLY_SECTION_TITLES) {
-			String body = sectionBodies.get(title).toString().trim();
-			if (body.isEmpty()) {
-				continue;
-			}
-			body = trimToSentenceLength(body, MARCH_MONTHLY_SECTION_MAX_CHARS);
-			rebuilt.add(title + "\n" + body);
-		}
-
-		return String.join("\n\n", rebuilt).trim();
-	}
-
-	private void appendSectionBody(StringBuilder builder, String text) {
-		if (text == null || text.isBlank()) {
-			return;
-		}
-		if (builder.length() > 0) {
-			builder.append(" ");
-		}
-		builder.append(text.replaceAll("\\s+", " ").trim());
-	}
-
-	private String trimToSentenceLength(String text, int maxChars) {
-		if (text == null) {
-			return "";
-		}
-		String normalized = text.trim();
-		if (normalized.length() <= maxChars) {
-			return normalized;
-		}
-
-		int hardCut = Math.min(maxChars, normalized.length());
-		int cut = -1;
-		String[] markers = {"다.", "요.", "니다.", ".", "!", "?"};
-		for (String marker : markers) {
-			int idx = normalized.lastIndexOf(marker, hardCut);
-			if (idx > cut) {
-				cut = idx + marker.length();
-			}
-		}
-
-		if (cut < (int) (maxChars * 0.55)) {
-			cut = hardCut;
-		}
-		return normalized.substring(0, cut).trim();
-	}
-
-	private String normalizeChemistryText(String text) {
-		String normalized = text
-			.replace("\r\n", "\n")
-			.replace("\r", "\n");
-		normalized = BUSINESS_PAGE_BREAK_PATTERN.matcher(normalized).replaceAll("\n\n");
-		normalized = BRACKET_SECTION_TITLE_PATTERN.matcher(normalized).replaceAll("");
-		normalized = normalized.replaceAll(
-			"(?m)^\\s*\\[(아이돌\\s*추천|배우\\s*추천|캐릭터\\s*추천)\\]\\s*\\n?",
-			"");
-		normalized = NUMBERED_SUBSECTION_PATTERN.matcher(normalized).replaceAll("");
-		normalized = NUMBERED_LIST_PATTERN.matcher(normalized).replaceAll("");
-		normalized = HASH_HEADER_PATTERN.matcher(normalized).replaceAll("");
-		normalized = mergeSingleLineBreaksWithinParagraph(normalized);
-		normalized = ensureChemistryParagraphBreaks(normalized);
-		normalized = THREE_OR_MORE_NEWLINES_PATTERN.matcher(normalized).replaceAll("\n\n");
-		return normalized.trim();
-	}
-
-	private String limitBusinessSummaryLength(String summary) {
-		String normalized = summary == null ? "" : summary
-			.replace("\r\n", "\n")
-			.replace("\r", "\n")
-			.trim();
-		if (normalized.isEmpty()) {
-			return normalized;
-		}
-
-		List<String> lines = Arrays.stream(normalized.split("\n"))
-			.map(String::trim)
-			.filter(line -> !line.isEmpty())
-			.limit(BUSINESS_SUMMARY_MAX_LINES)
-			.toList();
-
-		String limited = String.join("\n", lines);
-		if (limited.length() > BUSINESS_SUMMARY_MAX_CHARS) {
-			limited = limited.substring(0, BUSINESS_SUMMARY_MAX_CHARS).trim();
-		}
-		return limited;
-	}
-
-	private String expandBusinessJargonForReadability(String text) {
-		String normalized = text;
-		normalized = normalized.replace("수국", "수기운 결속 구조");
-		normalized = normalized.replace("천간충", "천간 충돌(생각과 실행이 맞부딪히는 구조)");
-		normalized = normalized.replace("양인살", "양인살(추진력이 강하지만 과속 시 마찰이 생기기 쉬운 신살)");
-		normalized = normalized.replace("공망", "공망(기대와 현실이 어긋나기 쉬운 구간)");
-		normalized = normalized.replace("역마살", "역마살(이동과 변화가 많아지는 기운)");
-		return normalized;
-	}
-
-	private String removeBusinessForbiddenAdviceLines(String text) {
-		return text.replaceAll(
-			"(?m)^.*(행운의 색|개운색|개운법|청색|녹색|동쪽|서쪽|남쪽|북쪽|3과\\s*8|숫자\\s*3|숫자\\s*8).*$\\n?",
-			"");
-	}
-
-	private String mergeSingleLineBreaksWithinParagraph(String text) {
-		String[] paragraphBlocks = text.split("\\n\\s*\\n");
-		List<String> mergedBlocks = new ArrayList<>();
-
-		for (String block : paragraphBlocks) {
-			String trimmed = block.trim();
-			if (trimmed.isEmpty()) {
-				continue;
-			}
-			String merged = trimmed
-				.replaceAll("\\n+", " ")
-				.replaceAll("[ \\t]{2,}", " ");
-			mergedBlocks.add(merged);
-		}
-
-		return String.join("\n\n", mergedBlocks);
-	}
-
-	private String removeKeywordMetaPhrases(String text) {
-		String normalized = text;
-		normalized = normalized.replaceAll(
-			"직접\\s*대면\\s*상담하듯\\s*핵심만\\s*전해드(?:립니|릴게)다\\.?",
-			"");
-		normalized = normalized.replaceAll("핵심만\\s*전해드(?:립니|릴게)다\\.?", "");
-		normalized = normalized.replaceAll("AI가\\s*분석한\\s*결과", "");
-		return normalized;
-	}
-
-	private String ensureKeywordParagraphBreaks(String text) {
-		String normalized = text == null ? "" : text.trim();
-		if (normalized.isEmpty()) {
-			return normalized;
-		}
-
-		String titleLine = "";
-		Matcher titleMatcher = KEYWORD_TITLE_LINE_PATTERN.matcher(normalized);
-		if (titleMatcher.find() && titleMatcher.start() == 0) {
-			titleLine = titleMatcher.group().trim();
-			normalized = normalized.substring(titleMatcher.end()).trim();
-		}
-
-		List<String> existingParagraphs = Arrays.stream(normalized.split("\\n\\s*\\n"))
-			.map(String::trim)
-			.filter(line -> !line.isEmpty())
-			.toList();
-
-		if (existingParagraphs.size() >= 3) {
-			List<String> mergedParagraphs = new ArrayList<>(existingParagraphs);
-			if (!titleLine.isEmpty()) {
-				mergedParagraphs.set(0, titleLine + "\n" + mergedParagraphs.get(0));
-			}
-			return String.join("\n\n", mergedParagraphs);
-		}
-
-		String body = ensureContextAwareParagraphBreaks(
-			normalized,
-			List.of("다만", "특히", "반면", "무엇보다", "결론적으로"),
-			150,
-			240
-		);
-		List<String> rebuiltParagraphs = Arrays.stream(body.split("\\n\\s*\\n"))
-			.map(String::trim)
-			.filter(line -> !line.isEmpty())
-			.collect(java.util.stream.Collectors.toCollection(ArrayList::new));
-		if (rebuiltParagraphs.size() < 2 && normalized.length() > 120) {
-			rebuiltParagraphs = new ArrayList<>(
-				splitParagraphByContext(normalized, List.of(), 90, 150));
-		}
-		if (rebuiltParagraphs.isEmpty()) {
-			return titleLine.isEmpty() ? normalized : titleLine + "\n" + normalized;
-		}
-
-		if (!titleLine.isEmpty() && !rebuiltParagraphs.isEmpty()) {
-			List<String> titledParagraphs = new ArrayList<>(rebuiltParagraphs);
-			titledParagraphs.set(0, titleLine + "\n" + titledParagraphs.get(0));
-			return String.join("\n\n", titledParagraphs);
-		}
-		return String.join("\n\n", rebuiltParagraphs);
-	}
-
-	private String ensureChemistryParagraphBreaks(String text) {
-		String normalized = text == null ? "" : text.trim();
-		if (normalized.isEmpty()) {
-			return normalized;
-		}
-
-		List<String> existingParagraphs = Arrays.stream(normalized.split("\\n\\s*\\n"))
-			.map(String::trim)
-			.filter(line -> !line.isEmpty())
-			.toList();
-		if (existingParagraphs.size() >= 3) {
-			return String.join("\n\n", existingParagraphs);
-		}
-
-		String markerSplit = normalized;
-		markerSplit = markerSplit.replaceAll(
-			"\\s*(아이돌\\s*1명\\s*추천\\s*문단|배우\\s*1명\\s*추천\\s*문단|캐릭터\\s*1명\\s*추천\\s*문단|아이돌\\s*추천\\s*3명|배우\\s*추천\\s*3명|캐릭터\\s*추천\\s*3명|종합 원픽\\s*TOP3)",
-			"\n\n$1");
-		markerSplit = markerSplit.replaceAll("\\s*(🥇|🥈|🥉)\\s*", "\n\n$1 ");
-		markerSplit = markerSplit.replaceAll("(?<!\\d)([123])위\\s*[:：]", "\n\n$1위:");
-		markerSplit = markerSplit.replaceAll(
-			"\\s*(아이돌\\s*[1-3]위|배우\\s*[1-3]위|캐릭터\\s*[1-3]위|아이돌\\s*추천\\s*[1-3]|배우\\s*추천\\s*[1-3]|캐릭터\\s*추천\\s*[1-3]|아이돌\\s*1명|배우\\s*1명|캐릭터\\s*1명)\\s*[:：]?",
-			"\n\n$1 ");
-		markerSplit = markerSplit.replaceAll(
-			"(?<=[.!?])\\s*(?=[가-힣A-Za-z0-9]{2,20}(은|는)\\s)",
-			"\n\n");
-		markerSplit = THREE_OR_MORE_NEWLINES_PATTERN.matcher(markerSplit).replaceAll("\n\n");
-
-		List<String> markerParagraphs = Arrays.stream(markerSplit.split("\\n\\s*\\n"))
-			.map(String::trim)
-			.filter(line -> !line.isEmpty())
-			.toList();
-		if (markerParagraphs.size() >= 3) {
-			return String.join("\n\n", markerParagraphs);
-		}
-
-		return ensureContextAwareParagraphBreaks(
-			markerSplit,
-			List.of("또한", "다만", "특히", "반면", "그리고"),
-			140,
-			240
-		);
-	}
-
-	private String ensureContextAwareParagraphBreaks(String text, List<String> topicMarkers,
-		int minChars, int maxChars) {
-		String normalized = text == null ? "" : text.trim();
-		if (normalized.isEmpty()) {
-			return normalized;
-		}
-
-		String withMarkerHints = normalized;
-		for (String marker : topicMarkers) {
-			withMarkerHints = withMarkerHints.replaceAll(
-				"(?<!\\n\\n)\\s+(?=" + Pattern.quote(marker) + ")",
-				"\n\n");
-		}
-		withMarkerHints = THREE_OR_MORE_NEWLINES_PATTERN.matcher(withMarkerHints)
-			.replaceAll("\n\n");
-
-		List<String> paragraphs = Arrays.stream(withMarkerHints.split("\\n\\s*\\n"))
-			.map(String::trim)
-			.filter(line -> !line.isEmpty())
-			.toList();
-
-		List<String> rebuilt = new ArrayList<>();
-		for (String paragraph : paragraphs) {
-			rebuilt.addAll(splitParagraphByContext(paragraph, topicMarkers, minChars, maxChars));
-		}
-		return String.join("\n\n", rebuilt);
-	}
-
-	private List<String> splitParagraphByContext(String paragraph, List<String> topicMarkers,
-		int minChars, int maxChars) {
-		List<String> sentences = Arrays.stream(paragraph.split("(?<=[.!?])\\s+"))
-			.map(String::trim)
-			.filter(line -> !line.isEmpty())
-			.toList();
-		if (sentences.isEmpty()) {
-			return List.of(paragraph);
-		}
-
-		if (sentences.size() == 1 && paragraph.length() <= maxChars) {
-			return List.of(paragraph);
-		}
-
-		List<String> chunks = new ArrayList<>();
-		StringBuilder current = new StringBuilder();
-		for (int i = 0; i < sentences.size(); i++) {
-			String sentence = sentences.get(i);
-			if (current.length() > 0) {
-				current.append(" ");
-			}
-			current.append(sentence);
-
-			String next = (i + 1) < sentences.size() ? sentences.get(i + 1).trim() : "";
-			boolean contextShift = startsWithAny(next, topicMarkers)
-				|| startsWithAny(next, FREE_PARAGRAPH_TRANSITIONS);
-			boolean overSoftLimit = current.length() >= maxChars;
-			boolean canSplit = current.length() >= minChars;
-
-			if ((contextShift && canSplit) || overSoftLimit) {
-				chunks.add(current.toString().trim());
-				current.setLength(0);
-			}
-		}
-
-		if (current.length() > 0) {
-			chunks.add(current.toString().trim());
-		}
-		return chunks;
-	}
-
-	private boolean startsWithAny(String text, List<String> prefixes) {
-		if (text == null || text.isBlank()) {
-			return false;
-		}
-		String trimmed = text.trim();
-		for (String prefix : prefixes) {
-			if (trimmed.startsWith(prefix)) {
-				return true;
-			}
-		}
-		return false;
-	}
-
-	private String convertYearMonthToKorean(String text) {
-		Matcher matcher = YEAR_MONTH_PATTERN.matcher(text);
-		StringBuffer sb = new StringBuffer();
-		while (matcher.find()) {
-			String year = matcher.group(1);
-			int month = Integer.parseInt(matcher.group(2));
-			String replaced = year + "년 " + month + "월";
-			matcher.appendReplacement(sb, Matcher.quoteReplacement(replaced));
-		}
-		matcher.appendTail(sb);
-		return sb.toString();
 	}
 
 	private String extractIlgan(ManseryeokCalculationResponse response) {
