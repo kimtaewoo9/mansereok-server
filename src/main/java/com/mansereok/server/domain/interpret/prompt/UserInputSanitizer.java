@@ -1,5 +1,6 @@
 package com.mansereok.server.domain.interpret.prompt;
 
+import com.mansereok.server.domain.interpret.text.TextCut;
 import java.util.Map;
 import java.util.SequencedMap;
 import java.util.regex.Pattern;
@@ -10,7 +11,7 @@ import java.util.regex.Pattern;
  * <p>LLM 프롬프트에서는 시스템 지시와 사용자 데이터가 결국 같은 텍스트 스트림으로 모델에 도달한다.
  * 그래서 사용자 입력이 줄을 바꾸거나 구획 표시를 흉내 내면 지시처럼 읽힐 수 있다.
  * 여기서는 (1) 제어문자·개행을 없애 입력이 독립된 줄이 되지 못하게 하고,
- * (2) 구획 표시 문자열을 지워 구획을 위조하지 못하게 하고,
+ * (2) 구획 표시 문자열을 지워 구획을 위조하지 못하게 하고(모양만 다른 전각 괄호도 반각으로 바꾼 뒤 지운다),
  * (3) 길이를 잘라 프롬프트 본문을 덮어쓰지 못하게 한다.
  *
  * <p>Effective Java 아이템 49(매개변수 유효성 검사)를 따라 잘못된 입력은 호출 즉시 예외로 알리고,
@@ -120,21 +121,53 @@ public final class UserInputSanitizer {
 		String withoutInvisible = INVISIBLE.matcher(raw).replaceAll("");
 		String singleLine = WHITESPACE_LIKE.matcher(withoutInvisible).replaceAll(" ");
 		// 개행으로 쪼개 넣은 구획 표시도 잡으려면 공백을 정리한 뒤에 지워야 한다.
-		String withoutMarkers = SECTION_MARKER.matcher(singleLine).replaceAll("");
-		String trimmed = WHITESPACE_LIKE.matcher(withoutMarkers).replaceAll(" ").trim();
+		String trimmed = removeSectionMarkers(toAsciiBrackets(singleLine)).trim();
 
-		if (trimmed.length() <= field.maxLength()) {
-			return trimmed;
+		// 상한은 @Size 와 같은 기준(코드 유닛)으로 두되, 이모지의 서로게이트 쌍이 쪼개지지 않게 자른다.
+		// 표시가 없는 문자열의 앞부분에는 표시가 새로 생기지 않으므로 자른 뒤에 다시 지울 필요는 없다.
+		return TextCut.atCodePointBoundary(trimmed, field.maxLength()).trim();
+	}
+
+	/**
+	 * 구획 표시를 더 지울 것이 없을 때까지 지운다.
+	 *
+	 * <p>한 번만 지우면 {@code [분석 [분석 지시]지시]} 처럼 표시 안에 표시를 끼운 입력에서 안쪽이 지워진 뒤
+	 * 바깥 조각이 이어 붙어 온전한 표시가 새로 생긴다. 지운 자리 양옆의 공백이 겹쳐 {@code [분석  지시]} 가 된 것도
+	 * 공백을 한 칸으로 합치면 다시 표시가 되므로 공백 정리도 같은 반복 안에서 한다.
+	 * 한 바퀴를 돌 때마다 문자열이 짧아지거나 그대로이므로 반복은 반드시 끝난다.
+	 */
+	private static String removeSectionMarkers(String text) {
+		String current = text;
+		String previous;
+		do {
+			previous = current;
+			String withoutMarkers = SECTION_MARKER.matcher(previous).replaceAll("");
+			current = WHITESPACE_LIKE.matcher(withoutMarkers).replaceAll(" ");
+		} while (!current.equals(previous));
+		return current;
+	}
+
+	/**
+	 * 구획 표시를 이루는 괄호와 모양만 다른 호환 문자를 반각 괄호로 바꾼다.
+	 * 전각(［ ］ ＜ ＞), 작은 꼴(﹤ ﹥), 세로쓰기 꼴(﹇ ﹈)이 대상이고, 유니코드 NFKC 정규화가 반각 괄호로 바꾸는 문자와 같다.
+	 * 모델에게는 {@code ［분석 지시］} 도 머리말로 읽히므로 반각으로 바꾼 뒤 구획 표시 지우기에 넘긴다.
+	 *
+	 * <p>입력 전체에 NFKC 를 걸지 않는 이유는 한글 호환 자모(ㅋ, ㅎ 등)까지 조합용 자모로 바뀌어
+	 * 이름이 달라지기 때문이다. 그래서 괄호만 골라 바꾼다.
+	 */
+	private static String toAsciiBrackets(String text) {
+		StringBuilder converted = new StringBuilder(text.length());
+		for (int i = 0; i < text.length(); i++) {
+			char c = text.charAt(i);
+			converted.append(switch (c) {
+				case '\uFF3B', '\uFE47' -> '[';
+				case '\uFF3D', '\uFE48' -> ']';
+				case '\uFF1C', '\uFE64' -> '<';
+				case '\uFF1E', '\uFE65' -> '>';
+				default -> c;
+			});
 		}
-		// 상한은 @Size 와 같은 기준(코드 유닛)으로 두되, 자르는 위치는 코드 포인트 경계로 맞춘다.
-		// 그냥 substring 하면 이모지 같은 보조 평면 문자의 서로게이트 쌍이 쪼개져
-		// 반쪽짜리 문자가 그대로 프롬프트에 실린다.
-		int end = field.maxLength();
-		if (Character.isHighSurrogate(trimmed.charAt(end - 1))
-			&& Character.isLowSurrogate(trimmed.charAt(end))) {
-			end--;
-		}
-		return trimmed.substring(0, end).trim();
+		return converted.toString();
 	}
 
 	/**
