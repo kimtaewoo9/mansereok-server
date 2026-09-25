@@ -35,7 +35,7 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
  *
  * <p>운영과 같게 두 예외 처리기를 등록한 standalone MockMvc 로 부른다. UserService 는 목이다.
  */
-class PasswordResetRequestValidationTest {
+class PasswordResetInputValidationTest {
 
 	private static final String REQUEST_URL = "/api/auth/password-reset/request";
 	private static final String CONFIRM_URL = "/api/auth/password-reset/confirm";

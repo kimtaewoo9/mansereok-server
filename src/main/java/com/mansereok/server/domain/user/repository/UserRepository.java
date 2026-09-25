@@ -33,8 +33,10 @@ public interface UserRepository extends JpaRepository<User, Long> {
 	boolean existsByEmail(String email);
 
 	/**
-	 * 사용자 행을 SELECT ... FOR UPDATE 로 읽어 트랜잭션이 끝날 때까지 잠근다. 같은 사용자의 비밀번호 재설정 요청을 한 줄로 세워,
-	 * 먼저 온 요청이 토큰을 넣고 커밋한 뒤에 다음 요청이 그 토큰을 보게 한다.
+	 * 사용자 행을 SELECT ... FOR UPDATE 로 읽어 트랜잭션이 끝날 때까지 잠근다. 같은 사용자의 비밀번호 재설정 요청을 한 줄로 세운다.
+	 *
+	 * <p>잠금을 기다린 뒤 일반 SELECT 로 앞 요청이 커밋한 행을 보려면 부르는 트랜잭션이 READ COMMITTED 여야 한다. REPEATABLE READ
+	 * 에서는 잠금 전 첫 조회 때의 스냅숏을 계속 읽는다(UserService.requestPasswordReset 참고).
 	 */
 	@Lock(LockModeType.PESSIMISTIC_WRITE)
 	@Query("select u from User u where u.id = :id")
