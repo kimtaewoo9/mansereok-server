@@ -102,9 +102,17 @@ public class Result {
 		return result;
 	}
 
-	// 정보 입력시 ..
+	/**
+	 * 해석을 시작하며 입력 정보를 채운다. 상태는 바꾸지 않는다.
+	 *
+	 * <p>해석 중(PROCESSING)으로 바꾸는 일은 ResultRepository.markProcessingIfInputRequired 의 조건부 UPDATE 가 맡고, 이 메서드는
+	 * 그 관문을 지난 결과에만 쓴다.
+	 *
+	 * @throws IllegalStateException 해석 중이 아닐 때. 완료된 결과에 다른 사람의 정보를 덮어써 본문과 인적 정보가 어긋나지 않게 한다.
+	 */
 	public void updateInformation(String name, LocalDate solarDate, LocalTime solarTime,
 		String gender, Boolean isLunar, String ilgan) {
+		requireProcessing("입력 정보를 채울");
 		this.name = name;
 		this.solarDate = solarDate;
 		this.solarTime = solarTime;
@@ -113,24 +121,17 @@ public class Result {
 		this.ilgan = ilgan;
 	}
 
-	// 해석 완료 후 COMPLETED 상태로 바꿈 .
+	/**
+	 * 해석 본문과 요약을 넣고 완료(COMPLETED)로 바꾼다.
+	 *
+	 * @throws IllegalStateException 해석 중(PROCESSING)이 아닐 때. 오래 멈춰 정보 입력 대기로 되돌려진 뒤 늦게 끝난 해석이나,
+	 *                               이미 완료된 결과를 다시 덮어쓰는 저장을 막는다.
+	 */
 	public void completeInterpretation(String interpretation, String summary) {
+		requireProcessing("해석 결과를 저장할");
 		this.interpretation = interpretation;
 		this.summary = summary;
 		this.status = ResultStatus.COMPLETED;
-	}
-
-	/**
-	 * 정보 입력 대기(INPUT_REQUIRED)인 결과만 해석 중(PROCESSING)으로 바꾼다.
-	 *
-	 * @return 바꿨으면 true. 이미 해석 중이거나 완료된 결과는 그대로 두고 false.
-	 */
-	public boolean markProcessing() {
-		if (status != ResultStatus.INPUT_REQUIRED) {
-			return false;
-		}
-		this.status = ResultStatus.PROCESSING;
-		return true;
 	}
 
 	/**
@@ -145,5 +146,12 @@ public class Result {
 		}
 		this.status = ResultStatus.INPUT_REQUIRED;
 		return true;
+	}
+
+	private void requireProcessing(String action) {
+		if (status != ResultStatus.PROCESSING) {
+			throw new IllegalStateException(String.format(
+				"해석 중(PROCESSING)인 결과에만 %s 수 있다. paymentId=%s, 지금 상태=%s", action, paymentId, status));
+		}
 	}
 }

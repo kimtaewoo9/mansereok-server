@@ -2,7 +2,6 @@ package com.mansereok.server.domain.interpret.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.lenient;
 
@@ -12,7 +11,10 @@ import com.mansereok.server.domain.interpret.entity.ResultStatus;
 import com.mansereok.server.domain.interpret.repository.CompatibilityResultRepository;
 import com.mansereok.server.domain.interpret.repository.ResultRepository;
 import com.mansereok.server.domain.product.repository.SubCategoryRepository;
-import jakarta.persistence.EntityNotFoundException;
+import com.mansereok.server.support.fixture.ResultFixture;
+import java.time.Clock;
+import java.time.Instant;
+import java.time.ZoneId;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -31,9 +33,9 @@ import org.mockito.junit.jupiter.MockitoExtension;
  * 아무것도 바꾸지 못하고 있었다.
  *
  * <p>네 갈래 모두 해석 중(되돌린다), 완료(그대로 둔다), 행 없음(예외 없이 끝난다)을 같은 순서로 두고, 결과 ID 갈래에는 ID 가
- * null 인 경우를 더한다. 빠진 경우가 있으면 갈래끼리 견줘 바로 보이게 하려는 것이다. 해석 중 결과는 검증 대상인 markProcessing
- * 으로 만들므로, 그 준비가 실제로 해석 중이 됐는지 given 끝에서 먼저 확인한다. 그렇지 않으면 markProcessing 이 상태를 바꾸지
- * 못할 때 결과가 처음부터 정보 입력 대기라 되돌리기 테스트가 아무것도 되돌리지 않고 통과한다.
+ * null 인 경우를 더한다. 빠진 경우가 있으면 갈래끼리 견줘 바로 보이게 하려는 것이다. 해석 중 결과는 ResultFixture 로 만들고, 그
+ * 준비가 실제로 해석 중인지 given 끝에서 먼저 확인한다. 그렇지 않으면 결과가 처음부터 정보 입력 대기라 되돌리기 테스트가 아무것도
+ * 되돌리지 않고 통과한다. 해석을 시작하는 쪽(startProcessing)은 ResultStartProcessingTest 가 본다.
  *
  * <p>save 호출 여부는 보지 않는다. 트랜잭션 안에서 읽은 엔티티는 커밋 때 반영되며, 그 사실은 ResultRollbackMySqlTest 가 실제
  * MySQL 로 확인한다.
@@ -58,8 +60,9 @@ class ResultStatusRollbackTest {
 
 	@BeforeEach
 	void setUp() {
+		// 되돌리기는 시각을 쓰지 않는다. 시각이 필요한 해석 시작은 ResultStartProcessingTest 가 본다.
 		resultService = new ResultService(resultRepository, compatibilityResultRepository,
-			subCategoryRepository);
+			subCategoryRepository, Clock.fixed(Instant.parse("2026-09-26T00:00:00Z"), ZoneId.of("Asia/Seoul")));
 		sajuResultService = new SajuResultService(resultRepository, compatibilityResultRepository);
 	}
 
@@ -271,72 +274,19 @@ class ResultStatusRollbackTest {
 		}
 	}
 
-	@Nested
-	@DisplayName("해석을 시작하며 결제 ID 로 상태를 해석 중으로 올리면")
-	class MarkProcessingByPaymentId {
-
-		@Test
-		@DisplayName("정보 입력 대기인 궁합 결과는 해석 중이 된다")
-		void marksCompatibility() {
-			// given
-			CompatibilityResult result = CompatibilityResult.createInitial(1L, PAYMENT_ID, "연인 궁합");
-			given(compatibilityResultRepository.findByPaymentId(PAYMENT_ID)).willReturn(Optional.of(result));
-
-			// when
-			resultService.updateCompatibilityStatusToProcessing(PAYMENT_ID);
-
-			// then
-			assertThat(result.getStatus()).isEqualTo(ResultStatus.PROCESSING);
-		}
-
-		@Test
-		@DisplayName("정보 입력 대기인 사주 결과는 해석 중이 된다")
-		void marksSaju() {
-			// given
-			Result result = Result.createInitial(1L, PAYMENT_ID, "인생 총운");
-			given(resultRepository.findByPaymentId(PAYMENT_ID)).willReturn(Optional.of(result));
-
-			// when
-			resultService.updateStatusToProcessing(PAYMENT_ID);
-
-			// then
-			assertThat(result.getStatus()).isEqualTo(ResultStatus.PROCESSING);
-		}
-
-		@Test
-		@DisplayName("결제 ID 에 해당하는 궁합 결과가 없으면 EntityNotFoundException 을 던진다")
-		void failsWhenCompatibilityMissing() {
-			// given
-			given(compatibilityResultRepository.findByPaymentId(PAYMENT_ID)).willReturn(Optional.empty());
-
-			// when & then
-			assertThatThrownBy(() -> resultService.updateCompatibilityStatusToProcessing(PAYMENT_ID))
-				.isInstanceOf(EntityNotFoundException.class)
-				.hasMessage("CompatibilityResult not found");
-		}
-	}
-
 	private static CompatibilityResult processingCompatibility() {
-		CompatibilityResult result = CompatibilityResult.createInitial(1L, PAYMENT_ID, "연인 궁합");
-		result.markProcessing();
-		return result;
+		return ResultFixture.compatibility(1L, PAYMENT_ID, ResultStatus.PROCESSING);
 	}
 
 	private static CompatibilityResult completedCompatibility() {
-		CompatibilityResult result = CompatibilityResult.createInitial(1L, PAYMENT_ID, "연인 궁합");
-		result.completeInterpretation("궁합 본문", 80, "궁합 요약");
-		return result;
+		return ResultFixture.compatibility(1L, PAYMENT_ID, ResultStatus.COMPLETED);
 	}
 
 	private static Result processingSaju() {
-		Result result = Result.createInitial(1L, PAYMENT_ID, "인생 총운");
-		result.markProcessing();
-		return result;
+		return ResultFixture.saju(1L, PAYMENT_ID, ResultStatus.PROCESSING);
 	}
 
 	private static Result completedSaju() {
-		Result result = Result.createInitial(1L, PAYMENT_ID, "인생 총운");
-		result.completeInterpretation("사주 본문", "사주 요약");
-		return result;
+		return ResultFixture.saju(1L, PAYMENT_ID, ResultStatus.COMPLETED);
 	}
 }

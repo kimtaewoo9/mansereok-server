@@ -54,10 +54,7 @@ public class ManseryeokController {
 	) {
 		log.info("만세력 해석 요청 username: " + username);
 
-		// 1. 상태 변경 (공통)
-		resultService.updateStatusToProcessing(request.getPaymentId());
-
-		// 2. 만세력 계산 (공통)
+		// 1. 만세력 계산 (공통). DB 를 읽기만 하므로 입력이 잘못돼 실패해도 결과 상태는 그대로다.
 		ManseryeokCalculationResponse manse = manseCalculationService.calculate(
 				new ManseryeokCalculationRequest(
 					request.getName(),
@@ -69,6 +66,10 @@ public class ManseryeokController {
 				)
 			);
 
+		// 2. 해석 시작 표시 (공통). 이미 해석 중이거나 완료된 결제면 409 로 끝나고 해석을 제출하지 않는다.
+		resultService.startProcessing(request.getPaymentId());
+
+		// 3. 비동기 해석 제출
 		submitOrRollback(request.getPaymentId(), resultService::rollbackStatusByPaymentId, () -> {
 			if (subcategoryId >= 100) {
 				manseInterpretationService.interpretFree(
@@ -107,8 +108,7 @@ public class ManseryeokController {
 		ManseCompatibilityAnalysisRequest.PersonInfo person1 = request.getPerson1();
 		ManseCompatibilityAnalysisRequest.PersonInfo person2 = request.getPerson2();
 
-		resultService.updateCompatibilityStatusToProcessing(request.getPaymentId());
-
+		// 1. 두 사람 만세력 계산. 둘 다 끝난 뒤에 해석 시작을 표시해, 두 번째 사람의 입력이 잘못돼도 결과 상태는 그대로다.
 		ManseryeokCalculationResponse person1Response = manseCalculationService.calculate(
 				new ManseryeokCalculationRequest(
 					person1.getName(),
@@ -131,6 +131,10 @@ public class ManseryeokController {
 				)
 			);
 
+		// 2. 해석 시작 표시. 이미 해석 중이거나 완료된 결제면 409 로 끝나고 해석을 제출하지 않는다.
+		resultService.startCompatibilityProcessing(request.getPaymentId());
+
+		// 3. 비동기 해석 제출
 		submitOrRollback(request.getPaymentId(),
 			resultService::rollbackCompatibilityStatusByPaymentId,
 			() -> manseInterpretationService.analyzeCompatibilityWithSubcategory(
@@ -175,7 +179,7 @@ public class ManseryeokController {
 			);
 
 		// 3. 상태 변경 INPUT_REQUIRED -> PROCESSING
-		resultService.updateStatusToProcessing(payment.getId());
+		resultService.startProcessing(payment.getId());
 
 		// 4. [비동기] 무료 전용 해석 메서드 호출 (별도 스레드 풀)
 		submitOrRollback(payment.getId(), resultService::rollbackStatusByPaymentId,
@@ -213,7 +217,7 @@ public class ManseryeokController {
 		);
 
 		// 3. 상태 변경
-		resultService.updateCompatibilityStatusToProcessing(payment.getId());
+		resultService.startCompatibilityProcessing(payment.getId());
 
 		// 4. [비동기] 무료 궁합 해석 서비스 호출
 		submitOrRollback(payment.getId(), resultService::rollbackCompatibilityStatusByPaymentId,
@@ -237,8 +241,11 @@ public class ManseryeokController {
 	 * <p>제출 직전에 결과 상태를 PROCESSING 으로 바꿔 두는데, 스레드 풀이 포화면
 	 * {@code TaskRejectedException}(= {@link RejectedExecutionException} 의 하위 타입)이
 	 * 제출 스레드, 즉 이 요청 스레드에서 그대로 튀어나온다. 해석은 시작조차 하지 않았으므로
-	 * 되돌리지 않으면 결과가 영원히 PROCESSING 에 남는다. 상태를 되돌린 뒤 예외는 그대로 올려
+	 * 되돌리지 않으면 결과가 PROCESSING 에 남는다. 상태를 되돌린 뒤 예외는 그대로 올려
 	 * GlobalExceptionHandler 가 503("잠시 후 다시")로 내려 주게 한다.
+	 *
+	 * <p>여기까지 오는 요청은 해석 시작 표시(startProcessing)를 통과한 하나뿐이다. 그래서 되돌리는 것은
+	 * 이 요청이 바꾼 상태이고, 같은 결제로 먼저 접수된 다른 요청의 해석 중 상태를 지우지 않는다.
 	 */
 	private void submitOrRollback(Long paymentId, Consumer<Long> rollback, Runnable submission) {
 		try {

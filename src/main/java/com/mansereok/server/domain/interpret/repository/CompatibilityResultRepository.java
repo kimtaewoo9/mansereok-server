@@ -1,6 +1,7 @@
 package com.mansereok.server.domain.interpret.repository;
 
 import com.mansereok.server.domain.interpret.entity.CompatibilityResult;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -17,6 +18,20 @@ public interface CompatibilityResultRepository extends JpaRepository<Compatibili
 	List<CompatibilityResult> findByUserIdOrderByCreatedAtDesc(Long userId);
 
 	Optional<CompatibilityResult> findByPaymentId(Long paymentId);
+
+	/**
+	 * 정보 입력 대기(INPUT_REQUIRED)인 궁합 결과만 해석 중(PROCESSING)으로 바꾸고, 바꾼 행 수(0 또는 1)를 돌려준다.
+	 * ResultRepository.markProcessingIfInputRequired 와 같은 규칙이다. uk_compatibility_results_payment_id 로 한 행만 잠근다.
+	 * 호출자의 트랜잭션 안에서 부른다.
+	 */
+	@Modifying(flushAutomatically = true, clearAutomatically = true)
+	@Query("UPDATE CompatibilityResult c"
+		+ " SET c.status = com.mansereok.server.domain.interpret.entity.ResultStatus.PROCESSING, c.updatedAt = :now"
+		+ " WHERE c.paymentId = :paymentId"
+		+ " AND c.status = com.mansereok.server.domain.interpret.entity.ResultStatus.INPUT_REQUIRED")
+	int markProcessingIfInputRequired(@Param("paymentId") Long paymentId, @Param("now") LocalDateTime now);
+
+	boolean existsByPaymentId(Long paymentId);
 
 	@Transactional
 	@Modifying(clearAutomatically = true)

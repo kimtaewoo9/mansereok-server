@@ -9,6 +9,7 @@ import static org.mockito.Mockito.mockingDetails;
 
 import com.mansereok.server.domain.interpret.entity.CompatibilityResult;
 import com.mansereok.server.domain.interpret.entity.Result;
+import com.mansereok.server.domain.interpret.entity.ResultStatus;
 import com.mansereok.server.domain.interpret.service.ResultService;
 import com.mansereok.server.domain.order.entity.Order;
 import com.mansereok.server.domain.order.entity.OrderStatus;
@@ -19,6 +20,7 @@ import com.mansereok.server.domain.payment.repository.PaymentRepository;
 import com.mansereok.server.support.ConcurrentCalls;
 import com.mansereok.server.support.ConcurrentCalls.CallResult;
 import com.mansereok.server.support.InterpretationMySqlTest;
+import com.mansereok.server.support.fixture.ResultFixture;
 import jakarta.persistence.EntityManagerFactory;
 import java.time.Duration;
 import java.time.LocalDateTime;
@@ -244,7 +246,7 @@ class ResultTableConstraintMySqlTest extends InterpretationMySqlTest {
 		void sajuInterpretationIsStoredWhole() {
 			// given
 			Long paymentId = runKey;
-			Result result = Result.createInitial(userA, paymentId, "사주");
+			Result result = ResultFixture.saju(userA, paymentId, ResultStatus.PROCESSING);
 			result.completeInterpretation(LONG_KOREAN_TEXT, "요약");
 
 			// when
@@ -262,7 +264,7 @@ class ResultTableConstraintMySqlTest extends InterpretationMySqlTest {
 		void compatibilityInterpretationIsStoredWhole() {
 			// given
 			Long paymentId = runKey;
-			CompatibilityResult result = CompatibilityResult.createInitial(userA, paymentId, "궁합");
+			CompatibilityResult result = ResultFixture.compatibility(userA, paymentId, ResultStatus.PROCESSING);
 			result.completeInterpretation(LONG_KOREAN_TEXT, 80, "요약");
 
 			// when
@@ -327,7 +329,7 @@ class ResultTableConstraintMySqlTest extends InterpretationMySqlTest {
 			Map<String, String> outcomes = outcomesWhileDeleteIsOpen(
 				() -> resultRepository.deleteAllByUserId(userA),
 				Map.of(
-					"다른 사용자 결과를 해석 중으로 바꾸기", () -> resultService.updateStatusToProcessing(runKey + 3),
+					"다른 사용자 결과를 해석 중으로 바꾸기", () -> resultService.startProcessing(runKey + 3),
 					"다른 사용자의 새 결과 행 저장", () -> saveSaju(userB, runKey + 4)));
 
 			// then
@@ -389,7 +391,7 @@ class ResultTableConstraintMySqlTest extends InterpretationMySqlTest {
 			Map<String, String> outcomes = outcomesWhileDeleteIsOpen(
 				() -> compatibilityResultRepository.deleteAllByUserId(userA),
 				Map.of(
-					"다른 사용자 결과를 해석 중으로 바꾸기", () -> resultService.updateCompatibilityStatusToProcessing(runKey + 3),
+					"다른 사용자 결과를 해석 중으로 바꾸기", () -> resultService.startCompatibilityProcessing(runKey + 3),
 					"다른 사용자의 새 결과 행 저장", () -> saveCompatibility(userB, runKey + 4)));
 
 			// then
@@ -421,14 +423,14 @@ class ResultTableConstraintMySqlTest extends InterpretationMySqlTest {
 		@Test
 		@DisplayName("엔티티를 고쳐 저장하면 새 시각으로 바뀐다")
 		void isRefreshedOnUpdate() {
-			// given: 저장한 행의 updated_at 을 과거로 옮겨 둔다
+			// given: 저장한 행을 해석 중으로 두고 updated_at 을 과거로 옮겨 둔다
 			Long paymentId = runKey;
 			saveCompatibility(userA, paymentId);
-			jdbcTemplate.update("UPDATE compatibility_results SET updated_at = '2020-01-01 00:00:00' WHERE payment_id = ?",
-				paymentId);
+			jdbcTemplate.update("UPDATE compatibility_results SET status = 'PROCESSING', updated_at = '2020-01-01 00:00:00' "
+				+ "WHERE payment_id = ?", paymentId);
 
-			// when
-			resultService.updateCompatibilityStatusToProcessing(paymentId);
+			// when: 엔티티를 읽어 상태를 바꾸는 길(조건부 UPDATE 가 아니라 @PreUpdate 를 거치는 길)로 고친다
+			resultService.rollbackCompatibilityStatusByPaymentId(paymentId);
 
 			// then
 			LocalDateTime updatedAt = jdbcTemplate.queryForObject(
