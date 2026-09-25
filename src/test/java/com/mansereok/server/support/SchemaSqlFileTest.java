@@ -20,7 +20,8 @@ import org.junit.jupiter.api.Test;
 class SchemaSqlFileTest {
 
 	// 이 프로젝트 schema.sql 에 실제로 있는 모양을 섞었다. 백틱 있는 이름과 없는 이름, 주석 속 괄호·쉼표,
-	// ENUM 안의 쉼표, 표 안의 INDEX 와 표 밖의 CREATE INDEX.
+	// ENUM 안의 쉼표, 표 안의 INDEX 와 표 밖의 CREATE INDEX. users 표에는 여러 방식으로 건 UNIQUE 와,
+	// 백슬래시로 이스케이프한 따옴표 뒤에 쉼표·세미콜론·괄호·주석 기호가 든 COMMENT 를 넣었다.
 	private static final String SCHEMA = """
 		-- 테이블 전체 삭제 (개발 초기 안전을 위해 사용)
 		DROP TABLE IF EXISTS `orders`;
@@ -53,6 +54,19 @@ class SchemaSqlFileTest {
 
 		CREATE INDEX idx_orders_status ON orders(status);
 		ALTER TABLE payments ADD CONSTRAINT fk_payments_order FOREIGN KEY (order_id) REFERENCES orders (id);
+
+		CREATE TABLE users (
+		    id BIGINT PRIMARY KEY,
+		    email VARCHAR(255),
+		    username VARCHAR(255),
+		    nickname VARCHAR(255) COMMENT 'it\\'s not unique; -- (really), fine #1',
+		    social_id VARCHAR(255),
+		    social_type VARCHAR(20),
+		    UNIQUE KEY uk_users_social_id_type (social_id, social_type)
+		);
+
+		CREATE UNIQUE INDEX uk_users_email ON users (email);
+		ALTER TABLE users ADD UNIQUE KEY uk_users_username (username), ADD INDEX idx_users_nickname (nickname);
 		""";
 
 	private final SchemaSqlFile schemaSqlFile = SchemaSqlFile.of(SCHEMA);
@@ -115,6 +129,13 @@ class SchemaSqlFileTest {
 			assertThat(schemaSqlFile.columnNames("payments"))
 				.containsExactly("id", "imp_uid", "order_id");
 		}
+
+		@Test
+		@DisplayName("백슬래시로 이스케이프한 따옴표가 든 COMMENT 안의 쉼표·세미콜론·괄호·주석 기호에서 끊지 않는다")
+		void keepsEscapedQuoteInsideComment() {
+			assertThat(schemaSqlFile.columnNames("users"))
+				.containsExactly("id", "email", "username", "nickname", "social_id", "social_type");
+		}
 	}
 
 	@Nested
@@ -130,10 +151,24 @@ class SchemaSqlFileTest {
 		}
 
 		@Test
-		@DisplayName("표 밖의 CREATE INDEX ... ON 과 ALTER TABLE 에서도 그 표에 걸린 이름을 찾는다")
+		@DisplayName("표 밖의 CREATE [UNIQUE] INDEX ... ON 과 ALTER TABLE ... ADD 에서도 그 표에 걸린 이름을 찾는다")
 		void findsNamesInSeparateStatements() {
 			assertThat(schemaSqlFile.mentions("orders", "idx_orders_status")).isTrue();
 			assertThat(schemaSqlFile.mentions("payments", "fk_payments_order")).isTrue();
+			assertThat(schemaSqlFile.mentions("users", "uk_users_email")).isTrue();
+			assertThat(schemaSqlFile.mentions("users", "uk_users_username")).isTrue();
+			assertThat(schemaSqlFile.mentions("users", "idx_users_nickname")).isTrue();
+		}
+
+		@Test
+		@DisplayName("컬럼 이름, 표 이름, 인덱스 컬럼 목록 안의 이름은 인덱스·제약 이름으로 보지 않는다")
+		void ignoresColumnAndTableNames() {
+			// merchant_uid 는 컬럼 끝에 UNIQUE 가 붙어 있고 INDEX 의 컬럼 목록에도 있다
+			assertThat(schemaSqlFile.mentions("orders", "merchant_uid")).isFalse();
+			assertThat(schemaSqlFile.mentions("orders", "orders")).isFalse();
+			// status 는 CREATE INDEX 의 컬럼 목록에, order_id 는 UNIQUE KEY·ALTER TABLE 의 컬럼 목록에 있다
+			assertThat(schemaSqlFile.mentions("orders", "status")).isFalse();
+			assertThat(schemaSqlFile.mentions("payments", "order_id")).isFalse();
 		}
 
 		@Test
@@ -142,6 +177,29 @@ class SchemaSqlFileTest {
 			assertThat(schemaSqlFile.mentions("payments", "idx_orders_status")).isFalse();
 			assertThat(schemaSqlFile.mentions("orders", "idx_orders_history_id")).isFalse();
 			assertThat(schemaSqlFile.mentions("orders", "idx_orders")).isFalse();
+		}
+	}
+
+	@Nested
+	@DisplayName("한 컬럼에 UNIQUE 가 걸렸는지 볼 때")
+	class IsUniqueColumn {
+
+		@Test
+		@DisplayName("컬럼 끝 UNIQUE, 표 안 UNIQUE KEY, CREATE UNIQUE INDEX, ALTER TABLE ADD UNIQUE 로 건 한 컬럼 UNIQUE 를 모두 찾는다")
+		void findsEachWayOfDeclaringUnique() {
+			assertThat(schemaSqlFile.isUniqueColumn("orders", "merchant_uid")).as("컬럼 끝 UNIQUE").isTrue();
+			assertThat(schemaSqlFile.isUniqueColumn("payments", "order_id")).as("표 안 UNIQUE KEY").isTrue();
+			assertThat(schemaSqlFile.isUniqueColumn("users", "email")).as("CREATE UNIQUE INDEX").isTrue();
+			assertThat(schemaSqlFile.isUniqueColumn("users", "username")).as("ALTER TABLE ADD UNIQUE KEY").isTrue();
+		}
+
+		@Test
+		@DisplayName("여러 컬럼을 묶은 UNIQUE, PRIMARY KEY, 일반 INDEX, 따옴표 안의 unique 글자는 UNIQUE 로 보지 않는다")
+		void ignoresOtherKeysAndQuotedWords() {
+			assertThat(schemaSqlFile.isUniqueColumn("users", "social_id")).as("여러 컬럼 UNIQUE").isFalse();
+			assertThat(schemaSqlFile.isUniqueColumn("orders", "id")).as("PRIMARY KEY").isFalse();
+			assertThat(schemaSqlFile.isUniqueColumn("orders", "status")).as("CREATE INDEX").isFalse();
+			assertThat(schemaSqlFile.isUniqueColumn("users", "nickname")).as("COMMENT 안의 unique, ADD INDEX").isFalse();
 		}
 	}
 
