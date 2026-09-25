@@ -1,7 +1,6 @@
 package com.mansereok.server.domain.interpret.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.BDDMockito.given;
 
@@ -27,8 +26,9 @@ import org.mockito.junit.jupiter.MockitoExtension;
  * 확인한다.
  *
  * <p>조건부 UPDATE 가 동시에 온 요청 중 하나에만 1 을 돌려주는 일은 DB 가 지키므로 ResultStartOnceMySqlTest 가 실제 MySQL 로 본다.
- * 여기서는 리포지토리가 돌려줄 값만 정한다. UPDATE 에 넘기는 시각은 주입한 시계의 "지금" 이어야 하는데, 정확한 시각으로 스텁해 두면
- * 다른 시각으로 부를 때 MockitoExtension 의 strict stubs 가 PotentialStubbingProblem 으로 테스트를 실패시킨다.
+ * 여기서는 리포지토리가 돌려줄 값만 정한다. UPDATE 에 넘기는 시각은 주입한 시계의 "지금" 을 초 단위로 자른 값이어야 하는데,
+ * 정확한 시각으로 스텁해 두면 다른 시각으로 부를 때 MockitoExtension 의 strict stubs 가 PotentialStubbingProblem 으로 테스트를
+ * 실패시킨다. 통과하면 같은 시각을 돌려주고, 해석은 그 시각으로 자기가 시작한 해석인지 가린다.
  */
 @ExtendWith(MockitoExtension.class)
 class ResultStartProcessingTest {
@@ -37,6 +37,9 @@ class ResultStartProcessingTest {
 	private static final Clock FIXED_CLOCK = Clock.fixed(Instant.parse("2026-09-26T00:00:00Z"),
 		ZoneId.of("Asia/Seoul"));
 	private static final LocalDateTime NOW = LocalDateTime.of(2026, 9, 26, 9, 0);
+	// 소수 초가 붙은 지금. 운영 updated_at 칸의 자릿수에 따라 반올림되지 않도록 해석 시작 시각은 초 단위로 잘린다.
+	private static final Clock CLOCK_WITH_FRACTION = Clock.fixed(Instant.parse("2026-09-26T00:00:00.123456789Z"),
+		ZoneId.of("Asia/Seoul"));
 	private static final Long PAYMENT_ID = 10L;
 
 	@Mock
@@ -61,13 +64,31 @@ class ResultStartProcessingTest {
 	class Saju {
 
 		@Test
-		@DisplayName("정보 입력 대기라 조건부 UPDATE 가 한 행을 바꾸면 예외 없이 끝난다")
-		void passesWhenOneRowChanged() {
+		@DisplayName("정보 입력 대기라 조건부 UPDATE 가 한 행을 바꾸면 UPDATE 에 넣은 해석 시작 시각을 돌려준다")
+		void returnsStartTimeWhenOneRowChanged() {
 			// given
 			given(resultRepository.markProcessingIfInputRequired(PAYMENT_ID, NOW)).willReturn(1);
 
-			// when & then
-			assertThatCode(() -> resultService.startProcessing(PAYMENT_ID)).doesNotThrowAnyException();
+			// when
+			LocalDateTime startedAt = resultService.startProcessing(PAYMENT_ID);
+
+			// then
+			assertThat(startedAt).isEqualTo(NOW);
+		}
+
+		@Test
+		@DisplayName("시계에 소수 초가 있어도 해석 시작 시각은 초 단위로 잘라 UPDATE 에 넣고 돌려준다")
+		void truncatesStartTimeToSeconds() {
+			// given
+			ResultService service = new ResultService(resultRepository, compatibilityResultRepository,
+				subCategoryRepository, CLOCK_WITH_FRACTION);
+			given(resultRepository.markProcessingIfInputRequired(PAYMENT_ID, NOW)).willReturn(1);
+
+			// when
+			LocalDateTime startedAt = service.startProcessing(PAYMENT_ID);
+
+			// then
+			assertThat(startedAt).isEqualTo(NOW);
 		}
 
 		@Test
@@ -104,13 +125,31 @@ class ResultStartProcessingTest {
 	class Compatibility {
 
 		@Test
-		@DisplayName("정보 입력 대기라 조건부 UPDATE 가 한 행을 바꾸면 예외 없이 끝난다")
-		void passesWhenOneRowChanged() {
+		@DisplayName("정보 입력 대기라 조건부 UPDATE 가 한 행을 바꾸면 UPDATE 에 넣은 해석 시작 시각을 돌려준다")
+		void returnsStartTimeWhenOneRowChanged() {
 			// given
 			given(compatibilityResultRepository.markProcessingIfInputRequired(PAYMENT_ID, NOW)).willReturn(1);
 
-			// when & then
-			assertThatCode(() -> resultService.startCompatibilityProcessing(PAYMENT_ID)).doesNotThrowAnyException();
+			// when
+			LocalDateTime startedAt = resultService.startCompatibilityProcessing(PAYMENT_ID);
+
+			// then
+			assertThat(startedAt).isEqualTo(NOW);
+		}
+
+		@Test
+		@DisplayName("시계에 소수 초가 있어도 해석 시작 시각은 초 단위로 잘라 UPDATE 에 넣고 돌려준다")
+		void truncatesStartTimeToSeconds() {
+			// given
+			ResultService service = new ResultService(resultRepository, compatibilityResultRepository,
+				subCategoryRepository, CLOCK_WITH_FRACTION);
+			given(compatibilityResultRepository.markProcessingIfInputRequired(PAYMENT_ID, NOW)).willReturn(1);
+
+			// when
+			LocalDateTime startedAt = service.startCompatibilityProcessing(PAYMENT_ID);
+
+			// then
+			assertThat(startedAt).isEqualTo(NOW);
 		}
 
 		@Test

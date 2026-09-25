@@ -26,6 +26,7 @@ import com.mansereok.server.global.exception.OpenAiRefusalException;
 import com.mansereok.server.global.exception.OpenAiRequestException;
 import com.mansereok.server.global.exception.OpenAiUnavailableException;
 import java.net.SocketTimeoutException;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -462,6 +463,27 @@ class OpenAiResponsesRestClientTest {
 		// 20초 -> 200초 -> 2000초 로 뛰려는 것을 두 번째부터 상한이 잘라낸다.
 		assertThat(sleeper.delays).containsExactly(20_000L, cap, cap);
 		server.verify();
+	}
+
+	/**
+	 * 오래 멈춘 해석 되돌리기 설정(StaleProcessingConfig)이 기동할 때 이 값과 견준다. 재시도 대기 상한을 바꾸면 첫 줄이 깨져, 그
+	 * 설정 검사의 기대값(StaleProcessingResultSchedulerTest)도 함께 고치게 된다.
+	 */
+	@ParameterizedTest(name = "[{index}] 연결 {0}ms, 읽기 {1}ms, 시도 {2}번 → {3}")
+	@CsvSource(textBlock = """
+		# 연결 제한(ms), 읽기 제한(ms), 시도 횟수, 가장 오래 걸리는 시간
+		# 기본값. (10초 + 180초) × (3번 + fallback 1번) + 재시도 대기 상한 30초 × 2번
+		10000,         180000,       3,        PT13M40S
+		# 한 번만 시도하면 재시도 대기 없이 fallback 한 번만 더한다. (10초 + 180초) × 2
+		10000,         180000,       1,        PT6M20S
+		""")
+	@DisplayName("createResponse 한 번이 가장 오래 걸리는 시간은 시도와 fallback 마다 연결·읽기 제한을 다 쓰고 재시도 사이마다 대기 상한만큼 기다린 합이다")
+	void longestCallAddsEveryAttemptAndRetryWait(int connectTimeoutMs, int readTimeoutMs, int maxAttempts,
+		Duration expected) {
+		OpenAiProperties properties = new OpenAiProperties("test-api-key", null, connectTimeoutMs, readTimeoutMs,
+			maxAttempts, 0L, 0.0, null, null, null);
+
+		assertThat(OpenAiResponsesRestClient.longestCall(properties)).isEqualTo(expected);
 	}
 
 	@Test

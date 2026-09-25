@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.willThrow;
 import static org.mockito.Mockito.inOrder;
@@ -25,6 +26,7 @@ import com.mansereok.server.domain.interpret.service.ResultService;
 import com.mansereok.server.domain.payment.entity.Payment;
 import com.mansereok.server.domain.payment.service.PaymentService;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.LocalTime;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -43,6 +45,9 @@ import org.springframework.core.task.TaskRejectedException;
  *
  * <p>해석 시작 표시가 거절되면(이미 해석 중이거나 완료) 해석을 제출하지도, 남의 상태를 되돌리지도 않아야 한다. 유료 경로는
  * 만세력 계산이 실패하면 결과 상태를 건드리지 않아야 한다.
+ *
+ * <p>해석 시작 표시가 돌려준 시각은 비동기 해석과 되돌리기에 그대로 넘어가야 한다. 해석과 되돌리기는 이 시각으로 자기가 시작한
+ * 해석인지 가린다. 제출 거부 스텁은 그 시각을 eq 로 걸어, 다른 값을 넘기면 스텁이 맞지 않아 거부 예외가 나지 않고 테스트가 실패한다.
  */
 @ExtendWith(MockitoExtension.class)
 @DisplayName("ManseryeokController 비동기 제출 거부")
@@ -53,6 +58,7 @@ class ManseryeokControllerRejectionTest {
 	private static final Long FREE_PAYMENT_ID = 200L;
 	private static final Long SUBCATEGORY_ID = 1L;
 	private static final Long FREE_SUBCATEGORY_ID = 101L;
+	private static final LocalDateTime STARTED_AT = LocalDateTime.of(2026, 9, 26, 9, 0);
 
 	@Mock
 	private ManseCalculationService manseCalculationService;
@@ -134,23 +140,25 @@ class ManseryeokControllerRejectionTest {
 	@Test
 	@DisplayName("유료 단일 해석 제출이 거부되면 상태를 되돌리고 거부 예외를 그대로 올린다")
 	void paidSingleRejectionRollsBackStatus() {
+		given(resultService.startProcessing(PAYMENT_ID)).willReturn(STARTED_AT);
 		willThrow(rejection()).given(manseInterpretationService)
-			.interpret(anyString(), any(), anyString(), anyLong(), anyLong(), any());
+			.interpret(anyString(), any(), anyString(), anyLong(), anyLong(), eq(STARTED_AT), any());
 
 		assertThatThrownBy(() -> controller.interpret(SUBCATEGORY_ID, singleRequest(), USERNAME))
 			.isInstanceOf(TaskRejectedException.class);
 
 		InOrder inOrder = inOrder(resultService);
 		inOrder.verify(resultService).startProcessing(PAYMENT_ID);
-		inOrder.verify(resultService).rollbackStatusByPaymentId(PAYMENT_ID);
+		inOrder.verify(resultService).rollbackStatusByPaymentId(PAYMENT_ID, STARTED_AT);
 	}
 
 	@Test
 	@DisplayName("유료 궁합 제출이 거부되면 궁합 상태를 되돌리고 거부 예외를 그대로 올린다")
 	void paidCompatibilityRejectionRollsBackStatus() {
+		given(resultService.startCompatibilityProcessing(PAYMENT_ID)).willReturn(STARTED_AT);
 		willThrow(rejection()).given(manseInterpretationService)
 			.analyzeCompatibilityWithSubcategory(anyString(), any(), anyString(), any(),
-				anyLong(), anyLong(), anyString(), any(), any());
+				anyLong(), anyLong(), eq(STARTED_AT), anyString(), any(), any());
 
 		assertThatThrownBy(() -> controller.analyzeCompatibility(
 			SUBCATEGORY_ID, paidCompatibilityRequest(), USERNAME))
@@ -158,15 +166,16 @@ class ManseryeokControllerRejectionTest {
 
 		InOrder inOrder = inOrder(resultService);
 		inOrder.verify(resultService).startCompatibilityProcessing(PAYMENT_ID);
-		inOrder.verify(resultService).rollbackCompatibilityStatusByPaymentId(PAYMENT_ID);
+		inOrder.verify(resultService).rollbackCompatibilityStatusByPaymentId(PAYMENT_ID, STARTED_AT);
 	}
 
 	@Test
 	@DisplayName("무료 단일 해석 제출이 거부되면 상태를 되돌리고 거부 예외를 그대로 올린다")
 	void freeSingleRejectionRollsBackStatus() {
 		givenFreeOrder();
+		given(resultService.startProcessing(FREE_PAYMENT_ID)).willReturn(STARTED_AT);
 		willThrow(rejection()).given(manseInterpretationService)
-			.interpretFree(anyString(), any(), anyString(), anyLong(), anyLong());
+			.interpretFree(anyString(), any(), anyString(), anyLong(), anyLong(), eq(STARTED_AT));
 
 		assertThatThrownBy(() -> controller.interpretFree(
 			FREE_SUBCATEGORY_ID, singleRequest(), USERNAME))
@@ -174,16 +183,17 @@ class ManseryeokControllerRejectionTest {
 
 		InOrder inOrder = inOrder(resultService);
 		inOrder.verify(resultService).startProcessing(FREE_PAYMENT_ID);
-		inOrder.verify(resultService).rollbackStatusByPaymentId(FREE_PAYMENT_ID);
+		inOrder.verify(resultService).rollbackStatusByPaymentId(FREE_PAYMENT_ID, STARTED_AT);
 	}
 
 	@Test
 	@DisplayName("무료 궁합 제출이 거부되면 궁합 상태를 되돌리고 거부 예외를 그대로 올린다")
 	void freeCompatibilityRejectionRollsBackStatus() {
 		givenFreeOrder();
+		given(resultService.startCompatibilityProcessing(FREE_PAYMENT_ID)).willReturn(STARTED_AT);
 		willThrow(rejection()).given(manseInterpretationService)
 			.analyzeCompatibilityFree(anyString(), any(), anyString(), any(),
-				anyLong(), anyLong(), anyString());
+				anyLong(), anyLong(), eq(STARTED_AT), anyString());
 
 		assertThatThrownBy(() -> controller.analyzeCompatibilityFree(
 			FREE_SUBCATEGORY_ID, freeCompatibilityRequest(), USERNAME))
@@ -191,16 +201,19 @@ class ManseryeokControllerRejectionTest {
 
 		InOrder inOrder = inOrder(resultService);
 		inOrder.verify(resultService).startCompatibilityProcessing(FREE_PAYMENT_ID);
-		inOrder.verify(resultService).rollbackCompatibilityStatusByPaymentId(FREE_PAYMENT_ID);
+		inOrder.verify(resultService).rollbackCompatibilityStatusByPaymentId(FREE_PAYMENT_ID, STARTED_AT);
 	}
 
 	@Test
-	@DisplayName("제출이 정상이면 상태를 되돌리지 않는다")
+	@DisplayName("제출이 정상이면 해석을 시작한 시각을 비동기 해석에 넘기고 상태를 되돌리지 않는다")
 	void successfulSubmissionDoesNotRollBack() {
+		given(resultService.startProcessing(PAYMENT_ID)).willReturn(STARTED_AT);
+
 		controller.interpret(SUBCATEGORY_ID, singleRequest(), USERNAME);
 
-		verify(resultService).startProcessing(PAYMENT_ID);
-		verify(resultService, never()).rollbackStatusByPaymentId(anyLong());
+		verify(manseInterpretationService).interpret(eq("홍길동"), any(), eq(USERNAME), eq(SUBCATEGORY_ID),
+			eq(PAYMENT_ID), eq(STARTED_AT), any());
+		verify(resultService, never()).rollbackStatusByPaymentId(anyLong(), any());
 	}
 
 	@Nested
@@ -218,7 +231,7 @@ class ManseryeokControllerRejectionTest {
 			assertThatThrownBy(() -> controller.interpret(SUBCATEGORY_ID, singleRequest(), USERNAME))
 				.isInstanceOf(InterpretationAlreadyStartedException.class);
 			verifyNoInteractions(manseInterpretationService);
-			verify(resultService, never()).rollbackStatusByPaymentId(anyLong());
+			verify(resultService, never()).rollbackStatusByPaymentId(anyLong(), any());
 		}
 
 		@Test
@@ -233,7 +246,7 @@ class ManseryeokControllerRejectionTest {
 				SUBCATEGORY_ID, paidCompatibilityRequest(), USERNAME))
 				.isInstanceOf(InterpretationAlreadyStartedException.class);
 			verifyNoInteractions(manseInterpretationService);
-			verify(resultService, never()).rollbackCompatibilityStatusByPaymentId(anyLong());
+			verify(resultService, never()).rollbackCompatibilityStatusByPaymentId(anyLong(), any());
 		}
 	}
 

@@ -7,6 +7,7 @@ import com.mansereok.server.support.fixture.ResultFixture;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.PreUpdate;
 import java.lang.reflect.Method;
+import java.time.LocalDateTime;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -22,10 +23,15 @@ import org.junit.jupiter.params.provider.EnumSource.Mode;
  * 대기(revertToInputRequired), 해석 중에 두 사람 정보 채우기(updatePersonsInformation), 해석 중 → 완료(completeInterpretation)
  * 셋이다. 되돌리기는 해석 중이 아니면 아무것도 바꾸지 않고 false 를 돌려주고, 정보 채우기와 완료는 해석 중이 아니면 예외를 던진다.
  * 예전에는 setStatus 가 받은 값을 버리고 늘 해석 중을 넣어, 실패한 궁합이 입력 대기로 돌아가지 못했다.
+ *
+ * <p>해석 중인 결과의 updated_at 은 해석을 시작한 시각이다. 해석 실행은 isProcessingStartedAt 으로 자기가 시작한 해석인지 가리고,
+ * 저장 콜백 onUpdate 는 해석 중으로 저장할 때 이 값을 바꾸지 않는다.
  */
 class CompatibilityResultTest {
 
 	private static final Long PAYMENT_ID = 10L;
+	// 저장 콜백은 시스템 시계의 지금을 쓰므로, 지금보다 확실히 이른 시각을 해석 시작 시각으로 둔다.
+	private static final LocalDateTime LONG_AGO = LocalDateTime.of(2020, 1, 1, 0, 0);
 
 	@Nested
 	@DisplayName("revertToInputRequired 를 부르면")
@@ -142,6 +148,37 @@ class CompatibilityResultTest {
 		}
 	}
 
+	@Nested
+	@DisplayName("isProcessingStartedAt 을 부르면")
+	class IsProcessingStartedAt {
+
+		@ParameterizedTest(name = "[{index}] {0}, updated_at {1}, 넘긴 시각 {2} → {3}")
+		@CsvSource(textBlock = """
+			# 지금 상태,     결과의 updated_at,   넘긴 해석 시작 시각,  결과
+			PROCESSING,     2026-09-26T09:00:00, 2026-09-26T09:00:00, true
+			# 1초 이르거나 늦으면 다른 해석이다(되돌린 뒤 다시 시작한 해석)
+			PROCESSING,     2026-09-26T09:00:00, 2026-09-26T08:59:59, false
+			PROCESSING,     2026-09-26T09:00:00, 2026-09-26T09:00:01, false
+			# updated_at 이 비어 있는 행(궁합 updated_at 칸을 채우기 전의 행)
+			PROCESSING,     ,                    2026-09-26T09:00:00, false
+			# 되돌려졌거나 이미 완료된 결과
+			INPUT_REQUIRED, 2026-09-26T09:00:00, 2026-09-26T09:00:00, false
+			COMPLETED,      2026-09-26T09:00:00, 2026-09-26T09:00:00, false
+			""")
+		@DisplayName("해석 중이고 updated_at 이 넘긴 해석 시작 시각과 같을 때만 true 다")
+		void trueOnlyWhenProcessingStartedAtThatTime(ResultStatus status, LocalDateTime updatedAt,
+			LocalDateTime startedAt, boolean expected) {
+			// given
+			CompatibilityResult result = ResultFixture.compatibility(1L, PAYMENT_ID, status, updatedAt);
+
+			// when
+			boolean startedAtThatTime = result.isProcessingStartedAt(startedAt);
+
+			// then
+			assertThat(startedAtThatTime).isEqualTo(expected);
+		}
+	}
+
 	/**
 	 * JPA 가 저장 직전에 부르는 콜백 메서드(onCreate, onUpdate)를 같은 패키지에서 직접 불러 확인하고, 두 메서드에 콜백 애너테이션이
 	 * 붙어 있는지 본다. 실제 저장에서 updated_at 이 채워지고 바뀌는지는 ResultTableConstraintMySqlTest 가 본다.
@@ -175,6 +212,19 @@ class CompatibilityResultTest {
 			// then
 			assertThat(result.getUpdatedAt()).isNotNull();
 			assertThat(result.getCreatedAt()).isNull();
+		}
+
+		@Test
+		@DisplayName("onUpdate 는 해석 중인 결과의 고친 시각(해석을 시작한 시각)을 바꾸지 않는다")
+		void keepsStartTimeWhileProcessing() {
+			// given
+			CompatibilityResult result = ResultFixture.compatibility(1L, PAYMENT_ID, ResultStatus.PROCESSING, LONG_AGO);
+
+			// when
+			result.onUpdate();
+
+			// then
+			assertThat(result.getUpdatedAt()).isEqualTo(LONG_AGO);
 		}
 
 		@Test

@@ -92,7 +92,8 @@ class StaleProcessingResultSchedulerTest {
 
 	/**
 	 * StaleProcessingConfig 가 기동할 때 설정을 확인하는지 본다. OpenAI 기본값이면 호출 한 건이 가장 오래 걸리는 시간은
-	 * (10초 + 180초) × 4번 + 30초 × 2번 = 820초(13분 40초)다.
+	 * (10초 + 180초) × 4번 + 30초 × 2번 = 820초(13분 40초)다. 이 계산은 OpenAiResponsesRestClient.longestCall 이 재시도 대기
+	 * 상한을 직접 읽어 하고, OpenAiResponsesRestClientTest 가 따로 본다.
 	 */
 	@Nested
 	@DisplayName("설정은")

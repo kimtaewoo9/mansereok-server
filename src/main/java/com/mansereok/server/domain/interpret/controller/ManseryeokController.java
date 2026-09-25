@@ -11,9 +11,9 @@ import com.mansereok.server.domain.interpret.service.ResultService;
 import com.mansereok.server.domain.payment.entity.Payment;
 import com.mansereok.server.domain.payment.service.PaymentService;
 import jakarta.validation.Valid;
+import java.time.LocalDateTime;
 import java.util.Map;
 import java.util.concurrent.RejectedExecutionException;
-import java.util.function.Consumer;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
@@ -67,17 +67,19 @@ public class ManseryeokController {
 			);
 
 		// 2. 해석 시작 표시 (공통). 이미 해석 중이거나 완료된 결제면 409 로 끝나고 해석을 제출하지 않는다.
-		resultService.startProcessing(request.getPaymentId());
+		LocalDateTime startedAt = resultService.startProcessing(request.getPaymentId());
 
-		// 3. 비동기 해석 제출
-		submitOrRollback(request.getPaymentId(), resultService::rollbackStatusByPaymentId, () -> {
+		// 3. 비동기 해석 제출. 해석을 시작한 시각을 넘겨, 늦게 끝난 해석이 그사이 되돌려지거나 다시 시작된 결과를 덮어쓰지 않게 한다.
+		Runnable rollback = () -> resultService.rollbackStatusByPaymentId(request.getPaymentId(), startedAt);
+		submitOrRollback(request.getPaymentId(), rollback, () -> {
 			if (subcategoryId >= 100) {
 				manseInterpretationService.interpretFree(
 					request.getName(),
 					manse,
 					username,
 					subcategoryId,
-					request.getPaymentId()
+					request.getPaymentId(),
+					startedAt
 				);
 			} else {
 				manseInterpretationService.interpret(
@@ -86,6 +88,7 @@ public class ManseryeokController {
 					username,
 					subcategoryId,
 					request.getPaymentId(),
+					startedAt,
 					request.getSourceTitle()
 				);
 			}
@@ -132,16 +135,17 @@ public class ManseryeokController {
 			);
 
 		// 2. 해석 시작 표시. 이미 해석 중이거나 완료된 결제면 409 로 끝나고 해석을 제출하지 않는다.
-		resultService.startCompatibilityProcessing(request.getPaymentId());
+		LocalDateTime startedAt = resultService.startCompatibilityProcessing(request.getPaymentId());
 
-		// 3. 비동기 해석 제출
+		// 3. 비동기 해석 제출. 해석을 시작한 시각을 함께 넘긴다.
 		submitOrRollback(request.getPaymentId(),
-			resultService::rollbackCompatibilityStatusByPaymentId,
+			() -> resultService.rollbackCompatibilityStatusByPaymentId(request.getPaymentId(), startedAt),
 			() -> manseInterpretationService.analyzeCompatibilityWithSubcategory(
 				person1.getName(), person1Response,
 				person2.getName(), person2Response,
 				subcategoryId,
 				request.getPaymentId(),
+				startedAt,
 				username,
 				person1.getSourceTitle(),
 				person2.getSourceTitle() // 상대방 캐릭터
@@ -179,16 +183,17 @@ public class ManseryeokController {
 			);
 
 		// 3. 상태 변경 INPUT_REQUIRED -> PROCESSING
-		resultService.startProcessing(payment.getId());
+		LocalDateTime startedAt = resultService.startProcessing(payment.getId());
 
 		// 4. [비동기] 무료 전용 해석 메서드 호출 (별도 스레드 풀)
-		submitOrRollback(payment.getId(), resultService::rollbackStatusByPaymentId,
+		submitOrRollback(payment.getId(), () -> resultService.rollbackStatusByPaymentId(payment.getId(), startedAt),
 			() -> manseInterpretationService.interpretFree(
 				request.getName(),
 				manse,
 				username,
 				subcategoryId,
-				payment.getId()
+				payment.getId(),
+				startedAt
 			));
 
 		return ResponseEntity.accepted().body(Map.of(
@@ -217,15 +222,17 @@ public class ManseryeokController {
 		);
 
 		// 3. 상태 변경
-		resultService.startCompatibilityProcessing(payment.getId());
+		LocalDateTime startedAt = resultService.startCompatibilityProcessing(payment.getId());
 
 		// 4. [비동기] 무료 궁합 해석 서비스 호출
-		submitOrRollback(payment.getId(), resultService::rollbackCompatibilityStatusByPaymentId,
+		submitOrRollback(payment.getId(),
+			() -> resultService.rollbackCompatibilityStatusByPaymentId(payment.getId(), startedAt),
 			() -> manseInterpretationService.analyzeCompatibilityFree(
 				request.getPerson1().getName(), p1Manse,
 				request.getPerson2().getName(), p2Manse,
 				subcategoryId,
 				payment.getId(),
+				startedAt,
 				username
 			));
 
@@ -244,16 +251,16 @@ public class ManseryeokController {
 	 * 되돌리지 않으면 결과가 PROCESSING 에 남는다. 상태를 되돌린 뒤 예외는 그대로 올려
 	 * GlobalExceptionHandler 가 503("잠시 후 다시")로 내려 주게 한다.
 	 *
-	 * <p>여기까지 오는 요청은 해석 시작 표시(startProcessing)를 통과한 하나뿐이다. 그래서 되돌리는 것은
-	 * 이 요청이 바꾼 상태이고, 같은 결제로 먼저 접수된 다른 요청의 해석 중 상태를 지우지 않는다.
+	 * <p>여기까지 오는 요청은 해석 시작 표시(startProcessing)를 통과한 하나뿐이다. 되돌리기도 이 요청이 해석을
+	 * 시작한 시각을 걸어, 같은 결제로 먼저 접수된 다른 요청의 해석 중 상태를 지우지 않는다.
 	 */
-	private void submitOrRollback(Long paymentId, Consumer<Long> rollback, Runnable submission) {
+	private void submitOrRollback(Long paymentId, Runnable rollback, Runnable submission) {
 		try {
 			submission.run();
 		} catch (RejectedExecutionException e) {
 			log.error("비동기 해석 제출이 거부되었습니다. 상태를 되돌립니다: paymentId={}", paymentId, e);
 			try {
-				rollback.accept(paymentId);
+				rollback.run();
 			} catch (Exception rollbackFailure) {
 				// 되돌리기까지 실패해도 원래의 거부 예외를 덮지 않는다 (Effective Java 아이템 77).
 				log.error("제출 거부 후 상태 되돌리기 실패: paymentId={}", paymentId, rollbackFailure);

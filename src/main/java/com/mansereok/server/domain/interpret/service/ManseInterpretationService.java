@@ -25,6 +25,7 @@ import com.mansereok.server.domain.notification.service.DiscordNotificationServi
 import com.mansereok.server.domain.user.entity.User;
 import com.mansereok.server.domain.user.service.EmailService;
 import com.mansereok.server.domain.user.service.UserService;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Supplier;
@@ -181,6 +182,10 @@ public class ManseInterpretationService {
 		this.interpretationPipeline = interpretationPipeline;
 	}
 
+	/**
+	 * 유료 단일 사주 해석. startedAt 은 컨트롤러가 ResultService.startProcessing 으로 해석을 시작한 시각이다. 결과를 쓸 때마다
+	 * 이 값으로 이 실행이 시작한 해석인지 가려, 오래 멈춰 되돌려진 뒤 다시 시작한 결과를 덮어쓰지 않는다. 궁합·무료도 같다.
+	 */
 	@Async("gptTaskExecutor")
 	public void interpret(
 		String name,
@@ -188,6 +193,7 @@ public class ManseInterpretationService {
 		String username,
 		Long subcategoryId,
 		Long paymentId,
+		LocalDateTime startedAt,
 		String sourceTitle
 	) {
 		log.info("✅ 사주 해석 요청 시작 - name: {}, subcategoryId: {}", name, subcategoryId);
@@ -197,7 +203,7 @@ public class ManseInterpretationService {
 
 		interpretationPipeline.run(
 			"유료 단일 사주 해석",
-			sajuResultStatusHandler(paymentId, name, response, subcategoryId),
+			sajuResultStatusHandler(paymentId, startedAt, name, response, subcategoryId),
 			() -> discordNotificationService.sendInterpretationRequestNotification(
 				name, user.get().getEmail(),
 				response.getInput().getSolarDate().toString(), subcategoryId),
@@ -216,7 +222,7 @@ public class ManseInterpretationService {
 	public void analyzeCompatibilityWithSubcategory(
 		String person1Name, ManseryeokCalculationResponse person1Response,
 		String person2Name, ManseryeokCalculationResponse person2Response,
-		Long subcategoryId, Long paymentId, String username,
+		Long subcategoryId, Long paymentId, LocalDateTime startedAt, String username,
 		String person1SourceTitle, String person2SourceTitle
 	) {
 		log.info("✅ 궁합 분석 요청 시작: {} & {}", person1Name, person2Name);
@@ -228,7 +234,7 @@ public class ManseInterpretationService {
 
 		interpretationPipeline.run(
 			"유료 궁합 분석",
-			compatibilityResultStatusHandler(paymentId, person1Name, person1Response, person2Name,
+			compatibilityResultStatusHandler(paymentId, startedAt, person1Name, person1Response, person2Name,
 				person2Response),
 			() -> discordNotificationService.sendCompatibilityRequestNotification(
 				person1Name, person1Response.getInput().getSolarDate().toString(),
@@ -249,7 +255,7 @@ public class ManseInterpretationService {
 	@Async("gptFreeTaskExecutor")
 	public void interpretFree(
 		String name, ManseryeokCalculationResponse response,
-		String username, Long subcategoryId, Long paymentId
+		String username, Long subcategoryId, Long paymentId, LocalDateTime startedAt
 	) {
 		log.info("🆓 무료 사주 해석 시작");
 
@@ -257,7 +263,7 @@ public class ManseInterpretationService {
 
 		interpretationPipeline.run(
 			"무료 단일 사주 해석",
-			sajuResultStatusHandler(paymentId, name, response, subcategoryId),
+			sajuResultStatusHandler(paymentId, startedAt, name, response, subcategoryId),
 			() -> discordNotificationService.sendInterpretationRequestNotification(
 				name, user.get().getEmail(),
 				response.getInput().getSolarDate().toString(), subcategoryId),
@@ -280,13 +286,13 @@ public class ManseInterpretationService {
 	public void analyzeCompatibilityFree(
 		String person1Name, ManseryeokCalculationResponse person1Response,
 		String person2Name, ManseryeokCalculationResponse person2Response,
-		Long subcategoryId, Long paymentId, String username
+		Long subcategoryId, Long paymentId, LocalDateTime startedAt, String username
 	) {
 		log.info("🆓 무료 궁합/재회운 서비스 시작: {} & {}", person1Name, person2Name);
 
 		interpretationPipeline.run(
 			"무료 궁합 분석",
-			compatibilityResultStatusHandler(paymentId, person1Name, person1Response, person2Name,
+			compatibilityResultStatusHandler(paymentId, startedAt, person1Name, person1Response, person2Name,
 				person2Response),
 			() -> discordNotificationService.sendCompatibilityRequestNotification(
 				person1Name, person1Response.getInput().getSolarDate().toString(),
@@ -303,15 +309,19 @@ public class ManseInterpretationService {
 		);
 	}
 
-	/** 단일 사주(Result) 의 시작·완료·롤백. 유료와 무료가 같은 것을 쓴다. */
+	/**
+	 * 단일 사주(Result) 의 시작·완료·롤백. 유료와 무료가 같은 것을 쓴다. 세 단계 모두 해석을 시작한 시각(startedAt)을 넘겨,
+	 * 이 실행이 시작한 해석일 때만 결과를 쓰거나 되돌린다.
+	 */
 	private ResultStatusHandler<GptSajuResponse, Result> sajuResultStatusHandler(
-		Long paymentId, String name, ManseryeokCalculationResponse response, Long subcategoryId
+		Long paymentId, LocalDateTime startedAt, String name, ManseryeokCalculationResponse response,
+		Long subcategoryId
 	) {
 		return new ResultStatusHandler<>() {
 			@Override
 			public Long markInProgress() {
 				return sajuResultService
-					.updateInitialStatus(paymentId, name, response, extractIlgan(response))
+					.updateInitialStatus(paymentId, startedAt, name, response, extractIlgan(response))
 					.getId();
 			}
 
@@ -319,20 +329,24 @@ public class ManseInterpretationService {
 			public Result saveFinalResult(Long resultId, GptSajuResponse gptData) {
 				return sajuResultService.saveFinalResult(
 					resultId,
+					startedAt,
 					analysisNormalizer.normalizeAnalysis(subcategoryId, gptData.getFullAnalysis()),
 					analysisNormalizer.normalizeSummary(subcategoryId, gptData.getSummary()));
 			}
 
 			@Override
 			public void rollbackToInitialStatus(Long resultId) {
-				sajuResultService.rollbackStatus(resultId);
+				sajuResultService.rollbackStatus(resultId, startedAt);
 			}
 		};
 	}
 
-	/** 궁합(CompatibilityResult) 의 시작·완료·롤백. 유료와 무료가 같은 것을 쓴다. */
+	/**
+	 * 궁합(CompatibilityResult) 의 시작·완료·롤백. 유료와 무료가 같은 것을 쓴다. 단일 사주와 같이 세 단계 모두 해석을 시작한
+	 * 시각(startedAt)을 넘긴다.
+	 */
 	private ResultStatusHandler<GptCompatibilityResponse, CompatibilityResult> compatibilityResultStatusHandler(
-		Long paymentId,
+		Long paymentId, LocalDateTime startedAt,
 		String person1Name, ManseryeokCalculationResponse person1Response,
 		String person2Name, ManseryeokCalculationResponse person2Response
 	) {
@@ -340,7 +354,7 @@ public class ManseInterpretationService {
 			@Override
 			public Long markInProgress() {
 				return sajuResultService.updateCompatibilityInitialStatus(
-					paymentId,
+					paymentId, startedAt,
 					person1Name, extractIlgan(person1Response),
 					person2Name, extractIlgan(person2Response)
 				).getId();
@@ -349,13 +363,13 @@ public class ManseInterpretationService {
 			@Override
 			public CompatibilityResult saveFinalResult(Long resultId, GptCompatibilityResponse gptData) {
 				return sajuResultService.saveCompatibilityFinalResult(
-					resultId, gptData.getInterpretation(), gptData.getScore(),
+					resultId, startedAt, gptData.getInterpretation(), gptData.getScore(),
 					gptData.getSummary());
 			}
 
 			@Override
 			public void rollbackToInitialStatus(Long resultId) {
-				sajuResultService.rollbackCompatibilityStatus(resultId);
+				sajuResultService.rollbackCompatibilityStatus(resultId, startedAt);
 			}
 		};
 	}

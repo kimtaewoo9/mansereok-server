@@ -1,6 +1,7 @@
 package com.mansereok.server.domain.interpret.service;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.mansereok.server.domain.interpret.exception.InterpretationRunOutdatedException;
 import com.mansereok.server.global.exception.OpenAiIncompleteResponseException;
 import java.util.List;
 import java.util.function.Consumer;
@@ -12,6 +13,8 @@ import org.springframework.stereotype.Component;
  *
  * <p>순서는 [초기 상태 갱신 → 알림 → GPT 호출 → 결과 저장 → 후처리] 하나뿐이고,
  * 실패하면 초기 상태를 되돌린다. 네 메서드에 같은 try/catch 가 복사돼 있던 것을 여기로 모았다.
+ * 해석을 시작한 뒤 결과가 되돌려졌거나 다른 요청이 다시 시작했으면({@link InterpretationRunOutdatedException})
+ * 결과는 이제 이 실행의 것이 아니므로 쓰지도 되돌리지도 않는다.
  *
  * <p>상속(템플릿 메서드)이 아니라 단계를 넘겨받는 쪽을 골랐다. 단일 사주는 {@code Result},
  * 궁합은 {@code CompatibilityResult} 를 저장해서 반환 타입이 갈리는데, 템플릿 메서드로 가면
@@ -59,6 +62,11 @@ public class InterpretationPipeline {
 				runAndLogFailure(flowName, step.name(), () -> step.action().accept(saved));
 			}
 
+		} catch (InterpretationRunOutdatedException e) {
+			// 오래 멈춘 결과 되돌리기가 먼저 돌았다. 결과는 사용자나 다시 시작한 해석의 것이라 건드리지 않는다.
+			// 정상이라면 일어나지 않으므로, 해석이 stale-after 보다 오래 걸렸다는 신호로 WARN 을 남긴다.
+			log.warn("[{}] 해석을 시작한 뒤 결과가 되돌려졌거나 다시 시작돼 결과를 쓰지 않고 끝낸다 - resultId: {}, {}",
+				flowName, resultId, e.getMessage());
 		} catch (JsonProcessingException e) {
 			// 스키마를 강제해도 파싱이 깨졌다면 응답 형식 쪽 문제라 따로 남긴다.
 			log.error("[{}] GPT 응답 파싱 실패 - resultId: {}", flowName, resultId, e);
@@ -94,13 +102,22 @@ public class InterpretationPipeline {
 	 */
 	public interface ResultStatusHandler<R, T> {
 
-		/** 초기 상태를 갱신하고 롤백에 쓸 결과 ID 를 돌려준다. */
+		/**
+		 * 초기 상태를 갱신하고 롤백에 쓸 결과 ID 를 돌려준다. 이 실행이 시작한 해석이 아니면
+		 * {@link InterpretationRunOutdatedException} 을 던진다.
+		 */
 		Long markInProgress();
 
-		/** GPT 응답을 결과로 확정해 저장한다. */
+		/**
+		 * GPT 응답을 결과로 확정해 저장한다. 이 실행이 시작한 해석이 아니면
+		 * {@link InterpretationRunOutdatedException} 을 던진다.
+		 */
 		T saveFinalResult(Long resultId, R gptResult);
 
-		/** 실패 시 초기 상태로 되돌린다. resultId 가 null 이어도 안전해야 한다. */
+		/**
+		 * 실패 시 초기 상태로 되돌린다. resultId 가 null 이어도 안전해야 한다. 이 실행이 시작한 해석이
+		 * 아니면 아무것도 바꾸지 않는다.
+		 */
 		void rollbackToInitialStatus(Long resultId);
 	}
 

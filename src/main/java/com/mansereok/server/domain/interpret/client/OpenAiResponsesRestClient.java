@@ -111,6 +111,22 @@ public class OpenAiResponsesRestClient implements OpenAiResponsesClient {
 	}
 
 	/**
+	 * {@link #createResponse} 한 번이 가장 오래 걸리는 시간. maxAttempts 번 시도한 뒤 fallback 모델로 한 번 더 부른다. 시도마다
+	 * 연결 제한과 읽기 제한을 모두 쓰고, 재시도 사이(maxAttempts - 1 번)마다 대기 상한({@link #MAX_RETRY_DELAY_MS})만큼 기다린다고
+	 * 본다. 기본값이면 (10초 + 180초) × 4 + 30초 × 2 = 820초(13분 40초)다.
+	 *
+	 * <p>오래 멈춘 해석을 되돌리는 설정(StaleProcessingConfig)이 이 값보다 길어야 한다. 재시도 횟수나 대기 상한을 바꾸면 이
+	 * 계산도 여기서 함께 바뀌어, 그 설정 검사가 옛 값을 쓰지 않는다.
+	 */
+	public static Duration longestCall(OpenAiProperties properties) {
+		Duration oneAttempt = Duration.ofMillis((long) properties.connectTimeoutMs() + properties.readTimeoutMs());
+		int attemptsWithFallback = properties.maxAttempts() + 1;
+		int waitsBetweenRetries = properties.maxAttempts() - 1;
+		return oneAttempt.multipliedBy(attemptsWithFallback)
+			.plus(Duration.ofMillis(MAX_RETRY_DELAY_MS).multipliedBy(waitsBetweenRetries));
+	}
+
+	/**
 	 * 재시도를 모두 쓰고도 실패하면 fallback 티어로 요청 객체를 새로 만들어 딱 한 번 더 호출한다.
 	 * 직렬화된 본문에 문자열 치환을 하지 않는다. 그 방식은 프롬프트 본문에 모델명이 섞여 있으면 그것까지 바꾸고,
 	 * 애초에 다른 모델을 쓰던 경로에서는 아무것도 바꾸지 못한 채 같은 모델로 재호출한다.

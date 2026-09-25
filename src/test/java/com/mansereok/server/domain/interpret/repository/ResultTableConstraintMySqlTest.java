@@ -423,14 +423,14 @@ class ResultTableConstraintMySqlTest extends InterpretationMySqlTest {
 		@Test
 		@DisplayName("엔티티를 고쳐 저장하면 새 시각으로 바뀐다")
 		void isRefreshedOnUpdate() {
-			// given: 저장한 행을 해석 중으로 두고 updated_at 을 과거로 옮겨 둔다
+			// given: 저장한 행을 2020-01-01 00:00 에 시작한 해석 중으로 둔다
 			Long paymentId = runKey;
 			saveCompatibility(userA, paymentId);
 			jdbcTemplate.update("UPDATE compatibility_results SET status = 'PROCESSING', updated_at = '2020-01-01 00:00:00' "
 				+ "WHERE payment_id = ?", paymentId);
 
 			// when: 엔티티를 읽어 상태를 바꾸는 길(조건부 UPDATE 가 아니라 @PreUpdate 를 거치는 길)로 고친다
-			resultService.rollbackCompatibilityStatusByPaymentId(paymentId);
+			resultService.rollbackCompatibilityStatusByPaymentId(paymentId, LocalDateTime.of(2020, 1, 1, 0, 0));
 
 			// then
 			LocalDateTime updatedAt = jdbcTemplate.queryForObject(

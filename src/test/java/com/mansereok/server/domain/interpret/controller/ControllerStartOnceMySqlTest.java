@@ -22,6 +22,7 @@ import com.mansereok.server.support.ConcurrentCalls;
 import com.mansereok.server.support.ConcurrentCalls.CallResult;
 import com.mansereok.server.support.InterpretationMySqlTest;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.List;
 import java.util.UUID;
@@ -29,7 +30,9 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
@@ -39,6 +42,9 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
  * <p>컨트롤러는 만세력을 계산하고, 해석 시작을 표시하고(조건부 UPDATE), 통과한 요청만 해석을 제출한다. 제출 횟수는 밖으로 나가는
  * GPT 호출 횟수라서 해석 서비스를 {@link MockitoBean} 으로 바꿔 센다. 만세력 계산도 목으로 바꿔 입력과 상관없이 같은 결과를 돌려주게
  * 한다. 이 두 목 때문에 이 클래스는 다른 해석 MySQL 테스트와 스프링 컨텍스트를 함께 쓰지 않는다.
+ *
+ * <p>제출한 해석에 넘긴 해석 시작 시각이 DB 에 남은 updated_at 과 같은지도 본다. 해석은 결과를 쓸 때마다 이 둘을 견주므로, 칸에
+ * 담기며 값이 달라지면 모든 해석이 자기 결과를 쓰지 못한다.
  *
  * <p>행은 이번 실행의 사용자 ID 로 만들고 뒤 정리에서 그 사용자 ID 로만 지운다.
  */
@@ -92,12 +98,15 @@ class ControllerStartOnceMySqlTest extends InterpretationMySqlTest {
 			() -> controller.interpret(SUBCATEGORY_ID, singleRequest(), USERNAME));
 
 		// then
-		assertThat(calls).filteredOn(CallResult::succeeded).as("202 로 접수된 요청").hasSize(1);
+		assertThat(calls).filteredOn(CallResult::succeeded).as("접수된 요청").singleElement()
+			.satisfies(call -> assertThat(call.value().getStatusCode()).as("응답 상태").isEqualTo(HttpStatus.ACCEPTED));
 		assertThat(calls).filteredOn(call -> !call.succeeded()).as("거절된 요청").hasSize(9)
 			.allSatisfy(call -> assertThat(call.error()).isInstanceOf(InterpretationAlreadyStartedException.class));
+		ArgumentCaptor<LocalDateTime> startedAt = ArgumentCaptor.forClass(LocalDateTime.class);
 		then(manseInterpretationService).should(times(1))
-			.interpret(anyString(), any(), anyString(), eq(SUBCATEGORY_ID), eq(paymentId), any());
+			.interpret(anyString(), any(), anyString(), eq(SUBCATEGORY_ID), eq(paymentId), startedAt.capture(), any());
 		assertThat(statusOf("results")).isEqualTo("PROCESSING");
+		assertThat(updatedAtOf("results")).as("해석에 넘긴 시작 시각과 DB 의 updated_at").isEqualTo(startedAt.getValue());
 	}
 
 	@Test
@@ -111,12 +120,16 @@ class ControllerStartOnceMySqlTest extends InterpretationMySqlTest {
 			() -> controller.analyzeCompatibility(SUBCATEGORY_ID, compatibilityRequest(), USERNAME));
 
 		// then
-		assertThat(calls).filteredOn(CallResult::succeeded).as("202 로 접수된 요청").hasSize(1);
+		assertThat(calls).filteredOn(CallResult::succeeded).as("접수된 요청").singleElement()
+			.satisfies(call -> assertThat(call.value().getStatusCode()).as("응답 상태").isEqualTo(HttpStatus.ACCEPTED));
 		assertThat(calls).filteredOn(call -> !call.succeeded()).as("거절된 요청").hasSize(9)
 			.allSatisfy(call -> assertThat(call.error()).isInstanceOf(InterpretationAlreadyStartedException.class));
+		ArgumentCaptor<LocalDateTime> startedAt = ArgumentCaptor.forClass(LocalDateTime.class);
 		then(manseInterpretationService).should(times(1)).analyzeCompatibilityWithSubcategory(anyString(), any(),
-			anyString(), any(), eq(SUBCATEGORY_ID), eq(paymentId), anyString(), any(), any());
+			anyString(), any(), eq(SUBCATEGORY_ID), eq(paymentId), startedAt.capture(), anyString(), any(), any());
 		assertThat(statusOf("compatibility_results")).isEqualTo("PROCESSING");
+		assertThat(updatedAtOf("compatibility_results")).as("해석에 넘긴 시작 시각과 DB 의 updated_at")
+			.isEqualTo(startedAt.getValue());
 	}
 
 	private ManseInterpretationRequest singleRequest() {
@@ -151,5 +164,10 @@ class ControllerStartOnceMySqlTest extends InterpretationMySqlTest {
 	private String statusOf(String table) {
 		return jdbcTemplate.queryForObject("SELECT status FROM " + table + " WHERE payment_id = ?", String.class,
 			paymentId);
+	}
+
+	private LocalDateTime updatedAtOf(String table) {
+		return jdbcTemplate.queryForObject("SELECT updated_at FROM " + table + " WHERE payment_id = ?",
+			LocalDateTime.class, paymentId);
 	}
 }
