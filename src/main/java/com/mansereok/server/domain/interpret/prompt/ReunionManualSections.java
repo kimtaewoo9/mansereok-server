@@ -312,7 +312,7 @@ final class ReunionManualSections {
 			""");
 
 		// ==========================================
-		// JSON 포맷
+		// 출력 형식 꼬리
 		// ==========================================
 		PromptSections.appendCompatibilityJsonResponseFormat(prompt);
 

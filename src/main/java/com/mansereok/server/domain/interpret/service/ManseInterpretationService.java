@@ -90,7 +90,7 @@ public class ManseInterpretationService {
 		"당신은 대한민국 최고의 재회 상담가이자 사주 명리학 대가 '혜안'입니다.\n" +
 			"내담자는 이 상담을 위해 **매우 비싼 비용**을 지불했습니다. 절대 내용을 요약하거나 짧게 끝내지 마십시오.\n" +
 			"모든 분석은 **'논문' 수준의 깊이**와 **'소설' 수준의 서사**를 갖춰야 합니다.\n" +
-			"단순한 사실 전달을 넘어, 내담자의 마음을 어루만지는 **감성적인 문체**로, 최대한 길고 자세하게 서술하세요.\n" +
+			"단순한 사실 전달을 넘어, 내담자의 마음을 어루만지는 **감성적인 문체**로 서술하세요.\n" +
 			"한 챕터당 최소 **공백 포함 1,000자 이상** 작성해야 합니다."
 			+ PROMPT_BOUNDARY_RULE;
 
@@ -98,7 +98,20 @@ public class ManseInterpretationService {
 
 	/**
 	 * Structured Outputs 스키마. 출력이 API 레벨에서 이 형태로 강제되므로
-	 * 프롬프트에서 JSON 문법 지시(이스케이프, 코드블록 금지 등)를 제거할 수 있다.
+	 * 프롬프트에서 JSON 문법 지시(필드 구성 설명, 이스케이프, 코드블록 금지 등)를 제거할 수 있다.
+	 *
+	 * <p>문자열 길이는 description 으로만 표현한다. json_schema strict 모드가 maxLength 를
+	 * 받아 주는지 확실하지 않아, 넣었다가 400 이 나는 쪽보다 모델에게 말로 알려 주는 쪽을 택했다.
+	 *
+	 * <p>score 의 minimum/maximum 은 실제 OpenAI 호출로 검증하지 않았다. maxLength 와 같은
+	 * 확장 키워드군이라 거부될 가능성이 남아 있다. {@code OpenAiResponsesRestClient} 는 429 를 뺀
+	 * 4xx 를 재시도 없이 실패시키므로, 거부되면 유료 궁합 경로가 통째로 막힌다. 배포 전 스테이징에서
+	 * 궁합 경로를 한 번 호출해 확인하고, 400 이 나면 이 두 키만 제거한다.
+	 *
+	 * <p>description 은 상품 중립으로 쓴다. 같은 스키마를 12개 유료 사주 상품과 6개 무료 상품이
+	 * 공유하는데, 제목 표기와 summary 길이는 상품마다 다르다(20·21·22·23 은 대괄호 제목을 금지하고
+	 * summary 를 280자로 잡는다). 서식 수치를 여기에 적으면 프롬프트의 최종 출력 형식 지시와
+	 * 정면으로 충돌하므로, 상품별 서식은 프롬프트에 맡기고 여기서는 공통 규칙만 적는다.
 	 */
 	private static final Map<String, Object> SAJU_OUTPUT_FORMAT = Map.of(
 		"type", "json_schema",
@@ -108,9 +121,13 @@ public class ManseInterpretationService {
 			"type", "object",
 			"properties", Map.of(
 				"fullAnalysis", Map.of("type", "string",
-					"description", "상세 분석 전체. 문단 구분은 줄바꿈 두 번."),
+					"description", "사주 상세 분석 본문 전체. 프롬프트가 요청한 분석 항목을 순서대로 모두 담은"
+						+ " 줄글이다. 문단 구분은 줄바꿈 두 번으로만 하고, 목록 기호(-, *, 1.)와"
+						+ " 마크다운 강조(**)는 쓰지 않는다. 제목 표기 방식은 프롬프트의"
+						+ " 최종 출력 형식 지시를 따른다."),
 				"summary", Map.of("type", "string",
-					"description", "250자 이내 요약. 문장마다 줄바꿈, 마침표 없음.")),
+					"description", "해요체로 쓴 짧은 총평. 총 길이와 줄바꿈, 마침표 표기는 프롬프트의"
+						+ " 최종 출력 형식 지시를 따른다.")),
 			"required", List.of("fullAnalysis", "summary"),
 			"additionalProperties", false));
 
@@ -122,11 +139,16 @@ public class ManseInterpretationService {
 			"type", "object",
 			"properties", Map.of(
 				"score", Map.of("type", "integer",
-					"description", "종합 궁합 점수 (0~100)"),
+					"description", "두 사람의 종합 궁합 점수. 0 이상 100 이하의 정수.",
+					"minimum", 0,
+					"maximum", 100),
 				"interpretation", Map.of("type", "string",
-					"description", "상세 궁합 분석 전체. 문단 구분은 줄바꿈 두 번."),
+					"description", "궁합 상세 분석 본문 전체. 프롬프트가 요청한 분석 항목을 순서대로 모두 담은"
+						+ " 줄글이다. 문단 구분은 줄바꿈 두 번으로만 하고, 목록 기호(-, *, 1.)와"
+						+ " 마크다운 강조(**)는 쓰지 않는다. 제목은 대괄호로 감싼다."),
 				"summary", Map.of("type", "string",
-					"description", "250자 이내 요약. 문장마다 줄바꿈, 마침표 없음.")),
+					"description", "해요체 총평. 공백 포함 250자 이내이며, 한 문장이 끝날 때마다 줄바꿈하고"
+						+ " 문장 끝에 마침표를 찍지 않는다.")),
 			"required", List.of("score", "interpretation", "summary"),
 			"additionalProperties", false));
 

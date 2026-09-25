@@ -1,5 +1,6 @@
 package com.mansereok.server.domain.interpret.prompt;
 
+import com.mansereok.server.domain.interpret.dto.response.ManseryeokCalculationResponse;
 import java.util.SequencedMap;
 
 /**
@@ -170,7 +171,7 @@ final class PromptSections {
 		prompt.append("""
 			### 3. 작성 스타일 (공통) ###
 			- **자연스러운 전문가 어조**: '해요체'와 '입니다' 체를 자연스럽게 혼용하여 신뢰감과 친근함을 전달해주세요.
-			- **깊이 우선**: 각 항목을 매우 구체적이고 깊이 있게 분석해주세요. 분량 제한은 없습니다.
+			- **깊이 우선**: 각 항목을 최소 2문단 이상(문단당 4~5문장)으로 구체적으로 분석해주세요. 분량 상한은 두지 않되, 새로운 내용 없이 같은 말을 늘려 쓰지는 마세요.
 			- **구성의 자유**: 요청된 큰 단계 구조(개인 분석 → 관계 분석)는 유지하되, 각 단계 안의 소제목과 전개 순서는 두 사람의 이야기가 가장 흥미롭게 읽히도록 직접 설계해도 됩니다. 두 사람의 관계를 관통하는 테마 하나를 먼저 잡고 전체 서사를 그 테마로 엮으세요. 뒤에 나올 내용에 대한 예고를 걸어 궁금증을 이어가도 좋습니다.
 			""");
 
@@ -209,12 +210,155 @@ final class PromptSections {
 		return subcategoryId.intValue();
 	}
 
+	/**
+	 * 장문 유료 상품(사업운 21, 학업운 22, 인생조언 23)이 공유하는 용어 정책과 사실 근거 규칙.
+	 * 세 상품 모두 "### 절대 규칙 (최우선) ###" 의 앞머리로 같은 문구를 쓰고 있어 여기로 모았다.
+	 * 상품마다 다른 6번 이후 규칙은 호출부가 이어서 붙인다.
+	 */
+	static void appendLongformTermPolicy(StringBuilder prompt) {
+		prompt.append("""
+			### 절대 규칙 (최우선) ###
+			★★★ 1. [용어 정책 — 단 하나의 규칙] ★★★
+			- 사주 용어(십성/오행/신살/기둥)는 근거를 밝히는 데 필요하면 쓴다. 단, 처음 등장할 때 반드시 쉬운 풀이를 한 문장 붙이고, 두 번째부터는 풀이 없이 쓴다.
+			- 풀이 참고: 편인=남의 것을 빠르게 흡수해 재조립하는 힘, 겁재=비교심과 경쟁심, 식신=표현력과 출력, 정관=책임감과 규칙, 편관=외부 압박과 평가, 정재=안정적 성과, 편재=빠른 성과 욕구, 비견=자기 확신, 상관=날카로운 표현, 정인=차분한 이해력.
+			- 한 문단에 처음 등장하는 용어는 2개까지만. 용어를 나열하지 말고 그 작용을 장면으로 풀어낸다.
+			- 첫 문단은 용어 없이 이 사람의 기질만 일상 언어로 그려 도입 몰입을 만든다.
+			2. 사주팔자, 대운, 세운, 월운, 합, 충, 형, 파, 해는 절대 추측하지 말고 입력 데이터만 사용한다.
+			3. 일간과 일주를 혼동하지 않는다. 일간은 나 자신이다.
+			4. 본문에 일간은 임수입니다, 일주는 임자입니다 같은 직접 표기를 하지 않는다. 사주 구조는 풀어서 자연스럽게 녹여야 한다.
+			5. 날짜, 연도, 월을 말할 때는 입력 데이터 범위 내에서만 말한다. 데이터에 없는 연도나 월은 임의로 만들지 않는다.
+			""");
+	}
+
+	/**
+	 * 3단 전개에서 상품마다 달라지는 조각. 예전에는 String 매개변수 네 개를 나란히 받았는데,
+	 * 네 개가 모두 String 이라 호출부에서 순서를 바꿔 넘겨도 컴파일러가 잡지 못했다.
+	 * 이름 있는 필드로 묶어 호출부가 무엇을 넘기는지 읽히게 한다.
+	 *
+	 * @param tendency  (2단) 성향 풀이 줄의 뒷부분
+	 * @param sceneName (3단) 장면의 이름 (사업/학업/인생)
+	 * @param scene     (3단) 줄의 뒷부분
+	 * @param toneExample (3단)이 지시가 아니라 묘사여야 한다는 줄의 예시 뒷부분
+	 */
+	record LongformStage(String tendency, String sceneName, String scene, String toneExample) {
+	}
+
+	/**
+	 * 장문 유료 상품이 공유하는 3단 전개(깊이 규칙). 2단/3단의 무대만 상품마다 다르므로
+	 * 그 부분만 인자로 받고 나머지 문구는 한 곳에서 관리한다.
+	 */
+	static void appendLongformDepthRule(StringBuilder prompt, LongformStage stage) {
+		prompt.append("""
+			### 사주 풀이 깊이 규칙 (반드시 지킬 것) ###
+			이 분석은 10,000원짜리 유료 상품이다. 사주를 보지 않아도 할 수 있는 말은 돈값을 못 한다.
+			모든 핵심 문단에는 반드시 아래 3단 구조를 갖춘다:
+
+			""");
+
+		prompt.append("""
+			(1단) 사주 구조: 어느 기둥(년/월/일/시)에 어떤 글자(십성/오행)가 있고, 다른 글자와 어떤 관계(합/충/형/생/극)인지 밝힌다.
+			(2단) 성향 풀이: %s
+			(3단) %s 장면: %s
+
+			"""
+			.formatted(stage.tendency(), stage.sceneName(), stage.scene()));
+
+		prompt.append("""
+			(3단)은 ~하세요 같은 지시가 아니라, 이런 일이 벌어집니다/%s 같은 묘사여야 한다.
+			읽는 사람이 아 맞아 나 그래 하고 소름이 돋을 정도로 구체적이어야 한다.
+			누구에게나 맞는 말은 금지다. 반대 구조의 사주라면 반대로 말했을 문장만 쓴다.
+
+			"""
+			.formatted(stage.toneExample()));
+	}
+
+	/**
+	 * 장문 유료 상품 중 학업운(22)·인생조언(23)이 글자 하나까지 같이 쓰던 분량/페이지 규칙.
+	 *
+	 * <p>문구는 예전 그대로 둔다. 이 블록은 총 페이지 9~12개, 한 페이지 약 250~350자,
+	 * fullAnalysis 최소 4000자를 함께 요구하는데, 하단 모서리(9페이지 × 250자 = 2250자)에서는
+	 * 세 지시가 같이 성립하지 않는다. 상단(12 × 350 = 4200자)에서는 성립하므로 불가능한 충돌은
+	 * 아니고 범위가 빠듯한 것이다.
+	 *
+	 * <p>범위를 넓히면 22 의 이야기 흐름 7개, 23 의 6개와 페이지 수가 어긋나고 출력 분량과
+	 * 토큰 비용이 함께 늘어 부작용이 더 크다. 어느 쪽으로 맞추는 것이 옳은지 단정할 근거가 없어
+	 * 여기서는 고치지 않고 남겨 둔다. 고칠 때는 페이지 수와 문단 길이를 함께 조정해야 한다.
+	 */
+	static void appendLongformPageRule(StringBuilder prompt) {
+		prompt.append("""
+			### 분량/페이지 규칙 (가장 중요 — 반드시 지킬 것) ###
+			fullAnalysis 총 분량은 최소 4000자 이상으로 작성한다. 분량 상한은 두지 않는다.
+			단, 분량은 결과이지 목표가 아니다. 새로운 정보(사주 근거, 판단, 현실 장면)가 없는 문장은 쓰지 않는다.
+			모든 핵심 문단에는 이 사주의 실제 글자에서 나온 판단이 최소 1개 들어가야 한다. 근거가 떨어지면 반복하지 말고 다음 주제로 넘어간다.
+			페이지 분리는 반드시 줄바꿈 두 번으로만 한다.
+			총 페이지는 9~12개 흐름으로 구성한다.
+			**[핵심] 한 페이지(문단)는 반드시 7~8줄(약 250~350자) 이내로 제한한다. 이 규칙은 절대적이다.**
+			한 문단이 8줄을 넘기면 반드시 줄바꿈 두 번으로 끊어서 다음 문단으로 넘긴다.
+			모바일 화면에서 읽히는 분량이므로, 한 페이지가 길어지면 사용자가 이탈한다. 짧게 끊되 내용은 깊게.
+			문단 내부는 자연스러운 줄글로 이어 쓰고, 문단 경계에서만 줄바꿈 두 번을 사용한다.
+			문장마다 줄바꿈하지 않는다.
+			다음 표기 금지: [PAGE_BREAK], [1.], 1-1, 1), ##, ###, -, * 같은 목차/라벨/마크다운 기호.
+
+			""");
+	}
+
+	/** 장문 유료 상품이 공유하는 이야기 흐름 머리말. 흐름 항목 자체는 상품마다 다르다. */
+	static void appendLongformNarrativeFlowHeader(StringBuilder prompt) {
+		prompt.append("""
+			### 이야기 흐름 (제목/번호는 출력하지 말 것) ###
+			글은 다음 흐름으로 자연스럽게 이어간다. 각 흐름에서 사주 구조 풀이가 중심이고, 행동 조언은 최소화한다.
+
+			""");
+	}
+
+	/** 추가 줄이 없는 상품(학업운 22, 인생조언 23)이 쓰는 문장 스타일. */
+	static void appendLongformNarrationStyle(StringBuilder prompt) {
+		appendLongformNarrationStyle(prompt, "");
+	}
+
+	/**
+	 * 장문 유료 상품이 공유하는 문장 스타일. 사업운(21)만 가운데에 두 줄을 더 끼워 넣으므로
+	 * 그 줄만 인자로 받는다.
+	 *
+	 * @param extraMiddleLines 줄바꿈으로 끝나는 추가 줄. 추가 줄이 없으면 인자 없는 오버로드를 쓴다.
+	 */
+	static void appendLongformNarrationStyle(StringBuilder prompt, String extraMiddleLines) {
+		prompt.append("""
+			### 문장 스타일 ###
+			30년 경력 역술가가 대면 상담에서 말하듯 자연스럽고 구체적으로 작성한다.
+			추상적 칭찬, 뜬구름 문장, 과한 미사여구는 금지한다.
+			""");
+		prompt.append(extraMiddleLines);
+		prompt.append("""
+			해요체를 기본으로 하되, 핵심 판단은 합니다체로 무게를 준다.
+
+			""");
+	}
+
+	/** 장문 유료 상품이 공유하는 서버 산출 데이터 구획과 그 사용 규칙. */
+	static void appendLongformAnalysisData(StringBuilder prompt, String name,
+		ManseryeokCalculationResponse response) {
+		prompt.append("""
+			### 분석 대상자 데이터 (서버 산출값) ###
+			""");
+		SajuProfileSections.appendPersonDetailInfo(prompt, name, response);
+		SajuKeywordSections.appendKeywords(prompt, response);
+		prompt.append("""
+			※ 위 데이터의 수치값은 내부 판단용이다. 최종 본문(fullAnalysis)에는 점수/개수를 직접 쓰지 말고 강약 경향으로만 표현한다.
+
+			""");
+
+		prompt.append("""
+			시점 표기는 yyyy년 M월 형식만 사용하고 일/시간/분/초/T 문자는 절대 쓰지 않는다.
+
+			""");
+	}
+
 	static void appendSajuJsonResponseFormat(StringBuilder prompt) {
 		prompt.append("""
 
 
 			### [최종 출력 형식] ###
-			응답은 fullAnalysis와 summary 두 필드로 구성됩니다. JSON 형식은 시스템이 강제하므로 내용에만 집중하세요.
 
 			""");
 
@@ -235,14 +379,13 @@ final class PromptSections {
 	}
 
 	/**
-	 * [신규] 궁합 분석 프롬프트에 공통적으로 추가될 JSON 요청 꼬리
+	 * 궁합 분석 프롬프트에 공통으로 붙는 출력 형식 꼬리.
 	 */
 	static void appendCompatibilityJsonResponseFormat(StringBuilder prompt) {
 		prompt.append("""
 
 
 			### [최종 출력 형식] ###
-			응답은 score, interpretation, summary 세 필드로 구성됩니다. JSON 형식은 시스템이 강제하므로 내용에만 집중하세요.
 
 			""");
 
@@ -273,7 +416,6 @@ final class PromptSections {
 
 
 			### 최종 출력 형식 ###
-			응답은 fullAnalysis와 summary 두 필드로 구성된다. JSON 형식은 시스템이 강제하므로 내용에만 집중한다.
 			fullAnalysis에는 번호형 목차, 대괄호 제목, 목록 기호 없이 순수 문장 단락만 작성한다.
 			단락 구분은 줄바꿈 두 번만 사용하고, 문단 내부에서 문장별 줄바꿈은 하지 않는다.
 			전환 문장 없이 단락을 끊지 말고 앞 단락의 의미를 다음 단락으로 연결한다.
@@ -290,7 +432,6 @@ final class PromptSections {
 
 
 			### 최종 출력 형식 ###
-			응답은 fullAnalysis와 summary 두 필드로 구성된다. JSON 형식은 시스템이 강제하므로 내용에만 집중한다.
 			fullAnalysis에는 번호형 라벨(A., 1., 첫째), 대괄호 제목([ ... ]), 목록 기호(-, *)를 쓰지 않는다.
 			문단 구분은 줄바꿈 두 번만 사용한다.
 			fullAnalysis 길이는 3800자 이상 4600자 이하를 지킨다.

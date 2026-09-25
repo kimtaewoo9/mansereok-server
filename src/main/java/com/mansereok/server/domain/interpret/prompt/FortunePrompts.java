@@ -30,7 +30,7 @@ final class FortunePrompts {
 
 		prompt.append("""
 			### 작성 원칙 ###
-			1. 입력 JSON 밖의 사실은 추측하지 않는다.
+			1. 입력 데이터 밖의 사실은 추측하지 않는다.
 			2. 근거 없는 단정 금지. 핵심 판단마다 사주 근거를 붙인다.
 			3. 좋은 점만 미화하지 말고 리스크와 손실 가능성을 반드시 같이 다룬다.
 			4. 전문 용어는 필요한 순간에만 쓰고, 첫 등장 1회만 쉬운 풀이를 붙인다.
@@ -54,7 +54,7 @@ final class FortunePrompts {
 		prompt.append("""
 			### 분량/문단 규칙 ###
 			fullAnalysis 총 분량은 3800자 이상 4600자 이하로 작성한다.
-			전체는 6~8개 문단으로 구성하고, 문단 구분은 줄바꿈 두 번(\\\\n\\\\n)만 사용한다.
+			전체는 6~8개 문단으로 구성하고, 문단 구분은 줄바꿈 두 번만 사용한다.
 			한 문단이 과도하게 길어지면 문맥 기준으로 자연스럽게 나눈다.
 			분량을 늘릴 때는 미사여구가 아니라 근거와 현실 장면 설명을 채운다.
 
@@ -114,7 +114,7 @@ final class FortunePrompts {
 			""");
 
 		prompt.append("""
-			**[분량/문단 규칙]** fullAnalysis 전체 4,000자 이상, 각 주제당 500~700자. 한 문단은 6~7줄 이내, 문단 경계는 줄바꿈 두 번(\\n\\n)만 사용.
+			**[분량/문단 규칙]** fullAnalysis 전체 4,000자 이상, 각 주제당 500~700자. 한 문단은 6~7줄 이내, 문단 경계는 줄바꿈 두 번만 사용.
 
 			""");
 
@@ -178,7 +178,7 @@ final class FortunePrompts {
 			"""
 			.formatted(name));
 
-		// JSON 포맷 추가
+		// 출력 형식 꼬리
 		PromptSections.appendSajuJsonResponseFormat(prompt);
 
 		return prompt.toString();
@@ -431,7 +431,7 @@ final class FortunePrompts {
 		prompt.append("""
 
 			### 🔍 [최종 검증] 제출 전 필수 체크 ###
-			**아래 항목을 모두 충족했는지 확인한 후 JSON으로 출력하세요.**
+			**아래 항목을 모두 충족했는지 확인한 후 출력하세요.**
 
 			""");
 
@@ -445,7 +445,7 @@ final class FortunePrompts {
 
 			""");
 
-		// ===== [6단계] JSON 포맷 =====
+		// ===== [6단계] 출력 형식 꼬리 =====
 		PromptSections.appendSajuJsonResponseFormat(prompt);
 
 		return prompt.toString();
