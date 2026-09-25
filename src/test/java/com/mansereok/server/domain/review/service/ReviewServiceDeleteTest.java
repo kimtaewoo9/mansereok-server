@@ -63,7 +63,7 @@ class ReviewServiceDeleteTest {
 	@DisplayName("관리자가 아닌 회원이 지우려 하면")
 	class WhenRequesterIsNotAdmin {
 
-		@ParameterizedTest(name = "[{index}] {0}")
+		@ParameterizedTest(name = "[{index}] {0} 요청 → 403, 리뷰는 그대로")
 		@EnumSource(value = Role.class, mode = Mode.EXCLUDE, names = {"ADMIN", "SUPER_ADMIN"})
 		@DisplayName("403(AccessDeniedException)을 내고 리뷰를 삭제 표시하지 않는다")
 		void deniesAndKeepsReview(Role role) {
@@ -81,7 +81,7 @@ class ReviewServiceDeleteTest {
 			assertThat(review.isDeleted()).isFalse();
 		}
 
-		@ParameterizedTest(name = "[{index}] {0}")
+		@ParameterizedTest(name = "[{index}] {0} 요청, 없는 리뷰 번호 → 404 가 아니라 403")
 		@EnumSource(value = Role.class, mode = Mode.EXCLUDE, names = {"ADMIN", "SUPER_ADMIN"})
 		@DisplayName("없는 리뷰 번호여도 404 가 아니라 403 을 내서 리뷰가 있는지 알려 주지 않는다")
 		void deniesBeforeLookingUpReview(Role role) {
@@ -99,7 +99,7 @@ class ReviewServiceDeleteTest {
 	@DisplayName("관리자가 지우면")
 	class WhenRequesterIsAdmin {
 
-		@ParameterizedTest(name = "[{index}] {0}")
+		@ParameterizedTest(name = "[{index}] {0} 요청 → 삭제 표시")
 		@EnumSource(value = Role.class, names = {"ADMIN", "SUPER_ADMIN"})
 		@DisplayName("리뷰를 삭제 표시한다")
 		void marksReviewAsDeleted(Role role) {
