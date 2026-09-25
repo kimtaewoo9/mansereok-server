@@ -122,6 +122,42 @@ class CompatibilityResultTest {
 		}
 	}
 
+	/**
+	 * JPA 가 저장 직전에 부르는 콜백(@PrePersist, @PreUpdate)을 같은 패키지에서 직접 불러 확인한다. 실제 저장에서 updated_at 이
+	 * 바뀌는지는 ResultTableConstraintMySqlTest 가 본다.
+	 */
+	@Nested
+	@DisplayName("저장될 때")
+	class Timestamps {
+
+		@Test
+		@DisplayName("처음 저장하면(@PrePersist) 만든 시각과 고친 시각을 같은 값으로 채운다")
+		void fillsCreatedAtAndUpdatedAtOnCreate() {
+			// given
+			CompatibilityResult result = inputRequired();
+
+			// when
+			result.onCreate();
+
+			// then
+			assertThat(result.getUpdatedAt()).isNotNull().isEqualTo(result.getCreatedAt());
+		}
+
+		@Test
+		@DisplayName("고쳐 저장하면(@PreUpdate) 고친 시각을 채우고 만든 시각은 건드리지 않는다")
+		void fillsOnlyUpdatedAtOnUpdate() {
+			// given: 고친 시각이 비어 있는 결과(updated_at 컬럼이 생기기 전에 저장된 행과 같다)
+			CompatibilityResult result = inputRequired();
+
+			// when
+			result.onUpdate();
+
+			// then
+			assertThat(result.getUpdatedAt()).isNotNull();
+			assertThat(result.getCreatedAt()).isNull();
+		}
+	}
+
 	@Test
 	@DisplayName("상태를 비롯한 어떤 필드도 아무 값으로나 바꾸는 public 세터가 없다")
 	void hasNoPublicSetter() {
