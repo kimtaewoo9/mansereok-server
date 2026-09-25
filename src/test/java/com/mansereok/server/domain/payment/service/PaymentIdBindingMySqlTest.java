@@ -32,6 +32,7 @@ import org.springframework.beans.factory.annotation.Autowired;
  * <p>막으려는 공격: 브라우저에서 결제 pay_A 를 한 번 만들어 주문 A 를 확정한 뒤, 같은 금액의 주문 B 에 "pay_A#1" 로 결제 완료를
  * 보낸다. 예전에는 조회 주소가 '#' 에서 잘려 포트원이 pay_A 를 돌려줬고, 중복 검사(payments.imp_uid)는 요청 문자열 "pay_A#1"
  * 로 해서 걸리지 않아 B 도 PAID 가 됐다. 여기서는 포트원 목이 "pay_A#1" 에도 pay_A 를 돌려주게 해 그 상황을 재현한다.
+ * 공격자는 customData 없이 결제를 만들어 주문 번호 대조도 건너뛰었으므로, 그런 결제로는 어느 주문도 확정되지 않는지도 본다.
  *
  * <p>결제 행 개수와 주문 상태는 JPA 캐시를 거치지 않고 SQL 로 센다. 데이터는 실행마다 다른 키(runId)로 만들고 그 키로만 지운다.
  */
@@ -120,6 +121,30 @@ class PaymentIdBindingMySqlTest extends PaymentMySqlTest {
 			.isInstanceOf(PaymentException.class)
 			.hasMessage("이미 처리된 결제입니다.");
 		assertOnlyOrderAHoldsPaymentA();
+	}
+
+	@Test
+	@DisplayName("customData 없이 만든 결제 pay_A 로 주문 A 에 결제 완료를 보내면 주문 번호 대조를 건너뛰지 않고 거부해, 결제 행이 생기지 않고 A 는 PENDING 으로 남는다")
+	void paymentWithoutCustomDataConfirmsNoOrder() {
+		// given: 예전 공격은 customData 없이 결제를 만들어 주문 번호 대조를 건너뛰었다
+		PortOnePaymentResponse withoutCustomData = paidResponse(paymentA, orderA);
+		withoutCustomData.setCustomData(null);
+		given(portOneClient.getPayment(paymentA)).willReturn(withoutCustomData);
+
+		// when
+		Throwable rejected = catchThrowable(
+			() -> paymentConfirmService.complete(username, completeRequest(paymentA, orderA)));
+
+		// then
+		assertThat(rejected)
+			.isInstanceOf(PaymentException.class)
+			.hasMessage("결제 정보에 주문 번호가 없습니다.");
+		assertThat(jdbcTemplate.queryForObject(
+			"SELECT COUNT(*) FROM payments WHERE merchant_uid IN (?, ?)", Integer.class, orderA, orderB))
+			.as("두 주문에 붙은 결제 행").isZero();
+		assertThat(jdbcTemplate.queryForObject(
+			"SELECT status FROM orders WHERE merchant_uid = ?", String.class, orderA))
+			.as("주문 A 상태").isEqualTo("PENDING");
 	}
 
 	private void confirmOrderAWithPaymentA() {
