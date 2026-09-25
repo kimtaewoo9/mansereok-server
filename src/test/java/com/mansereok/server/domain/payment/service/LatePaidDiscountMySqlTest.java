@@ -8,6 +8,7 @@ import static org.mockito.BDDMockito.then;
 import static org.mockito.Mockito.times;
 
 import com.mansereok.server.domain.coupon.repository.CouponRepository;
+import com.mansereok.server.domain.coupon.service.CouponService;
 import com.mansereok.server.domain.discount.entity.DiscountCode;
 import com.mansereok.server.domain.discount.repository.DiscountCodeRepository;
 import com.mansereok.server.domain.discount.service.DiscountCodeService;
@@ -28,6 +29,7 @@ import com.mansereok.server.support.fixture.DiscountCodeFixture;
 import com.mansereok.server.support.fixture.SubCategoryFixture;
 import java.time.Duration;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.UUID;
@@ -48,6 +50,9 @@ import org.springframework.transaction.IllegalTransactionStateException;
  * <p>주문 생성·만료·결제 완료·환불은 실제 서비스를 부르고, 포트원과 Discord 만 목으로 바꾼다. 만료는 스케줄러를 기다리지 않고
  * 만료 서비스를 직접 부른다. 쿠폰 사용 여부와 사용 횟수는 JPA 캐시를 거치지 않고 SQL 로 읽는다. 데이터는 실행마다 다른 키(runId)로
  * 만들고 그 키로 만든 행만 지운다.
+ *
+ * <p>여기서는 작업을 하나씩 차례로 부른다. 늦은 결제 확정이 커밋되기 전에 다른 작업이 겹치는 경우는
+ * {@link LatePaidDiscountOverlapMySqlTest} 가 확인한다.
  */
 class LatePaidDiscountMySqlTest extends PaymentMySqlTest {
 
@@ -67,6 +72,8 @@ class LatePaidDiscountMySqlTest extends PaymentMySqlTest {
 	private PaymentRefundService paymentRefundService;
 	@Autowired
 	private DiscountCodeService discountCodeService;
+	@Autowired
+	private CouponService couponService;
 	@Autowired
 	private UserRepository userRepository;
 	@Autowired
@@ -173,6 +180,31 @@ class LatePaidDiscountMySqlTest extends PaymentMySqlTest {
 			assertThat(orderStatus(orderB.getMerchantUid())).isEqualTo("PENDING");
 			assertThat(couponIsUsed(couponId)).as("B 가 쥔 쿠폰 X 사용 여부").isTrue();
 		}
+
+		@Test
+		@DisplayName("X 로 만든 주문 B 가 결제까지 마친 뒤 A 가 늦게 결제되어도, A 를 환불하면 X 는 결제 완료된 B 가 쥔 채 사용 상태로 남는다")
+		void couponHeldByPaidOrderStaysUsedAfterRefundOfLatePaidOrder() {
+			// given: X 로 만든 주문 B 가 결제를 마치고, 그 뒤 A 가 늦게 결제된다
+			OrderCreateResponse orderB = paymentOrderService.createOrder(username, orderRequestWithCoupon(couponId));
+			String paymentB = "pay_late_b_" + runId;
+			given(portOneClient.getPayment(paymentB))
+				.willReturn(paidResponse(paymentB, orderB.getMerchantUid(), PRICE_WITH_COUPON));
+			paymentConfirmService.complete(username, completeRequest(paymentB, orderB.getMerchantUid()));
+			String paymentA = "pay_late_a_" + runId;
+			given(portOneClient.getPayment(paymentA))
+				.willReturn(paidResponse(paymentA, orderA.getMerchantUid(), PRICE_WITH_COUPON));
+			paymentConfirmService.complete(username, completeRequest(paymentA, orderA.getMerchantUid()));
+			assertThat(orderStatus(orderB.getMerchantUid())).as("준비 단계: B 결제 완료").isEqualTo("PAID");
+			assertThat(orderStatus(orderA.getMerchantUid())).as("준비 단계: A 늦은 결제 확정").isEqualTo("PAID");
+
+			// when: 늦게 결제된 A 를 환불한다
+			paymentRefundService.cancel(username, paymentA, "단순 변심");
+
+			// then
+			assertThat(orderStatus(orderA.getMerchantUid())).isEqualTo("CANCELLED");
+			assertThat(orderStatus(orderB.getMerchantUid())).isEqualTo("PAID");
+			assertThat(couponIsUsed(couponId)).as("결제 완료된 B 가 쥔 쿠폰 X 사용 여부").isTrue();
+		}
 	}
 
 	@Nested
@@ -237,16 +269,69 @@ class LatePaidDiscountMySqlTest extends PaymentMySqlTest {
 		}
 	}
 
-	@Test
-	@DisplayName("할인 코드 사용 횟수 증가(incrementUsage)를 트랜잭션 밖에서 부르면 IllegalTransactionStateException 으로 거절하고 횟수를 바꾸지 않는다")
-	void incrementUsageOutsideTransactionIsRejected() {
-		// given: 잠금을 쥔 트랜잭션이 이미 끝난 엔티티
-		DiscountCode detached = saveDiscountCode(100);
+	/**
+	 * 잠금 전제를 가진 할인 사용·복구 메서드는 전파가 MANDATORY 라, 진행 중인 트랜잭션 없이 부르면 스프링이 거절하고 DB 를 바꾸지 않는다.
+	 */
+	@Nested
+	@DisplayName("잠금을 쥔 트랜잭션 안에서 불러야 하는 메서드를 트랜잭션 밖에서 부르면")
+	class CalledOutsideTransaction {
 
-		// when & then
-		assertThatThrownBy(() -> discountCodeService.incrementUsage(detached))
-			.isInstanceOf(IllegalTransactionStateException.class);
-		assertThat(currentUses()).isZero();
+		private static final String NO_TRANSACTION_MESSAGE =
+			"No existing transaction found for transaction marked with propagation 'mandatory'";
+
+		@Test
+		@DisplayName("할인 코드 사용 횟수 증가(incrementUsage)는 IllegalTransactionStateException 으로 거절하고 횟수를 바꾸지 않는다")
+		void incrementUsageIsRejected() {
+			// given: 잠금을 쥔 트랜잭션이 이미 끝난 엔티티
+			DiscountCode detached = saveDiscountCode(100);
+
+			// when & then
+			assertThatThrownBy(() -> discountCodeService.incrementUsage(detached))
+				.isInstanceOf(IllegalTransactionStateException.class)
+				.hasMessage(NO_TRANSACTION_MESSAGE);
+			assertThat(currentUses()).isZero();
+		}
+
+		@Test
+		@DisplayName("늦은 결제 몫의 할인 코드 사용 횟수 증가(reapplyUsage)는 IllegalTransactionStateException 으로 거절하고 횟수를 바꾸지 않는다")
+		void reapplyUsageIsRejected() {
+			// given
+			saveDiscountCode(100);
+
+			// when & then
+			assertThatThrownBy(() -> discountCodeService.reapplyUsage(discountCode))
+				.isInstanceOf(IllegalTransactionStateException.class)
+				.hasMessage(NO_TRANSACTION_MESSAGE);
+			assertThat(currentUses()).isZero();
+		}
+
+		@Test
+		@DisplayName("늦은 결제 몫의 쿠폰 사용 처리(claimForPaidOrder)는 IllegalTransactionStateException 으로 거절하고 쿠폰을 미사용으로 둔다")
+		void claimForPaidOrderIsRejected() {
+			// given
+			Long couponId = couponRepository.save(CouponFixture.fixedAmount(COUPON_DISCOUNT).withoutId()
+				.userId(userId).build()).getId();
+
+			// when & then
+			assertThatThrownBy(() -> couponService.claimForPaidOrder(couponId))
+				.isInstanceOf(IllegalTransactionStateException.class)
+				.hasMessage(NO_TRANSACTION_MESSAGE);
+			assertThat(couponIsUsed(couponId)).isFalse();
+		}
+
+		@Test
+		@DisplayName("쿠폰 되돌리기(restoreCoupon)는 IllegalTransactionStateException 으로 거절하고 쿠폰을 사용 상태로 둔다")
+		void restoreCouponIsRejected() {
+			// given
+			Long couponId = couponRepository.save(CouponFixture.fixedAmount(COUPON_DISCOUNT).withoutId()
+				.userId(userId).usedAt(LocalDateTime.of(2026, 9, 1, 10, 0)).build()).getId();
+
+			// when & then
+			assertThatThrownBy(() -> couponService.restoreCoupon(couponId))
+				.isInstanceOf(IllegalTransactionStateException.class)
+				.hasMessage(NO_TRANSACTION_MESSAGE);
+			assertThat(couponIsUsed(couponId)).isTrue();
+		}
 	}
 
 	private DiscountCode saveDiscountCode(int maxUses) {

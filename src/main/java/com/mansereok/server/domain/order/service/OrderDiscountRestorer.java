@@ -8,6 +8,7 @@ import com.mansereok.server.domain.order.repository.OrderRepository;
 import com.mansereok.server.domain.payment.event.PaymentAnomalyEvent;
 import java.util.EnumSet;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import lombok.RequiredArgsConstructor;
@@ -22,8 +23,27 @@ import org.springframework.stereotype.Component;
  * 대상이 아니다. 환불(PaymentRefundService)·만료(OrderExpirationService)·웹훅 실패 기록(PaymentWebhookService)이
  * 되돌리기를, 만료 뒤 결제 확정(PaidOrderFinalizer)이 다시 쓰기를 같은 규칙으로 부르도록 여기로 모았다.
  *
- * <p>지키려는 규칙은 "결제 대기·결제 완료 주문의 할인은 사용된 상태" 다. 트랜잭션은 호출자의 것에 참여하고, 잠금 순서는
- * 주문 행(호출자가 잠금) → 쿠폰·할인 코드 행이다.
+ * <p>지키려는 규칙은 "결제 대기·결제 완료 주문의 할인은 사용된 상태" 다. 트랜잭션은 호출자의 것에 참여한다. 여기서 건 잠금은
+ * 호출자의 트랜잭션이 끝날 때 풀린다.
+ *
+ * <p>할인 행을 잠그는 순서는 경로마다 다르다.
+ * <ul>
+ *   <li>주문 생성(PaymentOrderService.createOrder): 쿠폰·할인 코드 행 → orders INSERT</li>
+ *   <li>늦은 결제 확정({@link #reapply}): 주문 행(호출자) → 쿠폰·할인 코드 행</li>
+ *   <li>쿠폰 복구({@link #restore}, 만료·환불·웹훅 실패 기록): 주문 행(호출자) → 같은 쿠폰을 쓴 다른 주문 행(공유 잠금) → 쿠폰 행</li>
+ *   <li>할인 코드 복구({@link #restore}): 주문 행(호출자) → 할인 코드 행</li>
+ * </ul>
+ *
+ * <p>이 순서는 orders.merchant_uid 인덱스를 전제로 한다. 인덱스가 있으면 결제 확정의 주문 잠금 조회는 자기 주문 행만 잠근다. 인덱스가
+ * 없으면 그 조회가 orders 의 모든 행과 끝 틈까지 잠가 아래 두 교착이 난다. InnoDB 가 한쪽 트랜잭션을 되돌리므로 요청 하나가 실패한다.
+ * <ul>
+ *   <li>할인 행을 쥔 주문 생성은 INSERT 에서 확정을 기다리고, 늦은 결제 확정은 할인 행에서 주문 생성을 기다린다(서로 반대 순서).</li>
+ *   <li>쿠폰 복구는 자기 주문 행을 쥔 채 확정이 잠근 행을 공유 잠금으로 기다리고, 확정은 쿠폰 복구가 쥔 주문 행을 기다린다.</li>
+ * </ul>
+ *
+ * <p>인덱스가 있어도 쿠폰 복구 두 건이 겹치면(같은 쿠폰을 쥔 두 주문의 환불과 만료 등) 서로 자기 주문 행을 쥔 채 상대 행을 공유
+ * 잠금으로 기다려 교착이 난다. orders.coupon_id 인덱스가 없으면 쿠폰이 달라도 orders 를 모두 훑으므로 같은 일이 난다. 만료는 다음
+ * 주기에 다시 돌지만, 환불은 포트원 취소 뒤의 DB 확정이 실패해 CANCEL_REQUESTED 로 남는다(PaymentRefundService 설명).
  */
 @Component
 @RequiredArgsConstructor
@@ -50,14 +70,22 @@ public class OrderDiscountRestorer {
 	 * <p>쿠폰은 이 주문 말고 결제 대기·결제 완료인 다른 주문이 같은 쿠폰을 쓰고 있으면 되돌리지 않는다. 만료 뒤 늦게 결제된 주문이
 	 * 그사이 다른 주문에 넘어간 쿠폰을 기록상 들고 있을 수 있는데, 이 주문을 환불하면서 쿠폰을 풀면 다른 주문이 쓰는 쿠폰이 다시
 	 * 쓸 수 있게 되기 때문이다.
+	 *
+	 * <p>다른 주문이 쥐고 있는지는 공유 잠금 읽기로 판단한다. 잠그지 않고 읽으면 트랜잭션 스냅샷을 읽는다. 그래서 늦은 결제 확정이
+	 * 주문 행과 쿠폰 행을 잠근 채 아직 커밋하지 않은 동안에는 그 주문을 여전히 EXPIRED 로 본다. 그러면 확정이 커밋된 뒤 쿠폰을 풀어,
+	 * 결제 완료 주문이 쥔 쿠폰이 미사용으로 남는다. 공유 잠금 읽기는 그 확정이 커밋될 때까지 기다린 뒤 PAID 로 읽는다.
+	 *
+	 * <p>쿠폰 행보다 다른 주문 행을 먼저 잠근다. 늦은 결제 확정은 주문 행 → 쿠폰 행 순서로 잠그므로, 여기서 쿠폰 행을 먼저 잠그면
+	 * 확정이 쥔 주문 행을 기다리는 동안 확정은 이 트랜잭션이 쥔 쿠폰 행을 기다려 교착이 난다.
 	 */
 	public void restore(Order order) {
 		Long couponId = order.getCouponId();
 		if (couponId != null) {
-			if (orderRepository.existsByCouponIdAndStatusInAndIdNot(couponId, STATUSES_HOLDING_DISCOUNT,
-				order.getId())) {
-				log.warn("다른 주문이 쓰고 있는 쿠폰이라 복구하지 않습니다: orderId={}, couponId={}", order.getId(),
-					couponId);
+			List<Long> otherHolderIds = orderRepository.findIdsByCouponIdAndStatusInAndIdNotForShare(couponId,
+				STATUSES_HOLDING_DISCOUNT, order.getId());
+			if (!otherHolderIds.isEmpty()) {
+				log.warn("다른 주문이 쓰고 있는 쿠폰이라 복구하지 않습니다: orderId={}, couponId={}, 쓰고 있는 주문 ID={}",
+					order.getId(), couponId, otherHolderIds);
 				return;
 			}
 			couponService.restoreCoupon(couponId);
@@ -83,6 +111,9 @@ public class OrderDiscountRestorer {
 	 *   <li>쿠폰을 그사이 다른 주문이 이미 쓰고 있다. 쿠폰 한 장의 할인이 두 결제에 들어갔다.</li>
 	 *   <li>할인 코드 사용 횟수가 최대 횟수를 넘었다. 선착순 인원보다 많이 할인됐다.</li>
 	 * </ul>
+	 *
+	 * <p>호출자가 주문 행을 잠근 뒤 쿠폰·할인 코드 행을 잠근다. 주문 생성과는 반대 순서라 orders.merchant_uid 인덱스를 전제로 한다
+	 * (클래스 설명).
 	 */
 	public void reapply(Order order) {
 		Long couponId = order.getCouponId();

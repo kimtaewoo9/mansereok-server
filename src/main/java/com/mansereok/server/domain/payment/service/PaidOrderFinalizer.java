@@ -37,7 +37,9 @@ import org.springframework.transaction.annotation.Transactional;
  *
  * <p>만료(EXPIRED)된 주문을 확정할 때는 만료 때 되돌린 쿠폰·할인 코드를 같은 트랜잭션에서 다시 사용 처리한다
  * ({@link OrderDiscountRestorer#reapply}). 확정과 다시 쓰기를 한 트랜잭션에 두어, 확정이 롤백되면 다시 쓰기도 함께 롤백되고
- * "결제 완료 주문의 할인은 사용된 상태" 라는 규칙이 중간에 깨진 채 남지 않는다.
+ * "결제 완료 주문의 할인은 사용된 상태" 라는 규칙이 중간에 깨진 채 남지 않는다. 이 다시 쓰기는 호출자가 잠근 주문 행을 쥔 채
+ * 쿠폰·할인 코드 행을 잠가, 할인 행을 먼저 잠그고 주문을 INSERT 하는 주문 생성과 반대 순서다. orders.merchant_uid 인덱스가 없으면
+ * 둘이 교착될 수 있다(OrderDiscountRestorer 클래스 설명).
  */
 @Component
 @RequiredArgsConstructor
@@ -71,6 +73,7 @@ public class PaidOrderFinalizer {
 		orderRepository.save(order);
 
 		// 1-1. 만료 뒤 결제면 만료 때 되돌린 할인을 다시 사용 처리한다. 다시 쓸 수 없으면 확정은 두고 운영에 알린다.
+		//      주문 행을 쥔 채 할인 행을 잠근다(주문 생성과 반대 순서, orders.merchant_uid 인덱스 전제).
 		if (paidAfterExpiry) {
 			orderDiscountRestorer.reapply(order);
 		}

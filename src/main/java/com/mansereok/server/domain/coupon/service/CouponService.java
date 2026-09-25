@@ -14,6 +14,7 @@ import java.util.List;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
@@ -100,13 +101,15 @@ public class CouponService {
 	 * 돌려준다. 결제는 이미 끝났으므로 예외로 확정을 되돌리지 않고, 호출자가 운영 알림을 보낸다. 쿠폰 기간은 보지 않는다
 	 * ({@link Coupon#useForPaidOrder()}).
 	 *
-	 * <p>잠금 순서는 주문 행 → 쿠폰 행이다. 호출자(결제 확정)가 이미 주문 행을 잠근 트랜잭션 안에서 부르고, 잠금은 그 트랜잭션이
-	 * 끝날 때 풀린다.
+	 * <p>호출자(결제 확정)가 주문 행을 잠근 트랜잭션 안에서 부른다. 그래서 이 경로는 주문 행 → 쿠폰 행 순서로 잠그고, 쿠폰 행 → 주문
+	 * INSERT 순서인 주문 생성과 반대다. orders.merchant_uid 인덱스가 없으면 둘이 교착될 수 있다(OrderDiscountRestorer 클래스 설명).
+	 * 잠금은 호출자의 트랜잭션이 끝날 때 풀린다. 트랜잭션 밖에서 부르면 이 전제가 깨지므로 {@link Propagation#MANDATORY} 로 진행 중인
+	 * 트랜잭션이 없으면 IllegalTransactionStateException 을 던진다.
 	 *
 	 * @return 이 호출로 사용 처리했으면 true, 다른 주문이 이미 쓰고 있어 그대로 두었으면 false
 	 * @throws PaymentException 쿠폰이 없을 때
 	 */
-	@Transactional
+	@Transactional(propagation = Propagation.MANDATORY)
 	public boolean claimForPaidOrder(Long couponId) {
 		Coupon coupon = couponRepository.findByIdWithLock(couponId)
 			.orElseThrow(() -> new PaymentException("쿠폰 정보를 찾을 수 없습니다."));
@@ -161,13 +164,25 @@ public class CouponService {
 			.collect(Collectors.toList());
 	}
 
-	@Transactional
+	/**
+	 * 주문이 쿠폰을 놓을 때(만료·환불·웹훅 실패 기록) 쿠폰을 미사용으로 되돌린다.
+	 *
+	 * <p>쿠폰 행을 잠가(SELECT ... FOR UPDATE) 가장 최근에 커밋된 상태를 읽는다. 잠그지 않고 읽으면 트랜잭션 스냅샷의 값을 읽고,
+	 * 그사이 다른 트랜잭션이 바꾼 쿠폰을 덮어쓴다.
+	 *
+	 * <p>호출자(OrderDiscountRestorer.restore)는 같은 트랜잭션에서 이 쿠폰을 쥔 다른 주문이 없음을 잠금 읽기로 먼저 확인한다. 그
+	 * 확인이 되돌리기까지 이어지려면 두 잠금이 같은 트랜잭션에 있어야 하므로 {@link Propagation#MANDATORY} 로 진행 중인 트랜잭션이
+	 * 없으면 IllegalTransactionStateException 을 던진다.
+	 *
+	 * @throws PaymentException 쿠폰이 없을 때
+	 */
+	@Transactional(propagation = Propagation.MANDATORY)
 	public void restoreCoupon(Long couponId) {
 		if (couponId == null) {
 			return;
 		}
 
-		Coupon coupon = couponRepository.findById(couponId)
+		Coupon coupon = couponRepository.findByIdWithLock(couponId)
 			.orElseThrow(() -> new PaymentException("쿠폰 정보를 찾을 수 없습니다."));
 
 		// 사용된 상태라면 복구

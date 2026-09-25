@@ -20,7 +20,8 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 /**
- * 쿠폰을 사용 처리하는 두 메서드가 쿠폰 행을 스스로 잠가(findByIdWithLock) 읽는지와, 만료 뒤 결제된 주문 몫의 사용 처리 규칙을 확인한다.
+ * 쿠폰을 사용 처리하는 두 메서드와 되돌리는 메서드가 쿠폰 행을 스스로 잠가(findByIdWithLock) 읽는지와, 만료 뒤 결제된 주문 몫의 사용
+ * 처리 규칙을 확인한다.
  *
  * <p>잠금 자체는 DB 가 지키므로 여기서는 "잠금 조회로 읽는다" 까지만 본다. 리포지토리 목은 findByIdWithLock 만 스텁한다.
  * 코드가 잠그지 않는 findById 로 읽으면 스텁되지 않은 조회가 빈 값을 돌려줘 "쿠폰 없음" 으로 실패하고, MockitoExtension 의
@@ -123,6 +124,38 @@ class CouponServiceLockingTest {
 
 			// when & then
 			assertThatThrownBy(() -> couponService.claimForPaidOrder(COUPON_ID))
+				.isInstanceOf(PaymentException.class)
+				.hasMessage("쿠폰 정보를 찾을 수 없습니다.");
+		}
+	}
+
+	@Nested
+	@DisplayName("주문이 쿠폰을 놓아 쿠폰을 되돌릴 때(restoreCoupon)")
+	class RestoreCoupon {
+
+		@Test
+		@DisplayName("쿠폰 행을 잠가 읽은 뒤 미사용으로 되돌린다")
+		void readsCouponWithLockThenMarksUnused() {
+			// given
+			Coupon coupon = CouponFixture.usableCoupon().id(COUPON_ID).usedAt(EARLIER_USE).build();
+			given(couponRepository.findByIdWithLock(COUPON_ID)).willReturn(Optional.of(coupon));
+
+			// when
+			couponService.restoreCoupon(COUPON_ID);
+
+			// then
+			assertThat(coupon.isUsed()).isFalse();
+			assertThat(coupon.getUsedAt()).isNull();
+		}
+
+		@Test
+		@DisplayName("쿠폰이 없으면 '쿠폰 정보를 찾을 수 없습니다.' 로 거절한다")
+		void rejectsMissingCoupon() {
+			// given
+			given(couponRepository.findByIdWithLock(COUPON_ID)).willReturn(Optional.empty());
+
+			// when & then
+			assertThatThrownBy(() -> couponService.restoreCoupon(COUPON_ID))
 				.isInstanceOf(PaymentException.class)
 				.hasMessage("쿠폰 정보를 찾을 수 없습니다.");
 		}

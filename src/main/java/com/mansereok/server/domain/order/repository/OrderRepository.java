@@ -41,13 +41,22 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
 	List<Order> findAllByStatusAndCreatedAtBefore(OrderStatus status, LocalDateTime cutoff);
 
 	/**
-	 * 주문 excludedOrderId 말고 이 쿠폰을 쓴 주문 중 상태가 statuses 에 드는 것이 있는지 돌려준다. 할인 복구가 "다른 주문이 아직
-	 * 이 쿠폰을 쥐고 있는가" 를 확인할 때 쓴다.
+	 * 주문 excludedOrderId 말고 이 쿠폰을 쓴 주문 중 상태가 statuses 에 드는 주문의 id 를 공유 잠금(SELECT ... FOR SHARE)으로
+	 * 읽는다. 할인 복구가 "다른 주문이 아직 이 쿠폰을 쥐고 있는가" 를 판단할 때 쓴다.
 	 *
-	 * <p>orders.coupon_id 에 인덱스가 없으면 orders 를 훑는다. 환불·만료처럼 복구할 때만 부른다.
+	 * <p>잠금 읽기라 트랜잭션의 스냅샷이 아니라 가장 최근에 커밋된 상태를 읽는다. 다른 트랜잭션이 읽을 주문 행을 잠그고 있으면(늦은
+	 * 결제 확정이 주문 행을 잠근 채 쿠폰을 다시 쓰는 중) 그 트랜잭션이 끝날 때까지 기다린다. 읽은 행은 호출한 트랜잭션이 끝날 때까지
+	 * 다른 트랜잭션이 바꾸지 못한다. 트랜잭션 밖에서 부르면 잠금이 곧바로 풀려 의미가 없다.
+	 *
+	 * <p>orders.coupon_id 에 인덱스가 없으면 orders 를 처음부터 끝까지 훑으며 모든 행과 행 사이 틈을 잠근다. 그동안 다른 주문의
+	 * 확정·생성이 이 트랜잭션을 기다린다. 환불·만료·웹훅 실패 기록처럼 쿠폰을 되돌릴 때만 부른다. 이 읽기가 결제 확정과 교착되지
+	 * 않으려면 orders.merchant_uid 인덱스가 있어야 한다(OrderDiscountRestorer 클래스 설명).
 	 */
-	boolean existsByCouponIdAndStatusInAndIdNot(Long couponId, Collection<OrderStatus> statuses,
-		Long excludedOrderId);
+	@Lock(LockModeType.PESSIMISTIC_READ)
+	@Query("SELECT o.id FROM Order o WHERE o.couponId = :couponId AND o.status IN :statuses "
+		+ "AND o.id <> :excludedOrderId")
+	List<Long> findIdsByCouponIdAndStatusInAndIdNotForShare(@Param("couponId") Long couponId,
+		@Param("statuses") Collection<OrderStatus> statuses, @Param("excludedOrderId") Long excludedOrderId);
 
 	/**
 	 * 현재 상태가 expected 일 때만 next 로 바꾼다. 영향 행 수(0 또는 1)로 경합 여부를 판단한다.
