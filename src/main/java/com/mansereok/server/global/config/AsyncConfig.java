@@ -85,6 +85,12 @@ public class AsyncConfig {
 	// 기본 풀(threadPoolTaskExecutor)은 거부 시 예외를 던지는데, AFTER_COMMIT 리스너의 @Async 제출은 커밋 스레드에서
 	// 일어나므로 그 예외가 결제 완료 API 호출자까지 올라가 "DB 는 PAID 인데 500" 이 될 수 있다.
 	// 그래서 알림은 풀을 분리하고, 포화 시에는 거부 대신 호출 스레드에서 실행(CallerRunsPolicy)한다.
+	//
+	// 서버가 종료될 때는 우아한 종료 중에도 알림을 받고, 빈을 없앨 때 실행 중인 알림과 대기열에 남은 알림을 최대 10초 기다려 보낸다.
+	// 아래 두 줄이 없으면 스프링은 종료를 시작하자마자 이 풀이 새 작업을 받지 않게 하고, 빈을 없앨 때 대기열에 남은 알림을 버리고
+	// 실행 중인 알림을 인터럽트한다. 그 사이 우아한 종료 중에 끝난 결제의 알림은 CallerRunsPolicy 가 조용히 버린다(닫힌 풀의 작업은
+	// 호출 스레드에서도 돌리지 않는다). Discord 호출은 연결 3초·읽기 5초에서 끊기므로 10초면 실행 중인 알림은 끝난다. Discord 가
+	// 느려 대기열이 10초 안에 비지 않으면 남은 알림은 버려진다.
 	@Bean(name = "notificationTaskExecutor")
 	public Executor notificationTaskExecutor() {
 		ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
@@ -93,6 +99,8 @@ public class AsyncConfig {
 		executor.setQueueCapacity(200);
 		executor.setThreadNamePrefix("Notify-");
 		executor.setRejectedExecutionHandler(new ThreadPoolExecutor.CallerRunsPolicy());
+		executor.setWaitForTasksToCompleteOnShutdown(true);
+		executor.setAwaitTerminationSeconds(10);
 		executor.initialize();
 		return executor;
 	}
