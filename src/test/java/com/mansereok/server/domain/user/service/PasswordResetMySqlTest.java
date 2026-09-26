@@ -4,6 +4,7 @@ import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.catchThrowable;
 import static org.awaitility.Awaitility.await;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.then;
@@ -28,14 +29,18 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.mockito.Mockito;
+import org.mockito.invocation.InvocationOnMock;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
@@ -55,6 +60,9 @@ import org.springframework.transaction.support.TransactionTemplate;
  *   <li>재설정 확인·요청, 탈퇴, 로그인이 같은 회원의 행을 두고 겹쳐도 잠그는 순서(리프레시 토큰 → users → 재설정 토큰, UserService
  *   클래스 설명)가 같아 교착 없이 한쪽이 다른 쪽의 커밋을 기다린다. 한쪽 트랜잭션을 커밋 직전에 멈춰 잠금을 쥐게 하고, 다른 쪽이
  *   잠금을 기다리기 시작한 것을 performance_schema 로 확인한 뒤 풀어 준다.</li>
+ *   <li>리프레시 토큰이 하나도 없는 회원이면 순서만으로는 교착을 막지 못한다. 재설정 확인·탈퇴가 리프레시 토큰을 다룬 뒤 users 행을
+ *   잠그기 전에 로그인이 새 토큰을 넣어도, 확인·탈퇴가 READ COMMITTED 라 0행을 다룬 문장이 틈 잠금을 걸지 않아 교착 없이 둘 다
+ *   커밋한다. 리프레시 토큰 리포지토리를 스파이로 바꿔 확인·탈퇴를 그 사이에서 멈춰 세운다.</li>
  * </ol>
  *
  * <p>모든 행은 이번 실행의 runId 를 넣은 이메일의 회원으로 만들고, 뒤 정리에서 그 회원의 행만 지운다.
@@ -71,6 +79,9 @@ class PasswordResetMySqlTest extends LocalMySqlTest {
 	@Autowired
 	private UserRepository userRepository;
 	@Autowired
+	private RefreshTokenService refreshTokenService;
+	// 재설정 확인·탈퇴를 리프레시 토큰을 다룬 직후에 멈춰 세우려고 스파이로 둔다. 멈추게 하지 않은 호출은 실제 리포지토리로 간다.
+	@MockitoSpyBean
 	private RefreshTokenRepository refreshTokenRepository;
 	@Autowired
 	private PasswordResetTokenRepository passwordResetTokenRepository;
@@ -426,6 +437,106 @@ class PasswordResetMySqlTest extends LocalMySqlTest {
 			String.class, userId)).as("폐기된 리프레시 토큰").containsExactly("reset-refresh-new-" + runId);
 		assertThat(countRowsOfMember("SELECT COUNT(*) FROM refresh_tokens WHERE user_id = ? AND revoked = false"))
 			.as("폐기되지 않은 리프레시 토큰").isZero();
+	}
+
+	@Test
+	@DisplayName("리프레시 토큰이 없는 회원의 재설정 확인이 폐기를 마치고 users 행을 잠그기 전에 로그인이 새 토큰을 넣으면, 교착 없이 로그인이 먼저 커밋하고 확인도 커밋해 비밀번호가 바뀌며, 폐기 뒤에 들어온 로그인의 토큰은 남는다")
+	void confirmOfMemberWithoutRefreshTokenAndLoginInBetweenBothCommit() throws Exception {
+		// given: 메일로 받은 토큰. 이 회원에게는 리프레시 토큰 행이 없다.
+		userService.requestPasswordReset(email);
+		String token = storedToken();
+		CountDownLatch confirmRevoked = new CountDownLatch(1);
+		CountDownLatch releaseConfirm = new CountDownLatch(1);
+		// 확인이 리프레시 토큰을 폐기한 직후, users 행을 잠그기 전에 멈춘다
+		willAnswer(invocation -> {
+			Object result = callRealRepository(invocation);
+			confirmRevoked.countDown();
+			waitUpToTenSeconds(releaseConfirm);
+			return result;
+		}).given(refreshTokenRepository).revokeAllUserTokens(any());
+
+		String loginToken;
+		ExecutorService executor = Executors.newFixedThreadPool(2);
+		try {
+			Future<?> confirm = executor.submit(() -> userService.resetPassword(token, "new-password"));
+			assertThat(confirmRevoked.await(10, SECONDS)).as("확인이 리프레시 토큰을 폐기하고 멈췄다").isTrue();
+
+			// when: 확인이 멈춘 동안 로그인한다. 확인의 폐기가 틈 잠금을 걸었다면 로그인의 새 토큰 넣기가 그 잠금을 기다린다.
+			Future<String> login = executor.submit(() -> loginAndGetRefreshToken());
+			await().atMost(Duration.ofSeconds(10)).until(() -> login.isDone() || rowLockWaitsInThisSchema() > 0);
+			releaseConfirm.countDown();
+			loginToken = login.get(10, SECONDS);
+			confirm.get(10, SECONDS);
+		} finally {
+			releaseConfirm.countDown();
+			executor.shutdownNow();
+		}
+
+		// then
+		assertThat(passwordEncoder.matches("new-password", storedPasswordHash())).as("확인이 바꾼 비밀번호").isTrue();
+		assertThat(countRowsOfMember("SELECT COUNT(*) FROM password_reset_tokens WHERE user_id = ?"))
+			.as("쓴 재설정 토큰 행").isZero();
+		assertThat(jdbcTemplate.queryForList("SELECT token FROM refresh_tokens WHERE user_id = ? AND revoked = false",
+			String.class, userId))
+			.as("확인이 폐기한 뒤에 로그인이 넣은 리프레시 토큰은 폐기되지 않는다(UserService.resetPassword 설명)")
+			.containsExactly(loginToken);
+	}
+
+	@Test
+	@DisplayName("리프레시 토큰이 없는 회원의 탈퇴가 리프레시 토큰을 지우고 users 행을 잠그기 전에 로그인이 새 토큰을 넣으면, 교착 없이 로그인이 먼저 커밋하고 탈퇴가 그 토큰까지 지우고 커밋한다")
+	void withdrawalOfMemberWithoutRefreshTokenAndLoginInBetweenBothCommit() throws Exception {
+		// given: 이 회원에게는 리프레시 토큰 행이 없다
+		CountDownLatch withdrawalDeletedRefreshTokens = new CountDownLatch(1);
+		CountDownLatch releaseWithdrawal = new CountDownLatch(1);
+		AtomicBoolean firstDelete = new AtomicBoolean(true);
+		// 탈퇴가 리프레시 토큰을 처음 지운 직후, users 행을 잠그기 전에 멈춘다. 로그인의 삭제와 탈퇴의 두 번째 삭제는 멈추지 않는다.
+		willAnswer(invocation -> {
+			Object result = callRealRepository(invocation);
+			if (firstDelete.compareAndSet(true, false)) {
+				withdrawalDeletedRefreshTokens.countDown();
+				waitUpToTenSeconds(releaseWithdrawal);
+			}
+			return result;
+		}).given(refreshTokenRepository).deleteByUser(any());
+
+		ExecutorService executor = Executors.newFixedThreadPool(2);
+		try {
+			Future<?> withdrawal = executor.submit(() -> userService.deleteUser(email));
+			assertThat(withdrawalDeletedRefreshTokens.await(10, SECONDS)).as("탈퇴가 리프레시 토큰을 지우고 멈췄다").isTrue();
+
+			// when: 탈퇴가 멈춘 동안 로그인한다. 탈퇴의 삭제가 틈 잠금을 걸었다면 로그인의 새 토큰 넣기가 그 잠금을 기다린다.
+			Future<String> login = executor.submit(() -> loginAndGetRefreshToken());
+			await().atMost(Duration.ofSeconds(10)).until(() -> login.isDone() || rowLockWaitsInThisSchema() > 0);
+			releaseWithdrawal.countDown();
+			login.get(10, SECONDS);
+			withdrawal.get(10, SECONDS);
+		} finally {
+			releaseWithdrawal.countDown();
+			executor.shutdownNow();
+		}
+
+		// then
+		assertThat(countRowsOfMember("SELECT COUNT(*) FROM users WHERE id = ?")).as("탈퇴한 회원 행").isZero();
+		assertThat(countRowsOfMember("SELECT COUNT(*) FROM refresh_tokens WHERE user_id = ?"))
+			.as("탈퇴가 users 를 잠근 뒤 한 번 더 지운, 로그인이 넣은 리프레시 토큰").isZero();
+	}
+
+	/**
+	 * 로그인·토큰 재발급이 쓰는 RefreshTokenService.generateRefreshToken 을 제 트랜잭션으로 부른다. 회원의 리프레시 토큰을 지운 뒤
+	 * 새 토큰을 넣고, 넣을 때 외래 키 확인으로 users 행을 공유 잠금한다.
+	 */
+	private String loginAndGetRefreshToken() {
+		User member = userRepository.findById(userId).orElseThrow();
+		return refreshTokenService.generateRefreshToken(member).getToken();
+	}
+
+	/**
+	 * 스파이로 바꾼 리포지토리의 실제 메서드를 부른다. 스프링 데이터 리포지토리는 JDK 프록시라, @MockitoSpyBean 이 실제 객체에 호출을
+	 * 넘기는 목(AdditionalAnswers.delegatesTo)으로 만든다. 그 목의 기본 응답에 넘기면 실제 리포지토리가 불린다.
+	 */
+	private static Object callRealRepository(InvocationOnMock invocation) throws Throwable {
+		return Mockito.mockingDetails(invocation.getMock()).getMockCreationSettings().getDefaultAnswer()
+			.answer(invocation);
 	}
 
 	private String storedToken() {

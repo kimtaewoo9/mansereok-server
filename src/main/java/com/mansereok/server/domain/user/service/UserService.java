@@ -63,6 +63,12 @@ import org.springframework.util.StringUtils;
  * (requestPasswordReset)·확인(resetPassword)이 이 순서를 따른다. 로그인과 토큰 재발급(RefreshTokenService.generateRefreshToken)은
  * 리프레시 토큰을 지운 뒤 새 토큰을 넣으면서 외래 키 확인으로 users 행을 공유 잠금하므로 이미 이 순서다. 순서를 달리 잡은 두 요청이
  * 겹치면 서로의 잠금을 기다리다 MySQL 이 한쪽을 교착(1213)으로 롤백하고, 그 요청은 503 을 받는다.
+ *
+ * <p>순서만 맞춰서는 회원에게 리프레시 토큰 행이 하나도 없을 때 교착이 남는다. REPEATABLE READ(MySQL 기본값)에서는 0행을 고치거나
+ * 지우는 문장도 user_id 인덱스의 그 자리에 틈 잠금을 건다. 그사이 로그인이 users 행을 공유 잠금하고 그 틈에 새 토큰을 넣으려다
+ * 기다리면, 뒤이어 users 행을 잠그려는 쪽과 서로를 기다린다. READ COMMITTED 에서는 틈 잠금을 걸지 않아 로그인이 먼저 넣고 커밋한다.
+ * 그래서 리프레시 토큰을 먼저 다루는 확인과 탈퇴도 요청처럼 READ COMMITTED 로 돈다. READ COMMITTED 트랜잭션의 쓰기는 binlog_format
+ * 이 STATEMENT 면 MySQL 이 1665 로 거절하므로, 운영 DB 의 binlog_format 이 ROW 나 MIXED 인지 배포 전에 확인한다.
  */
 @Service
 @Slf4j
@@ -419,8 +425,13 @@ public class UserService {
 	 *
 	 * <p>재설정 토큰은 users 행을 잠근 뒤에 지운다(잠금 순서는 클래스 설명). 예전처럼 먼저 지우면, users 행을 잠그고 재설정 토큰을
 	 * 넣거나 바꾸려는 같은 회원의 재설정 요청과 서로를 기다리다 한쪽이 교착으로 롤백됐다.
+	 *
+	 * <p>READ COMMITTED 로 돈다(클래스 설명). 그래서 리프레시 토큰이 없는 회원이면 처음 지운 뒤 users 를 잠그기 전에 로그인이 새
+	 * 토큰을 넣고 커밋할 수 있다. users 를 잠근 뒤 리프레시 토큰을 한 번 더 지워 그 토큰을 치운다. 치우지 않으면 users 삭제가 외래
+	 * 키(ON DELETE CASCADE 가 없을 때)에 걸려 탈퇴가 500 으로 롤백된다. 그 틈에 로그인이 두 번 이어져, 뒤 로그인이 앞 로그인의 토큰을
+	 * 지운 채 users 잠금을 기다리면 두 번째 삭제가 그 토큰을 기다려 교착이 나고 탈퇴가 503 을 받는다.
 	 */
-	@Transactional
+	@Transactional(isolation = Isolation.READ_COMMITTED)
 	public void deleteUser(String username) {
 		User user = findByUsername(username);
 		Long userId = user.getId();
@@ -430,7 +441,7 @@ public class UserService {
 		orderRepository.detachUser(userId);
 
 		// 2. 사용자를 가리키는 행을 사용자보다 먼저 지운다 (Hard Delete)
-		//    순서: 리프레시 토큰 → 사주 결과·궁합 결과·리뷰 → users 행 잠금 → 재설정 토큰 → (3) 사용자
+		//    순서: 리프레시 토큰 → 사주 결과·궁합 결과·리뷰 → users 행 잠금 → 리프레시 토큰 한 번 더 → 재설정 토큰 → (3) 사용자
 		//    재설정 토큰과 리프레시 토큰은 users 를 외래 키로 가리켜, 남아 있으면 3 의 DELETE 가 막히고 탈퇴 전체가 롤백된다.
 		//    리뷰는 작성자 이름·이메일 사본을 들고 있어 개인정보 파기를 위해 지운다.
 		refreshTokenRepository.deleteByUser(user);       // 리프레시 토큰 삭제
@@ -440,6 +451,7 @@ public class UserService {
 		// 그사이 다른 요청이 먼저 탈퇴시켰으면 행이 없다
 		userRepository.findByIdForUpdate(userId)
 			.orElseThrow(() -> new EntityNotFoundException("사용자를 찾을 수 없습니다."));
+		refreshTokenRepository.deleteByUser(user);       // 처음 지운 뒤 로그인이 넣고 커밋한 리프레시 토큰 삭제
 		passwordResetTokenRepository.deleteAllByUserId(userId); // 재설정 토큰 삭제
 
 		// 3. 유저 삭제 (Hard Delete)
@@ -518,12 +530,17 @@ public class UserService {
 	 * <p>리프레시 토큰 폐기 → users 행 잠금 → 재설정 토큰 쓰기 순서로 잠근다(클래스 설명). 토큰을 쓰지 못해 예외가 나면 앞의 폐기도
 	 * 함께 롤백된다.
 	 *
+	 * <p>READ COMMITTED 로 돈다(클래스 설명). 리프레시 토큰이 없는 회원이면 폐기가 행도 틈도 잠그지 않아, 폐기와 users 잠금 사이에
+	 * 로그인이 새 토큰을 넣고 커밋할 수 있다. 확인은 교착 없이 이어 가지만 그 토큰은 폐기되지 않고 남는다. 새 비밀번호가 커밋되기
+	 * 전에 들어온 로그인이다. 리프레시 토큰이 있는 회원도, 로그인이 확인이 잠근 토큰을 기다렸다가 확인이 커밋한 뒤 새 토큰을 넣으면 그
+	 * 토큰은 남는다. 재설정과 겹친 로그인까지 끊는 것은 위의 비밀번호를 바꾼 시각 확인이 맡을 몫이다.
+	 *
 	 * <p>없는 토큰과 만료된 토큰은 400 이다. 만료된 토큰은 지우지 않는다. 예외로 트랜잭션이 롤백되므로 지워도 반영되지 않는다. 같은
 	 * 사용자가 다시 요청하면 그 행의 값이 바뀐다.
 	 *
 	 * @throws IllegalArgumentException 토큰이 없거나, 만료됐거나, 이미 쓰였거나, 그사이 회원이 탈퇴했을 때(400)
 	 */
-	@Transactional
+	@Transactional(isolation = Isolation.READ_COMMITTED)
 	public void resetPassword(String token, String newPassword) {
 		LocalDateTime now = LocalDateTime.now(clock);
 		PasswordResetToken resetToken = passwordResetTokenRepository.findByToken(token)
