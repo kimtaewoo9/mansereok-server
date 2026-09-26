@@ -94,7 +94,9 @@ class PaymentSchemaSqlTest {
 		// then
 		assertThat(field.getType()).as("엔티티 발급 수의 타입(null 이 들어갈 수 없는 int)").isEqualTo(int.class);
 		assertThat(field.getAnnotation(Column.class).nullable()).as("엔티티 발급 수의 nullable").isFalse();
-		assertThat(field.getAnnotation(ColumnDefault.class).value()).as("엔티티 발급 수의 DEFAULT").isEqualTo("0");
+		assertThat(field.getAnnotation(ColumnDefault.class)).as("엔티티 발급 수의 @ColumnDefault")
+			.isNotNull()
+			.extracting(ColumnDefault::value).isEqualTo("0");
 		assertThat(columnDefinitionInSchema("coupon_templates", "current_issue_count"))
 			.as("schema.sql 의 current_issue_count 정의")
 			.containsIgnoringCase("NOT NULL")
