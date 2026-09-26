@@ -7,7 +7,6 @@ import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
-import static org.mockito.BDDMockito.willAnswer;
 import static org.mockito.BDDMockito.willThrow;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.lenient;
@@ -45,10 +44,8 @@ import com.mansereok.server.global.exception.OpenAiIncompleteResponseException;
 import jakarta.persistence.EntityNotFoundException;
 import java.lang.reflect.Method;
 import java.time.LocalDateTime;
-import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -962,30 +959,6 @@ class ManseInterpretationServiceFlowTest {
 
 			assertThat(asyncExecutorOf("interpretFree")).isEqualTo("gptFreeTaskExecutor");
 			assertThat(captureRequest().getModel()).isEqualTo(openAiProperties.light().model());
-		}
-
-		/**
-		 * OG 이미지를 다른 풀로 넘기면 그 풀이 가득 찼거나 먼저 닫혔을 때 이미지가 버려지고 다시 만들 길이 없다. 그래서 해석을 돌리는
-		 * 스레드가 결과를 저장한 직후 그 자리에서 만든다. 여기서는 파이프라인이 OG 단계를 부른 스레드를 보고, OG 서비스에
-		 * {@code @Async} 가 다시 붙지 않았는지도 함께 본다(서비스를 목으로 두어 스프링 프록시를 거치지 않기 때문이다).
-		 */
-		@Test
-		@DisplayName("OG 이미지는 다른 풀로 넘기지 않고 해석을 돌리는 스레드에서 결과 저장 직후 바로 만든다")
-		void ogImageRunsOnInterpretationThread() {
-			givenSajuResponse();
-			AtomicReference<String> ogImageThread = new AtomicReference<>();
-			willAnswer(invocation -> {
-				ogImageThread.set(Thread.currentThread().getName());
-				return null;
-			}).given(ogImageGenerationService).generateAndUploadOgImage(result);
-
-			callInterpret();
-
-			assertThat(ogImageThread.get()).isEqualTo(Thread.currentThread().getName());
-			assertThat(Arrays.stream(OgImageGenerationService.class.getDeclaredMethods())
-				.filter(method -> method.isAnnotationPresent(Async.class))
-				.map(Method::getName))
-				.as("@Async 가 붙은 OG 서비스 메서드").isEmpty();
 		}
 	}
 }

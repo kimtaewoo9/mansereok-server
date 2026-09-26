@@ -2,6 +2,7 @@ package com.mansereok.server.domain.interpret.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
+import static org.assertj.core.api.Assertions.within;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
@@ -9,6 +10,10 @@ import static org.mockito.BDDMockito.then;
 import static org.mockito.BDDMockito.willThrow;
 import static org.mockito.Mockito.verifyNoInteractions;
 
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import com.mansereok.server.domain.interpret.entity.CompatibilityResult;
 import com.mansereok.server.domain.interpret.entity.Result;
 import com.mansereok.server.domain.interpret.entity.ResultStatus;
@@ -17,11 +22,14 @@ import com.mansereok.server.domain.interpret.repository.ResultRepository;
 import com.mansereok.server.support.fixture.ResultFixture;
 import java.awt.FontMetrics;
 import java.awt.Graphics2D;
+import java.awt.Rectangle;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.util.List;
 import javax.imageio.ImageIO;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -31,6 +39,8 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.slf4j.LoggerFactory;
+import org.springframework.core.io.ClassPathResource;
 import org.springframework.test.util.ReflectionTestUtils;
 import software.amazon.awssdk.core.exception.SdkClientException;
 
@@ -44,6 +54,10 @@ class OgImageGenerationServiceTest {
 	private static final Long RESULT_ID = 7L;
 	private static final String PUBLIC_URL = "https://named-og-image.s3.ap-northeast-2.amazonaws.com/og-images/x.png";
 	private static final String SUMMARY = "올해는 기회가 많은 해입니다.\n차분하게 준비하면 좋은 결과가 따라옵니다.";
+	// 한 줄 폭(1200px - 좌우 여백 60px × 2 = 1080px)보다 넓어 띄어쓰기에서 두 줄로 나뉘는 요약. 줄 폭을 여백 없이 1200px 로
+	// 잡으면 첫 줄이 1080px 보다 넓어져 좌우 여백을 침범한다.
+	private static final String SUMMARY_WIDER_THAN_ONE_LINE =
+		"타고난 성실함 덕분에 올해는 새로운 기회가 여러 번 찾아옵니다. 서두르지 말고 차분하게 준비하면 좋은 결과가 따라옵니다.";
 
 	@Mock
 	private S3UploadService s3UploadService;
@@ -59,28 +73,63 @@ class OgImageGenerationServiceTest {
 		service = new OgImageGenerationService(s3UploadService, resultRepository, compatibilityResultRepository);
 	}
 
+	/**
+	 * 결과 저장은 요약이 없는(null) GPT 응답을 막지 않으므로, 요약 없이 완료된 결과가 이 서비스로 올 수 있다. 이때 이미지를 그리려
+	 * 들면 줄 나누기에서 NullPointerException 이 나는데, 그 예외를 삼키는 catch 때문에 올리지도 저장하지도 않는 겉모습은 같다.
+	 * 차이는 결과마다 남는 ERROR 로그와 스택뿐이라 로그도 본다.
+	 */
 	@Nested
 	@DisplayName("요약이 없으면")
 	class WhenSummaryIsMissing {
 
-		@Test
-		@DisplayName("사주 결과는 이미지를 올리지도 주소를 저장하지도 않는다")
-		void skipsSaju() {
-			// when
-			service.generateAndUploadOgImage(sajuResult(ResultStatus.INPUT_REQUIRED));
+		private final Logger serviceLogger = (Logger) LoggerFactory.getLogger(OgImageGenerationService.class);
+		private final ListAppender<ILoggingEvent> logs = new ListAppender<>();
+		private Level levelBeforeTest;
 
-			// then
-			verifyNoInteractions(s3UploadService, resultRepository);
+		@BeforeEach
+		void captureLogs() {
+			// 테스트 JVM 의 로그 설정과 상관없이 운영과 같은 INFO 에서 본다.
+			levelBeforeTest = serviceLogger.getLevel();
+			serviceLogger.setLevel(Level.INFO);
+			logs.start();
+			serviceLogger.addAppender(logs);
+		}
+
+		@AfterEach
+		void stopCapturingLogs() {
+			serviceLogger.detachAppender(logs);
+			logs.stop();
+			serviceLogger.setLevel(levelBeforeTest);
 		}
 
 		@Test
-		@DisplayName("궁합 결과는 이미지를 올리지도 주소를 저장하지도 않는다")
-		void skipsCompatibility() {
+		@DisplayName("사주 결과는 이미지를 올리지도 주소를 저장하지도 않고 ERROR 로그도 남기지 않는다")
+		void skipsSaju() {
+			// given
+			Result saju = sajuResult(ResultStatus.PROCESSING);
+			saju.completeInterpretation("사주 본문", null);
+
 			// when
-			service.generateAndUploadOgImage(compatibilityResult(ResultStatus.INPUT_REQUIRED));
+			service.generateAndUploadOgImage(saju);
+
+			// then
+			verifyNoInteractions(s3UploadService, resultRepository);
+			assertThat(logs.list).extracting(ILoggingEvent::getLevel).doesNotContain(Level.ERROR);
+		}
+
+		@Test
+		@DisplayName("궁합 결과는 이미지를 올리지도 주소를 저장하지도 않고 ERROR 로그도 남기지 않는다")
+		void skipsCompatibility() {
+			// given
+			CompatibilityResult compatibility = compatibilityResult(ResultStatus.PROCESSING);
+			compatibility.completeInterpretation("궁합 본문", 80, null);
+
+			// when
+			service.generateAndUploadOgImage(compatibility);
 
 			// then
 			verifyNoInteractions(s3UploadService, compatibilityResultRepository);
+			assertThat(logs.list).extracting(ILoggingEvent::getLevel).doesNotContain(Level.ERROR);
 		}
 	}
 
@@ -154,6 +203,32 @@ class OgImageGenerationServiceTest {
 			BufferedImage decoded = ImageIO.read(new ByteArrayInputStream(sajuImage.getValue()));
 			assertThat(decoded.getWidth()).isEqualTo(1200);
 			assertThat(decoded.getHeight()).isEqualTo(630);
+		}
+
+		/**
+		 * 올린 이미지를 템플릿 파일과 픽셀 단위로 비교해, 템플릿과 달라진 픽셀을 요약을 그린 자리로 본다. 요약을 그리지 않으면 달라진
+		 * 픽셀이 없다. 줄을 1080px 보다 넓게 나누거나 가로 가운데 정렬이 어긋나면 좌우 여백 60px 안에 달라진 픽셀이 생긴다. 세로는
+		 * 글자 모양에 따라 몇 px 어긋날 수 있어 가운데(315px)에서 10px 까지 허용한다.
+		 */
+		@Test
+		@DisplayName("요약을 템플릿 가운데에 그리고 그린 자리는 좌우 여백 60px 안으로 들어오지 않는다")
+		void drawsSummaryInCenterInsideSideMargins() throws IOException {
+			// given
+			Result saju = sajuResult(ResultStatus.PROCESSING);
+			saju.completeInterpretation("사주 본문", SUMMARY_WIDER_THAN_ONE_LINE);
+
+			// when
+			service.generateAndUploadOgImage(saju);
+
+			// then
+			ArgumentCaptor<byte[]> uploaded = ArgumentCaptor.forClass(byte[].class);
+			then(s3UploadService).should()
+				.uploadFileAndGetPublicUrl(uploaded.capture(), eq("og-images/saju-7.png"), eq("image/png"));
+			Rectangle drawnArea = areaDifferentFrom(templateImage(), decode(uploaded.getValue()));
+			assertThat(drawnArea.isEmpty()).as("템플릿과 달라진 픽셀이 없다. 요약을 그리지 않았다").isFalse();
+			assertThat(drawnArea.getMinX()).as("그린 자리의 왼쪽 끝 x").isGreaterThanOrEqualTo(60);
+			assertThat(drawnArea.getMaxX()).as("그린 자리의 오른쪽 끝 x(끝 픽셀 다음)").isLessThanOrEqualTo(1140);
+			assertThat(drawnArea.getCenterY()).as("그린 자리의 세로 가운데 y").isCloseTo(315.0, within(10.0));
 		}
 	}
 
@@ -235,6 +310,33 @@ class OgImageGenerationServiceTest {
 			});
 			assertThat(String.join("", lines)).isEqualTo("링크" + "a".repeat(120));
 		}
+	}
+
+	/** 운영 코드가 그리기 전에 읽는 템플릿 파일 그대로. 요약을 그리지 않은 빈 바탕이다. */
+	private static BufferedImage templateImage() throws IOException {
+		try (InputStream template = new ClassPathResource("static/result_image_template.png").getInputStream()) {
+			return ImageIO.read(template);
+		}
+	}
+
+	private static BufferedImage decode(byte[] png) throws IOException {
+		return ImageIO.read(new ByteArrayInputStream(png));
+	}
+
+	/** 두 이미지에서 색이 다른 픽셀을 모두 담는 가장 작은 사각형. 다른 픽셀이 없으면 빈 사각형이다. */
+	private static Rectangle areaDifferentFrom(BufferedImage expected, BufferedImage actual) {
+		assertThat(actual.getWidth()).isEqualTo(expected.getWidth());
+		assertThat(actual.getHeight()).isEqualTo(expected.getHeight());
+		// 폭·높이가 음수인 사각형은 "없는 사각형" 이라 처음 더한 픽셀이 그대로 영역이 된다. (0, 0, 0, 0) 으로 시작하면 원점이 섞인다.
+		Rectangle area = new Rectangle(0, 0, -1, -1);
+		for (int y = 0; y < expected.getHeight(); y++) {
+			for (int x = 0; x < expected.getWidth(); x++) {
+				if (expected.getRGB(x, y) != actual.getRGB(x, y)) {
+					area.add(new Rectangle(x, y, 1, 1));
+				}
+			}
+		}
+		return area;
 	}
 
 	/** 결과 행 id 는 DB 가 채우는 값이라 저장 없이 쓰려고 리플렉션으로 넣는다. */

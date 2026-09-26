@@ -2,6 +2,7 @@ package com.mansereok.server.domain.interpret.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.tuple;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
@@ -14,6 +15,7 @@ import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.mockito.stubbing.Answer;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Configuration;
@@ -64,8 +66,12 @@ class S3UploadServiceRetryTest {
 	@DisplayName("S3 가 본문을 다 받은 뒤 500 으로 답하면")
 	class WhenServerErrorAfterBodyWasRead {
 
+		/**
+		 * 요청의 키가 받은 키와 다르면 이미지는 다른 키에 올라가는데 돌려주는 주소는 받은 키를 가리켜 공유 미리보기가 깨진다.
+		 * 그래서 공개 주소와 함께 두 번 보낸 요청의 버킷·키·Content-Type 을 모두 본다.
+		 */
 		@Test
-		@DisplayName("다시 시도할 때 원본과 같은 본문을 처음부터 다시 보내고 공개 주소를 돌려준다")
+		@DisplayName("다시 시도할 때 같은 버킷·키·Content-Type 으로 원본과 같은 본문을 처음부터 다시 보내고 그 키의 공개 주소를 돌려준다")
 		void resendsWholeBody() {
 			// given
 			List<byte[]> sentBodies = new ArrayList<>();
@@ -81,6 +87,13 @@ class S3UploadServiceRetryTest {
 			assertThat(sentBodies).as("보낸 본문 수").hasSize(2);
 			assertThat(sentBodies.get(1)).as("두 번째 시도의 본문").isEqualTo(CONTENT);
 			assertThat(publicUrl).isEqualTo("https://test-bucket.s3.ap-northeast-2.amazonaws.com/og-images/saju-7.png");
+			ArgumentCaptor<PutObjectRequest> sentRequests = ArgumentCaptor.forClass(PutObjectRequest.class);
+			then(s3Client).should(times(2)).putObject(sentRequests.capture(), any(RequestBody.class));
+			assertThat(sentRequests.getAllValues()).as("두 번 보낸 요청의 버킷·키·Content-Type")
+				.extracting(PutObjectRequest::bucket, PutObjectRequest::key, PutObjectRequest::contentType)
+				.containsExactly(
+					tuple("test-bucket", "og-images/saju-7.png", "image/png"),
+					tuple("test-bucket", "og-images/saju-7.png", "image/png"));
 		}
 
 		@Test
