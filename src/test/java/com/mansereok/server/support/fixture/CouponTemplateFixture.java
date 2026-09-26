@@ -52,6 +52,13 @@ public final class CouponTemplateFixture {
 		return this;
 	}
 
+	/** 쿠폰을 받을 수 있는 기간(이벤트 기간). 시작·끝 시각도 기간에 든다. */
+	public CouponTemplateFixture issuePeriod(LocalDateTime issueStartDate, LocalDateTime issueEndDate) {
+		this.issueStartDate = issueStartDate;
+		this.issueEndDate = issueEndDate;
+		return this;
+	}
+
 	/** 선착순 상한. null 이면 무제한이다. */
 	public CouponTemplateFixture maxIssueCount(Integer maxIssueCount) {
 		this.maxIssueCount = maxIssueCount;
