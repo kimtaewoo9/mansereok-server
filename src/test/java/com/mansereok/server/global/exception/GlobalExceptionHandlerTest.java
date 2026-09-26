@@ -85,11 +85,9 @@ class GlobalExceptionHandlerTest {
 	}
 
 	@Test
-	@DisplayName("새 OpenAI 예외들은 기존 GptApiFailedException 계층과 섞이지 않는다")
-	void openAiExceptionsAreSeparateHierarchy() {
-		assertThat(new OpenAiUnavailableException("x"))
-			.isNotInstanceOf(GptApiFailedException.class)
-			.isInstanceOf(OpenAiException.class);
+	@DisplayName("OpenAI 예외 네 가지는 모두 OpenAiException 을 상속한다")
+	void openAiExceptionsShareOneParent() {
+		assertThat(new OpenAiUnavailableException("x")).isInstanceOf(OpenAiException.class);
 		assertThat(new OpenAiRequestException("x")).isInstanceOf(OpenAiException.class);
 		assertThat(new OpenAiIncompleteResponseException("max_output_tokens"))
 			.isInstanceOf(OpenAiException.class);
