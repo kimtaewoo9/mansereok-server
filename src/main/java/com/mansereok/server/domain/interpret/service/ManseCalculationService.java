@@ -15,6 +15,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.ZoneId;
+import java.time.temporal.ChronoField;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
@@ -38,9 +39,13 @@ public class ManseCalculationService {
 	private static final Limit MONTHLY_SEASON_LIMIT = Limit.of(MONTHLY_FORTUNE_MONTHS + 1);
 	// 자시가 시작하는 시각. 이때부터 일주를 다음 날로 넘기고(야자시), 시주도 이 시각부터 2시간씩 자·축·인… 순서로 센다.
 	private static final LocalTime JASI_START = LocalTime.of(23, 30);
+	private static final int JASI_START_MINUTE_OF_DAY = JASI_START.get(ChronoField.MINUTE_OF_DAY);
 	private static final int MINUTES_PER_DAY = 24 * 60;
 	private static final int MINUTES_PER_TIME_PILLAR = 2 * 60;
 	// 만세력 표(manses)에 들어 있는 양력 날짜 범위. 표에서 날짜를 못 찾으면 입력 오류로 보고 이 범위를 알려 준다.
+	// 범위 안이라도 가장자리 날짜는 계산이 실패할 수 있다. 표의 절입은 1900-01-06 04:08~2100-12-07 10:04 만 있어
+	// 1900-01-06 04:08 전 출생의 역행 대운과 2100-12-07 10:04 이후 출생의 순행 대운은 셀 절입이 없고,
+	// 2100-12-31 23:30 이후 출생은 야자시로 표에 없는 다음 날 일주가 필요하다.
 	private static final String SUPPORTED_RANGE = "지원 범위(양력 1900-01-01~2100-12-31)";
 
 	private final ManseRepository manseRepository;
@@ -59,7 +64,8 @@ public class ManseCalculationService {
 				request.getSolarDate(), request.getGender(), request.getIsLunar(),
 				request.getLeapMonth());
 
-			// 시주 구간과 절입 시각이 분 단위라 초는 버린다. 초를 남기면 hh:29:30 같은 시각이 어느 시주에도 들지 않는다.
+			// 응답·프롬프트에 돌려주는 출생시각을 분 단위로 맞추고, 분 단위인 절입 시각과의 비교와 대운 날수 계산도 같은 단위로 하려고
+			// 초를 버린다. 시주 번호는 시·분만 보므로 초가 남아도 시주가 빠지지는 않는다.
 			LocalTime rawSolarTime = request.getSolarTime() == null ? null
 				: request.getSolarTime().truncatedTo(ChronoUnit.MINUTES);
 			boolean timeUnknown = rawSolarTime == null;
@@ -595,6 +601,7 @@ public class ManseCalculationService {
 				.build();
 		}
 
+		// 닿지 않는 방어 코드다. getTimeJuIndex 는 0~11 만 돌려주고 시주 표는 일간마다 0~11 을 모두 갖는다.
 		throw new IllegalStateException("시주 계산 실패: daySky=" + daySky + ", timeKey=" + timeKey);
 	}
 
@@ -603,9 +610,8 @@ public class ManseCalculationService {
 	 * 빈틈없이 한 번호에 든다. 자정을 넘는 자시(23:30~01:29)도 따로 다루지 않는다. 초는 보지 않는다.
 	 */
 	private static String getTimeJuIndex(LocalTime time) {
-		int minuteOfDay = time.getHour() * 60 + time.getMinute();
-		int jasiStartMinuteOfDay = JASI_START.getHour() * 60 + JASI_START.getMinute();
-		int minutesSinceJasiStart = Math.floorMod(minuteOfDay - jasiStartMinuteOfDay, MINUTES_PER_DAY);
+		int minutesSinceJasiStart = Math.floorMod(time.get(ChronoField.MINUTE_OF_DAY) - JASI_START_MINUTE_OF_DAY,
+			MINUTES_PER_DAY);
 		return String.valueOf(minutesSinceJasiStart / MINUTES_PER_TIME_PILLAR);
 	}
 
