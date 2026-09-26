@@ -64,7 +64,7 @@ public class PaidOrderFinalizer {
 	 * @return 저장된 Payment
 	 * @throws PaymentException 같은 paymentId 의 Payment 가 이미 있어 imp_uid UNIQUE 에 걸린 경우
 	 */
-	public Payment finalizePaid(Order order, String paymentId, Long amount, LocalDateTime paidAt) {
+	public Payment finalizePaid(Order order, String paymentId, long amount, LocalDateTime paidAt) {
 		// 1. 주문 상태 확정. 만료된 주문이었는지는 상태를 바꾸기 전에 기억해 둔다.
 		boolean paidAfterExpiry = order.getStatus() == OrderStatus.EXPIRED;
 		order.markPaid(paymentId, paidAt);

@@ -60,7 +60,7 @@ public class Payment {
 
 	private Long subCategoryId;
 
-	private Long amount; // 검증을 위해 필수
+	private long amount; // 결제된 금액. payments.amount 는 NOT NULL 이라 기본 타입으로 둔다.
 	@Enumerated(EnumType.STRING)
 	private PaymentStatus status; // 결제 상태
 	// 스프링 데이터의 생성 시각 자동 채움(@CreatedDate)을 켜 두지 않았으므로 paid() 가 직접 넣는다.

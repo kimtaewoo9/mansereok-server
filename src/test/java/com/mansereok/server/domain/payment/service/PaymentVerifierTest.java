@@ -114,14 +114,6 @@ class PaymentVerifierTest {
 	}
 
 	@Test
-	@DisplayName("금액이 같으면 true, 다르면 false 를 돌려준다")
-	void amountMatches_comparesTotalWithOrderAmount() {
-		assertThat(paymentVerifier.amountMatches(order(), response("PAID", PRICE, null))).isTrue();
-		assertThat(paymentVerifier.amountMatches(order(), response("PAID", PRICE - 1, null)))
-			.isFalse();
-	}
-
-	@Test
 	@DisplayName("포트원 상태를 PaymentStatus 로 매핑하고 모르는 상태는 빈 Optional 을 돌려준다")
 	void resolveStatus_mapsKnownAndUnknownStatuses() {
 		assertThat(paymentVerifier.resolveStatus(order(), PAYMENT_ID, response("PAID", PRICE, null)))

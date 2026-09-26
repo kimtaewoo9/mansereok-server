@@ -68,7 +68,8 @@ public class Order {
 	private String buyerName;
 	private String buyerEmail;
 
-	private Integer amount; // 최종 결제 금액 .
+	// 최종 결제 금액. orders.amount 는 NOT NULL 이라 기본 타입으로 둔다. 결제된 금액과 견줄 때는 amountEquals 를 쓴다.
+	private int amount;
 	@Enumerated(EnumType.STRING)
 	private OrderStatus status; // 주문 상태
 
@@ -114,6 +115,14 @@ public class Order {
 		order.couponId = discount.couponId();
 		order.status = OrderStatus.PENDING;
 		return order;
+	}
+
+	/**
+	 * 결제된 금액이 이 주문의 결제 금액과 같은지 본다. 금액 대조는 이 메서드로 한다. 주문 금액(int)과 포트원 금액(Long)을 박싱한 채
+	 * equals 로 견주면 타입이 달라 늘 false 가 된다.
+	 */
+	public boolean amountEquals(long paidAmount) {
+		return this.amount == paidAmount;
 	}
 
 	/**
