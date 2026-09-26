@@ -113,10 +113,16 @@ class OrderStatusUpdateMySqlTest extends PaymentMySqlTest {
 		return changedRows == null ? 0 : changedRows;
 	}
 
+	/**
+	 * 주문을 PENDING 으로 저장한 뒤 상태를 DB 에서 바꾼다. VIRTUAL_ACCOUNT_ISSUED 처럼 운영 코드의 전이로 갈 수 없는 상태도 DB 에는
+	 * 있을 수 있어 조건부 UPDATE 가 그 행을 건드리지 않는지 함께 본다.
+	 */
 	private Long saveOrder(OrderStatus status) {
-		return orderRepository.save(TestOrders.order().merchantUid(merchantUid).userId(ANY_USER_ID)
+		Long orderId = orderRepository.save(TestOrders.order().merchantUid(merchantUid).userId(ANY_USER_ID)
 			.subCategoryId(ANY_SUB_CATEGORY_ID).price(PRICE).buyer("상태변경", "status_update_" + runId + "@example.com")
-			.inStatus(status)).getId();
+			.pending()).getId();
+		jdbcTemplate.update("UPDATE orders SET status = ? WHERE id = ?", status.name(), orderId);
+		return orderId;
 	}
 
 	private String statusInDatabase() {
