@@ -32,14 +32,19 @@ import org.mockito.junit.jupiter.MockitoExtension;
  *
  * <p>EVENT_FREE(무료 이벤트 주문에 적는 표기)는 여기서 보지 않는다. 할인을 되돌리는 쪽은 OrderDiscountRestorer 가 EVENT_FREE 를
  * 먼저 걸러 이 서비스를 부르지 않으며, 그 규칙은 OrderDiscountRestorerTest 가 확인한다.
+ *
+ * <p>상품 id 는 Long 캐시(-128~127) 밖의 값을 쓰고 박싱은 쓰는 곳마다 따로 한다. 코드에 적힌 상품 id 와 주문한 상품 id 가 값은 같고
+ * 객체는 달라, 상품 비교를 equals 대신 참조 비교로 바꾸면 그 상품 주문도 거절되어 테스트가 실패한다. 카테고리 id 는 공통
+ * SubCategoryFixture 에 바꾸는 메서드가 없어 기본값 1 을 그대로 쓰므로 캐시 안의 값이다. 카테고리 비교를 참조 비교로 바꾸는 변경은
+ * 이 테스트가 잡지 못한다.
  */
 @ExtendWith(MockitoExtension.class)
 class DiscountCodeServiceTest {
 
 	private static final String CODE = "SALE10";
 	private static final int ORIGINAL_AMOUNT = 10000;
-	private static final Long PRODUCT_ID = 3L;
-	private static final Long OTHER_PRODUCT_ID = 5L;
+	private static final long PRODUCT_ID = 1003L;
+	private static final long OTHER_PRODUCT_ID = 1005L;
 	// SubCategoryFixture 로 만든 상품의 카테고리(기본값 1)
 	private static final Long PRODUCT_CATEGORY_ID = 1L;
 	private static final Long OTHER_CATEGORY_ID = 2L;
