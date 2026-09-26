@@ -158,15 +158,15 @@ server:
         same-site: none
         secure: true
 
-# Actuator
+# Actuator. health 는 누구나 부르되 상태(UP·DOWN)만 내려준다. prometheus 는 수집 토큰(app.management.scrape-token)이 있어야 한다.
 management:
   endpoints:
     web:
       exposure:
-        include: "health,prometheus,metrics"
+        include: "health,prometheus"
   endpoint:
     health:
-      show-details: always
+      show-details: never
   metrics:
     tags:
       application: ${spring.application.name}

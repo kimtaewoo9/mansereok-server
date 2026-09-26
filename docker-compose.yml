@@ -23,6 +23,8 @@ services:
       - "9090:9090"
     volumes:
       - ./prometheus.yml:/etc/prometheus/prometheus.yml
+      # 운영 서버의 MANAGEMENT_SCRAPE_TOKEN 과 같은 값을 한 줄로 적은 파일. 저장소에는 올리지 않는다(.gitignore).
+      - ./prometheus-scrape-token:/etc/prometheus/scrape-token:ro
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
       - '--storage.tsdb.path=/prometheus'

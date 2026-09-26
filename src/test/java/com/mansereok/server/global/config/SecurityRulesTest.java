@@ -48,6 +48,7 @@ import org.springframework.web.bind.annotation.RestController;
 	properties = {
 		"app.jwt.secret=security-rules-test-secret-0123456789abcdef",
 		"app.cors.allowed-origins=https://www.namedsaju.com",
+		"app.management.scrape-token=" + SecurityRulesTest.SCRAPE_TOKEN,
 		"spring.security.oauth2.client.registration.google.client-id=security-rules-test",
 		"spring.security.oauth2.client.registration.google.client-secret=security-rules-test",
 		"logging.level.org.springframework.security=INFO"
@@ -62,6 +63,7 @@ import org.springframework.web.bind.annotation.RestController;
 })
 class SecurityRulesTest {
 
+	static final String SCRAPE_TOKEN = "security-rules-test-scrape-token";
 	private static final String ALLOWED_ORIGIN = "https://www.namedsaju.com";
 	private static final String UNKNOWN_ORIGIN = "https://evil.vercel.app";
 
@@ -110,6 +112,11 @@ class SecurityRulesTest {
 		# 공개 조회와 같은 주소라도 GET 이 아니면 로그인이 필요하고, 유효한 토큰이면 통과한다.
 		POST,   /api/v1/products,               ANONYMOUS,    true,      401
 		POST,   /api/v1/products,               ADMIN,        true,      200
+		# 서버 상태 확인(health)은 누구나 부른다. 지표(prometheus)는 수집 토큰이 있어야 하고, 회원 토큰으로는 열리지 않는다.
+		GET,    /actuator/health,               ANONYMOUS,    false,     200
+		GET,    /actuator/prometheus,           ANONYMOUS,    false,     401
+		GET,    /actuator/prometheus,           ADMIN,        false,     401
+		GET,    /actuator/prometheus,           SCRAPER,      false,     200
 		""")
 	@DisplayName("경로마다 로그인·역할·CSRF 토큰 규칙대로 통과시키거나 막는다")
 	void appliesAccessRule(HttpMethod method, String path, Caller caller, boolean withCsrfToken,
@@ -176,10 +183,10 @@ class SecurityRulesTest {
 	}
 
 	/**
-	 * 요청을 보내는 사람. 표에서 이름으로 적는다.
+	 * 요청을 보내는 사람. 표에서 이름으로 적는다. SCRAPER 는 수집 토큰을 실어 지표를 가져가는 Prometheus 다.
 	 */
 	enum Caller {
-		ANONYMOUS, EXPIRED_USER, USER, MANAGER, ADMIN, SUPER_ADMIN
+		ANONYMOUS, EXPIRED_USER, USER, MANAGER, ADMIN, SUPER_ADMIN, SCRAPER
 	}
 
 	private RequestPostProcessor as(Caller caller) {
@@ -190,6 +197,7 @@ class SecurityRulesTest {
 			case MANAGER -> bearer(tokenWithRole("manager", "ROLE_MANAGER"));
 			case ADMIN -> bearer(tokenWithRole("admin", "ROLE_ADMIN"));
 			case SUPER_ADMIN -> bearer(tokenWithRole("super-admin", "ROLE_SUPER_ADMIN"));
+			case SCRAPER -> bearer(SCRAPE_TOKEN);
 		};
 	}
 

@@ -150,19 +150,19 @@ server:
     mime-types: application/json,application/xml,text/html,text/xml,text/plain
     min-response-size: 1024
 
-# Actuator
+# Actuator. health 는 누구나 부르되 상태(UP·DOWN)만 내려준다. prometheus 는 수집 토큰(app.management.scrape-token)이 있어야 한다.
 management:
   endpoints:
     web:
       exposure:
-        include: "health,prometheus,metrics"
+        include: "health,prometheus"
   endpoint:
     health:
-      show-details: always
+      show-details: never
   metrics:
     tags:
       application: ${spring.application.name}
-      environment: dev
+      environment: prod
 
 # Logging (운영 환경)
 logging:
