@@ -85,8 +85,9 @@ class ManseTableFixtureMatchesMySqlTest extends InterpretationMySqlTest {
 	void sameResultAsFixture(String description, boolean lunar, LocalDate date, LocalTime time, Boolean leapMonth,
 		String gender) {
 		// given
-		ManseryeokCalculationRequest request = new ManseryeokCalculationRequest("대표 사주", date, time, gender,
-			lunar, leapMonth);
+		ManseryeokCalculationRequest request = ManseryeokCalculationRequest.builder()
+			.name("대표 사주").solarDate(date).solarTime(time).gender(gender).isLunar(lunar).leapMonth(leapMonth)
+			.build();
 		ManseryeokCalculationResponse fromFixture = serviceWith(ManseTableFixture.realTable().newRepository())
 			.calculate(request);
 

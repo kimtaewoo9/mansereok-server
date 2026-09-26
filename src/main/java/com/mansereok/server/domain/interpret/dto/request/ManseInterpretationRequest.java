@@ -27,6 +27,8 @@ public class ManseInterpretationRequest {
 	@NotNull(message = "성별은 필수입니다.")
 	private String gender;
 
+	// 계산이 이 값으로 양력·음력 조회를 고르므로 비어 있으면 입구에서 400 으로 끝낸다.
+	@NotNull(message = "양력·음력 여부는 필수입니다.")
 	private Boolean isLunar; // 양력인지 음력인지 입력 .
 	private Boolean leapMonth; // 음력인 경우 윤달 여부
 

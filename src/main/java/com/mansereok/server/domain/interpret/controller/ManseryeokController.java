@@ -5,6 +5,8 @@ import com.mansereok.server.domain.interpret.dto.request.ManseCompatibilityAnaly
 import com.mansereok.server.domain.interpret.dto.request.ManseInterpretationRequest;
 import com.mansereok.server.domain.interpret.dto.request.ManseryeokCalculationRequest;
 import com.mansereok.server.domain.interpret.dto.response.ManseryeokCalculationResponse;
+import com.mansereok.server.domain.interpret.product.InterpretationProduct;
+import com.mansereok.server.domain.interpret.product.InterpretationProduct.Kind;
 import com.mansereok.server.domain.interpret.service.ManseCalculationService;
 import com.mansereok.server.domain.interpret.service.ManseInterpretationService;
 import com.mansereok.server.domain.interpret.service.ResultService;
@@ -12,6 +14,7 @@ import com.mansereok.server.domain.payment.entity.Payment;
 import com.mansereok.server.domain.payment.service.PaymentService;
 import jakarta.validation.Valid;
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.RejectedExecutionException;
 import lombok.RequiredArgsConstructor;
@@ -38,8 +41,6 @@ public class ManseryeokController {
 	public ResponseEntity<ManseryeokCalculationResponse> calculate(
 		@Valid @RequestBody ManseryeokCalculationRequest request
 	) {
-		log.info("만세력 계산 요청: solarDate={}, gender={}, isLunar={}",
-			request.getSolarDate(), request.getGender(), request.getIsLunar());
 		ManseryeokCalculationResponse response = manseCalculationService.calculate(request);
 		log.info("만세력 계산 완료: daySky={}", response.getSaju().getDaySky().getChinese());
 
@@ -52,27 +53,21 @@ public class ManseryeokController {
 		@Valid @RequestBody ManseInterpretationRequest request,
 		@AuthenticationPrincipal String username
 	) {
-		log.info("만세력 해석 요청 username: " + username);
+		// 1. 상품 확인. 사주 상품과 무료 운세 상품만 받는다. 궁합 상품이나 목록에 없는 번호는 여기서 400 으로 끝난다.
+		InterpretationProduct product = requireProduct(subcategoryId, Kind.SAJU, Kind.FREE_FORTUNE);
+		log.info("만세력 해석 요청: paymentId={}, subcategoryId={}", request.getPaymentId(), subcategoryId);
 
-		// 1. 만세력 계산 (공통). DB 를 읽기만 하므로 입력이 잘못돼 실패해도 결과 상태는 그대로다.
+		// 2. 만세력 계산 (공통). DB 를 읽기만 하므로 입력이 잘못돼 실패해도 결과 상태는 그대로다.
 		ManseryeokCalculationResponse manse = manseCalculationService.calculate(
-				new ManseryeokCalculationRequest(
-					request.getName(),
-					request.getSolarDate(),
-					request.getSolarTime(),
-					request.getGender(),
-					request.getIsLunar(),
-					request.getLeapMonth()
-				)
-			);
+			ManseryeokCalculationRequest.from(request));
 
-		// 2. 해석 시작 표시 (공통). 이미 해석 중이거나 완료된 결제면 409 로 끝나고 해석을 제출하지 않는다.
+		// 3. 해석 시작 표시 (공통). 이미 해석 중이거나 완료된 결제면 409 로 끝나고 해석을 제출하지 않는다.
 		LocalDateTime startedAt = resultService.startProcessing(request.getPaymentId());
 
-		// 3. 비동기 해석 제출. 해석을 시작한 시각을 넘겨, 늦게 끝난 해석이 그사이 되돌려지거나 다시 시작된 결과를 덮어쓰지 않게 한다.
+		// 4. 비동기 해석 제출. 해석을 시작한 시각을 넘겨, 늦게 끝난 해석이 그사이 되돌려지거나 다시 시작된 결과를 덮어쓰지 않게 한다.
 		Runnable rollback = () -> resultService.rollbackStatusByPaymentId(request.getPaymentId(), startedAt);
 		submitOrRollback(request.getPaymentId(), rollback, () -> {
-			if (subcategoryId >= 100) {
+			if (product.usesFreePrompt()) {
 				manseInterpretationService.interpretFree(
 					request.getName(),
 					manse,
@@ -108,36 +103,22 @@ public class ManseryeokController {
 		@Valid @RequestBody ManseCompatibilityAnalysisRequest request,
 		@AuthenticationPrincipal String username
 	) {
+		// 1. 상품 확인. 궁합 상품만 받는다.
+		requireProduct(subcategoryId, Kind.COMPATIBILITY);
+
 		ManseCompatibilityAnalysisRequest.PersonInfo person1 = request.getPerson1();
 		ManseCompatibilityAnalysisRequest.PersonInfo person2 = request.getPerson2();
 
-		// 1. 두 사람 만세력 계산. 둘 다 끝난 뒤에 해석 시작을 표시해, 두 번째 사람의 입력이 잘못돼도 결과 상태는 그대로다.
+		// 2. 두 사람 만세력 계산. 둘 다 끝난 뒤에 해석 시작을 표시해, 두 번째 사람의 입력이 잘못돼도 결과 상태는 그대로다.
 		ManseryeokCalculationResponse person1Response = manseCalculationService.calculate(
-				new ManseryeokCalculationRequest(
-					person1.getName(),
-					person1.getSolarDate(),
-					person1.getSolarTime(),
-					person1.getGender(),
-					person1.getIsLunar(),
-					person1.getLeapMonth()
-				)
-			);
-
+			ManseryeokCalculationRequest.from(person1));
 		ManseryeokCalculationResponse person2Response = manseCalculationService.calculate(
-				new ManseryeokCalculationRequest(
-					person2.getName(),
-					person2.getSolarDate(),
-					person2.getSolarTime(),
-					person2.getGender(),
-					person2.getIsLunar(),
-					person2.getLeapMonth()
-				)
-			);
+			ManseryeokCalculationRequest.from(person2));
 
-		// 2. 해석 시작 표시. 이미 해석 중이거나 완료된 결제면 409 로 끝나고 해석을 제출하지 않는다.
+		// 3. 해석 시작 표시. 이미 해석 중이거나 완료된 결제면 409 로 끝나고 해석을 제출하지 않는다.
 		LocalDateTime startedAt = resultService.startCompatibilityProcessing(request.getPaymentId());
 
-		// 3. 비동기 해석 제출. 해석을 시작한 시각을 함께 넘긴다.
+		// 4. 비동기 해석 제출. 해석을 시작한 시각을 함께 넘긴다.
 		submitOrRollback(request.getPaymentId(),
 			() -> resultService.rollbackCompatibilityStatusByPaymentId(request.getPaymentId(), startedAt),
 			() -> manseInterpretationService.analyzeCompatibilityWithSubcategory(
@@ -165,27 +146,21 @@ public class ManseryeokController {
 		@Valid @RequestBody ManseInterpretationRequest request,
 		@AuthenticationPrincipal String username
 	) {
-		log.info("🆓 무료 해석 요청 진입: user={}, category={}", username, subcategoryId);
+		// 1. 상품 확인. 무료 운세 상품만 받는다.
+		requireProduct(subcategoryId, Kind.FREE_FORTUNE);
 
-		// 1. [동기] 0원 주문/결제 생성 (PaymentService.createFreeOrder 사용)
-		Payment payment = paymentService.createFreeOrder(username, subcategoryId);
-
-		// 2. 만세력 계산
+		// 2. 만세력 계산. 0원 주문은 되돌리지 않으므로, 입력 때문에 실패할 수 있는 계산을 주문보다 먼저 끝낸다.
 		ManseryeokCalculationResponse manse = manseCalculationService.calculate(
-				new ManseryeokCalculationRequest(
-					request.getName(),
-					request.getSolarDate(),
-					request.getSolarTime(),
-					request.getGender(),
-					request.getIsLunar(),
-					request.getLeapMonth()
-				)
-			);
+			ManseryeokCalculationRequest.from(request));
 
-		// 3. 상태 변경 INPUT_REQUIRED -> PROCESSING
+		// 3. [동기] 0원 주문/결제 생성 (PaymentService.createFreeOrder 사용)
+		Payment payment = paymentService.createFreeOrder(username, subcategoryId);
+		log.info("🆓 무료 해석 요청: paymentId={}, subcategoryId={}", payment.getId(), subcategoryId);
+
+		// 4. 상태 변경 INPUT_REQUIRED -> PROCESSING
 		LocalDateTime startedAt = resultService.startProcessing(payment.getId());
 
-		// 4. [비동기] 무료 전용 해석 메서드 호출 (별도 스레드 풀)
+		// 5. [비동기] 무료 전용 해석 메서드 호출 (별도 스레드 풀)
 		submitOrRollback(payment.getId(), () -> resultService.rollbackStatusByPaymentId(payment.getId(), startedAt),
 			() -> manseInterpretationService.interpretFree(
 				request.getName(),
@@ -208,12 +183,10 @@ public class ManseryeokController {
 		@Valid @RequestBody CompatibilityAnalysisRequest request, // 👈 2인용 DTO
 		@AuthenticationPrincipal String username
 	) {
-		log.info("🆓 무료 궁합/재회운 요청 진입: user={}, category={}", username, subcategoryId);
+		// 1. 상품 확인. 궁합 상품만 받는다.
+		requireProduct(subcategoryId, Kind.COMPATIBILITY);
 
-		// 1. [동기] 0원 주문/결제 생성
-		Payment payment = paymentService.createFreeOrder(username, subcategoryId);
-
-		// 2. 두 사람 만세력 계산
+		// 2. 두 사람 입력 변환과 만세력 계산. 0원 주문은 되돌리지 않으므로, 두 사람 모두 계산이 끝난 뒤에 주문을 만든다.
 		ManseryeokCalculationResponse p1Manse = manseCalculationService.calculate(
 			ManseryeokCalculationRequest.from(request.getPerson1())
 		);
@@ -221,10 +194,14 @@ public class ManseryeokController {
 			ManseryeokCalculationRequest.from(request.getPerson2())
 		);
 
-		// 3. 상태 변경
+		// 3. [동기] 0원 주문/결제 생성
+		Payment payment = paymentService.createFreeOrder(username, subcategoryId);
+		log.info("🆓 무료 궁합/재회운 요청: paymentId={}, subcategoryId={}", payment.getId(), subcategoryId);
+
+		// 4. 상태 변경
 		LocalDateTime startedAt = resultService.startCompatibilityProcessing(payment.getId());
 
-		// 4. [비동기] 무료 궁합 해석 서비스 호출
+		// 5. [비동기] 무료 궁합 해석 서비스 호출
 		submitOrRollback(payment.getId(),
 			() -> resultService.rollbackCompatibilityStatusByPaymentId(payment.getId(), startedAt),
 			() -> manseInterpretationService.analyzeCompatibilityFree(
@@ -240,6 +217,20 @@ public class ManseryeokController {
 			"message", "무료 궁합/재회운 분석이 시작되었습니다.",
 			"paymentId", payment.getId()
 		));
+	}
+
+	/**
+	 * 경로의 상품 번호가 이 엔드포인트가 맡는 종류의 상품인지 확인한다. 아니면 IllegalArgumentException 이라 400 으로 끝난다.
+	 *
+	 * <p>계산·주문·상태 변경보다 먼저 부른다. 이 확인이 없으면 맞지 않는 번호도 202 로 접수된 뒤 비동기 해석 안에서야 실패하고, 무료
+	 * 경로는 그 전에 0원 주문까지 남긴다.
+	 */
+	private static InterpretationProduct requireProduct(Long subcategoryId, Kind... acceptedKinds) {
+		InterpretationProduct product = InterpretationProduct.require(subcategoryId);
+		if (!List.of(acceptedKinds).contains(product.kind())) {
+			throw InterpretationProduct.unsupported(subcategoryId);
+		}
+		return product;
 	}
 
 	/**

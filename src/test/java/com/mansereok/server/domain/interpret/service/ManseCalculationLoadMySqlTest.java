@@ -110,6 +110,8 @@ class ManseCalculationLoadMySqlTest extends InterpretationMySqlTest {
 	}
 
 	private static ManseryeokCalculationRequest request(LocalDate solarDate, LocalTime solarTime, String gender) {
-		return new ManseryeokCalculationRequest("동시 계산", solarDate, solarTime, gender, false, null);
+		return ManseryeokCalculationRequest.builder()
+			.name("동시 계산").solarDate(solarDate).solarTime(solarTime).gender(gender).isLunar(false)
+			.build();
 	}
 }

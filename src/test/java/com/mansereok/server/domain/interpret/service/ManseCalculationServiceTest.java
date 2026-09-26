@@ -76,7 +76,9 @@ class ManseCalculationServiceTest {
 
 	private static ManseryeokCalculationRequest solarRequest(LocalDate solarDate, LocalTime solarTime,
 		String gender) {
-		return new ManseryeokCalculationRequest("테스트", solarDate, solarTime, gender, false, null);
+		return ManseryeokCalculationRequest.builder()
+			.name("테스트").solarDate(solarDate).solarTime(solarTime).gender(gender).isLunar(false)
+			.build();
 	}
 
 	/** 연주 월주 일주 시주를 "己巳 丁丑 壬辰 辛亥" 처럼 한 줄로 쓴다. 없는 기둥은 "--" 다. */
@@ -153,8 +155,10 @@ class ManseCalculationServiceTest {
 			given(manseRepository.findFirstBySeasonStartTimeGreaterThanOrderBySeasonStartTimeAsc(
 				LocalDateTime.of(civilSolarDate, LocalTime.of(23, 40)))).willReturn(Optional.of(
 				ManseRow.on(LocalDate.of(1990, 1, 31)).season("입춘", LocalDateTime.of(1990, 1, 31, 0, 0)).build()));
-			ManseryeokCalculationRequest request = new ManseryeokCalculationRequest("테스트", lunarDate,
-				LocalTime.of(23, 40), "MALE", true, false);
+			ManseryeokCalculationRequest request = ManseryeokCalculationRequest.builder()
+				.name("테스트").solarDate(lunarDate).solarTime(LocalTime.of(23, 40)).gender("MALE").isLunar(true)
+				.leapMonth(false)
+				.build();
 
 			// when
 			SajuInfo saju = service.calculate(request).getSaju();
@@ -270,8 +274,9 @@ class ManseCalculationServiceTest {
 		void representativeSaju(String description, boolean lunar, LocalDate date, LocalTime time,
 			Boolean leapMonth, String gender, String pillars, int bigFortuneNumber, int bigFortuneStartYear) {
 			// given
-			ManseryeokCalculationRequest request = new ManseryeokCalculationRequest("대표 사주", date, time,
-				gender, lunar, leapMonth);
+			ManseryeokCalculationRequest request = ManseryeokCalculationRequest.builder()
+				.name("대표 사주").solarDate(date).solarTime(time).gender(gender).isLunar(lunar).leapMonth(leapMonth)
+				.build();
 
 			// when
 			SajuInfo saju = service.calculate(request).getSaju();

@@ -83,8 +83,9 @@ class ManseCalculationQueryCountTest {
 		void countsQueriesPerCalculation(String description, boolean lunar, LocalDate date, LocalTime time,
 			Boolean leapMonth, String gender, long totalQueries) {
 			// given
-			ManseryeokCalculationRequest request = new ManseryeokCalculationRequest("조회 수", date, time, gender,
-				lunar, leapMonth);
+			ManseryeokCalculationRequest request = ManseryeokCalculationRequest.builder()
+				.name("조회 수").solarDate(date).solarTime(time).gender(gender).isLunar(lunar).leapMonth(leapMonth)
+				.build();
 
 			// when
 			service.calculate(request);
