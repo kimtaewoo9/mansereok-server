@@ -1,6 +1,7 @@
 package com.mansereok.server.domain.interpret.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
 import static org.mockito.Mockito.mockingDetails;
 import static org.mockito.Mockito.times;
@@ -120,6 +121,8 @@ class ManseCalculationQueryCountTest {
 			request.setPerson1(person("남자", "MALE"));
 			request.setPerson2(person("여자", "FEMALE"));
 			request.setPaymentId(1L);
+			// 해석 명령은 해석 시작 시각을 반드시 받는다. 실제 서비스처럼 시각을 돌려준다.
+			given(resultService.startCompatibilityProcessing(1L)).willReturn(LocalDateTime.of(2026, 9, 26, 9, 0));
 
 			// when
 			controller.analyzeCompatibility(19L, request, "user");
