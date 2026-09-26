@@ -68,7 +68,10 @@ public class RefreshTokenService {
 	 * used_at 과 다른 값을 들고 있게 된다.
 	 *
 	 * <p>유예 시간 안의 재발급은 토큰 행을 잠근 채 새 토큰을 넣는다. 그래서 같은 토큰의 로그아웃(revoke)은 이 재발급이 커밋할 때까지
-	 * 기다렸다가, 이 재발급이 넣은 새 토큰까지 폐기한다.
+	 * 기다렸다가, 이 재발급이 넣은 새 토큰까지 폐기한다. REPEATABLE READ(MySQL 기본값)에서는 0 행을 고친 UPDATE 도 찾은 토큰 행의
+	 * 잠금을 트랜잭션 끝까지 쥐지만, READ COMMITTED 에서는 조건에 맞지 않은 행의 잠금을 바로 푼다. 격리 수준에 기대지 않도록 FOR UPDATE
+	 * 로 다시 잠가 읽는다. 로컬 MySQL 8.0 에서 FOR UPDATE 를 뺐을 때 REPEATABLE READ 에서는 로그아웃이 여전히 기다렸고, READ COMMITTED
+	 * 에서는 기다리지 않아 새 토큰이 폐기되지 않고 남았다.
 	 *
 	 * @throws InvalidRefreshTokenException 토큰이 없거나, 폐기·만료됐거나, 유예 시간이 지난 뒤 다시 쓰였을 때(401)
 	 */
