@@ -41,7 +41,7 @@ public class CouponService {
 			throw new PaymentException("이미 발급받은 쿠폰입니다.");
 		}
 
-		// 4. 선착순 재고 증가 및 검증 (Template 엔티티 내부 로직)
+		// 4. 선착순 재고 증가 및 검증 (Template 엔티티 내부 로직). 상한에 닿았으면 CouponSoldOutException(400)
 		template.incrementIssueCount();
 
 		// 5. 실제 쿠폰 생성 및 저장
@@ -131,8 +131,7 @@ public class CouponService {
 			.map(row -> {
 				CouponTemplate t = (CouponTemplate) row[0];
 				boolean isIssued = (boolean) row[1];
-				boolean isSoldOut = t.getMaxIssueCount() != null &&
-					t.getCurrentIssueCount() >= t.getMaxIssueCount();
+				boolean isSoldOut = t.isSoldOut();
 
 				// [수정됨] 유효 기간 텍스트 계산 로직
 				String validPeriod;
