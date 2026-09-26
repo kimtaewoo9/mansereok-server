@@ -46,7 +46,6 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
-import org.springframework.util.StringUtils;
 
 /**
  * 회원 가입·조회·수정·탈퇴.
@@ -164,16 +163,6 @@ public class UserService {
 //		emailService.sendWelcomeEmail(savedUser.getEmail(), savedUser.getName());
 
 		return savedUser;
-	}
-
-	/**
-	 * 이메일로 계정을 찾는다. 이메일이 null 이거나 공백이면 조회하지 않고 빈 값을 돌려준다.
-	 */
-	public Optional<User> findByEmail(String email) {
-		if (!StringUtils.hasText(email)) {
-			return Optional.empty();
-		}
-		return userRepository.findByEmail(email);
 	}
 
 	/**

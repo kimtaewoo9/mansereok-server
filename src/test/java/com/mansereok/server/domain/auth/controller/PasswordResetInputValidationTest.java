@@ -11,6 +11,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mansereok.server.domain.auth.dto.request.PasswordResetConfirmDto;
 import com.mansereok.server.domain.auth.dto.request.PasswordResetRequestDto;
 import com.mansereok.server.domain.auth.util.JwtUtil;
+import com.mansereok.server.domain.auth.util.RefreshTokenCookies;
 import com.mansereok.server.domain.user.service.RefreshTokenService;
 import com.mansereok.server.domain.user.service.UserService;
 import com.mansereok.server.global.exception.GlobalExceptionHandler;
@@ -50,7 +51,7 @@ class PasswordResetInputValidationTest {
 	@BeforeEach
 	void setUp() {
 		AuthController authController = new AuthController(mock(AuthenticationManager.class), userService,
-			mock(JwtUtil.class), mock(RefreshTokenService.class));
+			mock(JwtUtil.class), mock(RefreshTokenService.class), mock(RefreshTokenCookies.class));
 		mockMvc = MockMvcBuilders.standaloneSetup(authController)
 			.setControllerAdvice(new GlobalExceptionHandler(), new RequestErrorExceptionHandler())
 			.build();

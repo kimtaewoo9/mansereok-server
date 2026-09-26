@@ -8,7 +8,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 @Configuration
-@EnableConfigurationProperties(RefreshTokenProperties.class)
+@EnableConfigurationProperties({RefreshTokenProperties.class, RefreshCookieProperties.class})
 public class JwtConfig {
 
 	@Bean

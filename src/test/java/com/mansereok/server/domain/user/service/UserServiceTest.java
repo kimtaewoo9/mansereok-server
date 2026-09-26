@@ -51,8 +51,6 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.EnumSource;
-import org.junit.jupiter.params.provider.NullAndEmptySource;
-import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InOrder;
 import org.mockito.Mock;
@@ -457,19 +455,6 @@ public class UserServiceTest {
 			return userService.createUser("테스트유저", EMAIL, "password123", LocalDate.of(1990, 1, 1),
 				Gender.MALE, true, false);
 		}
-	}
-
-	@ParameterizedTest(name = "[{index}] 이메일 [{0}]")
-	@NullAndEmptySource
-	@ValueSource(strings = {"   "})
-	@DisplayName("이메일이 null 이거나 공백이면 저장소를 조회하지 않고 빈 값을 돌려준다")
-	void findByEmail_ReturnsEmptyWithoutQueryForBlankEmail(String email) {
-		// when
-		Optional<User> found = userService.findByEmail(email);
-
-		// then
-		assertThat(found).isEmpty();
-		verifyNoInteractions(userRepository);
 	}
 
 	@Nested

@@ -19,6 +19,7 @@ import com.mansereok.server.domain.auth.service.oauth.NaverService;
 import com.mansereok.server.domain.auth.service.oauth.OauthLoginService;
 import com.mansereok.server.domain.auth.service.oauth.XService;
 import com.mansereok.server.domain.auth.util.JwtUtil;
+import com.mansereok.server.domain.auth.util.RefreshTokenCookies;
 import com.mansereok.server.domain.user.service.RefreshTokenService;
 import com.mansereok.server.domain.user.service.UserService;
 import com.mansereok.server.global.exception.GlobalExceptionHandler;
@@ -66,9 +67,11 @@ class OauthControllerErrorResponseTest {
 
 		OauthController oauthController = new OauthController(mock(OauthLoginService.class),
 			new GoogleService(restClient), new KakaoService(restClient), new NaverService(restClient),
-			new XService(restClient), mock(JwtUtil.class), mock(RefreshTokenService.class));
+			new XService(restClient), mock(JwtUtil.class), mock(RefreshTokenService.class),
+			mock(RefreshTokenCookies.class));
 		AuthController authController = new AuthController(mock(AuthenticationManager.class),
-			mock(UserService.class), mock(JwtUtil.class), mock(RefreshTokenService.class));
+			mock(UserService.class), mock(JwtUtil.class), mock(RefreshTokenService.class),
+			mock(RefreshTokenCookies.class));
 
 		mockMvc = MockMvcBuilders.standaloneSetup(oauthController, authController)
 			.setControllerAdvice(new GlobalExceptionHandler(), new RequestErrorExceptionHandler(),

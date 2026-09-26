@@ -84,7 +84,7 @@ public class GlobalExceptionHandler {
 		ErrorResponse response = ErrorResponse.of(
 			HttpStatus.UNAUTHORIZED.value(),
 			"INVALID_CREDENTIALS",
-			"이메일 또는 비밀번호가 일치하지 않습니다."
+			"이메일 또는 비밀번호가 일치하지 않습니다. 소셜로 가입하셨다면 소셜 로그인을 이용해주세요."
 		);
 		return new ResponseEntity<>(response, HttpStatus.UNAUTHORIZED);
 	}
