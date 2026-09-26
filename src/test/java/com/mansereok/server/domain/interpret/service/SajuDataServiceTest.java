@@ -1,15 +1,21 @@
 package com.mansereok.server.domain.interpret.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Named.named;
 
+import com.mansereok.server.domain.interpret.service.SajuDataService.HiddenStem;
+import com.mansereok.server.domain.interpret.service.SajuDataService.HiddenStems;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.function.Supplier;
 import java.util.stream.IntStream;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Named;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -58,27 +64,86 @@ class SajuDataServiceTest {
 
 	@Test
 	void shouldUseStandardHiddenStemForSingleBranch() {
-		Map<String, Map<String, Object>> jijangan = sajuDataService.getJijangan();
-		Map<String, Object> ja = jijangan.get("子");
-		Map<String, Object> first = (Map<String, Object>) ja.get("first");
+		HiddenStems ja = sajuDataService.hiddenStemsOf("子");
 
-		assertEquals("癸", first.get("chinese"));
-		assertEquals(30, first.get("rate"));
-		assertNull(ja.get("second"));
-		assertNull(ja.get("third"));
+		assertEquals("癸", ja.first().chinese());
+		assertEquals(30, ja.first().rate());
+		assertNull(ja.second());
+		assertNull(ja.third());
 	}
 
 	@Test
 	void shouldUseStandardHiddenStemOrderForInBranch() {
-		Map<String, Map<String, Object>> jijangan = sajuDataService.getJijangan();
-		Map<String, Object> in = jijangan.get("寅");
-		Map<String, Object> first = (Map<String, Object>) in.get("first");
-		Map<String, Object> second = (Map<String, Object>) in.get("second");
-		Map<String, Object> third = (Map<String, Object>) in.get("third");
+		HiddenStems in = sajuDataService.hiddenStemsOf("寅");
 
-		assertEquals("甲", first.get("chinese"));
-		assertEquals("丙", second.get("chinese"));
-		assertEquals("戊", third.get("chinese"));
+		assertEquals("甲", in.first().chinese());
+		assertEquals("丙", in.second().chinese());
+		assertEquals("戊", in.third().chinese());
+	}
+
+	@Nested
+	@DisplayName("조회표는")
+	class LookupTables {
+
+		@Test
+		@DisplayName("같은 지지의 지장간을 두 번 찾으면 서비스 인스턴스가 달라도 같은 객체를 돌려준다(호출마다 표를 새로 만들지 않는다)")
+		void returnsSameHiddenStemsInstanceEveryTime() {
+			// given
+			HiddenStems foundByAnotherInstance = new SajuDataService().hiddenStemsOf("寅");
+
+			// when
+			HiddenStems found = sajuDataService.hiddenStemsOf("寅");
+
+			// then
+			assertThat(found).isSameAs(foundByAnotherInstance);
+		}
+
+		@Test
+		@DisplayName("같은 일간·시의 시주를 두 번 찾으면 서비스 인스턴스가 달라도 같은 목록을 돌려준다(호출마다 표를 새로 만들지 않는다)")
+		void returnsSameTimePillarInstanceEveryTime() {
+			// given
+			List<String> foundByAnotherInstance = new SajuDataService().timePillarOf("甲", 0);
+
+			// when
+			List<String> found = sajuDataService.timePillarOf("甲", 0);
+
+			// then
+			assertThat(found).isSameAs(foundByAnotherInstance);
+		}
+
+		@Test
+		@DisplayName("돌려받은 시주 목록을 고치려 하면 UnsupportedOperationException 을 던지고 표는 그대로다")
+		void timePillarCannotBeModified() {
+			// given
+			List<String> timePillar = sajuDataService.timePillarOf("甲", 0);
+
+			// when & then
+			assertThatThrownBy(() -> timePillar.set(0, "乙")).isInstanceOf(UnsupportedOperationException.class);
+			assertThat(sajuDataService.timePillarOf("甲", 0)).containsExactly("甲", "子");
+		}
+
+		@ParameterizedTest(name = "[{index}] {0}")
+		@MethodSource("com.mansereok.server.domain.interpret.service.SajuDataServiceTest#lookupsWithNullOrUnknownKey")
+		@DisplayName("null 이나 표에 없는 글자로 찾으면 NullPointerException 없이 null 을 돌려준다")
+		void returnsNullForNullOrUnknownKey(Supplier<Object> lookup) {
+			// when
+			Object found = lookup.get();
+
+			// then
+			assertThat(found).isNull();
+		}
+
+		@Test
+		@DisplayName("정기(first)가 비어 있는 지장간은 만들 수 없다")
+		void hiddenStemsRequireFirst() {
+			// given
+			HiddenStem second = new HiddenStem("癸", "계", "수", "음", 9);
+
+			// when & then
+			assertThatThrownBy(() -> new HiddenStems(null, second, null))
+				.isInstanceOf(NullPointerException.class)
+				.hasMessage("지장간 정기(first)는 비어 있을 수 없습니다");
+		}
 	}
 
 	/**
@@ -93,7 +158,7 @@ class SajuDataServiceTest {
 		@DisplayName("쉼표 뒤 오행이 글자 자체의 오행과 같다")
 		void elementPartIsElementOfLetter(String dayStem, String letter, String expectedElement) {
 			// when
-			String tenStar = sajuDataService.getTenStar().get(dayStem).get(letter);
+			String tenStar = sajuDataService.tenStarOf(dayStem, letter);
 
 			// then
 			assertThat(tenStar.split(",")[1]).isEqualTo(expectedElement);
@@ -104,7 +169,7 @@ class SajuDataServiceTest {
 		@DisplayName("쉼표 앞 십성 이름이 일간과 글자의 오행 관계·음양으로 정한 이름과 같다")
 		void namePartFollowsElementRelationAndPolarity(String dayStem, String letter, String expectedName) {
 			// when
-			String tenStar = sajuDataService.getTenStar().get(dayStem).get(letter);
+			String tenStar = sajuDataService.tenStarOf(dayStem, letter);
 
 			// then
 			assertThat(tenStar.split(",")[0]).isEqualTo(expectedName);
@@ -120,7 +185,7 @@ class SajuDataServiceTest {
 		@DisplayName("일간 10개 x 시 12개 모두 자시 천간에서 한 칸씩 나아간 천간과 子부터 센 지지다")
 		void followsJasiStemRule(String dayStem, int hourIndex, String expectedStem, String expectedBranch) {
 			// when
-			String[] timePillar = sajuDataService.getTimeJuData2().get(dayStem).get(String.valueOf(hourIndex));
+			List<String> timePillar = sajuDataService.timePillarOf(dayStem, hourIndex);
 
 			// then
 			assertThat(timePillar).containsExactly(expectedStem, expectedBranch);
@@ -136,21 +201,22 @@ class SajuDataServiceTest {
 		@DisplayName("12지지 모두 지장간 비율(rate)을 더하면 30이다")
 		void ratesAddUpToThirty(String branch) {
 			// when
-			List<Map<String, Object>> hiddenStems = hiddenStemsOf(branch);
+			List<HiddenStem> hiddenStems = hiddenStemsOf(branch);
 
 			// then
-			assertThat(hiddenStems.stream().mapToInt(hidden -> (Integer) hidden.get("rate")).sum()).isEqualTo(30);
+			assertThat(hiddenStems.stream().mapToInt(HiddenStem::rate).sum()).isEqualTo(30);
 		}
 
 		@ParameterizedTest(name = "[{index}] {0}")
 		@MethodSource("com.mansereok.server.domain.interpret.service.SajuDataServiceTest#everyBranch")
-		@DisplayName("12지지 모두 첫 지장간(정기)의 오행이 지지 자체의 오행과 같다")
+		@DisplayName("12지지 모두 첫 지장간(정기)이 있고 그 오행이 지지 자체의 오행과 같다")
 		void firstHiddenStemHasElementOfBranch(String branch) {
 			// when
-			List<Map<String, Object>> hiddenStems = hiddenStemsOf(branch);
+			HiddenStem first = sajuDataService.hiddenStemsOf(branch).first();
 
 			// then
-			assertThat(hiddenStems.get(0).get("fiveCircle")).isEqualTo(ELEMENT_OF.get(branch));
+			assertThat(first).isNotNull();
+			assertThat(first.fiveCircle()).isEqualTo(ELEMENT_OF.get(branch));
 		}
 
 		@ParameterizedTest(name = "[{index}] {0}")
@@ -158,26 +224,42 @@ class SajuDataServiceTest {
 		@DisplayName("12지지 모두 각 지장간의 한글 이름·오행·음양이 그 천간의 것과 같다")
 		void hiddenStemAttributesMatchStem(String branch) {
 			// when
-			List<Map<String, Object>> hiddenStems = hiddenStemsOf(branch);
+			List<HiddenStem> hiddenStems = hiddenStemsOf(branch);
 
 			// then
 			assertThat(hiddenStems).isNotEmpty().allSatisfy(hidden -> {
-				String stem = (String) hidden.get("chinese");
-				assertThat(hidden.get("korean")).as("%s 의 한글", stem).isEqualTo(STEM_KOREAN.get(STEMS.indexOf(stem)));
-				assertThat(hidden.get("fiveCircle")).as("%s 의 오행", stem).isEqualTo(ELEMENT_OF.get(stem));
-				assertThat(hidden.get("minusPlus")).as("%s 의 음양", stem)
+				String stem = hidden.chinese();
+				assertThat(hidden.korean()).as("%s 의 한글", stem).isEqualTo(STEM_KOREAN.get(STEMS.indexOf(stem)));
+				assertThat(hidden.fiveCircle()).as("%s 의 오행", stem).isEqualTo(ELEMENT_OF.get(stem));
+				assertThat(hidden.minusPlus()).as("%s 의 음양", stem)
 					.isEqualTo(YANG_LETTERS.contains(stem) ? "양" : "음");
 			});
 		}
 	}
 
-	@SuppressWarnings("unchecked")
-	private List<Map<String, Object>> hiddenStemsOf(String branch) {
-		Map<String, Object> hidden = sajuDataService.getJijangan().get(branch);
-		return Stream.of(hidden.get("first"), hidden.get("second"), hidden.get("third"))
+	private List<HiddenStem> hiddenStemsOf(String branch) {
+		HiddenStems hidden = sajuDataService.hiddenStemsOf(branch);
+		return Stream.of(hidden.first(), hidden.second(), hidden.third())
 			.filter(Objects::nonNull)
-			.map(value -> (Map<String, Object>) value)
 			.toList();
+	}
+
+	static Stream<Named<Supplier<Object>>> lookupsWithNullOrUnknownKey() {
+		SajuDataService service = new SajuDataService();
+		return Stream.of(
+			named("yinYangOf(null)", () -> service.yinYangOf(null)),
+			named("yinYangOf(\"X\")", () -> service.yinYangOf("X")),
+			named("koreanOf(null)", () -> service.koreanOf(null)),
+			named("koreanOf(\"X\")", () -> service.koreanOf("X")),
+			named("tenStarOf(null, \"甲\")", () -> service.tenStarOf(null, "甲")),
+			named("tenStarOf(\"甲\", null)", () -> service.tenStarOf("甲", null)),
+			named("tenStarOf(\"X\", \"甲\")", () -> service.tenStarOf("X", "甲")),
+			named("tenStarOf(\"甲\", \"X\")", () -> service.tenStarOf("甲", "X")),
+			named("hiddenStemsOf(null)", () -> service.hiddenStemsOf(null)),
+			named("hiddenStemsOf(\"甲\")", () -> service.hiddenStemsOf("甲")),
+			named("timePillarOf(null, 0)", () -> service.timePillarOf(null, 0)),
+			named("timePillarOf(\"X\", 0)", () -> service.timePillarOf("X", 0)),
+			named("timePillarOf(\"甲\", 12)", () -> service.timePillarOf("甲", 12)));
 	}
 
 	static Stream<String> everyBranch() {

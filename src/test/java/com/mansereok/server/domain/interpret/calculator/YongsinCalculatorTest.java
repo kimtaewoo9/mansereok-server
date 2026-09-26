@@ -8,6 +8,8 @@ import com.mansereok.server.domain.interpret.dto.response.ManseryeokCalculationR
 import com.mansereok.server.domain.interpret.dto.response.ManseryeokCalculationResponse.PillarElement;
 import com.mansereok.server.domain.interpret.dto.response.ManseryeokCalculationResponse.SajuInfo;
 import com.mansereok.server.domain.interpret.service.SajuDataService;
+import com.mansereok.server.domain.interpret.service.SajuDataService.HiddenStem;
+import com.mansereok.server.domain.interpret.service.SajuDataService.HiddenStems;
 import java.util.Map;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -181,24 +183,23 @@ class YongsinCalculatorTest {
 	/**
 	 * 운영의 만세력 계산처럼 SajuDataService 의 지장간 표를 JijangganInfo 로 옮긴다.
 	 */
-	@SuppressWarnings("unchecked")
 	private JijangganInfo hiddenStemsOf(String branch) {
-		Map<String, Object> hidden = sajuDataService.getJijangan().get(branch);
+		HiddenStems hidden = sajuDataService.hiddenStemsOf(branch);
 		return JijangganInfo.builder()
-			.first(hiddenStem((Map<String, Object>) hidden.get("first")))
-			.second(hiddenStem((Map<String, Object>) hidden.get("second")))
-			.third(hiddenStem((Map<String, Object>) hidden.get("third")))
+			.first(hiddenStem(hidden.first()))
+			.second(hiddenStem(hidden.second()))
+			.third(hiddenStem(hidden.third()))
 			.build();
 	}
 
-	private JijangganElement hiddenStem(Map<String, Object> data) {
-		if (data == null) {
+	private JijangganElement hiddenStem(HiddenStem hidden) {
+		if (hidden == null) {
 			return null;
 		}
 		return JijangganElement.builder()
-			.chinese((String) data.get("chinese"))
-			.fiveCircle((String) data.get("fiveCircle"))
-			.rate((Integer) data.get("rate"))
+			.chinese(hidden.chinese())
+			.fiveCircle(hidden.fiveCircle())
+			.rate(hidden.rate())
 			.build();
 	}
 }
