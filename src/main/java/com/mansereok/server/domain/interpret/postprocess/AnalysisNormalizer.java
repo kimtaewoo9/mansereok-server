@@ -30,9 +30,9 @@ public class AnalysisNormalizer {
 
 		rules.put(20L, new MoneyLuckNormalizationRule());
 
-		SubcategoryNormalizationRule business = new BusinessNormalizationRule();
+		// 세 상품은 같은 규칙을 쓴다. 지운 양을 로그에 남길 때 상품을 밝히려고 상품마다 따로 만든다.
 		for (Long subcategoryId : List.of(21L, 22L, 23L)) {
-			rules.put(subcategoryId, business);
+			rules.put(subcategoryId, new BusinessNormalizationRule(subcategoryId));
 		}
 
 		for (FreeFortuneStyle style : FreeFortuneStyle.values()) {

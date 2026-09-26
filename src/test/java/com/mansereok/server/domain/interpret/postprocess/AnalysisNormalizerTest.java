@@ -1,5 +1,6 @@
 package com.mansereok.server.domain.interpret.postprocess;
 
+import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.Arrays;
@@ -7,6 +8,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
 /**
@@ -209,7 +211,7 @@ class AnalysisNormalizerTest {
 		}
 
 		@Test
-		@DisplayName("요청하지 않은 개운법 줄을 지운다")
+		@DisplayName("요청하지 않은 개운법 문장을 지운다")
 		void removesForbiddenAdvice() {
 			String normalized = normalizer.normalizeAnalysis(21L, """
 				핵심 성향은 임수 일간입니다.
@@ -223,8 +225,33 @@ class AnalysisNormalizerTest {
 				.doesNotContain("3과 8");
 		}
 
+		/**
+		 * 21·22·23 의 실제 응답은 한 줄이 곧 한 문단이다. 금지어가 든 문장만 빠지고 앞뒤 문장은 남아야 한다.
+		 */
+		@ParameterizedTest(name = "[{index}] {0} → {1}")
+		@DisplayName("한 줄짜리 문단에서 개운법·오행 점수 문장만 빼고, 세력 수치는 숫자만 지운다")
+		@CsvSource(delimiter = '|', textBlock = """
+			# 넣은 문단(한 줄) | 남는 문단
+			# 남는 문장. 방위·숫자가 있어도 권하는 말이 없거나, 숫자 뒤에 숫자가 이어지면 개운법이 아니다
+			앞 문장입니다. 동쪽 지역 거래처와의 협업이 늘어나는 흐름입니다. 뒤 문장입니다.        | 앞 문장입니다. 동쪽 지역 거래처와의 협업이 늘어나는 흐름입니다. 뒤 문장입니다.
+			앞 문장입니다. 매출 숫자 30% 증가를 목표로 잡아도 유리합니다. 뒤 문장입니다.          | 앞 문장입니다. 매출 숫자 30% 증가를 목표로 잡아도 유리합니다. 뒤 문장입니다.
+			앞 문장입니다. 시장 내 세력 판도가 바뀌는 시기입니다. 뒤 문장입니다.                   | 앞 문장입니다. 시장 내 세력 판도가 바뀌는 시기입니다. 뒤 문장입니다.
+			# 빠지는 문장
+			앞 문장입니다. 행운의 색은 파란색입니다. 뒤 문장입니다.                               | 앞 문장입니다. 뒤 문장입니다.
+			앞 문장입니다. 개운법으로 아침 산책을 권합니다. 뒤 문장입니다.                         | 앞 문장입니다. 뒤 문장입니다.
+			앞 문장입니다. 거래처를 넓히려면 서쪽 지역 파트너와의 협업이 유리합니다. 뒤 문장입니다. | 앞 문장입니다. 뒤 문장입니다.
+			앞 문장입니다. 녹색 소품을 책상에 두면 집중이 잘 됩니다. 뒤 문장입니다.                 | 앞 문장입니다. 뒤 문장입니다.
+			앞 문장입니다. 숫자 8을 추천합니다. 뒤 문장입니다.                                     | 앞 문장입니다. 뒤 문장입니다.
+			앞 문장입니다. 오행 점수는 목 3.2 화 1.1 입니다. 뒤 문장입니다.                         | 앞 문장입니다. 뒤 문장입니다.
+			# 숫자만 빠지는 문장
+			앞 문장입니다. 신약 구조(내 세력 32.5 vs 남의 세력 67.5)라 협업이 중요합니다. 뒤 문장입니다. | 앞 문장입니다. 신약 구조(내 세력 vs 남의 세력)라 협업이 중요합니다. 뒤 문장입니다.
+			""")
+		void removesOnlyForbiddenSentencesInOneLineParagraph(String paragraph, String expected) {
+			assertThat(normalizer.normalizeAnalysis(21L, paragraph)).isEqualTo(expected);
+		}
+
 		@Test
-		@DisplayName("내부 계산값(오행 점수)이 노출된 줄과 한자 괄호를 지운다")
+		@DisplayName("내부 계산값(오행 점수)이 노출된 문장과 한자 괄호를 지운다")
 		void removesInternalScores() {
 			String normalized = normalizer.normalizeAnalysis(21L, """
 				오행 점수는 목 3.2 화 1.1 입니다.
@@ -260,6 +287,22 @@ class AnalysisNormalizerTest {
 			String normalized = normalizer.normalizeSummary(21L, "가".repeat(400));
 
 			assertThat(normalized).hasSize(280);
+		}
+
+		@Test
+		@DisplayName("요약을 280자에서 자를 때 경계에 걸린 이모지는 반으로 쪼개지 않고 통째로 뺀다")
+		void summaryCutKeepsEmojiWhole() {
+			// given: 280번째 글자 자리에 이모지(서로게이트 쌍)의 앞쪽 절반이 온다
+			String summary = "가".repeat(279) + "😀" + "끝";
+
+			// when
+			String normalized = normalizer.normalizeSummary(21L, summary);
+
+			// then
+			assertThat(normalized).hasSizeLessThanOrEqualTo(280).isEqualTo("가".repeat(279));
+			assertThat(new String(normalized.getBytes(UTF_8), UTF_8))
+				.as("UTF-8 로 저장했다 읽어도 깨진 글자가 생기지 않는다")
+				.isEqualTo(normalized);
 		}
 
 		@Test
