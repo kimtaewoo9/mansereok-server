@@ -12,7 +12,7 @@ import org.springframework.beans.factory.config.YamlPropertiesFactoryBean;
 import org.springframework.core.io.ClassPathResource;
 
 /**
- * 환경별 설정 파일(application.yml 은 로컬, -dev, -prod)에 적힌 actuator 공개 범위와 지표 환경 태그를 고정한다.
+ * 환경별 설정 파일(application.yml 은 로컬, -dev, -prod)에 적힌 actuator 공개 범위, 지표 환경 태그, JPA 방언 설정을 고정한다.
  *
  * <p>스프링을 띄우지 않고 yml 파일만 읽는다. 운영·개발 설정은 테스트에서 띄울 수 없어, 파일에 적힌 값을 직접 확인한다.
  */
@@ -56,6 +56,17 @@ class ProfileConfigFileTest {
 		// then
 		assertThat(properties.getProperty("management.metrics.tags.environment"))
 			.as(fileName).isEqualTo(expectedEnvironment);
+	}
+
+	@ParameterizedTest(name = "{0}")
+	@ValueSource(strings = {"application-dev.yml", "application-prod.yml"})
+	@DisplayName("개발·운영 설정이 JPA 방언을 적지 않아 Hibernate 가 DB 에 맞는 방언을 스스로 고른다")
+	void leavesDialectToHibernate(String fileName) {
+		// when
+		Properties properties = load(fileName);
+
+		// then
+		assertThat(properties).as(fileName).doesNotContainKey("spring.jpa.database-platform");
 	}
 
 	@Test
