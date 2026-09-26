@@ -24,7 +24,14 @@ services:
     volumes:
       - ./prometheus.yml:/etc/prometheus/prometheus.yml
       # 운영 서버의 MANAGEMENT_SCRAPE_TOKEN 과 같은 값을 한 줄로 적은 파일. 저장소에는 올리지 않는다(.gitignore).
-      - ./prometheus-scrape-token:/etc/prometheus/scrape-token:ro
+      # 짧은 문법으로 적으면 파일이 없을 때 같은 이름의 빈 디렉터리가 생겨 Prometheus 가 뜬 채로 수집만 조용히 실패한다.
+      # create_host_path: false 로 두어 파일이 없으면 컨테이너를 만들지 않고 바로 실패하게 한다.
+      - type: bind
+        source: ./prometheus-scrape-token
+        target: /etc/prometheus/scrape-token
+        read_only: true
+        bind:
+          create_host_path: false
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
       - '--storage.tsdb.path=/prometheus'
