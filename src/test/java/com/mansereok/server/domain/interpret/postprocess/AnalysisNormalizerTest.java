@@ -65,6 +65,18 @@ class AnalysisNormalizerTest {
 			assertThat(normalizer.normalizeSummary(subcategoryId, "")).isEmpty();
 		}
 
+		@ParameterizedTest(name = "규칙이 있는 상품 {0} 은 비어 있지 않은 원문을 비우지 않는다")
+		@ValueSource(longs = {20L, 21L, 22L, 23L, 101L, 102L, 103L, 104L, 105L, 106L})
+		@DisplayName("비어 있지 않은 원문은 비어 있지 않은 결과가 된다")
+		void keepsNonBlankTextNonBlank(long subcategoryId) {
+			// given: 어느 상품의 제목·소제목에도 맞지 않는 평범한 문장
+			String raw = "섹션 제목이 전혀 없는 본문입니다.";
+
+			// when & then
+			assertThat(normalizer.normalizeAnalysis(subcategoryId, raw)).as("본문").isNotBlank();
+			assertThat(normalizer.normalizeSummary(subcategoryId, raw)).as("요약").isNotBlank();
+		}
+
 		@Test
 		@DisplayName("규칙에 걸리지 않는 평문은 내용이 그대로 남는다")
 		void keepsPlainTextUnchanged() {
@@ -429,9 +441,46 @@ class AnalysisNormalizerTest {
 		}
 
 		@Test
-		@DisplayName("3월 월운(106)은 알려진 섹션이 하나도 없으면 빈 문자열이 된다")
-		void marchMonthlyBecomesEmptyWithoutKnownSections() {
-			assertThat(normalizer.normalizeAnalysis(106L, "섹션 제목이 전혀 없는 본문입니다.")).isEmpty();
+		@DisplayName("3월 월운(106)은 문장 끝이 없어 230자에서 자를 때 경계에 걸린 이모지를 쪼개지 않는다")
+		void marchMonthlySectionCutKeepsEmojiWhole() {
+			// given: 마침표가 없어 상한(230자)에서 잘리고, 230번째 글자 자리에 이모지의 앞쪽 절반이 온다
+			String body = "가".repeat(229) + "😀" + "나".repeat(80);
+
+			// when
+			String normalized = normalizer.normalizeAnalysis(106L, "[금전운]\n" + body);
+
+			// then
+			assertThat(normalized).isEqualTo("금전운\n" + "가".repeat(229));
+		}
+
+		@Test
+		@DisplayName("3월 월운(106)은 첫 제목 앞의 도입 문단을 버리지 않고 첫 섹션 본문 앞에 붙인다")
+		void marchMonthlyKeepsIntroParagraph() {
+			String normalized = normalizer.normalizeAnalysis(106L, """
+				3월은 정리의 달입니다.
+
+				[금전운]
+				지출을 나눠 집행하세요.
+
+				[3월운 총평]
+				관리가 성과를 남깁니다.
+				""");
+
+			assertThat(normalized).isEqualTo("""
+				금전운
+				3월은 정리의 달입니다. 지출을 나눠 집행하세요.
+
+				3월운 총평
+				관리가 성과를 남깁니다.""");
+		}
+
+		@Test
+		@DisplayName("3월 월운(106)은 알려진 섹션이 하나도 없으면 빈 줄만 정리한 원문을 돌려준다")
+		void marchMonthlyKeepsTextWithoutKnownSections() {
+			String normalized = normalizer.normalizeAnalysis(106L,
+				"섹션 제목이 전혀 없는 본문입니다.\n\n\n\n둘째 문단입니다.");
+
+			assertThat(normalized).isEqualTo("섹션 제목이 전혀 없는 본문입니다.\n\n둘째 문단입니다.");
 		}
 	}
 }

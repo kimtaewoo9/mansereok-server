@@ -1,5 +1,6 @@
 package com.mansereok.server.domain.interpret.postprocess;
 
+import com.mansereok.server.domain.interpret.text.TextCut;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -11,6 +12,9 @@ import java.util.regex.Pattern;
  *
  * <p>이 상품만 화면이 섹션 단위로 고정돼 있다. GPT 가 제목을 대괄호로 싸거나 줄바꿈으로 쪼개 놓으면
  * 화면이 깨지므로, 제목 변형을 표준 제목으로 되돌린 뒤 섹션별로 본문을 다시 모으고 길이를 자른다.
+ *
+ * <p>다시 모으면서 본문을 버리지 않는다. 첫 제목 앞의 도입 문단은 첫 섹션에 붙이고, 다시 모은 결과가 비면
+ * (표준 제목이 하나도 맞지 않은 경우 등) 빈 줄만 정리한 원문을 돌려준다.
  */
 final class MarchMonthlySections {
 
@@ -63,13 +67,20 @@ final class MarchMonthlySections {
 	}
 
 	static String normalize(String text) {
-		String normalized = text == null ? "" : text;
+		String original = text == null ? "" : text;
 
 		// 1) 섹션 제목 변형(대괄호, 줄바꿈 분리, 콜론 표기)을 표준 제목으로 통일
-		normalized = unifySectionTitles(normalized);
+		String normalized = unifySectionTitles(original);
 
 		// 2) 섹션 단위로 재조립해 제목이 분리되는 문제 방지 + 섹션당 길이 상한 적용
-		return rebuildSections(normalized);
+		String rebuilt = rebuildSections(normalized);
+
+		// 3) 재조립 결과가 비면(표준 제목이 하나도 맞지 않은 경우 등) 빈 줄만 정리한 원문을 돌려준다.
+		//    빈 결과가 그대로 저장되면 사용자는 빈 화면을 본다.
+		if (rebuilt.isEmpty()) {
+			return NormalizationSteps.collapseBlankLines(original).trim();
+		}
+		return rebuilt;
 	}
 
 	private static String unifySectionTitles(String text) {
@@ -90,6 +101,7 @@ final class MarchMonthlySections {
 			sectionBodies.put(title, new StringBuilder());
 		}
 
+		StringBuilder intro = new StringBuilder();
 		String currentTitle = null;
 		for (String block : TextBlocks.splitParagraphs(normalized)) {
 			if (SECTION_TITLES.contains(block)) {
@@ -107,8 +119,12 @@ final class MarchMonthlySections {
 
 			if (currentTitle != null) {
 				appendSectionBody(sectionBodies.get(currentTitle), block);
+			} else {
+				// 첫 표준 제목보다 앞에 온 도입 문단
+				appendSectionBody(intro, block);
 			}
 		}
+		prependIntroToFirstSection(intro.toString(), sectionBodies);
 
 		List<String> rebuilt = new ArrayList<>();
 		for (String title : SECTION_TITLES) {
@@ -119,6 +135,22 @@ final class MarchMonthlySections {
 			rebuilt.add(title + "\n" + trimToSentenceLength(body, SECTION_MAX_CHARS));
 		}
 		return TextBlocks.joinParagraphs(rebuilt).trim();
+	}
+
+	/**
+	 * 도입 문단을 버리지 않고 화면에 처음 나오는 섹션의 본문 앞에 붙인다. 섹션 길이 상한은 붙인 뒤에 건다.
+	 * 본문이 있는 섹션이 하나도 없으면 붙이지 않는다. 그때는 재조립 결과가 비어 원문을 돌려준다.
+	 */
+	private static void prependIntroToFirstSection(String intro,
+		Map<String, StringBuilder> sectionBodies) {
+		if (intro.isEmpty()) {
+			return;
+		}
+		// sectionBodies 는 SECTION_TITLES 순서로 만든 LinkedHashMap 이라 화면 순서대로 돈다.
+		sectionBodies.values().stream()
+			.filter(body -> !body.isEmpty())
+			.findFirst()
+			.ifPresent(body -> body.insert(0, intro + " "));
 	}
 
 	/** 문단이 표준 제목 + 줄바꿈으로 시작하면 그 제목을 돌려준다. */
@@ -161,8 +193,10 @@ final class MarchMonthlySections {
 		}
 
 		if (cut < (int) (maxChars * 0.55)) {
-			cut = hardCut;
+			// 상한 위치에서 자르되 이모지 같은 서로게이트 쌍은 쪼개지 않는다. 반쪽 글자는 저장할 때 '?' 로 깨진다.
+			return TextCut.atCodePointBoundary(normalized, maxChars).trim();
 		}
+		// 문장 끝 부호(. ! ?) 바로 뒤에서 자르므로 서로게이트 쌍이 쪼개질 일이 없다.
 		return normalized.substring(0, cut).trim();
 	}
 }
