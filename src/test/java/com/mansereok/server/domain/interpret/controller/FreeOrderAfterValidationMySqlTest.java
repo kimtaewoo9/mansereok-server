@@ -29,7 +29,8 @@ import org.springframework.beans.factory.annotation.Autowired;
  * <p>컨트롤러·계산 서비스·결제 서비스는 모두 진짜다. 계산은 이 스키마의 manses 기초 데이터(1900~2100년)를 읽는다. 해석 서비스는
  * 진짜지만 입력 단계에서 끝나므로 불리지 않는다.
  *
- * <p>행은 이번 실행의 사용자로만 만들고 뒤 정리에서 그 사용자 ID 로만 지운다. 상품 행은 번호를 정해 넣고 뒤 정리에서 그 번호로 지운다.
+ * <p>행은 이번 실행의 사용자로만 만들고 뒤 정리에서 그 사용자 ID 로만 지운다. 상품 행은 번호를 정해 넣지만 제목에 실행 키를 넣고
+ * 뒤 정리에서 그 제목으로만 지운다. 같은 번호의 행이 이미 있어 준비가 실패해도, 이번 실행이 넣지 않은 그 행은 지우지 않는다.
  */
 class FreeOrderAfterValidationMySqlTest extends InterpretationMySqlTest {
 
@@ -46,6 +47,7 @@ class FreeOrderAfterValidationMySqlTest extends InterpretationMySqlTest {
 	// 실행마다 다른 값이라 이전 실행이 남긴 사용자와 부딪히지 않는다.
 	private final String runId = UUID.randomUUID().toString().substring(0, 8);
 	private final String username = "free_order_" + runId;
+	private final String productTitle = "무료 주문 순서 테스트 상품 " + runId;
 
 	private Long userId;
 
@@ -53,8 +55,8 @@ class FreeOrderAfterValidationMySqlTest extends InterpretationMySqlTest {
 	void createUserAndProducts() {
 		userId = userRepository.save(User.create(username, "무료 주문", "password", username + "@example.com",
 			LocalDate.of(1990, 1, 1), Gender.MALE, true, true, false)).getId();
-		insertProduct(FREE_COMPATIBILITY_PRODUCT_ID, "무료 궁합 테스트 상품");
-		insertProduct(FREE_FORTUNE_PRODUCT_ID, "무료 운세 테스트 상품");
+		insertProduct(FREE_COMPATIBILITY_PRODUCT_ID);
+		insertProduct(FREE_FORTUNE_PRODUCT_ID);
 	}
 
 	@AfterEach
@@ -63,8 +65,7 @@ class FreeOrderAfterValidationMySqlTest extends InterpretationMySqlTest {
 		jdbcTemplate.update("DELETE FROM compatibility_results WHERE user_id = ?", userId);
 		jdbcTemplate.update("DELETE FROM payments WHERE user_id = ?", userId);
 		jdbcTemplate.update("DELETE FROM orders WHERE user_id = ?", userId);
-		jdbcTemplate.update("DELETE FROM subcategories WHERE id IN (?, ?)", FREE_COMPATIBILITY_PRODUCT_ID,
-			FREE_FORTUNE_PRODUCT_ID);
+		jdbcTemplate.update("DELETE FROM subcategories WHERE title = ?", productTitle);
 		userRepository.deleteById(userId);
 	}
 
@@ -77,7 +78,7 @@ class FreeOrderAfterValidationMySqlTest extends InterpretationMySqlTest {
 		// when & then
 		assertThatThrownBy(() -> controller.analyzeCompatibilityFree(FREE_COMPATIBILITY_PRODUCT_ID, request, username))
 			.isInstanceOf(IllegalArgumentException.class)
-			.hasMessage("생년월일은 YYYY/MM/DD 형식의 있는 날짜여야 합니다.");
+			.hasMessage("생년월일은 YYYY/MM/DD 형식이어야 하고 실제로 있는 날짜여야 합니다.");
 		assertNoRowsForThisUser();
 	}
 
@@ -103,7 +104,8 @@ class FreeOrderAfterValidationMySqlTest extends InterpretationMySqlTest {
 
 		// when & then
 		assertThatThrownBy(() -> controller.interpretFree(FREE_FORTUNE_PRODUCT_ID, request, username))
-			.hasMessageContaining("만세력 데이터를 찾을 수 없습니다");
+			.isInstanceOf(RuntimeException.class)
+			.hasMessage("만세력 계산 중 오류가 발생했습니다: 해당 양력 날짜의 만세력 데이터를 찾을 수 없습니다.");
 		assertNoRowsForThisUser();
 	}
 
@@ -122,14 +124,14 @@ class FreeOrderAfterValidationMySqlTest extends InterpretationMySqlTest {
 
 	/**
 	 * 상품 번호를 정해 0원 상품 행을 넣는다. 컨트롤러는 경로의 번호로 상품 종류를 가리고 0원 주문도 그 번호로 만들므로, 자동 증가 값에
-	 * 맡기지 않는다.
+	 * 맡기지 않는다. 제목은 이번 실행의 것이라 뒤 정리가 이 행만 지운다.
 	 */
-	private void insertProduct(long productId, String title) {
+	private void insertProduct(long productId) {
 		assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM subcategories WHERE id = ?", Integer.class,
 			productId))
 			.as("상품 %d 가 이미 있다. 이전 실행이 남긴 테스트 상품이면 지우고 다시 돌린다", productId)
 			.isZero();
-		jdbcTemplate.update("INSERT INTO subcategories (id, title, price) VALUES (?, ?, 0)", productId, title);
+		jdbcTemplate.update("INSERT INTO subcategories (id, title, price) VALUES (?, ?, 0)", productId, productTitle);
 	}
 
 	private CompatibilityAnalysisRequest freeCompatibilityRequest(String person2Birthday) {
