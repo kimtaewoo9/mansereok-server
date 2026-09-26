@@ -16,6 +16,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.data.jpa.repository.Query;
 
 /**
@@ -88,7 +89,7 @@ class ReviewIndexUsageMySqlTest extends LocalMySqlTest {
 		List<Map<String, Object>> plan = jdbcTemplate.queryForList("EXPLAIN " + sql);
 
 		// then: 페이지 쿼리의 바깥 JOIN 은 별칭 r 로 PRIMARY 를 읽으므로, 인덱스로 찾는 줄은 표 이름이 reviews 인 줄 하나다.
-		// 페이지 쿼리의 바깥 SELECT 는 고른 한 페이지를 다시 정렬하므로, 정렬이 없어야 하는 것은 이 줄이다.
+		// 페이지 쿼리의 바깥 SELECT 가 고른 한 페이지를 다시 정렬하는 것은 따로 확인한다(pageQuerySortsOnlyTheChosenPage).
 		assertThat(plan).as("실행 계획 %s", plan)
 			.filteredOn(row -> "reviews".equals(row.get("table")))
 			.singleElement()
@@ -99,6 +100,24 @@ class ReviewIndexUsageMySqlTest extends LocalMySqlTest {
 				assertThat(String.valueOf(row.get("Extra"))).as("인덱스 순서대로 읽어 따로 정렬하지 않는지")
 					.doesNotContain("Using filesort");
 			});
+	}
+
+	@ParameterizedTest(name = "[{index}] {0}")
+	@ValueSource(strings = {"findReviewsBySubCategoryWithPagination", "findAllReviewsWithPagination"})
+	@DisplayName("페이지 쿼리는 바깥 SELECT 에서 고른 한 페이지만 다시 정렬해, JOIN 순서와 상관없이 최신순을 SQL 로 보장한다")
+	void pageQuerySortsOnlyTheChosenPage(String repositoryMethod) {
+		// given
+		String sql = withValues(nativeQueryOf(repositoryMethod));
+
+		// when
+		List<Map<String, Object>> plan = jdbcTemplate.queryForList("EXPLAIN " + sql);
+
+		// then: 바깥 SELECT(select_type PRIMARY)의 줄에 정렬이 있다. 바깥 ORDER BY 가 빠지면 이 정렬도 사라진다.
+		// 안쪽에서 reviews 를 인덱스로 읽는 줄(DERIVED)에 정렬이 없는 것은 reviewQueryUsesIndexWithoutFilesort 가 본다.
+		assertThat(plan).as("실행 계획 %s", plan)
+			.filteredOn(row -> "PRIMARY".equals(row.get("select_type")))
+			.extracting(row -> String.valueOf(row.get("Extra")))
+			.anyMatch(extra -> extra.contains("Using filesort"));
 	}
 
 	@Test
