@@ -144,7 +144,8 @@ class PaymentLockScopeConcurrencyTest extends PaymentMySqlTest {
 
 		/**
 		 * 주문 B 는 A 의 확정을 멈추기 전에 만든다. 멈춘 뒤에 만들면, 잠금이 넓을 때 B 를 만드는 준비 단계가 시간을 재지 않은 채
-		 * A 가 풀릴 때까지 기다려 버려 B 의 확정은 늘 빨리 끝난다.
+		 * A 가 풀릴 때까지 기다려 버려 B 의 확정은 늘 빨리 끝난다. B 를 쓰는 것은 confirmOfOtherOrderDoesNotWait 하나이고, 나머지
+		 * 두 테스트에서는 결과와 상관없이 만들어만 둔다.
 		 */
 		@BeforeEach
 		void createOrdersThenPauseConfirmOfOrderA() throws InterruptedException {
@@ -183,11 +184,11 @@ class PaymentLockScopeConcurrencyTest extends PaymentMySqlTest {
 		void confirmOfSameOrderWaitsForOrderRow() throws Exception {
 			// when
 			Future<OrderStatus> confirmAgain = executor.submit(() -> complete(paymentOfA, orderA.getMerchantUid()));
-			boolean waitedForLock = waitsForLockInThisSchema(confirmAgain);
+			boolean waitedForLock = waitsForLockOn(confirmAgain, "orders");
 			releaseFirst.countDown();
 
 			// then: 멈춘 자리가 A 의 주문 행 잠금을 쥐고 있었다
-			assertThat(waitedForLock).as("같은 주문의 결제 완료 재요청이 A 의 커밋 전까지 잠금을 기다렸다").isTrue();
+			assertThat(waitedForLock).as("같은 주문의 결제 완료 재요청이 A 의 커밋 전까지 orders 행 잠금을 기다렸다").isTrue();
 			assertThat(confirmOfA.get(30, SECONDS)).as("주문 A 의 확정").isEqualTo(OrderStatus.PAID);
 			assertThat(confirmAgain.get(30, SECONDS)).as("같은 결제의 재요청").isEqualTo(OrderStatus.PAID);
 		}
@@ -230,11 +231,11 @@ class PaymentLockScopeConcurrencyTest extends PaymentMySqlTest {
 			// when
 			Future<OrderCreateResponse> newOrder = executor.submit(
 				() -> paymentOrderService.createOrder(username, orderRequest(codeHeldByA)));
-			boolean waitedForLock = waitsForLockInThisSchema(newOrder);
+			boolean waitedForLock = waitsForLockOn(newOrder, "discount_codes");
 			releaseFirst.countDown();
 
 			// then: 멈춘 자리가 C1 행 잠금을 쥐고 있었다
-			assertThat(waitedForLock).as("C1 으로 새 주문 만들기가 A 의 커밋 전까지 잠금을 기다렸다").isTrue();
+			assertThat(waitedForLock).as("C1 으로 새 주문 만들기가 A 의 커밋 전까지 discount_codes 행 잠금을 기다렸다").isTrue();
 			assertThat(confirmOfA.get(30, SECONDS)).as("주문 A 의 늦은 결제 확정").isEqualTo(OrderStatus.PAID);
 			assertThat(newOrder.get(30, SECONDS).getAmount()).as("C1 으로 만든 새 주문의 금액").isEqualTo(PRICE_WITH_CODE);
 			assertThat(currentUses(codeHeldByA)).as("C1 사용 횟수").isEqualTo(2);
@@ -275,18 +276,12 @@ class PaymentLockScopeConcurrencyTest extends PaymentMySqlTest {
 	}
 
 	/**
-	 * 요청이 이 스키마의 행 잠금을 기다리기 시작했는지 돌려준다. 끝나 버렸거나 10초 안에 기다리기 시작하지 않으면 false 다.
+	 * 요청이 표 table 의 행 잠금을 기다리기 시작했는지 돌려준다. 끝나 버렸거나 10초 안에 그 표에서 기다리기 시작하지 않으면
+	 * false 다.
 	 */
-	private boolean waitsForLockInThisSchema(Future<?> request) {
-		await().atMost(Duration.ofSeconds(10)).until(() -> request.isDone() || lockWaitsInThisSchema() > 0);
-		return !request.isDone() && lockWaitsInThisSchema() > 0;
-	}
-
-	private int lockWaitsInThisSchema() {
-		Integer waits = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM performance_schema.data_lock_waits w "
-			+ "JOIN performance_schema.data_locks l ON l.ENGINE_LOCK_ID = w.REQUESTING_ENGINE_LOCK_ID "
-			+ "WHERE l.OBJECT_SCHEMA = DATABASE()", Integer.class);
-		return waits == null ? 0 : waits;
+	private boolean waitsForLockOn(Future<?> request, String table) {
+		await().atMost(Duration.ofSeconds(10)).until(() -> request.isDone() || lockWaitsOn(table) > 0);
+		return !request.isDone() && lockWaitsOn(table) > 0;
 	}
 
 	private void awaitRelease() {

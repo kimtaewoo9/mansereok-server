@@ -4,9 +4,14 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.mansereok.server.domain.order.entity.Order;
 import com.mansereok.server.domain.order.entity.OrderStatus;
+import com.mansereok.server.domain.user.entity.Gender;
+import com.mansereok.server.domain.user.entity.User;
+import com.mansereok.server.domain.user.repository.UserRepository;
 import com.mansereok.server.support.PaymentMySqlTest;
+import java.time.LocalDate;
 import java.util.UUID;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -24,27 +29,39 @@ import org.springframework.transaction.support.TransactionTemplate;
  * 때만" 이라는 조건이 빠지면 결제가 끝난 주문을 EXPIRED 로 덮어쓰고 할인까지 되돌린다. OrderExpirationServiceTest 는 바꾼 행 수를
  * 목으로 정해 두므로 이 조건이 빠져도 알아채지 못한다.
  *
- * <p>주문은 저장소로 바로 만들고, 실행마다 다른 주문 번호(runId)로 만들어 그 번호로만 지운다.
+ * <p>주문은 저장소로 바로 만든다. 주문자와 주문은 실행마다 다른 키(runId)로 만들고 그 키로 만든 행만 지운다.
  */
 class OrderStatusUpdateMySqlTest extends PaymentMySqlTest {
 
-	// 상품·사용자 id 는 결과에 영향이 없다. orders 는 subcategories·users 를 참조하지 않는다.
-	private static final Long ANY_USER_ID = 1L;
+	// 상품 id 는 결과에 영향이 없다. orders.sub_category_id 는 subcategories 를 참조하지 않는다.
 	private static final Long ANY_SUB_CATEGORY_ID = 3L;
 	private static final int PRICE = 10000;
 
 	@Autowired
 	private OrderRepository orderRepository;
 	@Autowired
+	private UserRepository userRepository;
+	@Autowired
 	private PlatformTransactionManager transactionManager;
 
 	// 실행마다 다른 값이라 이전 실행이 남긴 데이터와 부딪히지 않는다.
 	private final String runId = UUID.randomUUID().toString().substring(0, 8);
+	private final String username = "status_update_" + runId;
 	private final String merchantUid = "order_status_update_" + runId;
 
+	private Long userId;
+
+	// 주문자는 실제로 저장한다. 운영 스키마(schema.sql)의 orders.user_id 는 users 를 참조하므로 없는 사용자 id 를 쓰면 실패한다.
+	@BeforeEach
+	void createBuyer() {
+		userId = userRepository.save(User.create(username, "상태변경", "password", username + "@example.com",
+			LocalDate.of(1990, 1, 1), Gender.MALE, true, true, false)).getId();
+	}
+
 	@AfterEach
-	void deleteOrderOfThisRun() {
+	void deleteRowsCreatedByThisRun() {
 		jdbcTemplate.update("DELETE FROM orders WHERE merchant_uid = ?", merchantUid);
+		userRepository.deleteById(userId);
 	}
 
 	@Nested
@@ -114,8 +131,8 @@ class OrderStatusUpdateMySqlTest extends PaymentMySqlTest {
 	}
 
 	private Long saveOrder(OrderStatus status) {
-		return orderRepository.save(Order.create(merchantUid, ANY_USER_ID, ANY_SUB_CATEGORY_ID, PRICE, PRICE, null,
-			null, status, "상태변경", "status_update_" + runId + "@example.com")).getId();
+		return orderRepository.save(Order.create(merchantUid, userId, ANY_SUB_CATEGORY_ID, PRICE, PRICE, null,
+			null, status, "상태변경", username + "@example.com")).getId();
 	}
 
 	private String statusInDatabase() {
