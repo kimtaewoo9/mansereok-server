@@ -2,6 +2,7 @@ package com.mansereok.server.domain.user.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.tuple;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.BDDMockito.given;
@@ -13,6 +14,12 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 
+import com.mansereok.server.domain.interpret.dto.response.InterpretationResultResponse;
+import com.mansereok.server.domain.interpret.dto.response.ManseCompatibilityAnalysisResponse;
+import com.mansereok.server.domain.interpret.dto.response.SajuHistoryResponseDto;
+import com.mansereok.server.domain.interpret.dto.response.SajuHistoryResponseDto.ResultType;
+import com.mansereok.server.domain.interpret.entity.CompatibilityResult;
+import com.mansereok.server.domain.interpret.entity.Result;
 import com.mansereok.server.domain.interpret.repository.CompatibilityResultRepository;
 import com.mansereok.server.domain.interpret.repository.ResultRepository;
 import com.mansereok.server.domain.order.repository.OrderRepository;
@@ -31,6 +38,7 @@ import com.mansereok.server.domain.user.event.UserWithdrawnEvent;
 import com.mansereok.server.domain.user.repository.RefreshTokenRepository;
 import com.mansereok.server.domain.user.repository.UserRepository;
 import com.mansereok.server.global.exception.DuplicateEmailException;
+import com.mansereok.server.support.fixture.UserFixture;
 import jakarta.persistence.EntityNotFoundException;
 import java.sql.SQLIntegrityConstraintViolationException;
 import java.time.Clock;
@@ -39,6 +47,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.ZoneId;
+import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.hibernate.exception.ConstraintViolationException;
@@ -51,6 +60,8 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.EnumSource;
+import org.junit.jupiter.params.provider.NullSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InOrder;
 import org.mockito.Mock;
@@ -59,7 +70,9 @@ import org.springframework.boot.test.system.CapturedOutput;
 import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.transaction.PlatformTransactionManager;
 
 /**
@@ -140,7 +153,7 @@ public class UserServiceTest {
 		// given
 		User member = User.create("gone@example.com", "탈퇴회원", "encoded-password", "gone@example.com",
 			LocalDate.of(1990, 1, 1), Gender.MALE, true, true, false);
-		member.setId(8L);
+		UserFixture.withId(member, 8L);
 		given(userRepository.findByUsername("gone@example.com")).willReturn(Optional.of(member));
 		given(userRepository.findByIdForUpdate(8L)).willReturn(Optional.empty());
 
@@ -165,7 +178,7 @@ public class UserServiceTest {
 		void givenMember() {
 			member = User.create(USERNAME, "탈퇴회원", "encoded-password", USERNAME, LocalDate.of(1990, 1, 1),
 				Gender.MALE, true, true, false);
-			member.setId(USER_ID);
+			UserFixture.withId(member, USER_ID);
 			given(userRepository.findByUsername(USERNAME)).willReturn(Optional.of(member));
 			// 재설정 토큰을 지우기 전에 잠그는 사용자 행
 			given(userRepository.findByIdForUpdate(USER_ID)).willReturn(Optional.of(member));
@@ -223,89 +236,195 @@ public class UserServiceTest {
 		}
 	}
 
-	@Test
-	@DisplayName("프로필 수정: marketingAgreed=true여도 birthTime 없이 저장된다")
-	void updateUserProfile_ShouldAllowNullBirthTime_WhenMarketingAgreedTrue() {
-		String username = "tester";
-		User user = User.create(
-			username,
-			"테스터",
-			"pw",
-			"t@test.com",
-			LocalDate.of(1998, 9, 2),
-			Gender.MALE,
-			true,
-			true,
-			false
-		);
-		user.setBirthTime(null);
+	@Nested
+	@DisplayName("프로필을 수정하면")
+	class WhenUpdatingProfile {
 
-		ProfileUpdateRequestDto request = new ProfileUpdateRequestDto();
-		request.setMarketingAgreed(true);
-		request.setBirthTime(null);
+		@Test
+		@DisplayName("요청에 담긴 모든 항목을 로그인한 회원에게 반영해 그 회원을 돌려준다")
+		void appliesEveryRequestFieldToMember() {
+			// given
+			User member = User.createByOauth("kakao-1", null, null, "kakao-1", SocialType.KAKAO);
+			given(userRepository.findByUsername("kakao-1")).willReturn(Optional.of(member));
+			ProfileUpdateRequestDto request = new ProfileUpdateRequestDto();
+			request.setName("새이름");
+			request.setBirthDate(LocalDate.of(1990, 1, 1));
+			request.setBirthTime(LocalTime.of(10, 30));
+			request.setBirthPlace(" 부산 ");
+			request.setGender(Gender.FEMALE);
+			request.setMarketingAgreed(true);
 
-		given(userRepository.findByUsername(username)).willReturn(Optional.of(user));
-		given(userRepository.save(user)).willReturn(user);
+			// when
+			User updated = userService.updateUserProfile("kakao-1", request);
 
-		User saved = userService.updateUserProfile(username, request);
+			// then
+			assertThat(updated).isSameAs(member);
+			assertThat(updated.getName()).isEqualTo("새이름");
+			assertThat(updated.getBirthDate()).isEqualTo(LocalDate.of(1990, 1, 1));
+			assertThat(updated.getBirthTime()).isEqualTo(LocalTime.of(10, 30));
+			assertThat(updated.getBirthPlace()).isEqualTo("부산");
+			assertThat(updated.getGender()).isEqualTo(Gender.FEMALE);
+			assertThat(updated.isMarketingAgreed()).isTrue();
+		}
 
-		assertThat(saved.isMarketingAgreed()).isTrue();
-		assertThat(saved.getBirthTime()).isNull();
-		verify(userRepository, times(1)).save(user);
+		@Test
+		@DisplayName("필수값이 비는 요청이면 400 이 되는 예외를 던진다")
+		void rejectsRequestLeavingRequiredFieldEmpty() {
+			// given
+			User member = User.createByOauth("kakao-1", "소셜회원", null, "kakao-1", SocialType.KAKAO);
+			given(userRepository.findByUsername("kakao-1")).willReturn(Optional.of(member));
+			ProfileUpdateRequestDto request = new ProfileUpdateRequestDto();
+			request.setGender(Gender.MALE);
+
+			// when & then
+			assertThatThrownBy(() -> userService.updateUserProfile("kakao-1", request))
+				.isInstanceOf(IllegalArgumentException.class)
+				.hasMessage("생년월일을 입력해주세요.");
+		}
+	}
+
+	@Nested
+	@DisplayName("사주·궁합 결과 하나를 조회하면")
+	class WhenReadingOneResult {
+
+		private static final Long MEMBER_ID = 1L;
+		private static final Long RESULT_ID = 100L;
+
+		private User member;
+
+		@BeforeEach
+		void loggedIn() {
+			member = UserFixture.withId(User.create("member@example.com", "회원", "encoded-password",
+				"member@example.com", LocalDate.of(1990, 1, 1), Gender.MALE, true, true, false), MEMBER_ID);
+			given(userRepository.findByUsername("member@example.com")).willReturn(Optional.of(member));
+		}
+
+		@Test
+		@DisplayName("내 사주 결과이면 돌려준다")
+		void returnsOwnSajuResult() {
+			// given
+			Result result = Result.createInitial(MEMBER_ID, 10L, "인생 총운");
+			ReflectionTestUtils.setField(result, "id", RESULT_ID);
+			given(resultRepository.findById(RESULT_ID)).willReturn(Optional.of(result));
+
+			// when
+			InterpretationResultResponse response = userService.getInterpretationResult(RESULT_ID,
+				"member@example.com");
+
+			// then
+			assertThat(response.getId()).isEqualTo(RESULT_ID);
+		}
+
+		@Test
+		@DisplayName("내 궁합 결과이면 돌려준다")
+		void returnsOwnCompatibilityResult() {
+			// given
+			CompatibilityResult result = CompatibilityResult.createInitial(MEMBER_ID, 10L, "궁합");
+			ReflectionTestUtils.setField(result, "id", RESULT_ID);
+			given(compatibilityResultRepository.findById(RESULT_ID)).willReturn(Optional.of(result));
+
+			// when
+			ManseCompatibilityAnalysisResponse response = userService.getCompatibilityResultDetail(RESULT_ID,
+				"member@example.com");
+
+			// then
+			assertThat(response.getResultId()).isEqualTo(RESULT_ID);
+		}
+
+		@ParameterizedTest(name = "[{index}] 결과 주인 {0} → 403")
+		@NullSource
+		@ValueSource(longs = 2L)
+		@DisplayName("다른 사람의 사주 결과이거나 주인이 없는(user_id NULL) 결과이면 403 이 되는 예외를 던진다")
+		void rejectsSajuResultOfSomeoneElse(Long ownerId) {
+			// given
+			given(resultRepository.findById(RESULT_ID)).willReturn(
+				Optional.of(Result.createInitial(ownerId, 10L, "인생 총운")));
+
+			// when & then
+			assertThatThrownBy(() -> userService.getInterpretationResult(RESULT_ID, "member@example.com"))
+				.isInstanceOf(AccessDeniedException.class)
+				.hasMessage("다른 사람의 리소스에 접근할 수 없습니다.");
+		}
+
+		@ParameterizedTest(name = "[{index}] 결과 주인 {0} → 403")
+		@NullSource
+		@ValueSource(longs = 2L)
+		@DisplayName("다른 사람의 궁합 결과이거나 주인이 없는(user_id NULL) 결과이면 403 이 되는 예외를 던진다")
+		void rejectsCompatibilityResultOfSomeoneElse(Long ownerId) {
+			// given
+			given(compatibilityResultRepository.findById(RESULT_ID)).willReturn(
+				Optional.of(CompatibilityResult.createInitial(ownerId, 10L, "궁합")));
+
+			// when & then
+			assertThatThrownBy(() -> userService.getCompatibilityResultDetail(RESULT_ID, "member@example.com"))
+				.isInstanceOf(AccessDeniedException.class)
+				.hasMessage("다른 사람의 리소스에 접근할 수 없습니다.");
+		}
+
+		@Test
+		@DisplayName("없는 사주 결과 id 이면 404 가 되는 예외를 던진다")
+		void rejectsUnknownSajuResult() {
+			// given
+			given(resultRepository.findById(RESULT_ID)).willReturn(Optional.empty());
+
+			// when & then
+			assertThatThrownBy(() -> userService.getInterpretationResult(RESULT_ID, "member@example.com"))
+				.isInstanceOf(EntityNotFoundException.class)
+				.hasMessage("사주 결과를 찾을 수 없습니다. resultId: 100");
+		}
+
+		@Test
+		@DisplayName("없는 궁합 결과 id 이면 404 가 되는 예외를 던진다")
+		void rejectsUnknownCompatibilityResult() {
+			// given
+			given(compatibilityResultRepository.findById(RESULT_ID)).willReturn(Optional.empty());
+
+			// when & then
+			assertThatThrownBy(() -> userService.getCompatibilityResultDetail(RESULT_ID, "member@example.com"))
+				.isInstanceOf(EntityNotFoundException.class)
+				.hasMessage("궁합 결과를 찾을 수 없습니다. resultId: 100");
+		}
 	}
 
 	@Test
-	@DisplayName("프로필 수정: 이름/생년월일/성별은 marketingAgreed와 무관하게 필수다")
-	void updateUserProfile_ShouldRequireNameBirthDateGender() {
-		String username = "tester";
-		User user = User.create(
-			username,
-			"테스터",
-			"pw",
-			"t@test.com",
-			LocalDate.of(1998, 9, 2),
-			Gender.MALE,
-			true,
-			true,
-			false
-		);
-		user.setName(null);
+	@DisplayName("해석 이력은 사주 결과와 궁합 결과를 한 목록에 섞어 만든 시각이 늦은 것부터 돌려준다")
+	void combinedHistoryIsNewestFirstAcrossBothKinds() {
+		// given: 저장소는 종류별로 각각 최신순으로 돌려준다
+		User member = UserFixture.withId(User.create("member@example.com", "회원", "encoded-password",
+			"member@example.com", LocalDate.of(1990, 1, 1), Gender.MALE, true, true, false), 1L);
+		given(userRepository.findByUsername("member@example.com")).willReturn(Optional.of(member));
+		given(resultRepository.findAllByUserIdOrderByCreatedAtDesc(1L)).willReturn(List.of(
+			sajuResult(11L, LocalDateTime.of(2026, 9, 3, 9, 0)),
+			sajuResult(12L, LocalDateTime.of(2026, 9, 1, 9, 0))));
+		given(compatibilityResultRepository.findByUserIdOrderByCreatedAtDesc(1L)).willReturn(List.of(
+			compatibilityResult(21L, LocalDateTime.of(2026, 9, 4, 9, 0)),
+			compatibilityResult(22L, LocalDateTime.of(2026, 9, 2, 9, 0))));
 
-		ProfileUpdateRequestDto request = new ProfileUpdateRequestDto();
-		request.setMarketingAgreed(false);
+		// when
+		List<SajuHistoryResponseDto> history = userService.getCombinedSajuHistory("member@example.com");
 
-		given(userRepository.findByUsername(username)).willReturn(Optional.of(user));
-
-		assertThatThrownBy(() -> userService.updateUserProfile(username, request))
-			.isInstanceOf(IllegalArgumentException.class)
-			.hasMessageContaining("이름을 입력해주세요.");
+		// then
+		assertThat(history)
+			.extracting(SajuHistoryResponseDto::getResultId, SajuHistoryResponseDto::getResultType)
+			.containsExactly(
+				tuple(21L, ResultType.COMPATIBILITY),
+				tuple(11L, ResultType.SAJU),
+				tuple(22L, ResultType.COMPATIBILITY),
+				tuple(12L, ResultType.SAJU));
 	}
 
-	@Test
-	@DisplayName("프로필 수정: birthPlace는 선택값이지만 공백 문자열은 허용하지 않는다")
-	void updateUserProfile_ShouldRejectBlankBirthPlace() {
-		String username = "tester";
-		User user = User.create(
-			username,
-			"테스터",
-			"pw",
-			"t@test.com",
-			LocalDate.of(1998, 9, 2),
-			Gender.MALE,
-			true,
-			true,
-			false
-		);
-		user.setBirthTime(LocalTime.of(10, 30));
+	private static Result sajuResult(Long id, LocalDateTime createdAt) {
+		Result result = Result.createInitial(1L, id, "인생 총운");
+		ReflectionTestUtils.setField(result, "id", id);
+		ReflectionTestUtils.setField(result, "createdAt", createdAt);
+		return result;
+	}
 
-		ProfileUpdateRequestDto request = new ProfileUpdateRequestDto();
-		request.setBirthPlace("   ");
-
-		given(userRepository.findByUsername(username)).willReturn(Optional.of(user));
-
-		assertThatThrownBy(() -> userService.updateUserProfile(username, request))
-			.isInstanceOf(IllegalArgumentException.class)
-			.hasMessageContaining("태어난 장소는 공백일 수 없습니다.");
+	private static CompatibilityResult compatibilityResult(Long id, LocalDateTime createdAt) {
+		CompatibilityResult result = CompatibilityResult.createInitial(1L, id, "궁합");
+		ReflectionTestUtils.setField(result, "id", id);
+		ReflectionTestUtils.setField(result, "createdAt", createdAt);
+		return result;
 	}
 
 	@ParameterizedTest(name = "[{index}] {0} 가입 → 가입 경로 [{1}]")
@@ -493,7 +612,7 @@ public class UserServiceTest {
 		void deleteUserLogsOnlyUserId(CapturedOutput output) {
 			// given
 			User member = emailSignupMember();
-			member.setId(7L);
+			UserFixture.withId(member, 7L);
 			given(userRepository.findByUsername(EMAIL)).willReturn(Optional.of(member));
 			given(userRepository.findByIdForUpdate(7L)).willReturn(Optional.of(member));
 
@@ -554,7 +673,7 @@ public class UserServiceTest {
 		void givenEmailSignupMember() {
 			member = User.create(EMAIL, "재설정회원", "old-hash", EMAIL, LocalDate.of(1990, 1, 1), Gender.FEMALE,
 				true, true, false);
-			member.setId(USER_ID);
+			UserFixture.withId(member, USER_ID);
 			given(userRepository.findByEmail(EMAIL)).willReturn(Optional.of(member));
 			// 사용자 행 잠금. 이 스텁을 쓰지 않으면(잠그지 않으면) strict stubs 가 테스트를 실패시킨다.
 			given(userRepository.findByIdForUpdate(USER_ID)).willReturn(Optional.of(member));
@@ -653,7 +772,7 @@ public class UserServiceTest {
 		void givenMember() {
 			member = User.create("member@example.com", "재설정회원", "old-hash", "member@example.com",
 				LocalDate.of(1990, 1, 1), Gender.FEMALE, true, true, false);
-			member.setId(12L);
+			UserFixture.withId(member, 12L);
 		}
 
 		@Test
@@ -770,7 +889,7 @@ public class UserServiceTest {
 	private void givenSaveAssignsId(Long id) {
 		given(userRepository.saveAndFlush(any(User.class))).willAnswer(invocation -> {
 			User user = invocation.getArgument(0);
-			user.setId(id);
+			UserFixture.withId(user, id);
 			return user;
 		});
 	}

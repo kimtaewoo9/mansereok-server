@@ -15,7 +15,6 @@ import java.time.LocalTime;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
-import lombok.Setter;
 import org.hibernate.annotations.DynamicUpdate;
 
 // 제약 이름을 고정해 엔티티, schema.sql, 운영 DB 가 같은 이름을 쓰게 한다. 운영은 ddl-auto: validate 라 UNIQUE 를 검사하지
@@ -39,17 +38,19 @@ import org.hibernate.annotations.DynamicUpdate;
 @DynamicUpdate
 @Entity
 @Getter
-@Setter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class User {
 
 	@Id
 	@GeneratedValue(strategy = GenerationType.IDENTITY)
 	private Long id;
-	private String username; // 사용자 아이디
+	/**
+	 * 로그인 아이디. JWT 의 subject 이고, 로그인한 사용자를 이 값으로 찾는다. 이메일 가입자는 이메일, 소셜 가입자는 제공자의 사용자
+	 * 번호(네이버는 무작위 10자리 대문자)다. 가입할 때 한 번 정하고 바꾸지 않는다. 화면에 보이는 이름은 {@link #name} 이다.
+	 */
+	private String username;
 	private String name; // 사용자 본명
 	// 비밀번호는 changePassword 로만 바꾼다.
-	@Setter(AccessLevel.NONE)
 	private String password;
 	private String email;
 	@Enumerated(EnumType.STRING)
@@ -116,6 +117,61 @@ public class User {
 	 */
 	public void changePassword(String encodedPassword) {
 		this.password = encodedPassword;
+	}
+
+	/**
+	 * 프로필을 바꾼다. change 에서 null 인 항목은 그대로 두고, 이름이 공백만 있으면 이름을 바꾸지 않는다.
+	 *
+	 * <p>바뀐 뒤의 값을 먼저 모두 계산해 검사하고, 통과했을 때만 필드에 넣는다. 그래서 예외가 나면 어떤 필드도 바뀌지 않는다. 트랜잭션
+	 * 안에서 필드를 먼저 바꾸고 나중에 거절하면, 예외를 잡아 삼키는 호출자가 있을 때 절반만 바뀐 프로필이 변경 감지로 저장된다.
+	 *
+	 * <p>필수: 이름, 생년월일, 성별. 선택: 태어난 시각, 태어난 장소. 마케팅 동의 여부와 관계없이 같은 규칙이다.
+	 *
+	 * @throws IllegalArgumentException 태어난 장소가 공백만 있거나, 바뀐 뒤 이름·생년월일·성별 중 하나라도 비어 있을 때(400)
+	 */
+	public void updateProfile(ProfileChange change) {
+		String newName = hasText(change.name()) ? change.name() : this.name;
+		LocalDate newBirthDate = change.birthDate() != null ? change.birthDate() : this.birthDate;
+		LocalTime newBirthTime = change.birthTime() != null ? change.birthTime() : this.birthTime;
+		String newBirthPlace = this.birthPlace;
+		if (change.birthPlace() != null) {
+			if (change.birthPlace().isBlank()) {
+				throw new IllegalArgumentException("태어난 장소는 공백일 수 없습니다.");
+			}
+			newBirthPlace = change.birthPlace().trim();
+		}
+		Gender newGender = change.gender() != null ? change.gender() : this.gender;
+		boolean newMarketingAgreed =
+			change.marketingAgreed() != null ? change.marketingAgreed() : this.marketingAgreed;
+
+		if (!hasText(newName)) {
+			throw new IllegalArgumentException("이름을 입력해주세요.");
+		}
+		if (newBirthDate == null) {
+			throw new IllegalArgumentException("생년월일을 입력해주세요.");
+		}
+		if (newGender == null) {
+			throw new IllegalArgumentException("성별을 선택해주세요.");
+		}
+
+		this.name = newName;
+		this.birthDate = newBirthDate;
+		this.birthTime = newBirthTime;
+		this.birthPlace = newBirthPlace;
+		this.gender = newGender;
+		this.marketingAgreed = newMarketingAgreed;
+	}
+
+	/**
+	 * 사주 해석에 꼭 필요한 프로필(이름, 생년월일, 성별) 중 하나라도 비어 있는가. 소셜 가입자는 가입 직후 이 값들이 비어 있어,
+	 * 프론트가 이 값을 보고 추가 정보 입력 화면을 띄운다.
+	 */
+	public boolean isProfileIncomplete() {
+		return !hasText(name) || birthDate == null || gender == null;
+	}
+
+	private static boolean hasText(String value) {
+		return value != null && !value.isBlank();
 	}
 
 	@PreUpdate // 엔티티 업데이트 될때마다 자동으로 updateAt 필드를 현재시간으로 설정 .

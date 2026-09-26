@@ -32,6 +32,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -242,73 +243,48 @@ public class UserService {
 		}
 	}
 
-	@Transactional(readOnly = true)
-	public User getUserById(Long userId) {
-		return userRepository.findById(userId)
-			.orElseThrow(() -> new RuntimeException("사용자를 찾을 수 없습니다: ID " + userId));
-	}
-
+	/**
+	 * 로그인한 사용자의 프로필을 바꾼다. 규칙은 {@link User#updateProfile} 이 지키고, 바뀐 값은 트랜잭션이 끝날 때 변경 감지로
+	 * 저장된다.
+	 *
+	 * @throws IllegalArgumentException 태어난 장소가 공백만 있거나, 바뀐 뒤 이름·생년월일·성별 중 하나라도 비어 있을 때(400)
+	 */
 	@Transactional
 	public User updateUserProfile(String username, ProfileUpdateRequestDto requestDto) {
 		User user = findByUsername(username);
-
-		if (requestDto.getName() != null && !requestDto.getName().isBlank()) {
-			user.setName(requestDto.getName());
-		}
-		if (requestDto.getBirthDate() != null) {
-			user.setBirthDate(requestDto.getBirthDate());
-		}
-		if (requestDto.getBirthTime() != null) {
-			user.setBirthTime(requestDto.getBirthTime());
-		}
-		if (requestDto.getBirthPlace() != null) {
-			if (requestDto.getBirthPlace().isBlank()) {
-				throw new IllegalArgumentException("태어난 장소는 공백일 수 없습니다.");
-			}
-			user.setBirthPlace(requestDto.getBirthPlace().trim());
-		}
-
-		if (requestDto.getGender() != null && !requestDto.getGender().isBlank()) {
-			try {
-				user.setGender(Gender.valueOf(requestDto.getGender()));
-			} catch (IllegalArgumentException e) {
-				throw new IllegalArgumentException("성별을 입력해야 합니다.");
-			}
-		}
-
-		if (requestDto.getMarketingAgreed() != null) {
-			user.setMarketingAgreed(requestDto.getMarketingAgreed());
-		}
-
-		// marketingAgreed 여부와 무관하게 동일한 프로필 필수 검증을 적용한다.
-		// 필수: 이름, 생년월일, 성별 / 선택: 태어난 시각, 태어난 장소
-		if (user.getName() == null || user.getName().isBlank()) {
-			throw new IllegalArgumentException("이름을 입력해주세요.");
-		}
-		if (user.getBirthDate() == null) {
-			throw new IllegalArgumentException("생년월일을 입력해주세요.");
-		}
-		if (user.getGender() == null) {
-			throw new IllegalArgumentException("성별을 선택해주세요.");
-		}
-
-		return userRepository.save(user);
+		user.updateProfile(requestDto.toProfileChange());
+		return user;
 	}
 
+	/**
+	 * 로그인한 사용자의 사주 결과 하나를 돌려준다.
+	 *
+	 * @throws EntityNotFoundException 결과가 없을 때(404)
+	 * @throws AccessDeniedException   다른 사람의 결과이거나 주인이 없는 결과일 때(403)
+	 */
 	@Transactional(readOnly = true)
 	public InterpretationResultResponse getInterpretationResult(Long resultId, String username) {
 		User user = findByUsername(username);
 
 		Result result = resultRepository.findById(resultId)
-			.orElseThrow(() -> new RuntimeException("result not found. resultId: " + resultId));
-
-		if (!result.getUserId().equals(user.getId())) {
-			log.warn("다른 사람의 정보에 접근 시도. 접근 ID: {}, 접근하려는 ID: {}", user.getId(), result.getUserId());
-			log.warn("resultId: {}", resultId); // resultId 전송 .
-			throw new AccessDeniedException("다른 사람의 리소스에 접근할 수 없습니다.");
-		}
+			.orElseThrow(() -> new EntityNotFoundException("사주 결과를 찾을 수 없습니다. resultId: " + resultId));
+		assertOwnedBy(result.getUserId(), user, resultId);
 
 		return InterpretationResultResponse.create(result);
+	}
+
+	/**
+	 * 결과의 주인이 로그인한 사용자인지 확인한다. 주인이 없는 결과(user_id 가 NULL)도 다른 사람의 것으로 보고 막는다. 탈퇴로 연결이
+	 * 끊긴 주문에 뒤늦게 결과가 만들어지면 user_id 가 NULL 이다.
+	 *
+	 * @throws AccessDeniedException 주인이 다를 때(403)
+	 */
+	private static void assertOwnedBy(Long ownerId, User user, Long resultId) {
+		if (!Objects.equals(ownerId, user.getId())) {
+			log.warn("다른 사람의 결과에 접근 시도. 요청한 사용자 ID: {}, 결과 주인 ID: {}, resultId: {}", user.getId(), ownerId,
+				resultId);
+			throw new AccessDeniedException("다른 사람의 리소스에 접근할 수 없습니다.");
+		}
 	}
 
 	@Transactional(readOnly = true)
@@ -325,11 +301,10 @@ public class UserService {
 
 		// 두 리스트를 SajuHistoryResponseDto 스트림으로 변환
 		Stream<SajuHistoryResponseDto> sajuStream = sajuResults.stream()
-			.map(SajuHistoryResponseDto::new); // SajuHistoryResponseDto(Result result) 생성자 사용
+			.map(SajuHistoryResponseDto::fromSaju);
 
 		Stream<SajuHistoryResponseDto> compStream = compResults.stream()
-			.map(
-				SajuHistoryResponseDto::new); // SajuHistoryResponseDto(CompatibilityResult result) 생성자 사용
+			.map(SajuHistoryResponseDto::fromCompatibility);
 
 		// 두 스트림을 합치고, createdAt 기준으로 내림차순 정렬 (최신순)
 		return Stream.concat(sajuStream, compStream)
@@ -373,21 +348,20 @@ public class UserService {
 			.collect(Collectors.toList());
 	}
 
+	/**
+	 * 로그인한 사용자의 궁합 결과 하나를 돌려준다.
+	 *
+	 * @throws EntityNotFoundException 결과가 없을 때(404)
+	 * @throws AccessDeniedException   다른 사람의 결과이거나 주인이 없는 결과일 때(403)
+	 */
 	@Transactional(readOnly = true)
 	public ManseCompatibilityAnalysisResponse getCompatibilityResultDetail(Long resultId,
 		String username) {
 		User user = findByUsername(username);
 
 		CompatibilityResult result = compatibilityResultRepository.findById(resultId)
-			.orElseThrow(() -> new RuntimeException(
-				"compatibility result not found. resultId: " + resultId));
-
-		if (!result.getUserId().equals(user.getId())) {
-			log.warn("다른 사람의 궁합 정보에 접근 시도. 접근 ID: {}, 접근하려는 ID: {}", user.getId(),
-				result.getUserId());
-			log.warn("resultId: {}", resultId);
-			throw new AccessDeniedException("다른 사람의 리소스에 접근할 수 없습니다.");
-		}
+			.orElseThrow(() -> new EntityNotFoundException("궁합 결과를 찾을 수 없습니다. resultId: " + resultId));
+		assertOwnedBy(result.getUserId(), user, resultId);
 
 		// 궁합 DTO로 반환
 		return new ManseCompatibilityAnalysisResponse(

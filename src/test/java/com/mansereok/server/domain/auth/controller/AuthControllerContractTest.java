@@ -38,6 +38,7 @@ import com.mansereok.server.global.exception.InvalidRefreshTokenException;
 import com.mansereok.server.global.exception.OauthExceptionHandler;
 import com.mansereok.server.global.exception.RequestErrorExceptionHandler;
 import com.mansereok.server.support.SetCookieHeader;
+import com.mansereok.server.support.fixture.UserFixture;
 import io.jsonwebtoken.security.Keys;
 import jakarta.servlet.http.Cookie;
 import java.nio.charset.StandardCharsets;
@@ -395,7 +396,7 @@ class AuthControllerContractTest {
 	private static User emailMember(Long id, String email, String name) {
 		User user = User.create(email, name, PASSWORD_ENCODER.encode(PASSWORD), email, LocalDate.of(1990, 1, 1),
 			Gender.FEMALE, true, true, false);
-		user.setId(id);
+		UserFixture.withId(user, id);
 		return user;
 	}
 
@@ -404,7 +405,7 @@ class AuthControllerContractTest {
 	 */
 	private static User googleMember(Long id, String email, String name) {
 		User user = User.createByOauth("google-sub-" + id, name, email, "google-sub-" + id, SocialType.GOOGLE);
-		user.setId(id);
+		UserFixture.withId(user, id);
 		return user;
 	}
 }

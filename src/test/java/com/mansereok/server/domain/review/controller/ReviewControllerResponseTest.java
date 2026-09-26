@@ -17,6 +17,7 @@ import com.mansereok.server.domain.user.repository.UserRepository;
 import com.mansereok.server.domain.user.service.UserService;
 import com.mansereok.server.global.exception.GlobalExceptionHandler;
 import com.mansereok.server.support.fixture.ReviewFixture;
+import com.mansereok.server.support.fixture.UserFixture;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import java.util.List;
@@ -173,7 +174,7 @@ class ReviewControllerResponseTest {
 	private void givenLoggedIn(String username, Role role) {
 		User user = User.create(username, "요청자", "password", username + "@example.com",
 			LocalDate.of(1990, 1, 1), Gender.MALE, true, true, false);
-		user.setRole(role);
+		UserFixture.withRole(user, role);
 		given(userRepository.findByUsername(username)).willReturn(Optional.of(user));
 		SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(
 			username, null, List.of(new SimpleGrantedAuthority(role.getAuthority()))));

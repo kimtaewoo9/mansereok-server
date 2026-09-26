@@ -15,6 +15,7 @@ import com.mansereok.server.domain.user.entity.User;
 import com.mansereok.server.domain.user.repository.UserRepository;
 import com.mansereok.server.domain.user.service.UserService;
 import com.mansereok.server.global.exception.DuplicateEmailException;
+import com.mansereok.server.support.fixture.UserFixture;
 import java.sql.SQLIntegrityConstraintViolationException;
 import java.time.LocalDate;
 import java.util.Optional;
@@ -306,21 +307,21 @@ class OauthLoginServiceTest {
 	private void givenSaveAssignsNewId() {
 		given(userRepository.saveAndFlush(any(User.class))).willAnswer(invocation -> {
 			User user = invocation.getArgument(0);
-			user.setId(NEW_USER_ID);
+			UserFixture.withId(user, NEW_USER_ID);
 			return user;
 		});
 	}
 
 	private static User socialSignupUser(Long id, SocialType socialType, String socialId) {
 		User user = User.createByOauth(socialId, "기존 소셜 회원", null, socialId, socialType);
-		user.setId(id);
+		UserFixture.withId(user, id);
 		return user;
 	}
 
 	private static User emailSignupUser(Long id, String email) {
 		User user = User.create(email, "기존 이메일 회원", "encoded-password", email,
 			LocalDate.of(1990, 1, 1), Gender.FEMALE, true, true, false);
-		user.setId(id);
+		UserFixture.withId(user, id);
 		return user;
 	}
 

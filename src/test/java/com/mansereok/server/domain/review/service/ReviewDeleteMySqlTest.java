@@ -11,6 +11,7 @@ import com.mansereok.server.domain.user.entity.User;
 import com.mansereok.server.domain.user.repository.UserRepository;
 import com.mansereok.server.support.LocalMySqlTest;
 import com.mansereok.server.support.fixture.ReviewFixture;
+import com.mansereok.server.support.fixture.UserFixture;
 import java.time.LocalDate;
 import java.util.UUID;
 import org.junit.jupiter.api.AfterEach;
@@ -98,7 +99,7 @@ class ReviewDeleteMySqlTest extends LocalMySqlTest {
 	private User saveUser(String username, Role role) {
 		User user = User.create(username, "리뷰 테스트", "password", username + "@example.com",
 			LocalDate.of(1990, 1, 1), Gender.MALE, true, true, false);
-		user.setRole(role);
+		UserFixture.withRole(user, role);
 		return userRepository.save(user);
 	}
 
