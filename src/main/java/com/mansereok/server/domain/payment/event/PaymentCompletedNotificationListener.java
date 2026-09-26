@@ -41,8 +41,8 @@ public class PaymentCompletedNotificationListener {
 	@Async("notificationTaskExecutor")
 	@TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
 	public void on(PaymentCompletedEvent event) {
-		// 무료 경로(0원)는 전에도 알림이 없었다
-		if (event.amount() == null || event.amount() == 0L) {
+		// 무료 결제는 전에도 알림이 없었다
+		if (event.free()) {
 			log.debug("무료 결제라 Discord 알림을 보내지 않습니다: orderId={}, paymentPkId={}",
 				event.orderId(), event.paymentPkId());
 			return;

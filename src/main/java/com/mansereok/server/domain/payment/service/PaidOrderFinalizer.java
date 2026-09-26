@@ -86,9 +86,9 @@ public class PaidOrderFinalizer {
 		// 4. 초기 결과지 생성
 		resultService.createInitialResult(savedPayment, order);
 
-		// 5. 완료 이벤트 발행 (알림은 커밋 뒤 리스너가 담당. amount 0 이면 리스너가 보내지 않는다)
+		// 5. 완료 이벤트 발행 (알림은 커밋 뒤 리스너가 담당. 무료 결제면 리스너가 보내지 않는다)
 		eventPublisher.publishEvent(
-			new PaymentCompletedEvent(order.getId(), savedPayment.getId(), savedPayment.getAmount()));
+			new PaymentCompletedEvent(order.getId(), savedPayment.getId(), savedPayment.isFree()));
 
 		return savedPayment;
 	}

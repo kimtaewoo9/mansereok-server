@@ -71,15 +71,14 @@ public class PaymentReconciler {
 	}
 
 	/**
-	 * 무료 결제는 포트원에 거래 자체가 없으므로 모든 비교에서 뺀다. 대사 서비스도 이 규칙으로 단건 조회 대상을
+	 * 무료 결제는 포트원에 거래 자체가 없으므로 모든 비교에서 뺀다. DB 결제는 {@link Payment#isFree()} 로 가리고, PG 목록의
+	 * 거래는 같은 규칙(free_ 결제 번호 또는 0원)을 포트원 응답 값에 적용한다. 대사 서비스도 Payment#isFree 로 단건 조회 대상을
 	 * 고른다.
 	 */
-	public static boolean isFreePayment(Payment payment) {
-		return isFreePayment(payment.getImpUid(), payment.getAmount());
-	}
-
-	private static boolean isFreePayment(String impUid, Long amount) {
-		return (impUid != null && impUid.startsWith(MerchantUidGenerator.FREE_PREFIX))
+	private static boolean isFreePgPayment(PortOnePaymentResponse pgPayment) {
+		String paymentId = pgPayment.getId();
+		Long amount = amountOf(pgPayment);
+		return (paymentId != null && paymentId.startsWith(MerchantUidGenerator.FREE_PREFIX))
 			|| (amount != null && amount == 0L);
 	}
 
@@ -87,7 +86,7 @@ public class PaymentReconciler {
 		List<PortOnePaymentResponse> pgPayments) {
 		Map<String, PortOnePaymentResponse> indexed = new LinkedHashMap<>();
 		for (PortOnePaymentResponse pgPayment : pgPayments) {
-			if (isFreePayment(pgPayment.getId(), amountOf(pgPayment))) {
+			if (isFreePgPayment(pgPayment)) {
 				continue;
 			}
 			indexed.putIfAbsent(pgPayment.getId(), pgPayment);
@@ -112,7 +111,7 @@ public class PaymentReconciler {
 	}
 
 	private static void putUnlessFree(Map<String, Payment> indexed, Payment payment) {
-		if (isFreePayment(payment)) {
+		if (payment.isFree()) {
 			return;
 		}
 		indexed.putIfAbsent(payment.getImpUid(), payment);

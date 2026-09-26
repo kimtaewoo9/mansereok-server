@@ -239,7 +239,7 @@ class PaymentWebhookServiceTest {
 		verify(resultService).createInitialResult(savedPayment, order);
 		// 알림은 커밋 뒤 리스너가 담당하므로 여기서는 이벤트 발행만 확인한다
 		verify(eventPublisher).publishEvent(
-			new PaymentCompletedEvent(ORDER_ID, PAYMENT_PK_ID, (long) PRICE));
+			new PaymentCompletedEvent(ORDER_ID, PAYMENT_PK_ID, false));
 	}
 
 	@Test

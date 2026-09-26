@@ -3,12 +3,15 @@ package com.mansereok.server.domain.payment.entity;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.mansereok.server.domain.interpret.entity.ResultStatus;
 import com.mansereok.server.global.exception.OrderStateException;
 import com.mansereok.server.global.exception.PaymentException;
 import com.mansereok.server.support.fixture.TestPayments;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.EnumSource;
 
 class PaymentTest {
@@ -143,5 +146,54 @@ class PaymentTest {
 
 		// then
 		assertThat(payment.getStatus()).isEqualTo(PaymentStatus.CANCELLED);
+	}
+
+	@Nested
+	@DisplayName("isFree 는")
+	class IsFree {
+
+		@ParameterizedTest(name = "[{index}] 결제 번호 {0}, 금액 {1}원 → 무료 {2}")
+		@CsvSource(textBlock = """
+			# 결제 번호, 금액, 무료 여부
+			free_free_1727000000000_ab12cd34,     0, true
+			free_free_1727000000000_ab12cd34,   500, true
+			pay_01J000000000000000000000,         0, true
+			pay_01J000000000000000000000,       500, false
+			""")
+		@DisplayName("결제 번호가 free_ 로 시작하거나 금액이 0원이면 무료로 본다")
+		void freeWhenFreePrefixOrZeroAmount(String paymentId, long amount, boolean expected) {
+			// given
+			Payment payment = TestPayments.payment().paymentId(paymentId).amount(amount).paid();
+
+			// when & then
+			assertThat(payment.isFree()).isEqualTo(expected);
+		}
+	}
+
+	@Nested
+	@DisplayName("isRefundable 은")
+	class IsRefundable {
+
+		@ParameterizedTest(name = "[{index}] 결제 {0}, 결과 {1}, 결제 번호 {2}, 금액 {3}원 → 환불 가능 {4}")
+		@CsvSource(nullValues = "null", textBlock = """
+			# 결제 상태, 결과 상태, 결제 번호, 금액, 환불 가능 여부
+			PAID,             INPUT_REQUIRED, pay_test_001,     10000, true
+			PAID,             PROCESSING,     pay_test_001,     10000, false
+			PAID,             COMPLETED,      pay_test_001,     10000, false
+			PAID,             null,           pay_test_001,     10000, false
+			CANCEL_REQUESTED, INPUT_REQUIRED, pay_test_001,     10000, false
+			CANCELLED,        INPUT_REQUIRED, pay_test_001,     10000, false
+			PAID,             INPUT_REQUIRED, free_free_test,     500, false
+			PAID,             INPUT_REQUIRED, pay_test_001,         0, false
+			""")
+		@DisplayName("PAID 이고 정보 입력 전(INPUT_REQUIRED)이며 무료가 아닐 때만 true 다")
+		void refundableOnlyWhenPaidBeforeInputAndNotFree(PaymentStatus status, ResultStatus resultStatus,
+			String paymentId, long amount, boolean expected) {
+			// given
+			Payment payment = TestPayments.payment().paymentId(paymentId).amount(amount).inStatus(status);
+
+			// when & then
+			assertThat(payment.isRefundable(resultStatus)).isEqualTo(expected);
+		}
 	}
 }

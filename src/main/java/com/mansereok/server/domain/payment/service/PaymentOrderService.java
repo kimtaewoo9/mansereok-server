@@ -132,8 +132,8 @@ public class PaymentOrderService {
 			new OrderAmounts(originalAmount, 0), discount.applied());
 
 		// 5-2. 주문 PAID 확정, 0원 Payment 저장, 연관관계 연결, 초기 Result 생성
-		String paymentId = MerchantUidGenerator.FREE_PREFIX + merchantUid; // 포트원 거래가 없어 free_ 를 한 번 더 붙인 자체 번호를 쓴다.
-		Payment savedPayment = paidOrderFinalizer.finalizePaid(order, paymentId, 0L,
+		Payment savedPayment = paidOrderFinalizer.finalizePaid(order,
+			MerchantUidGenerator.freePaymentIdFor(merchantUid), 0L,
 			LocalDateTime.now());
 
 		// 5-3. 쿠폰 또는 할인 코드 사용 확정
@@ -172,8 +172,8 @@ public class PaymentOrderService {
 			new OrderAmounts(0, 0), AppliedDiscount.eventFree());
 
 		// 2. 주문 PAID 확정, 0원 Payment 저장, 연관관계 연결, 초기 Result 생성
-		String paymentId = MerchantUidGenerator.FREE_PREFIX + merchantUid; // redeemFreeProduct 와 같은 규칙
-		Payment savedPayment = paidOrderFinalizer.finalizePaid(order, paymentId, 0L,
+		Payment savedPayment = paidOrderFinalizer.finalizePaid(order,
+			MerchantUidGenerator.freePaymentIdFor(merchantUid), 0L,
 			LocalDateTime.now());
 
 		log.info("무료 사주 주문 생성 완료: orderId={}, paymentId={}", order.getId(),

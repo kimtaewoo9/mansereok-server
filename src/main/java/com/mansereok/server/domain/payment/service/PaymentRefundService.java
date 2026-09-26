@@ -135,9 +135,8 @@ public class PaymentRefundService {
 			throw new PaymentException("본인의 결제 건만 취소할 수 있습니다.");
 		}
 
-		// 4. 무료 결제(0원) 환불 시도 원천 차단
-		if (payment.getAmount() == 0
-			|| payment.getImpUid().startsWith(MerchantUidGenerator.FREE_PREFIX)) {
+		// 4. 무료 결제(0원 또는 free_ 결제 번호) 환불 시도 원천 차단
+		if (payment.isFree()) {
 			throw new PaymentException("무료 이벤트 결제는 환불/취소 대상이 아닙니다.");
 		}
 
@@ -167,7 +166,9 @@ public class PaymentRefundService {
 		if (resultStatus.isEmpty()) {
 			throw new PaymentException("해당 결제에 대한 결과 정보를 찾을 수 없습니다.");
 		}
-		if (resultStatus.get() != ResultStatus.INPUT_REQUIRED) {
+		// 위에서 PAID·무료 아님을 확인했으므로 여기서 남는 조건은 정보 입력 전(INPUT_REQUIRED)이다. 결제 목록의 환불 가능
+		// 표시(PaymentResponseDto)와 같은 판정을 거쳐, 판정에 조건이 늘면 환불 API 도 함께 막는다.
+		if (!payment.isRefundable(resultStatus.get())) {
 			throw new PaymentException("이미 사주 해석이 진행되었거나 완료된 건은 환불할 수 없습니다.");
 		}
 

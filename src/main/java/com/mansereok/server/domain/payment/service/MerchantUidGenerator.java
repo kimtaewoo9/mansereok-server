@@ -24,6 +24,15 @@ public class MerchantUidGenerator {
 		return generate(FREE_PREFIX);
 	}
 
+	/**
+	 * 무료 주문의 결제 번호(Payment.impUid, Order.paymentId)를 만든다. 포트원 거래가 없어 주문 번호 앞에 free_ 를 한 번 더 붙인다.
+	 * 무료 주문 번호가 이미 free_ 로 시작하므로 실제 값은 free_free_{epochMillis}_{UUID 앞 8자} 이다. 이미 저장된 무료 결제와 같은
+	 * 형식을 지키려고 접두사를 겹쳐 둔다.
+	 */
+	public static String freePaymentIdFor(String freeMerchantUid) {
+		return FREE_PREFIX + freeMerchantUid;
+	}
+
 	private String generate(String prefix) {
 		return prefix + System.currentTimeMillis() + "_"
 			+ UUID.randomUUID().toString().substring(0, 8);

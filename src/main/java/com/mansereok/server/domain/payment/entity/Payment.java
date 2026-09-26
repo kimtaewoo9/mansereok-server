@@ -1,6 +1,8 @@
 package com.mansereok.server.domain.payment.entity;
 
+import com.mansereok.server.domain.interpret.entity.ResultStatus;
 import com.mansereok.server.domain.order.entity.Order;
+import com.mansereok.server.domain.payment.service.MerchantUidGenerator;
 import com.mansereok.server.global.exception.OrderStateException;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -85,6 +87,24 @@ public class Payment {
 		payment.status = PaymentStatus.PAID;
 		payment.createdAt = LocalDateTime.now();
 		return payment;
+	}
+
+	/**
+	 * 포트원 거래가 없는 무료 결제인지 본다. 무료 발급 경로는 결제 번호를 free_ 로 시작하게 만들고 금액을 0원으로 두므로 둘 중
+	 * 하나라도 맞으면 무료다. 환불 거절, 대사 제외, 결제 목록의 환불 가능 표시, 결제 완료 알림 생략이 모두 이 판정을 쓴다.
+	 */
+	public boolean isFree() {
+		return impUid.startsWith(MerchantUidGenerator.FREE_PREFIX) || amount == 0L;
+	}
+
+	/**
+	 * 사용자가 직접 환불할 수 있는 결제인지 본다. 결제 완료(PAID) 상태이고, 해석에 쓸 정보를 아직 넣지 않았고(INPUT_REQUIRED),
+	 * 무료 결제가 아니어야 한다. 결제 목록의 환불 버튼과 환불 API 가 이 판정을 함께 쓴다.
+	 *
+	 * @param resultStatus 이 결제로 만든 결과(일반 사주 또는 궁합)의 상태. 결과가 없으면 null
+	 */
+	public boolean isRefundable(ResultStatus resultStatus) {
+		return status == PaymentStatus.PAID && resultStatus == ResultStatus.INPUT_REQUIRED && !isFree();
 	}
 
 	/**

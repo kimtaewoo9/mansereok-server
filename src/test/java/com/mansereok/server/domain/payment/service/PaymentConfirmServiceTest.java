@@ -332,7 +332,7 @@ class PaymentConfirmServiceTest {
 
 		// then
 		verify(eventPublisher).publishEvent(
-			new PaymentCompletedEvent(ORDER_ID, PAYMENT_PK_ID, (long) PRICE));
+			new PaymentCompletedEvent(ORDER_ID, PAYMENT_PK_ID, false));
 	}
 
 	// ===== 검증 실패 =====

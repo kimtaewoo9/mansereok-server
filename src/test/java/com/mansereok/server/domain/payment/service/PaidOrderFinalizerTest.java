@@ -196,11 +196,11 @@ class PaidOrderFinalizerTest {
 
 		// then
 		verify(eventPublisher, times(1)).publishEvent(
-			new PaymentCompletedEvent(ORDER_ID, PAYMENT_PK_ID, AMOUNT));
+			new PaymentCompletedEvent(ORDER_ID, PAYMENT_PK_ID, false));
 	}
 
 	@Test
-	@DisplayName("무료 결제(0원)도 amount 0 을 실은 이벤트를 발행한다 (보낼지 말지는 리스너가 amount 로 정한다)")
+	@DisplayName("무료 결제도 이벤트를 발행하되 free 를 true 로 싣는다 (보낼지 말지는 리스너가 free 로 정한다)")
 	void finalizePaid_zeroAmount_publishesEventWithZeroAmount() {
 		// given
 		givenPaymentSaveAssignsId();
@@ -209,7 +209,7 @@ class PaidOrderFinalizerTest {
 		paidOrderFinalizer.finalizePaid(order, "free_" + MERCHANT_UID, 0L, PAID_AT);
 
 		// then
-		verify(eventPublisher).publishEvent(new PaymentCompletedEvent(ORDER_ID, PAYMENT_PK_ID, 0L));
+		verify(eventPublisher).publishEvent(new PaymentCompletedEvent(ORDER_ID, PAYMENT_PK_ID, true));
 	}
 
 	@Test

@@ -314,7 +314,7 @@ class PaymentOrderServiceTest {
 	// ===== redeemFreeProduct =====
 
 	@Test
-	@DisplayName("100% 할인 코드로 무료 상품을 받으면 PAID 주문과 0원 Payment 가 저장되고 Result 가 생성되며 완료 이벤트는 amount 0 으로 발행된다")
+	@DisplayName("100% 할인 코드로 무료 상품을 받으면 PAID 주문과 0원 Payment 가 저장되고 Result 가 생성되며 완료 이벤트는 무료 결제로 발행된다")
 	void redeemFreeProduct_savesPaidOrderAndZeroPaymentAndCreatesResult() {
 		// given
 		given(userRepository.findByUsername(USERNAME)).willReturn(Optional.of(createUser()));
@@ -370,8 +370,8 @@ class PaymentOrderServiceTest {
 		// 할인 코드 사용 횟수 증가
 		verify(discountCodeService).incrementUsage(discountCode);
 
-		// (c) 완료 이벤트는 amount 0 으로 발행되고 알림 리스너가 0원이면 보내지 않는다
-		verify(eventPublisher).publishEvent(new PaymentCompletedEvent(ORDER_ID, PAYMENT_PK_ID, 0L));
+		// (c) 완료 이벤트는 무료 결제(free=true)로 발행되고 알림 리스너가 보내지 않는다
+		verify(eventPublisher).publishEvent(new PaymentCompletedEvent(ORDER_ID, PAYMENT_PK_ID, true));
 
 		assertThat(response.getOrderId()).isEqualTo(ORDER_ID);
 		assertThat(response.getMerchantUid()).isEqualTo(savedOrder.getMerchantUid());
@@ -458,7 +458,7 @@ class PaymentOrderServiceTest {
 	}
 
 	@Test
-	@DisplayName("무료 이벤트 주문은 원가 0원의 PAID 주문과 free_ 접두사의 0원 Payment 가 저장되고 Result 가 생성되며 완료 이벤트는 amount 0 으로 발행된다")
+	@DisplayName("무료 이벤트 주문은 원가 0원의 PAID 주문과 free_ 접두사의 0원 Payment 가 저장되고 Result 가 생성되며 완료 이벤트는 무료 결제로 발행된다")
 	void createFreeOrder_savesPaidOrderAndZeroPaymentAndCreatesResult() {
 		// given
 		given(userRepository.findByUsername(USERNAME)).willReturn(Optional.of(createUser()));
@@ -504,8 +504,8 @@ class PaymentOrderServiceTest {
 		// (b) Result 생성
 		verify(resultService).createInitialResult(savedPayment, savedOrder);
 
-		// (c) 할인/쿠폰 호출 없음. 완료 이벤트는 amount 0 으로 발행되고 알림 리스너가 0원이면 보내지 않는다
+		// (c) 할인/쿠폰 호출 없음. 완료 이벤트는 무료 결제(free=true)로 발행되고 알림 리스너가 보내지 않는다
 		verifyNoInteractions(discountCodeService, couponRepository);
-		verify(eventPublisher).publishEvent(new PaymentCompletedEvent(ORDER_ID, PAYMENT_PK_ID, 0L));
+		verify(eventPublisher).publishEvent(new PaymentCompletedEvent(ORDER_ID, PAYMENT_PK_ID, true));
 	}
 }

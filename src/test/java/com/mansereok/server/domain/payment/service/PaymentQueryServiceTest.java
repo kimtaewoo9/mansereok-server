@@ -29,6 +29,8 @@ import java.util.Optional;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -282,6 +284,32 @@ class PaymentQueryServiceTest {
 		assertThat(dtos.get(0).getStatus()).isEqualTo("CANCEL_REQUESTED");
 		assertThat(dtos.get(0).getResultStatus()).isEqualTo(ResultStatus.INPUT_REQUIRED);
 		assertThat(dtos.get(0).isRefundable()).isFalse();
+	}
+
+	@ParameterizedTest(name = "[{index}] 결제 번호 {0}, 금액 {1}원")
+	@CsvSource(textBlock = """
+		# 무료 발급 경로가 만든 결제. free_ 로 시작하거나 금액이 0원이다.
+		free_free_1727000000000_ab12cd34,   500
+		free_free_1727000000000_ab12cd34,     0
+		pay_01J000000000000000000000,          0
+		""")
+	@DisplayName("getPayments: 무료 결제는 PAID 이고 정보 입력 전이어도 환불 버튼을 보이지 않는다(환불 API 도 거절한다)")
+	void getPayments_freePayment_isNotRefundable(String impUid, long amount) {
+		// given
+		given(userRepository.findByUsername(USERNAME)).willReturn(Optional.of(user()));
+		Payment payment = TestPayments.payment().id(1L).paymentId(impUid).userId(USER_ID).amount(amount).paid();
+		given(paymentRepository.findAllByUserIdOrderByCreatedAtDesc(USER_ID)).willReturn(List.of(payment));
+		given(resultRepository.findByPaymentIdIn(List.of(1L)))
+			.willReturn(List.of(Result.createInitial(USER_ID, 1L, "상품")));
+
+		// when
+		List<PaymentResponseDto> dtos = paymentQueryService.getPayments(USERNAME);
+
+		// then
+		assertThat(dtos).singleElement().satisfies(dto -> {
+			assertThat(dto.getResultStatus()).isEqualTo(ResultStatus.INPUT_REQUIRED);
+			assertThat(dto.isRefundable()).as("환불 가능 표시").isFalse();
+		});
 	}
 
 	@Test
