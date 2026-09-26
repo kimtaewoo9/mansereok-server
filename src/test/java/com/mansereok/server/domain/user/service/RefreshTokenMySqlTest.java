@@ -166,29 +166,36 @@ class RefreshTokenMySqlTest extends LocalMySqlTest {
 		}
 	}
 
-	@RepeatedTest(value = 20, name = "{displayName} ({currentRepetition}/{totalRepetitions})")
-	@DisplayName("같은 토큰으로 로그아웃과 재발급이 동시에 와도 500 이 되는 예외 없이 끝나고, 끝난 뒤 그 회원에게 쓸 수 있는 토큰이 남지 않는다")
-	void logoutAndRotationAtTheSameTimeLeaveNoUsableToken() {
+	// 두 스레드를 한 순간에 출발시켜도 먼저 만든 스레드가 거의 늘 먼저 잠근다. 로그아웃을 먼저 만들면 재발급이 폐기된 토큰을 보는
+	// 순서만, 재발급을 먼저 만들면 로그아웃이 재발급이 넣은 새 토큰까지 폐기하는 순서만 주로 나와서, 두 순서를 10번씩 돌린다.
+	@RepeatedTest(value = 10, name = "{displayName} ({currentRepetition}/{totalRepetitions})")
+	@DisplayName("같은 토큰으로 로그아웃과 재발급이 동시에 와도(로그아웃 스레드를 먼저 만듦) 500 이 되는 예외 없이 끝나고, 끝난 뒤 그 회원에게 쓸 수 있는 토큰이 남지 않는다")
+	void logoutStartedFirstAndRotationLeaveNoUsableToken() {
 		// given
 		String presented = refreshTokenService.issue(member);
-		List<Callable<Object>> logoutAndRotation = List.of(
-			() -> {
-				refreshTokenService.revoke(presented);
-				return "로그아웃";
-			},
-			() -> refreshTokenService.rotate(presented));
 
 		// when
-		List<CallResult<Object>> results = ConcurrentCalls.runAtTheSameTime(2, logoutAndRotation::get);
+		List<CallResult<Object>> results = ConcurrentCalls.runAtTheSameTime(2,
+			List.of(logoutOf(presented), rotationOf(presented))::get);
 
-		// then: 로그아웃은 늘 성공한다. 재발급은 먼저 잠그면 성공하고, 로그아웃이 먼저 잠그면 폐기된 토큰으로 거절된다.
-		assertThat(results.get(0).error()).as("로그아웃").isNull();
-		assertThat(results.get(1)).as("재발급").satisfiesAnyOf(
-			rotation -> assertThat(rotation.error()).isNull(),
-			rotation -> assertThat(rotation.error())
-				.isInstanceOf(InvalidRefreshTokenException.class)
-				.hasMessage("로그아웃했거나 폐기된 리프레시 토큰입니다. 다시 로그인해주세요."));
-		// then: 재발급이 먼저 커밋했다면 그 새 토큰까지 로그아웃이 폐기했다
+		// then
+		assertLogoutAndRotationEndedWithoutServerError(results.get(0), results.get(1));
+		assertThat(countRowsOfMember("SELECT COUNT(*) FROM refresh_tokens WHERE user_id = ? AND revoked = false"))
+			.as("폐기되지 않은 토큰").isZero();
+	}
+
+	@RepeatedTest(value = 10, name = "{displayName} ({currentRepetition}/{totalRepetitions})")
+	@DisplayName("같은 토큰으로 재발급과 로그아웃이 동시에 와도(재발급 스레드를 먼저 만듦) 500 이 되는 예외 없이 끝나고, 재발급이 먼저 커밋했다면 그 새 토큰까지 폐기되어 쓸 수 있는 토큰이 남지 않는다")
+	void rotationStartedFirstAndLogoutLeaveNoUsableToken() {
+		// given
+		String presented = refreshTokenService.issue(member);
+
+		// when
+		List<CallResult<Object>> results = ConcurrentCalls.runAtTheSameTime(2,
+			List.of(rotationOf(presented), logoutOf(presented))::get);
+
+		// then
+		assertLogoutAndRotationEndedWithoutServerError(results.get(1), results.get(0));
 		assertThat(countRowsOfMember("SELECT COUNT(*) FROM refresh_tokens WHERE user_id = ? AND revoked = false"))
 			.as("폐기되지 않은 토큰").isZero();
 	}
@@ -387,6 +394,31 @@ class RefreshTokenMySqlTest extends LocalMySqlTest {
 	private int countRowsOfMember(String sql) {
 		Integer count = jdbcTemplate.queryForObject(sql, Integer.class, member.getId());
 		return count == null ? 0 : count;
+	}
+
+	private Callable<Object> logoutOf(String token) {
+		return () -> {
+			refreshTokenService.revoke(token);
+			return "로그아웃";
+		};
+	}
+
+	private Callable<Object> rotationOf(String token) {
+		return () -> refreshTokenService.rotate(token);
+	}
+
+	/**
+	 * 로그아웃은 늘 성공한다. 재발급은 먼저 잠그면 성공하고, 로그아웃이 먼저 잠그면 폐기된 토큰으로 거절(401)된다. 어느 쪽도 500 이 되는
+	 * 잠금·행 수 예외가 아니다.
+	 */
+	private static void assertLogoutAndRotationEndedWithoutServerError(CallResult<Object> logout,
+		CallResult<Object> rotation) {
+		assertThat(logout.error()).as("로그아웃").isNull();
+		assertThat(rotation).as("재발급").satisfiesAnyOf(
+			result -> assertThat(result.error()).isNull(),
+			result -> assertThat(result.error())
+				.isInstanceOf(InvalidRefreshTokenException.class)
+				.hasMessage("로그아웃했거나 폐기된 리프레시 토큰입니다. 다시 로그인해주세요."));
 	}
 
 	/**
