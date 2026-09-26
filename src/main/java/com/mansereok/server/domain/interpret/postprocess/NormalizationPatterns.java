@@ -44,6 +44,9 @@ final class NormalizationPatterns {
 	/** 종류를 가리지 않는 연속 공백(줄바꿈 포함). */
 	static final Pattern ANY_WHITESPACE = Pattern.compile("\\s+");
 
+	/** 문장 끝 부호 뒤의 공백. 글을 문장으로 나누는 경계다. {@code 3.2} 처럼 부호 뒤에 공백이 없으면 나누지 않는다. */
+	static final Pattern SENTENCE_BOUNDARY = Pattern.compile("(?<=[.!?])\\s+");
+
 	private NormalizationPatterns() {
 	}
 }
