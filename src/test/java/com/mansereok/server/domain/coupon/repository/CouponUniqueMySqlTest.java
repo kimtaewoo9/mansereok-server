@@ -23,7 +23,7 @@ import org.springframework.dao.DataIntegrityViolationException;
  *
  * <p>쿠폰 받기는 템플릿 행을 잠근 채 이미 받았는지 먼저 확인한다. 이 테스트는 그 잠금과 확인을 거치지 않고 쿠폰 행을 바로 두 번
  * 저장해, 마지막으로 DB 가 막는지와 그 예외를 UNIQUE 위반으로 판별하는지 본다. 쿠폰 받기는 이 판별로 UNIQUE 위반만 "이미 발급받은
- * 쿠폰입니다." 로 바꾼다.
+ * 쿠폰입니다." 로 바꾼다. 쿠폰 받기를 거쳐 그 답과 발급 수 롤백까지 이어지는지는 CouponDownloadUniqueViolationMySqlTest 가 본다.
  *
  * <p>테스트 DB 는 ddl-auto: update 라 엔티티 선언(@Table)대로 UNIQUE 가 생긴다. 운영은 validate 라 같은 이름의 DDL 을 손으로
  * 적용한다. 그래서 여기서 보는 이름과 컬럼 순서가 운영에 적용할 DDL 과 schema.sql 의 기준이 된다. 엔티티와 schema.sql 이 그 이름을

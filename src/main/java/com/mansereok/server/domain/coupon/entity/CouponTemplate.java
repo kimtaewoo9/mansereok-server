@@ -53,7 +53,10 @@ public class CouponTemplate {
 	@ColumnDefault("0")
 	private int currentIssueCount;
 
-	// 1인당 발급 가능 횟수 (보통 1회)
+	// 1인당 발급 가능 횟수. 코드는 이 값을 읽지 않는다. coupons 의 uk_coupons_user_template(user_id, template_id) 때문에
+	// 한 사용자는 한 템플릿의 쿠폰을 한 장만 받을 수 있어 사실상 1로 고정된다. 여기에 2 이상을 넣어도 두 번째 쿠폰은 발급되지 않는다.
+	// 이 값을 살려 여러 장을 주려면 그 UNIQUE 를 먼저 지우고(운영 DDL, schema.sql, Coupon 의 @Table), 쿠폰 받기의 이미 받았는지
+	// 확인을 장수 비교로 바꾼다.
 	private int maxCountPerUser;
 
 	/**

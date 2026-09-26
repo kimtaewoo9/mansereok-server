@@ -28,7 +28,8 @@ import org.junit.jupiter.params.provider.MethodSource;
  * <p>운영은 ddl-auto: validate 인데, validate 는 컬럼이 있는지와 타입만 보고 UNIQUE 이름과 NOT NULL·DEFAULT 는 보지 않는다. 그래서
  * 엔티티에 고정한 제약 이름이나 NOT NULL 이 schema.sql 과 어긋나도 배포 때 드러나지 않는다. 그 어긋남을 기본 테스트에서 잡는다.
  *
- * <p>실제 MySQL 에 그 이름과 컬럼 순서로 걸리는지는 CouponUniqueMySqlTest 가 본다.
+ * <p>실제 MySQL 에 그 이름과 컬럼 순서로 걸리는지는 CouponUniqueMySqlTest 가, 발급 수 칸을 비워 넣으면 실제로 0 이 들어가는지는
+ * CouponTemplateIssueCountMySqlTest 가 본다.
  */
 class PaymentSchemaSqlTest {
 
@@ -86,7 +87,7 @@ class PaymentSchemaSqlTest {
 	}
 
 	@Test
-	@DisplayName("쿠폰 템플릿의 발급 수는 엔티티와 schema.sql 모두 NOT NULL 이고 비워 넣으면 0 이 된다")
+	@DisplayName("쿠폰 템플릿의 발급 수는 엔티티와 schema.sql 모두 NOT NULL DEFAULT 0 으로 선언한다")
 	void issueCountIsNotNullWithZeroDefault() throws NoSuchFieldException {
 		// when
 		Field field = CouponTemplate.class.getDeclaredField("currentIssueCount");

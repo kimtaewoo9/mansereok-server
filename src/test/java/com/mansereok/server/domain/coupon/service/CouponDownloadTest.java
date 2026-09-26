@@ -2,8 +2,11 @@ package com.mansereok.server.domain.coupon.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.catchThrowable;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.BDDMockito.then;
+import static org.mockito.Mockito.never;
 
 import com.mansereok.server.domain.coupon.dto.CouponEventDto;
 import com.mansereok.server.domain.coupon.entity.Coupon;
@@ -29,11 +32,12 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.dao.DataIntegrityViolationException;
 
 /**
- * 쿠폰 받기가 쿠폰 저장에서 난 DB 제약 위반을 어떻게 돌려주는지와, 이벤트 목록의 마감 표시를 확인한다.
+ * 쿠폰 받기가 이미 받은 사용자와 쿠폰 저장에서 난 DB 제약 위반에 무엇을 돌려주는지와, 이벤트 목록의 마감 표시를 확인한다.
  *
  * <p>리포지토리 목은 돌려줄 값과 던질 예외만 정한다. 저장 예외는 Hibernate MySQL 방언과 스프링이 실제로 만드는 모양대로 손으로
  * 만든다. 중복 키(1062)는 ConstraintKind.UNIQUE 를 담고, NOT NULL 위반(1048)은 종류를 적지 않는다. 실제 MySQL 이 이 모양을
- * 만드는지는 CouponUniqueMySqlTest 가 본다.
+ * 만드는지는 CouponUniqueMySqlTest 가, 실제 MySQL 에서 쿠폰 받기를 끝까지 돌려 같은 답과 발급 수 롤백이 나오는지는
+ * CouponDownloadUniqueViolationMySqlTest 가 본다.
  */
 @ExtendWith(MockitoExtension.class)
 class CouponDownloadTest {
@@ -51,6 +55,29 @@ class CouponDownloadTest {
 	@BeforeEach
 	void setUp() {
 		couponService = new CouponService(couponRepository, couponTemplateRepository);
+	}
+
+	@Nested
+	@DisplayName("이미 받은 사용자면")
+	class WhenUserAlreadyHasCoupon {
+
+		@Test
+		@DisplayName("쿠폰을 저장하지 않고 발급 수도 올리지 않은 채 '이미 발급받은 쿠폰입니다.' 결제 예외로 답한다")
+		void rejectsWithoutSavingOrRaisingIssueCount() {
+			// given
+			CouponTemplate template = CouponTemplateFixture.issuableNow().id(TEMPLATE_ID)
+				.maxIssueCount(100).currentIssueCount(5).build();
+			given(couponTemplateRepository.findByIdWithLock(TEMPLATE_ID)).willReturn(Optional.of(template));
+			given(couponRepository.existsByUserIdAndTemplateId(USER_ID, TEMPLATE_ID)).willReturn(true);
+
+			// when
+			Throwable thrown = catchThrowable(() -> couponService.downloadCoupon(USER_ID, TEMPLATE_ID));
+
+			// then
+			assertThat(thrown).isExactlyInstanceOf(PaymentException.class).hasMessage("이미 발급받은 쿠폰입니다.");
+			assertThat(template.getCurrentIssueCount()).as("템플릿의 발급 수").isEqualTo(5);
+			then(couponRepository).should(never()).saveAndFlush(any(Coupon.class));
+		}
 	}
 
 	@Nested
