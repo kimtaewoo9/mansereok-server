@@ -17,14 +17,6 @@ import org.springframework.stereotype.Repository;
 @Repository
 public interface OrderRepository extends JpaRepository<Order, Long> {
 
-	@Query(
-		value = "SELECT * FROM orders WHERE merchant_uid = :merchantUid",
-		nativeQuery = true
-	)
-	Optional<Order> findByMerchantUid(
-		@Param("merchantUid") String merchantUid
-	);
-
 	Optional<Order> findByPaymentPkId(Long paymentPkId);
 
 	@Modifying(clearAutomatically = true)
@@ -38,7 +30,15 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
 	@Query("SELECT o FROM Order o WHERE o.merchantUid = :merchantUid")
 	Optional<Order> findByMerchantUidWithLock(@Param("merchantUid") String merchantUid);
 
-	List<Order> findAllByStatusAndCreatedAtBefore(OrderStatus status, LocalDateTime cutoff);
+	/**
+	 * 만료 스캔용. 상태가 status 이고 cutoff 보다 먼저 만든 주문의 id 만 돌려준다. cutoff 와 같은 시각에 만든 주문은 넣지 않는다.
+	 *
+	 * <p>건별 처리는 id 로 따로 하므로 여기서는 주문 엔티티를 만들지 않는다. (status, created_at) 인덱스에 PK 가 함께 담겨 있어
+	 * 인덱스만 읽고 끝난다.
+	 */
+	@Query("SELECT o.id FROM Order o WHERE o.status = :status AND o.createdAt < :cutoff")
+	List<Long> findIdsByStatusAndCreatedAtBefore(@Param("status") OrderStatus status,
+		@Param("cutoff") LocalDateTime cutoff);
 
 	/**
 	 * 주문 excludedOrderId 말고 이 쿠폰을 쓴 주문 중 상태가 statuses 에 드는 것이 있는지 돌려준다. 할인 복구가 "다른 주문이 아직
