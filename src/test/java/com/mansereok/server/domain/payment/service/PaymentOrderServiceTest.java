@@ -156,7 +156,7 @@ class PaymentOrderServiceTest {
 
 	@Test
 	@DisplayName("주문 생성 시 주문한 사용자·상품 id 와 구매자 이름·이메일이 Order 엔티티에 저장된다")
-	void createOrder_ShouldSaveBuyerInfo() {
+	void createOrder_savesOwnerProductAndBuyerInfo() {
 		// given
 		given(userRepository.findByUsername(USERNAME)).willReturn(Optional.of(createUser()));
 		SubCategory subCategory = paidProduct();
@@ -229,7 +229,7 @@ class PaymentOrderServiceTest {
 
 	@Test
 	@DisplayName("쿠폰 id 를 보낸 주문은 쿠폰으로 계산한 금액으로 저장되고 그 쿠폰이 사용 처리되며 할인 코드 서비스는 호출하지 않는다")
-	void createOrder_withCouponId_usesCouponServiceOnly() {
+	void createOrder_withCouponId_savesCouponPriceAndMarksCouponUsed() {
 		// given
 		Long couponId = 5L;
 		given(userRepository.findByUsername(USERNAME)).willReturn(Optional.of(createUser()));
@@ -408,6 +408,8 @@ class PaymentOrderServiceTest {
 	@Test
 	@DisplayName("100% 정률 쿠폰도 할인가가 1,000원 아래로 내려가지 않아 쿠폰으로는 무료 발급이 거절되고 주문·Payment·Result 도 쿠폰 사용도 남지 않는다")
 	void redeemFreeProduct_withFullPercentageCoupon_isRejected() {
+		// 쿠폰은 100% 여도 1,000원이 남아 할인 코드(100% 면 0원)와 결과가 다르다.
+		// 지금 동작을 고정해 두고, 바꿀 때는 이 테스트를 함께 바꾼다.
 		// given
 		Long couponId = 7L;
 		given(userRepository.findByUsername(USERNAME)).willReturn(Optional.of(createUser()));
