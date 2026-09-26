@@ -15,8 +15,10 @@ import org.springframework.transaction.event.TransactionalEventListener;
  * 메일로 나갔다. {@code AFTER_COMMIT} 이라 커밋된 토큰만 메일로 나간다.
  *
  * <p>EmailService.sendPasswordResetEmail 은 {@code @Async} 라 여기서는 메일 작업을 기본 스레드 풀에 넘기기만 한다. 그 풀이 가득
- * 차면 넘기는 순간 TaskRejectedException 이 난다. 토큰은 이미 커밋됐으므로 요청을 실패로 돌리지 않고 warn 로그만 남긴다. 사용자는
- * 메일이 오지 않으면 다시 요청한다. 로그에는 이메일과 토큰을 남기지 않는다.
+ * 차면 넘기는 순간 TaskRejectedException 이 난다. 이 catch 가 없어도 재설정 요청은 실패하지 않는다. 스프링은 AFTER_COMMIT 리스너를
+ * 커밋이 끝난 뒤(TransactionSynchronization.afterCompletion) 부르고, 거기서 난 예외는 ERROR 로그
+ * ('TransactionSynchronization.afterCompletion threw exception')만 남기고 삼킨다. 풀이 가득 찬 것은 알려진 혼잡이라, 회원 id 만
+ * 담아 warn 으로 남기려고 잡는다. 로그에는 이메일과 토큰을 남기지 않는다. 사용자는 메일이 오지 않으면 다시 요청한다.
  */
 @Component
 @RequiredArgsConstructor

@@ -24,6 +24,7 @@ public class RegisterRequest {
 
 	@NotBlank(message = PasswordRule.REQUIRED_MESSAGE)
 	@Size(min = PasswordRule.MIN_LENGTH, message = PasswordRule.TOO_SHORT_MESSAGE)
+	@MaxUtf8Bytes(value = PasswordRule.MAX_BYTES, message = PasswordRule.TOO_LONG_MESSAGE)
 	private String password;
 
 	private LocalDate birthDate;

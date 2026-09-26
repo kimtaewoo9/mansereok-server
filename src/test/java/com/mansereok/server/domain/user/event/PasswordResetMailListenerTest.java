@@ -54,7 +54,7 @@ class PasswordResetMailListenerTest {
 		willThrow(new TaskRejectedException("기본 스레드 풀이 가득 참"))
 			.given(emailService).sendPasswordResetEmail("reset@example.com", "reset-token-value");
 
-		// when & then: 토큰은 이미 커밋됐으므로 재설정 요청을 실패로 돌리지 않는다
+		// when & then: 커밋 뒤라 잡지 않아도 요청은 실패하지 않는다. 스프링의 ERROR 로그 대신 회원 id 만 담은 warn 로그를 남기는지 본다.
 		assertThatCode(() -> listener.onPasswordResetRequested(EVENT)).doesNotThrowAnyException();
 		assertThat(output.getAll())
 			.contains("비밀번호 재설정 메일을 보내지 못함", "userId=11")

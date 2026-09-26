@@ -136,6 +136,24 @@ public class UserServiceTest {
 			.hasMessageContaining("사용자를 찾을 수 없습니다");
 	}
 
+	@Test
+	@DisplayName("탈퇴 중 사용자 행을 잠그려는데 그사이 다른 요청이 먼저 탈퇴시켜 행이 없으면 404 가 되는 예외이고, 사용자를 지우지도 탈퇴 이벤트를 내지도 않는다")
+	void deleteUser_MemberRowRemovedMeanwhile() {
+		// given
+		User member = User.create("gone@example.com", "탈퇴회원", "encoded-password", "gone@example.com",
+			LocalDate.of(1990, 1, 1), Gender.MALE, true, true, false);
+		member.setId(8L);
+		given(userRepository.findByUsername("gone@example.com")).willReturn(Optional.of(member));
+		given(userRepository.findByIdForUpdate(8L)).willReturn(Optional.empty());
+
+		// when & then
+		assertThatThrownBy(() -> userService.deleteUser("gone@example.com"))
+			.isInstanceOf(EntityNotFoundException.class)
+			.hasMessage("사용자를 찾을 수 없습니다.");
+		then(userRepository).should(never()).delete(any());
+		verifyNoInteractions(eventPublisher);
+	}
+
 	@Nested
 	@DisplayName("회원을 탈퇴시키면")
 	class WhenWithdrawing {
@@ -151,6 +169,8 @@ public class UserServiceTest {
 				Gender.MALE, true, true, false);
 			member.setId(USER_ID);
 			given(userRepository.findByUsername(USERNAME)).willReturn(Optional.of(member));
+			// 재설정 토큰을 지우기 전에 잠그는 사용자 행
+			given(userRepository.findByIdForUpdate(USER_ID)).willReturn(Optional.of(member));
 		}
 
 		@Test
@@ -490,6 +510,7 @@ public class UserServiceTest {
 			User member = emailSignupMember();
 			member.setId(7L);
 			given(userRepository.findByUsername(EMAIL)).willReturn(Optional.of(member));
+			given(userRepository.findByIdForUpdate(7L)).willReturn(Optional.of(member));
 
 			// when
 			userService.deleteUser(EMAIL);
@@ -572,11 +593,21 @@ public class UserServiceTest {
 			assertThat(saved.getValue().getExpiryDate()).isEqualTo(LocalDateTime.of(2026, 9, 26, 15, 0));
 		}
 
-		@Test
-		@DisplayName("토큰 행이 있으면 새로 넣지 않고 그 행의 토큰 값을 바꾸고 만료 시각을 지금부터 15분 뒤로 옮긴다")
-		void reissuesExistingTokenInsteadOfInserting() {
-			// given: 30분 전에 요청해 이미 만료된 토큰
-			PasswordResetToken existing = new PasswordResetToken(member, LocalDateTime.of(2026, 9, 26, 14, 15));
+		@ParameterizedTest(name = "[{index}] {0} 에 발급한 토큰 → 만료 시각 {1}, 값이 그대로 {2}")
+		@CsvSource(textBlock = """
+			# 발급 시각,       요청 뒤 만료 시각,   토큰 값이 그대로인지
+			# 만료 14:30. 이미 만료돼 값을 바꾸고 지금(14:45)부터 15분 뒤로 옮긴다.
+			2026-09-26T14:15, 2026-09-26T15:00, false
+			# 만료 14:45. 만료 시각이 지금과 같으면 만료로 본다.
+			2026-09-26T14:30, 2026-09-26T15:00, false
+			# 만료 14:46. 아직 쓸 수 있어 값도 만료 시각도 그대로 둔다.
+			2026-09-26T14:31, 2026-09-26T14:46, true
+			""")
+		@DisplayName("토큰 행이 있으면 새로 넣지 않고, 만료됐을 때만 그 행의 토큰 값을 바꾸고 만료 시각을 지금부터 15분 뒤로 옮긴다")
+		void reissuesExistingTokenOnlyWhenExpired(LocalDateTime issuedAt, LocalDateTime expectedExpiry,
+			boolean expectedSameValue) {
+			// given
+			PasswordResetToken existing = new PasswordResetToken(member, issuedAt);
 			String oldValue = existing.getToken();
 			given(passwordResetTokenRepository.findByUserId(USER_ID)).willReturn(Optional.of(existing));
 
@@ -584,9 +615,25 @@ public class UserServiceTest {
 			userService.requestPasswordReset(EMAIL);
 
 			// then
-			assertThat(existing.getToken()).as("앞서 보낸 링크의 토큰 값은 더 이상 없다").isNotEqualTo(oldValue);
-			assertThat(existing.getExpiryDate()).isEqualTo(LocalDateTime.of(2026, 9, 26, 15, 0));
+			assertThat(existing.getExpiryDate()).isEqualTo(expectedExpiry);
+			assertThat(existing.getToken().equals(oldValue)).as("앞서 보낸 링크의 토큰 값이 그대로인지")
+				.isEqualTo(expectedSameValue);
 			then(passwordResetTokenRepository).should(never()).save(any());
+		}
+
+		@Test
+		@DisplayName("아직 만료 전인 토큰 행이 있으면 앞서 보낸 링크와 같은 토큰을 담은 이벤트를 발행해 같은 링크를 다시 보낸다")
+		void publishesSameTokenWhenNotExpired() {
+			// given: 10분 전에 요청해 5분 더 쓸 수 있는 토큰
+			PasswordResetToken existing = new PasswordResetToken(member, LocalDateTime.of(2026, 9, 26, 14, 35));
+			String mailedBefore = existing.getToken();
+			given(passwordResetTokenRepository.findByUserId(USER_ID)).willReturn(Optional.of(existing));
+
+			// when
+			userService.requestPasswordReset(EMAIL);
+
+			// then
+			then(eventPublisher).should().publishEvent(new PasswordResetRequestedEvent(USER_ID, EMAIL, mailedBefore));
 		}
 
 		@Test
@@ -630,6 +677,7 @@ public class UserServiceTest {
 			// given
 			String token = givenStoredToken(ISSUED_TEN_MINUTES_AGO);
 			given(passwordEncoder.encode("new-password")).willReturn("new-hash");
+			givenMemberRowLocked();
 			given(passwordResetTokenRepository.consume(token, NOW)).willReturn(1);
 
 			// when
@@ -645,6 +693,7 @@ public class UserServiceTest {
 			// given
 			String token = givenStoredToken(ISSUED_TEN_MINUTES_AGO);
 			given(passwordEncoder.encode("new-password")).willReturn("new-hash");
+			givenMemberRowLocked();
 			given(passwordResetTokenRepository.consume(token, NOW)).willReturn(1);
 
 			// when
@@ -655,19 +704,34 @@ public class UserServiceTest {
 		}
 
 		@Test
-		@DisplayName("그사이 다른 요청이 토큰을 먼저 써서 조건부 DELETE 가 0 이면 400 이고 비밀번호와 리프레시 토큰은 그대로다")
+		@DisplayName("그사이 다른 요청이 토큰을 먼저 써서 조건부 DELETE 가 0 이면 400 이고 비밀번호는 그대로다")
 		void rejectsTokenAlreadyConsumed() {
 			// given
 			String token = givenStoredToken(ISSUED_TEN_MINUTES_AGO);
 			given(passwordEncoder.encode("new-password")).willReturn("new-hash");
+			givenMemberRowLocked();
 			given(passwordResetTokenRepository.consume(token, NOW)).willReturn(0);
 
-			// when & then
+			// when & then: 토큰을 쓰기 전에 한 리프레시 토큰 폐기는 예외로 롤백된다(PasswordResetMySqlTest 가 본다)
 			assertThatThrownBy(() -> userService.resetPassword(token, "new-password"))
 				.isInstanceOf(IllegalArgumentException.class)
 				.hasMessage("이미 사용되었거나 만료된 토큰입니다.");
 			assertThat(member.getPassword()).isEqualTo("old-hash");
-			then(refreshTokenRepository).should(never()).revokeAllUserTokens(any());
+		}
+
+		@Test
+		@DisplayName("그사이 회원이 탈퇴해 사용자 행이 없으면 400 '유효하지 않은 토큰입니다.' 이고 토큰을 쓰지 않는다")
+		void rejectsWhenMemberWithdrewMeanwhile() {
+			// given
+			String token = givenStoredToken(ISSUED_TEN_MINUTES_AGO);
+			given(passwordEncoder.encode("new-password")).willReturn("new-hash");
+			given(userRepository.findByIdForUpdate(12L)).willReturn(Optional.empty());
+
+			// when & then
+			assertThatThrownBy(() -> userService.resetPassword(token, "new-password"))
+				.isInstanceOf(IllegalArgumentException.class)
+				.hasMessage("유효하지 않은 토큰입니다.");
+			then(passwordResetTokenRepository).should(never()).consume(anyString(), any());
 		}
 
 		@Test
@@ -683,6 +747,7 @@ public class UserServiceTest {
 			assertThat(member.getPassword()).isEqualTo("old-hash");
 			then(passwordResetTokenRepository).should(never()).consume(anyString(), any());
 			then(passwordResetTokenRepository).should(never()).delete(any());
+			then(refreshTokenRepository).should(never()).revokeAllUserTokens(any());
 		}
 
 		@Test
@@ -695,6 +760,13 @@ public class UserServiceTest {
 			assertThatThrownBy(() -> userService.resetPassword("unknown-token", "new-password"))
 				.isInstanceOf(IllegalArgumentException.class)
 				.hasMessage("유효하지 않은 토큰입니다.");
+		}
+
+		/**
+		 * 재설정 토큰을 쓰기 전에 잠그는 사용자 행이 아직 있게 한다.
+		 */
+		private void givenMemberRowLocked() {
+			given(userRepository.findByIdForUpdate(12L)).willReturn(Optional.of(member));
 		}
 
 		/**

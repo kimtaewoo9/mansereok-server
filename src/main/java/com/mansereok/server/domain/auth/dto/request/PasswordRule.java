@@ -10,9 +10,19 @@ public final class PasswordRule {
 
 	public static final int MIN_LENGTH = 6;
 
+	/**
+	 * 비밀번호를 UTF-8 로 바꾼 바이트 수의 상한. BCryptPasswordEncoder.encode 는 72바이트를 넘는 비밀번호에
+	 * IllegalArgumentException("password cannot be more than 72 bytes")을 던지고, 그 영어 문구가 400 본문에 그대로 나간다.
+	 * 입구에서 먼저 막는다. 영문·숫자는 한 글자가 1바이트, 한글은 3바이트다.
+	 */
+	public static final int MAX_BYTES = 72;
+
 	public static final String REQUIRED_MESSAGE = "비밀번호는 필수입니다";
 
 	public static final String TOO_SHORT_MESSAGE = "비밀번호는 최소 " + MIN_LENGTH + "자 이상이어야 합니다.";
+
+	public static final String TOO_LONG_MESSAGE =
+		"비밀번호는 " + MAX_BYTES + "바이트(영문·숫자 " + MAX_BYTES + "자, 한글 " + MAX_BYTES / 3 + "자)까지 입력할 수 있습니다.";
 
 	private PasswordRule() {
 	}

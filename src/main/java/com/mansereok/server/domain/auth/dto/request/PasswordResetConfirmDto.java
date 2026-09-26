@@ -12,6 +12,7 @@ public record PasswordResetConfirmDto(
 
 	@NotBlank(message = PasswordRule.REQUIRED_MESSAGE)
 	@Size(min = PasswordRule.MIN_LENGTH, message = PasswordRule.TOO_SHORT_MESSAGE)
+	@MaxUtf8Bytes(value = PasswordRule.MAX_BYTES, message = PasswordRule.TOO_LONG_MESSAGE)
 	String newPassword
 ) {
 

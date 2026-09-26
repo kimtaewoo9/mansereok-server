@@ -15,11 +15,14 @@ import com.mansereok.server.domain.user.service.RefreshTokenService;
 import com.mansereok.server.domain.user.service.UserService;
 import com.mansereok.server.global.exception.GlobalExceptionHandler;
 import com.mansereok.server.global.exception.RequestErrorExceptionHandler;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.NullAndEmptySource;
 import org.junit.jupiter.params.provider.NullSource;
 import org.junit.jupiter.params.provider.ValueSource;
@@ -30,8 +33,8 @@ import org.springframework.test.web.servlet.ResultActions;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 /**
- * 비밀번호 재설정 두 API 가 요청 본문을 입구에서 검사하는지 확인한다. 새 비밀번호는 가입과 같은 규칙(비어 있지 않고 6자 이상)을
- * 따르고, 규칙을 어긴 요청은 400 VALIDATION_ERROR 로 끝나 UserService 까지 가지 않는다.
+ * 비밀번호 재설정 두 API 가 요청 본문을 입구에서 검사하는지 확인한다. 새 비밀번호는 가입과 같은 규칙(비어 있지 않고 6자 이상,
+ * UTF-8 로 72바이트 이하)을 따르고, 규칙을 어긴 요청은 400 VALIDATION_ERROR 로 끝나 UserService 까지 가지 않는다.
  *
  * <p>운영과 같게 두 예외 처리기를 등록한 standalone MockMvc 로 부른다. UserService 는 목이다.
  */
@@ -76,6 +79,41 @@ class PasswordResetInputValidationTest {
 			confirm(new PasswordResetConfirmDto("reset-token", newPassword))
 				.andExpect(status().isOk());
 			then(userService).should().resetPassword("reset-token", newPassword);
+		}
+
+		@ParameterizedTest(name = "[{index}] {0} → 400")
+		@MethodSource("passwordsOverBcryptLimit")
+		@DisplayName("새 비밀번호가 UTF-8 로 72바이트를 넘으면 BCrypt 의 영어 오류 문구 대신 한도를 알려 주는 400 VALIDATION_ERROR 이고 서비스를 부르지 않는다")
+		void rejectsPasswordOverBcryptLimit(String description, String newPassword) throws Exception {
+			confirm(new PasswordResetConfirmDto("reset-token", newPassword))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.errorCode").value("VALIDATION_ERROR"))
+				.andExpect(jsonPath("$.errors.newPassword")
+					.value("비밀번호는 72바이트(영문·숫자 72자, 한글 24자)까지 입력할 수 있습니다."));
+			verifyNoInteractions(userService);
+		}
+
+		static Stream<Arguments> passwordsOverBcryptLimit() {
+			return Stream.of(
+				Arguments.of("영문 73자(73바이트)", "a".repeat(73)),
+				Arguments.of("한글 25자(75바이트)", "가".repeat(25)),
+				// 글자 수는 72자라 글자 수만 세면 통과한다
+				Arguments.of("영문 71자와 한글 1자(72자, 74바이트)", "a".repeat(71) + "가"));
+		}
+
+		@ParameterizedTest(name = "[{index}] {0} → 200")
+		@MethodSource("passwordsAtBcryptLimit")
+		@DisplayName("새 비밀번호가 UTF-8 로 딱 72바이트면 200 이고 새 비밀번호를 그대로 서비스에 넘긴다")
+		void acceptsPasswordAtBcryptLimit(String description, String newPassword) throws Exception {
+			confirm(new PasswordResetConfirmDto("reset-token", newPassword))
+				.andExpect(status().isOk());
+			then(userService).should().resetPassword("reset-token", newPassword);
+		}
+
+		static Stream<Arguments> passwordsAtBcryptLimit() {
+			return Stream.of(
+				Arguments.of("영문 72자(72바이트)", "a".repeat(72)),
+				Arguments.of("한글 24자(72바이트)", "가".repeat(24)));
 		}
 
 		@ParameterizedTest(name = "[{index}] 토큰 [{0}] → 400")
