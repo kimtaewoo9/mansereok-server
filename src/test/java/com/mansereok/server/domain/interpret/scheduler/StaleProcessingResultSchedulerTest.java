@@ -2,8 +2,10 @@ package com.mansereok.server.domain.interpret.scheduler;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
+import static org.mockito.Mockito.never;
 
 import com.mansereok.server.domain.interpret.client.OpenAiProperties;
 import com.mansereok.server.domain.interpret.repository.CompatibilityResultRepository;
@@ -13,6 +15,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -31,12 +34,13 @@ import org.springframework.dao.QueryTimeoutException;
  *
  * <ol>
  *   <li>되돌리는 기준 시각은 주입된 Clock 의 "지금 - staleAfter" 이고, 되돌린 행의 변경 시각은 그 "지금" 이다.</li>
+ *   <li>대상 ID 를 먼저 읽고 한 행씩 되돌린다. 대상이 없으면 UPDATE 를 보내지 않는다.</li>
  *   <li>한 표에서 실패해도 예외를 밖으로 던지지 않고 다른 표를 되돌린다.</li>
  *   <li>staleAfter 가 OpenAI 호출 한 건이 가장 오래 걸리는 시간보다 길지 않으면 애플리케이션이 뜨지 않는다.</li>
  * </ol>
  *
- * <p>조건부 UPDATE 가 어떤 행을 되돌리는지는 DB 가 정하므로 ResultStartOnceMySqlTest 가 실제 MySQL 로 본다. 여기서는 리포지토리에
- * 넘기는 두 시각만 본다.
+ * <p>조건부 UPDATE 가 어떤 행을 되돌리는지, 도는 해석의 저장과 교착하지 않는지는 DB 가 정하므로 ResultStartOnceMySqlTest 가 실제
+ * MySQL 로 본다. 여기서는 리포지토리에 넘기는 ID 와 두 시각만 본다.
  */
 @ExtendWith(MockitoExtension.class)
 class StaleProcessingResultSchedulerTest {
@@ -66,13 +70,34 @@ class StaleProcessingResultSchedulerTest {
 		void revertsBothTablesWithClockTimes(Duration staleAfter, LocalDateTime expectedStaleBefore) {
 			// given
 			StaleProcessingResultScheduler scheduler = schedulerWith(staleAfter);
+			given(resultRepository.findIdsProcessingUpdatedBefore(expectedStaleBefore)).willReturn(List.of(10L, 11L));
+			given(compatibilityResultRepository.findIdsProcessingUpdatedBefore(expectedStaleBefore))
+				.willReturn(List.of(20L));
 
 			// when
 			scheduler.revertStaleProcessingResults();
 
 			// then
-			then(resultRepository).should().revertProcessingUpdatedBefore(expectedStaleBefore, NOW);
-			then(compatibilityResultRepository).should().revertProcessingUpdatedBefore(expectedStaleBefore, NOW);
+			then(resultRepository).should().revertIfProcessingUpdatedBefore(10L, expectedStaleBefore, NOW);
+			then(resultRepository).should().revertIfProcessingUpdatedBefore(11L, expectedStaleBefore, NOW);
+			then(compatibilityResultRepository).should().revertIfProcessingUpdatedBefore(20L, expectedStaleBefore, NOW);
+		}
+
+		@Test
+		@DisplayName("멈춘 결과가 없으면 되돌리는 UPDATE 를 보내지 않는다")
+		void sendsNoUpdateWhenNothingIsStale() {
+			// given
+			StaleProcessingResultScheduler scheduler = schedulerWith(Duration.ofMinutes(60));
+			LocalDateTime staleBefore = LocalDateTime.of(2026, 9, 26, 8, 0);
+			given(resultRepository.findIdsProcessingUpdatedBefore(staleBefore)).willReturn(List.of());
+			given(compatibilityResultRepository.findIdsProcessingUpdatedBefore(staleBefore)).willReturn(List.of());
+
+			// when
+			scheduler.revertStaleProcessingResults();
+
+			// then
+			then(resultRepository).should(never()).revertIfProcessingUpdatedBefore(any(), any(), any());
+			then(compatibilityResultRepository).should(never()).revertIfProcessingUpdatedBefore(any(), any(), any());
 		}
 
 		@Test
@@ -81,12 +106,14 @@ class StaleProcessingResultSchedulerTest {
 			// given
 			StaleProcessingResultScheduler scheduler = schedulerWith(Duration.ofMinutes(60));
 			LocalDateTime staleBefore = LocalDateTime.of(2026, 9, 26, 8, 0);
-			given(resultRepository.revertProcessingUpdatedBefore(staleBefore, NOW))
+			given(resultRepository.findIdsProcessingUpdatedBefore(staleBefore)).willReturn(List.of(10L));
+			given(resultRepository.revertIfProcessingUpdatedBefore(10L, staleBefore, NOW))
 				.willThrow(new QueryTimeoutException("잠금 대기 시간 초과"));
+			given(compatibilityResultRepository.findIdsProcessingUpdatedBefore(staleBefore)).willReturn(List.of(20L));
 
 			// when & then
 			assertThatCode(scheduler::revertStaleProcessingResults).doesNotThrowAnyException();
-			then(compatibilityResultRepository).should().revertProcessingUpdatedBefore(staleBefore, NOW);
+			then(compatibilityResultRepository).should().revertIfProcessingUpdatedBefore(20L, staleBefore, NOW);
 		}
 	}
 

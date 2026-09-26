@@ -57,21 +57,35 @@ public interface ResultRepository extends JpaRepository<Result, Long> {
 	Optional<Result> findByPaymentIdForUpdate(@Param("paymentId") Long paymentId);
 
 	/**
-	 * 해석을 staleBefore 보다 전에 시작해 아직 해석 중(PROCESSING)인 결과를 정보 입력 대기(INPUT_REQUIRED)로 되돌리고, 되돌린 행
-	 * 수를 돌려준다. 해석 중인 결과의 updated_at 은 해석을 시작한 시각이다(Result.onUpdate). 배포로 잘리거나 대기열에서 버려진 해석을
-	 * 사용자가 다시 시작하거나 환불받을 수 있게 한다.
+	 * 해석을 staleBefore 보다 전에 시작해 아직 해석 중(PROCESSING)인 결과의 ID 를 잠그지 않고 읽는다. 해석 중인 결과의 updated_at 은
+	 * 해석을 시작한 시각이다(Result.onUpdate). idx_results_status_updated_at 으로 해당 범위만 훑는다.
 	 *
-	 * <p>상태 조건을 UPDATE 에 함께 걸어, 그사이 해석이 끝나 완료(COMPLETED)가 된 행은 건드리지 않는다. 해석 저장과 겹치면 그 행
-	 * 잠금이 풀리기를 기다린 뒤 최신 상태로 다시 판단한다. 되돌린 뒤 늦게 끝난 해석은 시작 시각이 달라져 결과를 쓰지 않는다.
-	 * idx_results_status_updated_at 으로 해당 범위만 훑는다. 따로 불려도 되도록 자기 트랜잭션을 연다.
+	 * <p>되돌리기를 이 범위에 대한 UPDATE 한 문장으로 하면, InnoDB 가 범위 바로 뒤의 행(가장 먼저 시작한, 아직 도는 해석)까지 인덱스와
+	 * 행 잠금을 걸려 한다. 그 행의 결과 저장이 행을 잠근 채 인덱스 칸을 바꾸려 하면 서로를 기다려 교착이 난다. 그래서 대상은 잠그지 않고
+	 * 읽고, 되돌리기는 {@link #revertIfProcessingUpdatedBefore} 로 한 행씩 기본 키로 한다.
+	 */
+	@Query("SELECT r.id FROM Result r"
+		+ " WHERE r.status = com.mansereok.server.domain.interpret.entity.ResultStatus.PROCESSING"
+		+ " AND r.updatedAt < :staleBefore")
+	List<Long> findIdsProcessingUpdatedBefore(@Param("staleBefore") LocalDateTime staleBefore);
+
+	/**
+	 * 결과 id 가 아직 해석 중이고 해석을 staleBefore 보다 전에 시작했으면 정보 입력 대기(INPUT_REQUIRED)로 되돌리고, 되돌린 행 수(0
+	 * 또는 1)를 돌려준다. 배포로 잘리거나 대기열에서 버려진 해석을 사용자가 다시 시작하거나 환불받을 수 있게 한다.
+	 *
+	 * <p>{@link #findIdsProcessingUpdatedBefore} 로 읽은 뒤 그사이 해석이 끝나 완료(COMPLETED)가 됐거나 다시 시작된 행은 조건에
+	 * 걸려 건드리지 않는다. 해석 저장과 겹치면 그 행 잠금이 풀리기를 기다린 뒤 최신 상태로 다시 판단한다. 되돌린 뒤 늦게 끝난 해석은 시작
+	 * 시각이 달라져 결과를 쓰지 않는다. 기본 키로 그 행 하나만 잠그고, 한 번에 한 행만 잠그므로 다른 트랜잭션과 서로 기다릴 일이 없다.
+	 * 따로 불려도 되도록 자기 트랜잭션을 연다.
 	 */
 	@Transactional
 	@Modifying(flushAutomatically = true, clearAutomatically = true)
 	@Query("UPDATE Result r"
 		+ " SET r.status = com.mansereok.server.domain.interpret.entity.ResultStatus.INPUT_REQUIRED, r.updatedAt = :now"
-		+ " WHERE r.status = com.mansereok.server.domain.interpret.entity.ResultStatus.PROCESSING"
+		+ " WHERE r.id = :id"
+		+ " AND r.status = com.mansereok.server.domain.interpret.entity.ResultStatus.PROCESSING"
 		+ " AND r.updatedAt < :staleBefore")
-	int revertProcessingUpdatedBefore(@Param("staleBefore") LocalDateTime staleBefore,
+	int revertIfProcessingUpdatedBefore(@Param("id") Long id, @Param("staleBefore") LocalDateTime staleBefore,
 		@Param("now") LocalDateTime now);
 
 	@Transactional

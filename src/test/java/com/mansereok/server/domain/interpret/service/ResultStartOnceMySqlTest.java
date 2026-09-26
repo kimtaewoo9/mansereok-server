@@ -3,6 +3,7 @@ package com.mansereok.server.domain.interpret.service;
 import static java.util.concurrent.TimeUnit.MILLISECONDS;
 import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.catchThrowable;
 import static org.assertj.core.api.Assumptions.assumeThat;
@@ -72,6 +73,8 @@ class ResultStartOnceMySqlTest extends InterpretationMySqlTest {
 		ZoneId.of("Asia/Seoul"));
 	private static final LocalDateTime NOW = LocalDateTime.of(2100, 1, 1, 9, 0);
 	private static final LocalDateTime SEVENTY_MINUTES_AGO = LocalDateTime.of(2100, 1, 1, 7, 50);
+	// 되돌리기 기준(60분)을 넘기지 않아 아직 도는 해석이 시작한 시각.
+	private static final LocalDateTime FIFTY_MINUTES_AGO = LocalDateTime.of(2100, 1, 1, 8, 10);
 	// 되돌린 뒤 다시 시작하는 순서에서, 먼저 시작한 해석(A)이 해석을 시작한 시각. 되돌리기 기준(60분)을 넘긴다.
 	private static final LocalDateTime FIRST_STARTED_AT = SEVENTY_MINUTES_AGO;
 
@@ -296,6 +299,46 @@ class ResultStartOnceMySqlTest extends InterpretationMySqlTest {
 				// then
 				assertThat(jdbcTemplate.queryForMap("SELECT status, interpretation FROM results WHERE payment_id = ?",
 					paymentId)).isEqualTo(Map.of("status", "COMPLETED", "interpretation", "늦게 끝난 본문"));
+			} finally {
+				releaseSave.countDown();
+				executor.shutdown();
+				assertThat(executor.awaitTermination(60, SECONDS)).as("저장과 되돌리기가 끝났다").isTrue();
+			}
+		}
+
+		/**
+		 * 되돌리기를 범위 UPDATE 한 문장으로 하던 때는, InnoDB 가 범위 바로 뒤의 행(아직 도는 해석 중 가장 먼저 시작한 것)의 인덱스
+		 * 칸을 잠그고 그 행 잠금을 기다렸다. 그 행의 결과 저장은 행을 잠근 채 상태를 바꾸며 그 인덱스 칸을 기다려 둘이 교착했다. 지금은
+		 * 대상 ID 를 잠그지 않고 읽으므로 되돌리기 대상이 아닌 행은 잠그지도 기다리지도 않는다.
+		 */
+		@Test
+		@DisplayName("아직 도는 해석의 결과 저장이 행을 잠그고 있을 때 되돌리기가 돌아도 그 행을 기다리지 않고 끝나며, 저장은 교착 없이 COMPLETED 로 끝난다")
+		void doesNotWaitForSaveOfRunningInterpretation() throws Exception {
+			// given: 되돌리기 기준을 넘기지 않은 해석 중 결과. 저장은 행을 잠가 읽고 엔티티만 바꾼 채 멈춘다(UPDATE 는 커밋 때 나간다).
+			Long paymentId = runKey + 1;
+			Long resultId = saveSajuUpdatedAt(paymentId, ResultStatus.PROCESSING, FIFTY_MINUTES_AGO);
+			assumeNoProcessingRowsOfOtherRuns();
+			CountDownLatch rowLockedBeforeUpdate = new CountDownLatch(1);
+			CountDownLatch releaseSave = new CountDownLatch(1);
+			ExecutorService executor = Executors.newFixedThreadPool(2);
+			try {
+				Future<?> save = executor.submit(() -> transactionTemplate.executeWithoutResult(status -> {
+					sajuResultService.saveFinalResult(resultId, FIFTY_MINUTES_AGO, "제때 끝난 본문", "제때 끝난 요약");
+					rowLockedBeforeUpdate.countDown();
+					awaitLatch(releaseSave);
+				}));
+				assertThat(rowLockedBeforeUpdate.await(10, SECONDS)).as("저장이 행을 잠갔다").isTrue();
+
+				// when
+				Future<?> revert = executor.submit(() -> staleProcessingScheduler().revertStaleProcessingResults());
+
+				// then
+				assertThatCode(() -> revert.get(5, SECONDS)).as("되돌리기가 저장 트랜잭션을 기다리지 않고 끝난다")
+					.doesNotThrowAnyException();
+				releaseSave.countDown();
+				assertThatCode(() -> save.get(10, SECONDS)).as("저장이 교착 없이 끝난다").doesNotThrowAnyException();
+				assertThat(jdbcTemplate.queryForObject("SELECT status FROM results WHERE payment_id = ?", String.class,
+					paymentId)).isEqualTo("COMPLETED");
 			} finally {
 				releaseSave.countDown();
 				executor.shutdown();

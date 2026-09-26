@@ -4,7 +4,9 @@ import com.mansereok.server.domain.interpret.repository.CompatibilityResultRepos
 import com.mansereok.server.domain.interpret.repository.ResultRepository;
 import java.time.Clock;
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.function.IntSupplier;
+import java.util.function.ToIntFunction;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -17,7 +19,9 @@ import org.springframework.stereotype.Component;
  * 중이던 해석과 대기열의 해석이 버려지면, 그 결과를 되돌릴 코드가 돌지 않아 PROCESSING 이 풀리지 않는다. 사용자는 재시도도 환불도
  * 못 한다. 이 작업이 그런 결과를 주기적으로 찾아 되돌린다.
  *
- * <p>되돌리기는 표마다 조건부 UPDATE 한 번이다. 같은 순간에 해석이 끝나 완료(COMPLETED)가 된 결과는 상태 조건에 걸려 그대로
+ * <p>되돌리기는 표마다 두 단계다. 오래 멈춘 결과의 ID 를 잠그지 않고 읽은 뒤, 한 행씩 기본 키로 조건부 UPDATE 를 보낸다. 범위
+ * UPDATE 한 문장으로 하면 범위 바로 뒤의 아직 도는 해석까지 잠그려 해 그 해석의 결과 저장과 교착한다(자세한 내용은
+ * ResultRepository.findIdsProcessingUpdatedBefore). 읽은 뒤 같은 순간에 해석이 끝나 완료(COMPLETED)가 된 결과는 상태 조건에 걸려 그대로
  * 남는다. 되돌리기는 updated_at 을 지금으로 바꾸므로, 되돌린 뒤에 늦게 끝난 해석은 자기가 해석을 시작한 시각이 결과에 남은 값과
  * 달라 결과를 쓰지 않는다(SajuResultService). 그사이 사용자가 같은 결제로 해석을 다시 시작했어도 그 결과를 덮어쓰거나 되돌리지 않는다.
  */
@@ -46,10 +50,21 @@ public class StaleProcessingResultScheduler {
 		LocalDateTime now = LocalDateTime.now(clock);
 		LocalDateTime staleBefore = now.minus(properties.staleAfter());
 
-		revertAndLog("사주 결과", staleBefore,
-			() -> resultRepository.revertProcessingUpdatedBefore(staleBefore, now));
-		revertAndLog("궁합 결과", staleBefore,
-			() -> compatibilityResultRepository.revertProcessingUpdatedBefore(staleBefore, now));
+		revertAndLog("사주 결과", staleBefore, () -> revertEach(
+			resultRepository.findIdsProcessingUpdatedBefore(staleBefore),
+			id -> resultRepository.revertIfProcessingUpdatedBefore(id, staleBefore, now)));
+		revertAndLog("궁합 결과", staleBefore, () -> revertEach(
+			compatibilityResultRepository.findIdsProcessingUpdatedBefore(staleBefore),
+			id -> compatibilityResultRepository.revertIfProcessingUpdatedBefore(id, staleBefore, now)));
+	}
+
+	/** 결과마다 따로 되돌리고, 실제로 되돌린 행 수를 더해 돌려준다. 한 행씩 자기 트랜잭션으로 되돌린다. */
+	private static int revertEach(List<Long> ids, ToIntFunction<Long> revertOne) {
+		int reverted = 0;
+		for (Long id : ids) {
+			reverted += revertOne.applyAsInt(id);
+		}
+		return reverted;
 	}
 
 	private void revertAndLog(String kind, LocalDateTime staleBefore, IntSupplier revert) {
