@@ -1,8 +1,7 @@
--- 테이블 전체 삭제 (개발 초기 안전을 위해 사용)
-DROP TABLE IF EXISTS `refresh_tokens`;
-DROP TABLE IF EXISTS `personal_info`;
-DROP TABLE IF EXISTS `manses`;
-DROP TABLE IF EXISTS `users`;
+-- 참고용 DDL 이다. 운영 표가 어떤 모양이어야 하는지 사람이 읽고 대조하는 데 쓴다.
+-- 애플리케이션은 이 파일을 실행하지 않는다(spring.sql.init 은 MySQL 에 돌지 않고, 운영·개발은 ddl-auto: validate 다).
+-- 운영이나 개발 DB 에 이 파일을 통째로 실행하지 않는다. 바뀐 부분만 ALTER 문으로 따로 만들어 손으로 적용한다.
+-- validate 는 표와 컬럼만 확인하고 UNIQUE·인덱스는 보지 않으므로, 운영에 인덱스가 있는지는 information_schema.STATISTICS 로 확인한다.
 
 -- 1. 사용자 정보 테이블 (users)
 -- users·refresh_tokens·password_reset_tokens 는 엔티티 선언(@Table)과 같은 컬럼, UNIQUE·인덱스 이름으로 적는다(AuthSchemaSqlTest 가
@@ -223,18 +222,47 @@ CREATE TABLE `orders` (
                           FOREIGN KEY (`user_id`) REFERENCES `users`(`id`) ON DELETE SET NULL
 );
 
--- subcategories 테이블
+-- subcategories 테이블 (상품)
 CREATE TABLE `subcategories` (
                                  `id` BIGINT NOT NULL AUTO_INCREMENT,
                                  `title` VARCHAR(255) NOT NULL,
+                                 `subtitle` VARCHAR(255),
                                  `description` TEXT,
                                  `icon` VARCHAR(255),
                                  `price` INT NOT NULL,
+                                 `original_price` INT,
                                  `category_id` BIGINT,
+    -- created_at·updated_at 은 엔티티가 매핑하지 않는다. INSERT 때 DB 가 기본값으로 채운다.
                                  `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
                                  `updated_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-                                 PRIMARY KEY (`id`)
+                                 PRIMARY KEY (`id`),
+    -- 상품 목록 API(GET /api/v1/products?categoryId=)의 WHERE category_id = ?
+                                 INDEX `idx_subcategories_category_id` (`category_id`)
 );
+
+-- reviews 테이블 (상품 리뷰). UNIQUE·인덱스 이름은 Review 엔티티의 @Table 선언과 같다.
+CREATE TABLE `reviews` (
+                           `id` BIGINT NOT NULL AUTO_INCREMENT,
+                           `user_id` BIGINT NOT NULL,
+                           `sub_category_id` BIGINT NOT NULL,
+                           `order_id` BIGINT NOT NULL,
+                           `content` TEXT NOT NULL,
+                           `user_name` VARCHAR(255),
+                           `user_email` VARCHAR(255),
+                           `is_deleted` BOOLEAN NOT NULL DEFAULT FALSE, -- 관리자가 지운 리뷰(논리적 삭제)
+                           `created_at` DATETIME(6),
+                           `updated_at` DATETIME(6),
+
+                           PRIMARY KEY (`id`),
+    -- 주문 하나에 리뷰 하나. 같은 주문으로 동시에 들어온 두 번째 INSERT 를 막는다.
+                           UNIQUE KEY `uk_reviews_order_id` (`order_id`),
+    -- 상품별 리뷰 목록·페이지·개수
+                           INDEX `idx_subcat_del_created` (`sub_category_id`, `is_deleted`, `created_at` DESC),
+    -- 전체 리뷰 페이지·개수
+                           INDEX `idx_del_created` (`is_deleted`, `created_at` DESC),
+    -- 회원 탈퇴 때의 DELETE FROM reviews WHERE user_id = ?
+                           INDEX `idx_user_del_created` (`user_id`, `is_deleted`, `created_at` DESC)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 
 -- 인덱스 생성 (검색 성능 최적화)

@@ -16,18 +16,22 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.ToString;
 
+// 운영은 ddl-auto: validate 라 아래 UNIQUE·인덱스를 만들지도 검사하지도 않는다. 운영에는 schema.sql 의 reviews 와 같은 이름으로
+// 손으로 적용한다. 이름을 고정해 두어야 로컬(ddl-auto: update)과 운영의 이름이 같아지고, EXPLAIN 결과를 서로 견줄 수 있다.
 @Table(name = "reviews",
 	uniqueConstraints = {
-		@UniqueConstraint(columnNames = "order_id") // 하나의 주문에 하나의 리뷰만 가능
+		// 주문 하나에 리뷰 하나. 같은 주문으로 두 요청이 동시에 와서 둘 다 existsByOrderId 를 통과해도 두 번째 INSERT 를 막는다.
+		@UniqueConstraint(name = "uk_reviews_order_id", columnNames = "order_id")
 	},
 	indexes = {
-		// 1. 특정 상품 리뷰 조회 및 최신순 정렬 (subCategoryId, is_deleted, createdAt DESC)
+		// 상품별 리뷰 목록·페이지·개수. 안쪽 SELECT id 는 이 인덱스만 읽고(id 는 인덱스에 함께 들어 있다) 정렬도 하지 않는다.
 		@Index(name = "idx_subcat_del_created", columnList = "sub_category_id, is_deleted, created_at DESC"),
 
-		// 2. 전체 리뷰 최신순 정렬 (is_deleted, createdAt DESC)
+		// 전체 리뷰 페이지·개수. 위와 같은 방식으로 이 인덱스만 읽는다.
 		@Index(name = "idx_del_created", columnList = "is_deleted, created_at DESC"),
 
-		// 3. 사용자별 리뷰 조회 및 최신순 정렬
+		// 회원 탈퇴 때 그 회원의 리뷰를 지우는 DELETE ... WHERE user_id 가 쓴다. 이 인덱스가 없으면 DELETE 가 표 전체를 훑으며
+		// 훑은 행마다 잠금을 걸어, 탈퇴 트랜잭션이 끝날 때까지 다른 회원의 리뷰 작성까지 막는다.
 		@Index(name = "idx_user_del_created", columnList = "user_id, is_deleted, created_at DESC")
 	}
 )
@@ -47,7 +51,7 @@ public class Review {
 	@Column(name = "sub_category_id", nullable = false)
 	private Long subCategoryId;
 
-	@Column(name = "order_id", nullable = false, unique = true)
+	@Column(name = "order_id", nullable = false)
 	private Long orderId; // 해당 리뷰가 어떤 주문을 기반으로 작성되었는지
 
 	@Column(columnDefinition = "TEXT", nullable = false)
