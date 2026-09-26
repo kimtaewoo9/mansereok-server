@@ -20,6 +20,8 @@ import ch.qos.logback.classic.spi.IThrowableProxy;
 import ch.qos.logback.core.read.ListAppender;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mansereok.server.domain.interpret.dto.request.Gpt5Request;
+import com.mansereok.server.domain.interpret.dto.request.Gpt5Request.SystemInstruction;
+import com.mansereok.server.domain.interpret.dto.request.Gpt5Request.UserPrompt;
 import com.mansereok.server.global.exception.GlobalExceptionHandler;
 import com.mansereok.server.global.exception.OpenAiIncompleteResponseException;
 import com.mansereok.server.global.exception.OpenAiRefusalException;
@@ -84,16 +86,11 @@ class OpenAiResponsesRestClientTest {
 	}
 
 	private Gpt5Request primaryRequest() {
-		OpenAiProperties.ModelTier tier = OpenAiProperties.ModelTier.defaultPrimary();
-		return new Gpt5Request(tier.model(), PROMPT, tier.maxOutputTokens(),
-			tier.reasoningEffort(), tier.verbosity(),
-			Map.of("type", "json_schema", "name", "saju"));
+		return requestFor(OpenAiProperties.ModelTier.defaultPrimary());
 	}
 
-	private Gpt5Request instructedRequest() {
-		OpenAiProperties.ModelTier tier = OpenAiProperties.ModelTier.defaultPrimary();
-		return Gpt5Request.withSystemInstruction(tier.model(), SYSTEM_INSTRUCTION, PROMPT,
-			tier.maxOutputTokens(), tier.reasoningEffort(), tier.verbosity(),
+	private Gpt5Request requestFor(OpenAiProperties.ModelTier tier) {
+		return Gpt5Request.of(tier, new SystemInstruction(SYSTEM_INSTRUCTION), new UserPrompt(PROMPT),
 			Map.of("type", "json_schema", "name", "saju"));
 	}
 
@@ -232,7 +229,7 @@ class OpenAiResponsesRestClientTest {
 			.andExpect(jsonPath("$.input").value(PROMPT))
 			.andRespond(withSuccess(completedBody("성공"), MediaType.APPLICATION_JSON));
 
-		assertThat(client.createResponse(instructedRequest())).isEqualTo("성공");
+		assertThat(client.createResponse(primaryRequest())).isEqualTo("성공");
 		server.verify();
 	}
 
@@ -249,7 +246,7 @@ class OpenAiResponsesRestClientTest {
 			.andExpect(jsonPath("$.input").value(PROMPT))
 			.andRespond(withSuccess(completedBody("fallback 성공"), MediaType.APPLICATION_JSON));
 
-		assertThat(client.createResponse(instructedRequest())).isEqualTo("fallback 성공");
+		assertThat(client.createResponse(primaryRequest())).isEqualTo("fallback 성공");
 		server.verify();
 	}
 

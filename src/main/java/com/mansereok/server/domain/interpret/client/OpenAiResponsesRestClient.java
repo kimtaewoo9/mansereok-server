@@ -5,6 +5,8 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mansereok.server.domain.interpret.client.OpenAiProperties.ModelTier;
 import com.mansereok.server.domain.interpret.dto.request.Gpt5Request;
+import com.mansereok.server.domain.interpret.dto.request.Gpt5Request.SystemInstruction;
+import com.mansereok.server.domain.interpret.dto.request.Gpt5Request.UserPrompt;
 import com.mansereok.server.global.exception.OpenAiIncompleteResponseException;
 import com.mansereok.server.global.exception.OpenAiRefusalException;
 import com.mansereok.server.global.exception.OpenAiRequestException;
@@ -12,7 +14,6 @@ import com.mansereok.server.global.exception.OpenAiUnavailableException;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.function.DoubleSupplier;
 import lombok.extern.slf4j.Slf4j;
@@ -153,16 +154,11 @@ public class OpenAiResponsesRestClient implements OpenAiResponsesClient {
 	}
 
 	private Gpt5Request copyRequestForTier(Gpt5Request request, ModelTier tier) {
-		Map<String, Object> outputFormat =
-			request.getText() == null ? null : request.getText().getFormat();
-		return Gpt5Request.withSystemInstruction(
-			tier.model(),
-			request.getInstructions(),
-			request.getInput(),
-			tier.maxOutputTokens(),
-			tier.reasoningEffort(),
-			tier.verbosity(),
-			outputFormat
+		return Gpt5Request.of(
+			tier,
+			new SystemInstruction(request.getInstructions()),
+			new UserPrompt(request.getInput()),
+			request.getText().getFormat()
 		);
 	}
 

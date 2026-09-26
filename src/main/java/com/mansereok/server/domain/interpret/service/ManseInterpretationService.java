@@ -6,6 +6,8 @@ import com.mansereok.server.domain.interpret.client.OpenAiProperties;
 import com.mansereok.server.domain.interpret.client.OpenAiProperties.ModelTier;
 import com.mansereok.server.domain.interpret.client.OpenAiResponsesClient;
 import com.mansereok.server.domain.interpret.dto.request.Gpt5Request;
+import com.mansereok.server.domain.interpret.dto.request.Gpt5Request.SystemInstruction;
+import com.mansereok.server.domain.interpret.dto.request.Gpt5Request.UserPrompt;
 import com.mansereok.server.domain.interpret.dto.response.GptCompatibilityResponse;
 import com.mansereok.server.domain.interpret.dto.response.GptSajuResponse;
 import com.mansereok.server.domain.interpret.dto.response.ManseryeokCalculationResponse;
@@ -197,8 +199,8 @@ public class ManseInterpretationService {
 				command.paymentId(), productLabel(command.product()), false),
 			() -> callGpt(
 				openAiProperties.primary(),
-				GPT5_SYSTEM_INSTRUCTION,
-				sajuPromptFactory.create(command.product().id(), command.person()),
+				new SystemInstruction(GPT5_SYSTEM_INSTRUCTION),
+				new UserPrompt(sajuPromptFactory.create(command.product().id(), command.person())),
 				SAJU_OUTPUT_FORMAT,
 				GptSajuResponse.class),
 			List.of(ogImageStep(), resultReadyEmailStep(command.username()))
@@ -220,8 +222,8 @@ public class ManseInterpretationService {
 				command.paymentId(), productLabel(command.product()), false),
 			() -> callGpt(
 				openAiProperties.primary(),
-				systemInstruction,
-				compatibilityPromptFactory.create(command.product().id(), command.persons()),
+				new SystemInstruction(systemInstruction),
+				new UserPrompt(compatibilityPromptFactory.create(command.product().id(), command.persons())),
 				COMPATIBILITY_OUTPUT_FORMAT,
 				GptCompatibilityResponse.class),
 			List.of(compatibilityOgImageStep(), compatibilityEmailStep(command.username()))
@@ -242,8 +244,8 @@ public class ManseInterpretationService {
 				command.paymentId(), productLabel(command.product()), true),
 			() -> callGpt(
 				openAiProperties.light(),
-				GPT5_SYSTEM_INSTRUCTION,
-				sajuPromptFactory.createFree(command.product().id(), command.person()),
+				new SystemInstruction(GPT5_SYSTEM_INSTRUCTION),
+				new UserPrompt(sajuPromptFactory.createFree(command.product().id(), command.person())),
 				SAJU_OUTPUT_FORMAT,
 				GptSajuResponse.class),
 			List.of(ogImageStep())
@@ -268,8 +270,8 @@ public class ManseInterpretationService {
 				command.paymentId(), productLabel(command.product()), true),
 			() -> callGpt(
 				openAiProperties.light(),
-				GPT5_SYSTEM_INSTRUCTION,
-				compatibilityPromptFactory.create(command.product().id(), command.persons()),
+				new SystemInstruction(GPT5_SYSTEM_INSTRUCTION),
+				new UserPrompt(compatibilityPromptFactory.create(command.product().id(), command.persons())),
 				COMPATIBILITY_OUTPUT_FORMAT,
 				GptCompatibilityResponse.class),
 			List.of(compatibilityOgImageStep())
@@ -369,23 +371,16 @@ public class ManseInterpretationService {
 	/**
 	 * 프롬프트를 실어 GPT 를 부르고 응답 JSON 을 DTO 로 읽는다.
 	 * 모델·토큰·추론 강도는 티어에서만 오므로 호출부에 리터럴이 흩어지지 않는다.
+	 * 시스템 지시와 사용자 프롬프트는 서로 다른 타입이라, 호출부에서 두 인자의 순서를 바꾸면 컴파일되지 않는다.
 	 */
 	private <R> R callGpt(
 		ModelTier tier,
-		String systemInstruction,
-		String userPrompt,
+		SystemInstruction systemInstruction,
+		UserPrompt userPrompt,
 		Map<String, Object> outputFormat,
 		Class<R> responseType
 	) throws JsonProcessingException {
-		Gpt5Request request = Gpt5Request.withSystemInstruction(
-			tier.model(),
-			systemInstruction,
-			userPrompt,
-			tier.maxOutputTokens(),
-			tier.reasoningEffort(),
-			tier.verbosity(),
-			outputFormat
-		);
+		Gpt5Request request = Gpt5Request.of(tier, systemInstruction, userPrompt, outputFormat);
 
 		log.info("GPT API 호출 시작 - model: {}, maxOutputTokens: {}", tier.model(),
 			tier.maxOutputTokens());

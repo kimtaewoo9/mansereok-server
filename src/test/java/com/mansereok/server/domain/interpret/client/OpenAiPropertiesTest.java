@@ -5,7 +5,10 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.mansereok.server.domain.interpret.client.OpenAiProperties.ModelTier;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.context.annotation.Configuration;
@@ -50,21 +53,21 @@ class OpenAiPropertiesTest {
 			null, null, null);
 
 		assertThat(properties.primary())
-			.isEqualTo(new ModelTier("gpt-5.4", 32_768, "high", "high"));
+			.isEqualTo(new ModelTier("gpt-5.4", 32_768, ReasoningEffort.HIGH, Verbosity.HIGH));
 		assertThat(properties.light())
-			.isEqualTo(new ModelTier("gpt-5-mini", 8_192, "medium", "medium"));
+			.isEqualTo(new ModelTier("gpt-5-mini", 8_192, ReasoningEffort.MEDIUM, Verbosity.MEDIUM));
 		assertThat(properties.fallback())
-			.isEqualTo(new ModelTier("gpt-5.2", 32_768, "medium", "medium"));
+			.isEqualTo(new ModelTier("gpt-5.2", 32_768, ReasoningEffort.MEDIUM, Verbosity.MEDIUM));
 	}
 
 	@Test
 	@DisplayName("티어 일부만 지정해도 나머지 값은 채워진다")
 	void tierFillsPartialValues() {
-		ModelTier tier = new ModelTier("gpt-5.4", 0, null, " ");
+		ModelTier tier = new ModelTier("gpt-5.4", 0, null, null);
 
 		assertThat(tier.maxOutputTokens()).isEqualTo(32_768);
-		assertThat(tier.reasoningEffort()).isEqualTo("medium");
-		assertThat(tier.verbosity()).isEqualTo("medium");
+		assertThat(tier.reasoningEffort()).isEqualTo(ReasoningEffort.MEDIUM);
+		assertThat(tier.verbosity()).isEqualTo(Verbosity.MEDIUM);
 	}
 
 	@Test
@@ -100,7 +103,7 @@ class OpenAiPropertiesTest {
 				assertThat(properties.maxAttempts()).isEqualTo(5);
 				assertThat(properties.light().model()).isEqualTo("gpt-5-nano");
 				assertThat(properties.light().maxOutputTokens()).isEqualTo(4_096);
-				assertThat(properties.light().reasoningEffort()).isEqualTo("medium");
+				assertThat(properties.light().reasoningEffort()).isEqualTo(ReasoningEffort.MEDIUM);
 			});
 	}
 
@@ -115,6 +118,66 @@ class OpenAiPropertiesTest {
 				.isInstanceOf(IllegalArgumentException.class)
 				.hasMessageContaining("openai.api.key");
 		});
+	}
+
+	@Test
+	@DisplayName("toString 은 key 를 앞 3글자와 길이만 남기고, 모델명 같은 나머지 설정은 그대로 보여 준다")
+	void toStringHidesKey() {
+		// given
+		OpenAiProperties properties = new OpenAiProperties("sk-test-secret", null, 0, 0, 0, 0L, 0.0,
+			null, null, null);
+
+		// when
+		String text = properties.toString();
+
+		// then
+		assertThat(text)
+			.doesNotContain("sk-test-secret")
+			.contains("key=sk-***(14자)")
+			.contains("baseUrl=https://api.openai.com")
+			.contains("gpt-5.4", "gpt-5-mini", "gpt-5.2");
+	}
+
+	@Nested
+	@DisplayName("모델 티어의 reasoning-effort·verbosity 를 yml 에서 읽을 때")
+	class TierLevelBinding {
+
+		@Test
+		@DisplayName("소문자 high 로 적으면 HIGH 로 읽힌다")
+		void bindsLowercaseValue() {
+			runner.withPropertyValues(
+					"openai.api.key=sk-test",
+					"openai.api.primary.model=gpt-5.4",
+					"openai.api.primary.reasoning-effort=high",
+					"openai.api.primary.verbosity=low")
+				.run(context -> {
+					OpenAiProperties properties = context.getBean(OpenAiProperties.class);
+					assertThat(properties.primary().reasoningEffort()).isEqualTo(ReasoningEffort.HIGH);
+					assertThat(properties.primary().verbosity()).isEqualTo(Verbosity.LOW);
+				});
+		}
+
+		@ParameterizedTest(name = "[{index}] {0}={1}")
+		@CsvSource(textBlock = """
+			openai.api.primary.reasoning-effort, hihg
+			openai.api.primary.verbosity,        minimal
+			openai.api.fallback.reasoning-effort, max
+			""")
+		@DisplayName("목록에 없는 값을 적으면 기동이 실패한다")
+		void failsOnUnknownValue(String propertyName, String value) {
+			runner.withPropertyValues(
+					"openai.api.key=sk-test",
+					"openai.api.primary.model=gpt-5.4",
+					"openai.api.fallback.model=gpt-5.2",
+					propertyName + "=" + value)
+				.run(context -> {
+					assertThat(context).hasFailed();
+					// hasFailed() 만 보면 다른 이유로 깨져도 초록이라, 어느 설정이 어떤 값 때문에 실패했는지까지 본다.
+					assertThat(context).getFailure()
+						.hasStackTraceContaining("Failed to bind properties under '" + propertyName + "'")
+						.hasStackTraceContaining("for value [" + value + "]");
+				});
+		}
 	}
 
 	@Configuration
