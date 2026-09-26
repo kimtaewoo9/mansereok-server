@@ -1,7 +1,7 @@
 package com.mansereok.server.domain.coupon.controller;
 
 import com.mansereok.server.domain.coupon.dto.CouponEventDto;
-import com.mansereok.server.domain.coupon.entity.Coupon;
+import com.mansereok.server.domain.coupon.dto.CouponResponse;
 import com.mansereok.server.domain.coupon.service.CouponService;
 import com.mansereok.server.domain.payment.service.PaymentUserLookup;
 import java.util.List;
@@ -16,7 +16,6 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequiredArgsConstructor
 public class CouponController {
-
 
 	private final CouponService couponService;
 	private final PaymentUserLookup paymentUserLookup;
@@ -47,13 +46,15 @@ public class CouponController {
 		return ResponseEntity.ok().build();
 	}
 
-	// 3. 내 쿠폰함 조회 (결제 시 사용 가능 목록)
+	// 3. 내 쿠폰함 조회 (결제 시 사용 가능 목록). 엔티티 대신 CouponResponse 로 내보낸다(JSON 키는 예전 엔티티 응답과 같다).
 	@GetMapping("/api/coupons/my")
-	public ResponseEntity<List<Coupon>> getMyCoupons(
+	public ResponseEntity<List<CouponResponse>> getMyCoupons(
 		@AuthenticationPrincipal String username
 	) {
 		Long userId = getUserId(username); // 실제 userId 조회
-		List<Coupon> myCoupons = couponService.getMyCoupons(userId);
+		List<CouponResponse> myCoupons = couponService.getMyCoupons(userId).stream()
+			.map(CouponResponse::from)
+			.toList();
 		return ResponseEntity.ok(myCoupons);
 	}
 }
