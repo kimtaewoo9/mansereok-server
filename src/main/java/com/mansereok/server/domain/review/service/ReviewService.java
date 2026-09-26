@@ -17,14 +17,13 @@ import java.time.Clock;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
-import java.util.stream.Collectors;
+import java.util.function.LongSupplier;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
-import org.springframework.data.domain.Pageable;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -35,24 +34,33 @@ import org.springframework.transaction.annotation.Transactional;
 @Transactional(readOnly = true)
 public class ReviewService {
 
+	/**
+	 * 로그인하지 않은 사람도 보는 리뷰 목록(GET /api/v1/reviews)이 한 번에 돌려주는 최대 건수. 최신 리뷰부터 이만큼만 읽고, 더 오래된
+	 * 리뷰는 돌려주지 않는다. 리뷰가 쌓여도 요청 한 번이 읽는 행 수와 응답 크기가 이 값을 넘지 않는다.
+	 */
+	public static final int PUBLIC_REVIEW_LIMIT = 100;
+
+	/** 페이지 단위 리뷰 목록(GET /api/v1/reviews/pagination)에서 한 페이지에 담을 수 있는 최대 건수. */
+	public static final int MAX_PAGE_SIZE = 50;
+
 	private final ReviewRepository reviewRepository;
 	private final OrderRepository orderRepository; //
 	private final UserService userService; //
 	private final Clock clock;
 
+	/**
+	 * 상품의 리뷰를 최신순으로 최대 {@value #PUBLIC_REVIEW_LIMIT}건 돌려준다. 같은 시각에 쓴 리뷰는 id 가 작은 것이 앞에 온다.
+	 */
 	public List<ReviewResponse> getReviewsBySubCategory(Long subCategoryId) {
-		List<Review> reviews = reviewRepository.findReviewsBySubCategory(
-			subCategoryId);
-		return reviews.stream()
-			.map(ReviewResponse::from)
-			.collect(Collectors.toList());
+		return toResponses(
+			reviewRepository.findReviewsBySubCategoryWithPagination(subCategoryId, 0, PUBLIC_REVIEW_LIMIT));
 	}
 
+	/**
+	 * 모든 상품의 리뷰를 최신순으로 최대 {@value #PUBLIC_REVIEW_LIMIT}건 돌려준다. 같은 시각에 쓴 리뷰는 id 가 작은 것이 앞에 온다.
+	 */
 	public List<ReviewResponse> getAllReviewsSortedByLatest() {
-		List<Review> reviews = reviewRepository.findAllLatestReviews();
-		return reviews.stream()
-			.map(ReviewResponse::from)
-			.collect(Collectors.toList());
+		return toResponses(reviewRepository.findAllReviewsWithPagination(0, PUBLIC_REVIEW_LIMIT));
 	}
 
 	/**
@@ -141,42 +149,61 @@ public class ReviewService {
 			LocalDate.now(clock), () -> reviewRepository.existsByOrderId(order.getId()));
 	}
 
+	/**
+	 * 상품의 리뷰를 최신순으로 나눈 page 번째 페이지를 돌려준다. page 는 1부터 센다. 같은 시각에 쓴 리뷰는 id 가 작은 것이 앞에 와서,
+	 * 페이지를 차례로 넘겨도 같은 리뷰가 두 번 나오거나 빠지지 않는다(그 사이에 리뷰가 새로 쓰이거나 지워지지 않았다면).
+	 *
+	 * @throws IllegalArgumentException page 가 1보다 작거나, size 가 1보다 작거나 {@value #MAX_PAGE_SIZE}보다 클 때(400).
+	 *                                  이때는 쿼리를 보내지 않는다.
+	 */
 	public Page<ReviewResponse> getReviewsBySubCategory(Long subCategoryId, int page, int size) {
-		// Offset 계산
-		long offset = (long) (page - 1) * size;
-
-		// 1. 리스트 조회 (커버링 인덱스 쿼리)
-		List<Review> reviews = reviewRepository.findReviewsBySubCategoryWithPagination(
-			subCategoryId, offset, size
-		);
-
-		// 2. 전체 개수 조회
-		long totalCount = reviewRepository.countBySubCategory(subCategoryId);
-
-		// 3. 응답 변환
-		List<ReviewResponse> content = reviews.stream()
-			.map(ReviewResponse::from)
-			.collect(Collectors.toList());
-
-		// Spring Data의 Page 인터페이스로 감싸서 반환 (프론트엔드 처리가 용이함)
-		Pageable pageable = PageRequest.of(page - 1, size);
-		return new PageImpl<>(content, pageable, totalCount);
+		return readPage(page, size,
+			(offset, limit) -> reviewRepository.findReviewsBySubCategoryWithPagination(subCategoryId, offset, limit),
+			() -> reviewRepository.countBySubCategory(subCategoryId));
 	}
 
+	/**
+	 * 모든 상품의 리뷰를 최신순으로 나눈 page 번째 페이지를 돌려준다. 순서와 page·size 규칙은
+	 * {@link #getReviewsBySubCategory(Long, int, int)} 와 같다.
+	 *
+	 * @throws IllegalArgumentException page 가 1보다 작거나, size 가 1보다 작거나 {@value #MAX_PAGE_SIZE}보다 클 때(400).
+	 *                                  이때는 쿼리를 보내지 않는다.
+	 */
 	public Page<ReviewResponse> getAllReviewsSortedByLatest(int page, int size) {
+		return readPage(page, size, reviewRepository::findAllReviewsWithPagination, reviewRepository::countAllReviews);
+	}
+
+	/**
+	 * page·size 를 먼저 확인한 뒤 그 페이지의 리뷰와 전체 건수를 읽어 Page 로 묶는다. 돌려주는 Page 의 번호(number)는 0부터 센다.
+	 */
+	private Page<ReviewResponse> readPage(int page, int size, ReviewPageQuery pageQuery, LongSupplier countQuery) {
+		checkPageRange(page, size);
+		// int 끼리 곱하면 page 가 클 때 넘쳐 음수가 되므로 long 으로 곱한다.
 		long offset = (long) (page - 1) * size;
+		List<ReviewResponse> content = toResponses(pageQuery.find(offset, size));
+		return new PageImpl<>(content, PageRequest.of(page - 1, size), countQuery.getAsLong());
+	}
 
-		// 1. 커버링 인덱스 쿼리로 데이터 조회
-		List<Review> reviews = reviewRepository.findAllReviewsWithPagination(offset, size);
+	// 잘못된 값이 그대로 쿼리로 가면 page=0 은 음수 OFFSET 으로 SQL 오류(500)가 나고, 큰 size 는 리뷰 전체를 한 번에 읽는다.
+	private static void checkPageRange(int page, int size) {
+		if (page < 1) {
+			throw new IllegalArgumentException("페이지 번호(page)는 1 이상이어야 합니다.");
+		}
+		if (size < 1 || size > MAX_PAGE_SIZE) {
+			throw new IllegalArgumentException("페이지 크기(size)는 1 이상 " + MAX_PAGE_SIZE + " 이하여야 합니다.");
+		}
+	}
 
-		// 2. 전체 개수 조회
-		long totalCount = reviewRepository.countAllReviews();
-
-		// 3. DTO 변환
-		List<ReviewResponse> content = reviews.stream()
+	private static List<ReviewResponse> toResponses(List<Review> reviews) {
+		return reviews.stream()
 			.map(ReviewResponse::from)
-			.collect(Collectors.toList());
+			.toList();
+	}
 
-		return new PageImpl<>(content, PageRequest.of(page - 1, size), totalCount);
+	/** 최신순으로 늘어선 리뷰에서 앞의 offset 건을 건너뛰고 limit 건을 읽는 쿼리. */
+	@FunctionalInterface
+	private interface ReviewPageQuery {
+
+		List<Review> find(long offset, int limit);
 	}
 }

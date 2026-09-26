@@ -90,8 +90,8 @@ class ReviewControllerResponseTest {
 	@Test
 	@DisplayName("전체 리뷰 목록에는 작성자 이메일이 없고 이름은 가려져 있다")
 	void allReviewsHideAuthorEmailAndName() throws Exception {
-		// given
-		given(reviewRepository.findAllLatestReviews()).willReturn(List.of(
+		// given: 로그인 없이 보는 목록은 최신 리뷰를 상한 건수만큼 읽는다
+		given(reviewRepository.findAllReviewsWithPagination(0L, ReviewService.PUBLIC_REVIEW_LIMIT)).willReturn(List.of(
 			ReviewFixture.review().userName("홍길동").userEmail("hong@example.com").build()));
 
 		// when
@@ -109,9 +109,10 @@ class ReviewControllerResponseTest {
 	@DisplayName("상품별 리뷰 목록에도 작성자 이메일이 없고 이름은 가려져 있다")
 	void reviewsOfProductHideAuthorEmailAndName() throws Exception {
 		// given
-		given(reviewRepository.findReviewsBySubCategory(3L)).willReturn(List.of(
-			ReviewFixture.review().subCategoryId(3L).userName("남궁민수").userEmail("namgung@example.com")
-				.build()));
+		given(reviewRepository.findReviewsBySubCategoryWithPagination(3L, 0L, ReviewService.PUBLIC_REVIEW_LIMIT))
+			.willReturn(List.of(
+				ReviewFixture.review().subCategoryId(3L).userName("남궁민수").userEmail("namgung@example.com")
+					.build()));
 
 		// when
 		ResultActions result = mockMvc.perform(get("/api/v1/reviews").param("subCategoryId", "3"));
