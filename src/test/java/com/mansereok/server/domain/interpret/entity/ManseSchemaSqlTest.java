@@ -1,10 +1,12 @@
 package com.mansereok.server.domain.interpret.entity;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.tuple;
 
 import com.mansereok.server.support.SchemaSqlFile;
 import jakarta.persistence.Index;
 import jakarta.persistence.Table;
+import jakarta.persistence.UniqueConstraint;
 import java.util.Arrays;
 import java.util.List;
 import java.util.regex.Matcher;
@@ -16,7 +18,7 @@ import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
 /**
- * manses 의 인덱스를 Manse 엔티티와 schema.sql 이 같은 이름과 컬럼 순서로 선언하는지 DB 없이 확인한다.
+ * manses 의 인덱스와 solar_date UNIQUE 를 Manse 엔티티와 schema.sql 이 같은 이름과 컬럼 순서로 선언하는지 DB 없이 확인한다.
  *
  * <p>운영은 ddl-auto: validate 라 인덱스를 검사하지 않는다. 엔티티 선언과 schema.sql 이 어긋나도 배포 때 드러나지 않으므로 기본
  * 테스트에서 잡는다. 실제 MySQL 에서 조회가 이 인덱스를 타는지는 ManseIndexMySqlTest 가 본다.
@@ -63,18 +65,33 @@ class ManseSchemaSqlTest {
 	@ParameterizedTest(name = "[{index}] {0}")
 	@DisplayName("쓰는 조회가 없거나 다른 인덱스와 겹치는 예전 manses 인덱스는 schema.sql 에 없다")
 	@ValueSource(strings = {
-		"idx_manses_solar_date",   // solar_date 의 UNIQUE 와 같은 컬럼
-		"idx_manses_lunar_date",   // idx_manses_lunar_date_leap_month 가 lunar_date 로 시작해 대신한다
-		"idx_solar_leap"           // (solar_date, leap_month) 로 찾는 조회가 없다
+		// solar_date 의 UNIQUE 와 같은 컬럼이다. 운영에서는 solar_date 에 Non_unique=0 인 인덱스가 있을 때만 지운다.
+		// 없으면 UNIQUE 를 먼저 더한다.
+		"idx_manses_solar_date",
+		// idx_manses_lunar_date_leap_month 가 lunar_date 로 시작해 대신한다.
+		"idx_manses_lunar_date",
+		// (solar_date, leap_month) 로 찾는 조회가 없다. 예전 schema.sql 은 "사용자의 요청대로 유지" 라고 적어 두었다. 운영에서
+		// 지우는 데 동의를 받지 못하면 schema.sql 에 CREATE INDEX idx_solar_leap ON manses(solar_date, leap_month); 한 줄을
+		// 되살리고 이 항목을 뺀다.
+		"idx_solar_leap"
 	})
 	void removedIndexIsNotDeclared(String indexName) {
 		assertThat(schema.mentions("manses", indexName)).isFalse();
 	}
 
 	@Test
-	@DisplayName("양력 날짜 조회는 schema.sql 의 solar_date UNIQUE 를 쓰므로 그 UNIQUE 는 남아 있다")
-	void solarDateStaysUnique() {
-		assertThat(schema.isUniqueColumn("manses", "solar_date")).isTrue();
+	@DisplayName("양력 날짜 조회가 쓰는 solar_date UNIQUE 를 schema.sql 과 엔티티가 함께 선언한다")
+	void solarDateIsUniqueInSchemaAndEntity() {
+		// when
+		UniqueConstraint[] declared = Manse.class.getAnnotation(Table.class).uniqueConstraints();
+
+		// then
+		assertThat(schema.isUniqueColumn("manses", "solar_date")).as("schema.sql 의 CREATE TABLE").isTrue();
+		// 이름이 MySQL 이 schema.sql 의 컬럼 UNIQUE 에 붙이는 이름(컬럼 이름)과 달라지면, schema.sql 로 만든 표에 ddl-auto: update
+		// 가 같은 컬럼의 UNIQUE 를 하나 더 만든다.
+		assertThat(declared).as("엔티티 @Table 의 uniqueConstraints")
+			.extracting(UniqueConstraint::name, constraint -> List.of(constraint.columnNames()))
+			.containsExactly(tuple("solar_date", List.of("solar_date")));
 	}
 
 	private static List<String> columnsOf(String columnList) {

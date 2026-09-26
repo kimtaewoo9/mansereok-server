@@ -12,8 +12,8 @@ import com.mansereok.server.domain.interpret.dto.response.ManseryeokCalculationR
 import com.mansereok.server.domain.interpret.repository.ManseRepository;
 import com.mansereok.server.support.ConcurrentCalls;
 import com.mansereok.server.support.ConcurrentCalls.CallResult;
+import com.mansereok.server.support.HibernateSqlRecorder;
 import com.mansereok.server.support.InterpretationMySqlTest;
-import jakarta.persistence.EntityManagerFactory;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -21,17 +21,14 @@ import java.time.LocalDate;
 import java.time.LocalTime;
 import java.time.ZoneId;
 import java.util.List;
-import org.hibernate.SessionFactory;
-import org.hibernate.stat.Statistics;
-import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 
 /**
- * 서로 다른 생일 10개를 실제 manses 표로 한꺼번에 계산해도 한 건씩 계산한 결과와 같고, 제시간에 끝나며, DB 로 보내는 SQL 이 계산
- * 수만큼만 늘어나는지 확인한다.
+ * 서로 다른 생일 10개를 실제 manses 표로 한꺼번에 계산해도 한 건씩 계산한 결과와 같고 제시간에 끝나는지, 그리고 manses 로 보내는
+ * SQL 이 계산 수만큼만 늘어나는지 확인한다.
  *
  * <p>/api/v1/manseryeok/calculate 는 로그인 없이 부를 수 있어 요청이 한꺼번에 몰릴 수 있다. 계산은 요청 스레드에서 manses 를
  * 여러 번 조회하므로, 조회가 인덱스를 타지 않거나 조회 수가 다시 늘면 커넥션을 오래 쥐게 된다. 요청 수는 HikariCP 기본 풀 크기(10)와
@@ -43,6 +40,9 @@ import org.springframework.beans.factory.annotation.Autowired;
 class ManseCalculationLoadMySqlTest extends InterpretationMySqlTest {
 
 	private static final int MIN_MANSE_ROWS = 1000;
+	// 커넥션을 기다리거나 잠금에 걸리는 수준의 큰 회귀만 잡는 한도다. 로컬 MySQL 에서 동시 계산 10개는 18~24ms, 절입 시각 인덱스를
+	// 지운 뒤에도 96~101ms 였다(각 3번). 그래서 인덱스 회귀는 이 한도로 잡히지 않는다. 조회 수가 다시 느는 회귀는 SQL 수 테스트가,
+	// 조회가 인덱스를 타지 않는 회귀는 ManseIndexMySqlTest 가 잡는다.
 	private static final Duration TIME_LIMIT = Duration.ofSeconds(5);
 	private static final Clock FIXED_CLOCK = Clock.fixed(Instant.parse("2026-09-26T03:00:00Z"),
 		ZoneId.of("Asia/Seoul"));
@@ -63,9 +63,6 @@ class ManseCalculationLoadMySqlTest extends InterpretationMySqlTest {
 	@Autowired
 	private ManseRepository manseRepository;
 
-	@Autowired
-	private EntityManagerFactory entityManagerFactory;
-
 	private ManseCalculationService service;
 
 	@BeforeEach
@@ -76,22 +73,15 @@ class ManseCalculationLoadMySqlTest extends InterpretationMySqlTest {
 			new SinsalCalculator(), new RelationCalculator(), new YongsinCalculator(), FIXED_CLOCK);
 	}
 
-	@AfterEach
-	void stopCountingStatements() {
-		statistics().setStatisticsEnabled(false);
-	}
-
 	@Test
-	@DisplayName("서로 다른 생일 10개를 동시에 계산해도 한 건씩 계산한 결과와 같고, 5초 안에 끝나며, SQL 은 계산 10번 × 4번인 40번이다")
+	@DisplayName("서로 다른 생일 10개를 동시에 계산해도 한 건씩 계산한 결과와 같고, 5초 안에 끝난다")
 	void concurrentCalculationsMatchOneByOne() {
 		// given
 		List<ManseryeokCalculationResponse> oneByOne = TEN_BIRTHDAYS.stream().map(service::calculate).toList();
-		Statistics statistics = startCountingStatements();
 		long startedAt = System.nanoTime();
 
 		// when
-		List<CallResult<ManseryeokCalculationResponse>> results = ConcurrentCalls.runAtTheSameTime(
-			TEN_BIRTHDAYS.size(), index -> () -> service.calculate(TEN_BIRTHDAYS.get(index)));
+		List<CallResult<ManseryeokCalculationResponse>> results = calculateTenAtTheSameTime();
 
 		// then
 		Duration elapsed = Duration.ofNanos(System.nanoTime() - startedAt);
@@ -101,21 +91,25 @@ class ManseCalculationLoadMySqlTest extends InterpretationMySqlTest {
 			.usingRecursiveFieldByFieldElementComparator()
 			.containsExactlyElementsOf(oneByOne);
 		assertThat(elapsed).as("동시 계산 10개가 끝난 시간").isLessThan(TIME_LIMIT);
-		assertThat(statistics.getPrepareStatementCount()).as("DB 로 보낸 SQL 문 수").isEqualTo(40);
+	}
+
+	@Test
+	@DisplayName("서로 다른 생일 10개를 동시에 계산하면 manses 로 보내는 SQL 은 계산 10번 × 4번인 40번이다")
+	void concurrentCalculationsSendFourManseStatementsEach() {
+		// when: 같은 SessionFactory 를 쓰는 스케줄러의 SQL 이 섞일 수 있어 manses 를 적은 문장만 센다
+		List<String> manseStatements = HibernateSqlRecorder.statementsOnTable("manses",
+			this::calculateTenAtTheSameTime);
+
+		// then
+		assertThat(manseStatements).as("manses 로 보낸 SQL 문").hasSize(40);
+	}
+
+	private List<CallResult<ManseryeokCalculationResponse>> calculateTenAtTheSameTime() {
+		return ConcurrentCalls.runAtTheSameTime(TEN_BIRTHDAYS.size(),
+			index -> () -> service.calculate(TEN_BIRTHDAYS.get(index)));
 	}
 
 	private static ManseryeokCalculationRequest request(LocalDate solarDate, LocalTime solarTime, String gender) {
 		return new ManseryeokCalculationRequest("동시 계산", solarDate, solarTime, gender, false, null);
-	}
-
-	private Statistics startCountingStatements() {
-		Statistics statistics = statistics();
-		statistics.setStatisticsEnabled(true);
-		statistics.clear();
-		return statistics;
-	}
-
-	private Statistics statistics() {
-		return entityManagerFactory.unwrap(SessionFactory.class).getStatistics();
 	}
 }

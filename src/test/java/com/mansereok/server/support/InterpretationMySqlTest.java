@@ -2,6 +2,7 @@ package com.mansereok.server.support;
 
 import com.mansereok.server.domain.interpret.client.OpenAiResponsesClient;
 import com.mansereok.server.domain.interpret.service.SajuResultService;
+import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 
@@ -13,7 +14,13 @@ import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
  * 띄우지 않는다.
  *
  * <p>지켜야 할 규칙(@Transactional 금지, 실행 키로 만든 행만 지우기, JdbcTemplate 로 확인)은 {@link LocalMySqlTest} 와 같다.
+ *
+ * <p>Hibernate 가 보내는 SQL 을 {@link HibernateSqlRecorder} 로 모을 수 있게 등록한다. 모으기를 켜지 않은 테스트에서는 문장을
+ * 그대로 넘기기만 한다. 해석 MySQL 테스트가 모두 이 설정을 함께 쓰므로 스프링 컨텍스트가 늘지 않는다.
  */
+@TestPropertySource(properties =
+	"spring.jpa.properties.hibernate.session_factory.statement_inspector="
+		+ "com.mansereok.server.support.HibernateSqlRecorder")
 public abstract class InterpretationMySqlTest extends LocalMySqlTest {
 
 	@MockitoBean

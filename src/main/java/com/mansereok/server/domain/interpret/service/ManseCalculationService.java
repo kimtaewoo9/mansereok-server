@@ -23,6 +23,7 @@ import java.util.Objects;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.Limit;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -32,8 +33,9 @@ public class ManseCalculationService {
 
 	// 월운의 "지금" 은 서버 시간대와 상관없이 한국 시각으로 센다.
 	private static final ZoneId SEOUL = ZoneId.of("Asia/Seoul");
-	// 월운은 지금이 든 절기부터 12개월이다. 마지막 달이 끝나는 시각까지 알려면 절입이 13개 필요해 findTop13 으로 한 번에 읽는다.
+	// 월운은 지금이 든 절기부터 12개월이다. 마지막 달이 끝나는 시각까지 알려면 절입이 하나 더 필요해 달 수 + 1 개를 한 번에 읽는다.
 	private static final int MONTHLY_FORTUNE_MONTHS = 12;
+	private static final Limit MONTHLY_SEASON_LIMIT = Limit.of(MONTHLY_FORTUNE_MONTHS + 1);
 
 	private final ManseRepository manseRepository;
 	private final SajuDataService sajuDataService;
@@ -221,11 +223,11 @@ public class ManseCalculationService {
 			return null;
 		}
 
-		// 지금이 든 절입(첫 행)부터 절입 시각 순서로 최대 13개를 한 번에 읽는다. 이웃한 두 절입이 한 달의 시작과 끝이다.
-		// 표 끝(2100년)에 가까워 13개가 안 되면 있는 만큼만 세고, 다음 절입이 없는 마지막 달은 끝을 비운다.
+		// 지금이 든 절입(첫 행)부터 절입 시각 순서로 달 수 + 1 개까지 한 번에 읽는다. 이웃한 두 절입이 한 달의 시작과 끝이다.
+		// 표 끝(2100년)에 가까워 그만큼이 안 되면 있는 만큼만 세고, 다음 절입이 없는 마지막 달은 끝을 비운다.
 		List<Manse> boundaries = manseRepository
-			.findTop13BySeasonStartTimeGreaterThanEqualOrderBySeasonStartTimeAsc(
-				currentBoundary.getSeasonStartTime());
+			.findBySeasonStartTimeGreaterThanEqualOrderBySeasonStartTimeAsc(
+				currentBoundary.getSeasonStartTime(), MONTHLY_SEASON_LIMIT);
 		int months = Math.min(MONTHLY_FORTUNE_MONTHS, boundaries.size());
 		for (int i = 0; i < months; i++) {
 			Manse startBoundary = boundaries.get(i);

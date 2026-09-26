@@ -13,6 +13,7 @@ import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.springframework.data.domain.Limit;
 
 /**
  * ManseTableFixture 가 manses.sql 을 DB 와 같은 값으로 읽고, 목 저장소가 조회 메서드 이름대로 답하는지 확인한다.
@@ -91,7 +92,7 @@ class ManseTableFixtureTest {
 
 			// then
 			// AssertJ 의 Optional 단언에서 map 은 설명(as)을 버린 새 단언을 만든다. 그래서 map 은 단언 밖에서 하고 as 를 그 뒤에 둔다.
-			assertThat(repository.findTop13BySeasonStartTimeGreaterThanEqualOrderBySeasonStartTimeAsc(mangjong))
+			assertThat(repository.findBySeasonStartTimeGreaterThanEqualOrderBySeasonStartTimeAsc(mangjong, Limit.of(13)))
 				.as("같은 시각 포함(이후, 13개)").first().extracting(Manse::getSeason).isEqualTo("망종");
 			assertThat(repository.findFirstBySeasonStartTimeGreaterThanOrderBySeasonStartTimeAsc(mangjong)
 				.map(Manse::getSeason)).as("같은 시각 제외(이후)").hasValue("소서");
@@ -109,16 +110,16 @@ class ManseTableFixtureTest {
 				LocalDateTime.of(1900, 1, 6, 4, 7, 59))).isEmpty();
 			assertThat(repository.findFirstBySeasonStartTimeGreaterThanOrderBySeasonStartTimeAsc(
 				LocalDateTime.of(2100, 12, 7, 10, 4))).isEmpty();
-			assertThat(repository.findTop13BySeasonStartTimeGreaterThanEqualOrderBySeasonStartTimeAsc(
-				LocalDateTime.of(2100, 12, 7, 10, 4, 1))).isEmpty();
+			assertThat(repository.findBySeasonStartTimeGreaterThanEqualOrderBySeasonStartTimeAsc(
+				LocalDateTime.of(2100, 12, 7, 10, 4, 1), Limit.of(13))).isEmpty();
 		}
 
 		@Test
-		@DisplayName("13개 조회는 같은 시각을 넣어 절입 시각 순서로 13개까지 준다(망종 1993-06-06 01:12 부터 망종 1994-06-06 07:01 까지)")
+		@DisplayName("Limit 13 으로 조회하면 같은 시각을 넣어 절입 시각 순서로 13개까지 준다(망종 1993-06-06 01:12 부터 망종 1994-06-06 07:01 까지)")
 		void findsThirteenSeasonsInOrder() {
 			// when
-			List<Manse> seasons = repository.findTop13BySeasonStartTimeGreaterThanEqualOrderBySeasonStartTimeAsc(
-				LocalDateTime.of(1993, 6, 6, 1, 12));
+			List<Manse> seasons = repository.findBySeasonStartTimeGreaterThanEqualOrderBySeasonStartTimeAsc(
+				LocalDateTime.of(1993, 6, 6, 1, 12), Limit.of(13));
 
 			// then
 			assertThat(seasons).hasSize(13)
@@ -130,11 +131,22 @@ class ManseTableFixtureTest {
 		}
 
 		@Test
-		@DisplayName("13개 조회는 표 끝(2100-12-07 대설)에 가까우면 남은 절입만 준다(소한 2100-01-05 15:28 부터 12개)")
+		@DisplayName("절입 조회는 Limit 이 정한 개수만큼만 준다(망종 1993-06-06 01:12 부터 Limit 2)")
+		void findsOnlyAsManySeasonsAsLimit() {
+			// when
+			List<Manse> seasons = repository.findBySeasonStartTimeGreaterThanEqualOrderBySeasonStartTimeAsc(
+				LocalDateTime.of(1993, 6, 6, 1, 12), Limit.of(2));
+
+			// then
+			assertThat(seasons).extracting(Manse::getSeason).containsExactly("망종", "소서");
+		}
+
+		@Test
+		@DisplayName("Limit 13 으로 조회해도 표 끝(2100-12-07 대설)에 가까우면 남은 절입만 준다(소한 2100-01-05 15:28 부터 12개)")
 		void findsOnlyRemainingSeasonsNearEndOfTable() {
 			// when
-			List<Manse> seasons = repository.findTop13BySeasonStartTimeGreaterThanEqualOrderBySeasonStartTimeAsc(
-				LocalDateTime.of(2100, 1, 5, 15, 28));
+			List<Manse> seasons = repository.findBySeasonStartTimeGreaterThanEqualOrderBySeasonStartTimeAsc(
+				LocalDateTime.of(2100, 1, 5, 15, 28), Limit.of(13));
 
 			// then
 			assertThat(seasons).extracting(Manse::getSeason).containsExactly(

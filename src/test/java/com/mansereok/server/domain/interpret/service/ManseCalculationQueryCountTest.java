@@ -28,6 +28,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.domain.Limit;
 
 /**
  * 만세력 계산 한 번이 manses 를 몇 번 조회하는지 고정한다.
@@ -93,7 +94,7 @@ class ManseCalculationQueryCountTest {
 			then(manseRepository).should(times(1))
 				.findFirstBySeasonStartTimeLessThanEqualOrderBySeasonStartTimeDesc(NOW);
 			then(manseRepository).should(times(1))
-				.findTop13BySeasonStartTimeGreaterThanEqualOrderBySeasonStartTimeAsc(CURRENT_SEASON_START);
+				.findBySeasonStartTimeGreaterThanEqualOrderBySeasonStartTimeAsc(CURRENT_SEASON_START, Limit.of(13));
 		}
 	}
 
@@ -127,7 +128,7 @@ class ManseCalculationQueryCountTest {
 			then(manseRepository).should(times(2))
 				.findFirstBySeasonStartTimeLessThanEqualOrderBySeasonStartTimeDesc(NOW);
 			then(manseRepository).should(times(2))
-				.findTop13BySeasonStartTimeGreaterThanEqualOrderBySeasonStartTimeAsc(CURRENT_SEASON_START);
+				.findBySeasonStartTimeGreaterThanEqualOrderBySeasonStartTimeAsc(CURRENT_SEASON_START, Limit.of(13));
 		}
 
 		private ManseCompatibilityAnalysisRequest.PersonInfo person(String name, String gender) {

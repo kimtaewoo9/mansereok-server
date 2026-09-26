@@ -29,6 +29,7 @@ import org.mockito.invocation.InvocationOnMock;
 import org.mockito.quality.Strictness;
 import org.springframework.beans.BeanUtils;
 import org.springframework.core.io.ClassPathResource;
+import org.springframework.data.domain.Limit;
 import org.springframework.test.util.ReflectionTestUtils;
 
 /**
@@ -45,7 +46,7 @@ import org.springframework.test.util.ReflectionTestUtils;
  *   <li>lunar_date 가 '0000-00-00' 인 행(음력 2월 29·30일처럼 양력 날짜로 쓸 수 없는 날)은 JDBC 설정
  *   zeroDateTimeBehavior=CONVERT_TO_NULL 이 읽는 것처럼 음력 날짜를 null 로 둔다.</li>
  *   <li>절입 조회는 season_start_time 이 있는 행만 대상으로 하고, 같은 시각을 넣는지 빼는지는 메서드 이름(GreaterThanEqual,
- *   GreaterThan, LessThanEqual)대로 가른다. findTop13 은 DB 의 LIMIT 13 처럼 13개까지만 준다.</li>
+ *   GreaterThan, LessThanEqual)대로 가른다. Limit 을 받는 조회는 DB 의 LIMIT 처럼 그 개수까지만 준다.</li>
  * </ul>
  *
  * <p>Manse 는 생성자가 protected 이고 setter 가 없어 리플렉션이 필요한데, 그 우회를 이 클래스 한 곳에만 둔다. 손으로 만든 행이
@@ -61,8 +62,6 @@ public final class ManseTableFixture {
 	private static final int COLUMN_COUNT = 14;
 	private static final String ZERO_DATE = "0000-00-00";
 	private static final DateTimeFormatter DATETIME = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
-	// 월운이 한 번에 읽는 절입 수. ManseRepository.findTop13... 의 13 과 같다.
-	private static final int MONTHLY_SEASON_LIMIT = 13;
 
 	private final List<Manse> rows;
 	private final Map<LocalDate, Manse> bySolarDate = new HashMap<>();
@@ -132,9 +131,9 @@ public final class ManseTableFixture {
 		doAnswer(call -> valueOf(bySeasonStartTime.floorEntry(call.getArgument(0))))
 			.when(repository).findFirstBySeasonStartTimeLessThanEqualOrderBySeasonStartTimeDesc(any());
 		doAnswer(call -> bySeasonStartTime.tailMap(call.getArgument(0), true).values().stream()
-			.limit(MONTHLY_SEASON_LIMIT)
+			.limit(maxRows(call.getArgument(1)))
 			.toList())
-			.when(repository).findTop13BySeasonStartTimeGreaterThanEqualOrderBySeasonStartTimeAsc(any());
+			.when(repository).findBySeasonStartTimeGreaterThanEqualOrderBySeasonStartTimeAsc(any(), any());
 		return repository;
 	}
 
@@ -148,6 +147,11 @@ public final class ManseTableFixture {
 		}
 		throw new UnsupportedOperationException("ManseTableFixture 의 목 저장소는 " + call.getMethod().getName()
 			+ " 를 흉내 내지 않는다. 서비스가 이 조회를 쓰게 됐다면 newRepository() 에 답을 더한다");
+	}
+
+	/** DB 의 LIMIT 처럼 Limit 이 정한 개수까지만 준다. 개수를 정하지 않은 Limit 은 모두 준다. */
+	private static long maxRows(Limit limit) {
+		return limit.isLimited() ? limit.max() : Long.MAX_VALUE;
 	}
 
 	private static Optional<Manse> valueOf(Map.Entry<LocalDateTime, Manse> entry) {
