@@ -63,7 +63,7 @@ public class SajuPromptFactory {
 				CHARACTER_COMPATIBILITY, CHARACTER_TO_CHARACTER_COMPATIBILITY, LOVE_STORY_14,
 				ACTOR_COMPATIBILITY, REUNION,
 				CHANGES_2026, KEYWORD_2026, FLIRTING, CHEMISTRY_MATCH, TODAY_FORTUNE,
-				MARCH_MONTHLY_FORTUNE -> throw InterpretationProduct.unsupported(subcategoryId);
+				MARCH_MONTHLY_FORTUNE -> throw InterpretationProduct.unsupported(product.id());
 		};
 
 		SequencedMap<String, String> userValues = new LinkedHashMap<>();
@@ -98,7 +98,7 @@ public class SajuPromptFactory {
 				LIFE_ADVICE,
 				LOVE_STORY_4, LOVE_STORY_6, IDOL_COMPATIBILITY, TRIANGLE_RELATIONSHIP,
 				CHARACTER_COMPATIBILITY, CHARACTER_TO_CHARACTER_COMPATIBILITY, LOVE_STORY_14,
-				ACTOR_COMPATIBILITY, REUNION -> throw InterpretationProduct.unsupported(subcategoryId);
+				ACTOR_COMPATIBILITY, REUNION -> throw InterpretationProduct.unsupported(product.id());
 		};
 
 		SequencedMap<String, String> userValues = new LinkedHashMap<>();

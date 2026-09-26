@@ -16,6 +16,10 @@ import org.junit.jupiter.params.provider.ValueSource;
 @DisplayName("해석 상품 목록")
 class InterpretationProductTest {
 
+	/**
+	 * 번호가 겹치면 이 단언까지 오지 못한다. 번호로 상품을 찾는 표(BY_ID)를 만들다 클래스 로딩이 먼저 실패해
+	 * ExceptionInInitializerError 로 끝난다. 어느 쪽이든 테스트는 실패하므로 겹침은 잡힌다.
+	 */
 	@Test
 	@DisplayName("상품 번호는 서로 겹치지 않는다")
 	void idsAreUnique() {
