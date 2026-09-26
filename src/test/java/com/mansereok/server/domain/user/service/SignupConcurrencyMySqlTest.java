@@ -221,9 +221,9 @@ class SignupConcurrencyMySqlTest extends LocalMySqlTest {
 	 * open-in-view 가 켜진 웹 요청처럼, 작업 하나가 EntityManager 하나를 처음부터 끝까지 쓰게 한다. 스프링이 웹 요청마다 쓰는
 	 * OpenEntityManagerInViewInterceptor 로 EntityManager 를 스레드에 묶었다 푼다.
 	 *
-	 * <p>이 조건에서는 UNIQUE 위반으로 롤백된 가입 트랜잭션과 그 뒤의 다시 찾기가 같은 EntityManager 를 쓴다. 운영은 아직
-	 * open-in-view 가 켜져 있어 소셜 로그인 요청이 이렇게 돈다. 설정과 상관없이 이 조건을 만들려고 인터셉터를 빈으로 받지 않고 직접
-	 * 만든다.
+	 * <p>이 조건에서는 UNIQUE 위반으로 롤백된 가입 트랜잭션과 그 뒤의 다시 찾기가 같은 EntityManager 를 쓴다. 운영은
+	 * open-in-view 를 꺼서 요청이 이렇게 돌지 않지만, 설정을 다시 켜도 같은 계정으로 로그인하는지 지켜 둔다. 설정과 상관없이 이 조건을
+	 * 만들려고 인터셉터를 빈으로 받지 않고 직접 만든다.
 	 */
 	private <T> T withEntityManagerPerRequest(Callable<T> task) throws Exception {
 		OpenEntityManagerInViewInterceptor interceptor = new OpenEntityManagerInViewInterceptor();
