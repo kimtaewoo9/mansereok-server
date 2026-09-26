@@ -1,5 +1,7 @@
 package com.mansereok.server.domain.interpret.calculator;
 
+import static java.util.Map.entry;
+
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -33,233 +35,141 @@ import org.springframework.stereotype.Component;
 public class SinsalCalculator {
 
 	// 삼합 기준 도화살
-	private static final Map<String, String> DOHWA_MAP = new HashMap<>();
-
-	static {
-		DOHWA_MAP.put("寅", "卯");
-		DOHWA_MAP.put("午", "卯");
-		DOHWA_MAP.put("戌", "卯");
-		DOHWA_MAP.put("申", "酉");
-		DOHWA_MAP.put("子", "酉");
-		DOHWA_MAP.put("辰", "酉");
-		DOHWA_MAP.put("巳", "午");
-		DOHWA_MAP.put("酉", "午");
-		DOHWA_MAP.put("丑", "午");
-		DOHWA_MAP.put("亥", "子");
-		DOHWA_MAP.put("卯", "子");
-		DOHWA_MAP.put("未", "子");
-	}
+	private static final Map<String, String> DOHWA_MAP = Map.ofEntries(
+		entry("寅", "卯"), entry("午", "卯"), entry("戌", "卯"),
+		entry("申", "酉"), entry("子", "酉"), entry("辰", "酉"),
+		entry("巳", "午"), entry("酉", "午"), entry("丑", "午"),
+		entry("亥", "子"), entry("卯", "子"), entry("未", "子")
+	);
 
 	// 삼합 기준 역마살
-	private static final Map<String, String> YEOGMA_MAP = new HashMap<>();
-
-	static {
-		YEOGMA_MAP.put("寅", "申");
-		YEOGMA_MAP.put("午", "申");
-		YEOGMA_MAP.put("戌", "申");
-		YEOGMA_MAP.put("申", "寅");
-		YEOGMA_MAP.put("子", "寅");
-		YEOGMA_MAP.put("辰", "寅");
-		YEOGMA_MAP.put("巳", "亥");
-		YEOGMA_MAP.put("酉", "亥");
-		YEOGMA_MAP.put("丑", "亥");
-		YEOGMA_MAP.put("亥", "巳");
-		YEOGMA_MAP.put("卯", "巳");
-		YEOGMA_MAP.put("未", "巳");
-	}
+	private static final Map<String, String> YEOGMA_MAP = Map.ofEntries(
+		entry("寅", "申"), entry("午", "申"), entry("戌", "申"),
+		entry("申", "寅"), entry("子", "寅"), entry("辰", "寅"),
+		entry("巳", "亥"), entry("酉", "亥"), entry("丑", "亥"),
+		entry("亥", "巳"), entry("卯", "巳"), entry("未", "巳")
+	);
 
 	// 삼합 기준 화개살
-	private static final Map<String, String> HWAGAE_MAP = new HashMap<>();
-
-	static {
-		HWAGAE_MAP.put("寅", "戌");
-		HWAGAE_MAP.put("午", "戌");
-		HWAGAE_MAP.put("戌", "戌");
-		HWAGAE_MAP.put("申", "辰");
-		HWAGAE_MAP.put("子", "辰");
-		HWAGAE_MAP.put("辰", "辰");
-		HWAGAE_MAP.put("巳", "丑");
-		HWAGAE_MAP.put("酉", "丑");
-		HWAGAE_MAP.put("丑", "丑");
-		HWAGAE_MAP.put("亥", "未");
-		HWAGAE_MAP.put("卯", "未");
-		HWAGAE_MAP.put("未", "未");
-	}
+	private static final Map<String, String> HWAGAE_MAP = Map.ofEntries(
+		entry("寅", "戌"), entry("午", "戌"), entry("戌", "戌"),
+		entry("申", "辰"), entry("子", "辰"), entry("辰", "辰"),
+		entry("巳", "丑"), entry("酉", "丑"), entry("丑", "丑"),
+		entry("亥", "未"), entry("卯", "未"), entry("未", "未")
+	);
 
 	// 일간 기준 천을귀인
-	private static final Map<String, List<String>> CHEONUL_MAP = new HashMap<>();
-
-	static {
-		CHEONUL_MAP.put("甲", Arrays.asList("丑", "未"));
-		CHEONUL_MAP.put("乙", Arrays.asList("子", "申"));
-		CHEONUL_MAP.put("丙", Arrays.asList("亥", "酉"));
-		CHEONUL_MAP.put("丁", Arrays.asList("亥", "酉"));
-		CHEONUL_MAP.put("戊", Arrays.asList("丑", "未"));
-		CHEONUL_MAP.put("己", Arrays.asList("子", "申"));
-		CHEONUL_MAP.put("庚", Arrays.asList("丑", "未"));
-		CHEONUL_MAP.put("辛", Arrays.asList("寅", "午"));
-		CHEONUL_MAP.put("壬", Arrays.asList("卯", "巳"));
-		CHEONUL_MAP.put("癸", Arrays.asList("卯", "巳"));
-	}
+	private static final Map<String, List<String>> CHEONUL_MAP = Map.ofEntries(
+		entry("甲", List.of("丑", "未")),
+		entry("乙", List.of("子", "申")),
+		entry("丙", List.of("亥", "酉")),
+		entry("丁", List.of("亥", "酉")),
+		entry("戊", List.of("丑", "未")),
+		entry("己", List.of("子", "申")),
+		entry("庚", List.of("丑", "未")),
+		entry("辛", List.of("寅", "午")),
+		entry("壬", List.of("卯", "巳")),
+		entry("癸", List.of("卯", "巳"))
+	);
 
 	// 월지 기준 월덕귀인 (해당 천간을 보면 성립)
-	private static final Map<String, String> WOLDEOK_MAP = new HashMap<>();
-
-	static {
-		WOLDEOK_MAP.put("寅", "丙");
-		WOLDEOK_MAP.put("卯", "甲");
-		WOLDEOK_MAP.put("辰", "壬");
-		WOLDEOK_MAP.put("巳", "庚");
-		WOLDEOK_MAP.put("午", "丙");
-		WOLDEOK_MAP.put("未", "甲");
-		WOLDEOK_MAP.put("申", "壬");
-		WOLDEOK_MAP.put("酉", "庚");
-		WOLDEOK_MAP.put("戌", "丙");
-		WOLDEOK_MAP.put("亥", "甲");
-		WOLDEOK_MAP.put("子", "壬");
-		WOLDEOK_MAP.put("丑", "庚");
-	}
+	private static final Map<String, String> WOLDEOK_MAP = Map.ofEntries(
+		entry("寅", "丙"), entry("卯", "甲"), entry("辰", "壬"),
+		entry("巳", "庚"), entry("午", "丙"), entry("未", "甲"),
+		entry("申", "壬"), entry("酉", "庚"), entry("戌", "丙"),
+		entry("亥", "甲"), entry("子", "壬"), entry("丑", "庚")
+	);
 
 	// 월지 기준 월덕합 (해당 천간을 보면 성립)
-	private static final Map<String, String> WOLDEOKHAP_MAP = new HashMap<>();
-
-	static {
-		WOLDEOKHAP_MAP.put("寅", "辛");
-		WOLDEOKHAP_MAP.put("卯", "己");
-		WOLDEOKHAP_MAP.put("辰", "丁");
-		WOLDEOKHAP_MAP.put("巳", "乙");
-		WOLDEOKHAP_MAP.put("午", "辛");
-		WOLDEOKHAP_MAP.put("未", "己");
-		WOLDEOKHAP_MAP.put("申", "丁");
-		WOLDEOKHAP_MAP.put("酉", "乙");
-		WOLDEOKHAP_MAP.put("戌", "辛");
-		WOLDEOKHAP_MAP.put("亥", "己");
-		WOLDEOKHAP_MAP.put("子", "丁");
-		WOLDEOKHAP_MAP.put("丑", "乙");
-	}
+	private static final Map<String, String> WOLDEOKHAP_MAP = Map.ofEntries(
+		entry("寅", "辛"), entry("卯", "己"), entry("辰", "丁"),
+		entry("巳", "乙"), entry("午", "辛"), entry("未", "己"),
+		entry("申", "丁"), entry("酉", "乙"), entry("戌", "辛"),
+		entry("亥", "己"), entry("子", "丁"), entry("丑", "乙")
+	);
 
 	// 일간 기준 문창귀인
-	private static final Map<String, String> MUNCHANG_MAP = new HashMap<>();
-
-	static {
-		MUNCHANG_MAP.put("甲", "巳");
-		MUNCHANG_MAP.put("乙", "午");
-		MUNCHANG_MAP.put("丙", "申");
-		MUNCHANG_MAP.put("丁", "酉");
-		MUNCHANG_MAP.put("戊", "申");
-		MUNCHANG_MAP.put("己", "酉");
-		MUNCHANG_MAP.put("庚", "亥");
-		MUNCHANG_MAP.put("辛", "子");
-		MUNCHANG_MAP.put("壬", "寅");
-		MUNCHANG_MAP.put("癸", "卯");
-	}
+	private static final Map<String, String> MUNCHANG_MAP = Map.ofEntries(
+		entry("甲", "巳"), entry("乙", "午"),
+		entry("丙", "申"), entry("丁", "酉"),
+		entry("戊", "申"), entry("己", "酉"),
+		entry("庚", "亥"), entry("辛", "子"),
+		entry("壬", "寅"), entry("癸", "卯")
+	);
 
 	// 월지 기준 천덕귀인 (천간/지지 혼합)
-	private static final Map<String, String> CHEONDEOK_MAP = new HashMap<>();
-
-	static {
-		CHEONDEOK_MAP.put("寅", "丁");
-		CHEONDEOK_MAP.put("卯", "申");
-		CHEONDEOK_MAP.put("辰", "壬");
-		CHEONDEOK_MAP.put("巳", "辛");
-		CHEONDEOK_MAP.put("午", "亥");
-		CHEONDEOK_MAP.put("未", "甲");
-		CHEONDEOK_MAP.put("申", "癸");
-		CHEONDEOK_MAP.put("酉", "寅");
-		CHEONDEOK_MAP.put("戌", "丙");
-		CHEONDEOK_MAP.put("亥", "乙");
-		CHEONDEOK_MAP.put("子", "巳");
-		CHEONDEOK_MAP.put("丑", "庚");
-	}
+	private static final Map<String, String> CHEONDEOK_MAP = Map.ofEntries(
+		entry("寅", "丁"), entry("卯", "申"), entry("辰", "壬"),
+		entry("巳", "辛"), entry("午", "亥"), entry("未", "甲"),
+		entry("申", "癸"), entry("酉", "寅"), entry("戌", "丙"),
+		entry("亥", "乙"), entry("子", "巳"), entry("丑", "庚")
+	);
 
 	// 월지 기준 천덕합 (천덕귀인의 합성 대응값)
-	private static final Map<String, String> CHEONDEOKHAP_MAP = new HashMap<>();
-
-	static {
-		CHEONDEOKHAP_MAP.put("寅", "壬");
-		CHEONDEOKHAP_MAP.put("卯", "巳");
-		CHEONDEOKHAP_MAP.put("辰", "丁");
-		CHEONDEOKHAP_MAP.put("巳", "丙");
-		CHEONDEOKHAP_MAP.put("午", "寅");
-		CHEONDEOKHAP_MAP.put("未", "己");
-		CHEONDEOKHAP_MAP.put("申", "戊");
-		CHEONDEOKHAP_MAP.put("酉", "亥");
-		CHEONDEOKHAP_MAP.put("戌", "辛");
-		CHEONDEOKHAP_MAP.put("亥", "庚");
-		CHEONDEOKHAP_MAP.put("子", "申");
-		CHEONDEOKHAP_MAP.put("丑", "乙");
-	}
+	private static final Map<String, String> CHEONDEOKHAP_MAP = Map.ofEntries(
+		entry("寅", "壬"), entry("卯", "巳"), entry("辰", "丁"),
+		entry("巳", "丙"), entry("午", "寅"), entry("未", "己"),
+		entry("申", "戊"), entry("酉", "亥"), entry("戌", "辛"),
+		entry("亥", "庚"), entry("子", "申"), entry("丑", "乙")
+	);
 
 	// 일간 기준 태극귀인
-	private static final Map<String, List<String>> TAEGEUK_MAP = new HashMap<>();
-
-	static {
-		TAEGEUK_MAP.put("甲", Arrays.asList("子", "午"));
-		TAEGEUK_MAP.put("乙", Arrays.asList("子", "午"));
-		TAEGEUK_MAP.put("丙", Arrays.asList("卯", "酉"));
-		TAEGEUK_MAP.put("丁", Arrays.asList("卯", "酉"));
-		TAEGEUK_MAP.put("戊", Arrays.asList("辰", "戌", "丑", "未"));
-		TAEGEUK_MAP.put("己", Arrays.asList("辰", "戌", "丑", "未"));
-		TAEGEUK_MAP.put("庚", Arrays.asList("寅", "亥"));
-		TAEGEUK_MAP.put("辛", Arrays.asList("寅", "亥"));
-		TAEGEUK_MAP.put("壬", Arrays.asList("巳", "申"));
-		TAEGEUK_MAP.put("癸", Arrays.asList("巳", "申"));
-	}
+	private static final Map<String, List<String>> TAEGEUK_MAP = Map.ofEntries(
+		entry("甲", List.of("子", "午")),
+		entry("乙", List.of("子", "午")),
+		entry("丙", List.of("卯", "酉")),
+		entry("丁", List.of("卯", "酉")),
+		entry("戊", List.of("辰", "戌", "丑", "未")),
+		entry("己", List.of("辰", "戌", "丑", "未")),
+		entry("庚", List.of("寅", "亥")),
+		entry("辛", List.of("寅", "亥")),
+		entry("壬", List.of("巳", "申")),
+		entry("癸", List.of("巳", "申"))
+	);
 
 	// 일간 기준 국인귀인
-	private static final Map<String, String> GUKIN_MAP = new HashMap<>();
-
-	static {
-		GUKIN_MAP.put("甲", "戌");
-		GUKIN_MAP.put("乙", "亥");
-		GUKIN_MAP.put("丙", "丑");
-		GUKIN_MAP.put("丁", "寅");
-		GUKIN_MAP.put("戊", "丑");
-		GUKIN_MAP.put("己", "寅");
-		GUKIN_MAP.put("庚", "辰");
-		GUKIN_MAP.put("辛", "巳");
-		GUKIN_MAP.put("壬", "未");
-		GUKIN_MAP.put("癸", "申");
-	}
+	private static final Map<String, String> GUKIN_MAP = Map.ofEntries(
+		entry("甲", "戌"), entry("乙", "亥"),
+		entry("丙", "丑"), entry("丁", "寅"),
+		entry("戊", "丑"), entry("己", "寅"),
+		entry("庚", "辰"), entry("辛", "巳"),
+		entry("壬", "未"), entry("癸", "申")
+	);
 
 	// 괴강살 (일주 기준)
-	private static final List<String> GOEGANG_LIST = Arrays.asList(
+	private static final List<String> GOEGANG_LIST = List.of(
 		"庚辰", "庚戌", "壬辰", "壬戌", "戊戌"
 	);
 
 	// 백호대살 (일주 기준)
-	private static final List<String> BAEKHO_LIST = Arrays.asList(
+	private static final List<String> BAEKHO_LIST = List.of(
 		"甲辰", "乙未", "丙戌", "丁丑", "戊辰", "壬戌", "癸丑"
 	);
 
 	// 양인살 (일간 기준, 양간만 해당)
-	private static final Map<String, String> YANGIN_MAP = new HashMap<>();
+	private static final Map<String, String> YANGIN_MAP = Map.ofEntries(
+		entry("甲", "卯"),
+		entry("丙", "午"),
+		entry("戊", "午"),
+		entry("庚", "酉"),
+		entry("壬", "子")
+	);
 
-	static {
-		YANGIN_MAP.put("甲", "卯");
-		YANGIN_MAP.put("丙", "午");
-		YANGIN_MAP.put("戊", "午");
-		YANGIN_MAP.put("庚", "酉");
-		YANGIN_MAP.put("壬", "子");
-	}
-
-	private static final Map<String, String> HONGYEOM_MAP = new HashMap<>();
-
-	static {
-		HONGYEOM_MAP.put("甲", "午"); // 갑오
-		HONGYEOM_MAP.put("乙", "申"); // 을신
-		HONGYEOM_MAP.put("丙", "寅"); // 병인
-		HONGYEOM_MAP.put("丁", "未"); // 정미
-		HONGYEOM_MAP.put("戊", "辰"); // 무진
-		HONGYEOM_MAP.put("己", "辰"); // 기진
-		HONGYEOM_MAP.put("庚", "戌"); // 경술
-		HONGYEOM_MAP.put("辛", "酉"); // 신유
-		HONGYEOM_MAP.put("壬", "子"); // 임자
-		HONGYEOM_MAP.put("癸", "申"); // 계신
-	}
+	private static final Map<String, String> HONGYEOM_MAP = Map.ofEntries(
+		entry("甲", "午"), // 갑오
+		entry("乙", "申"), // 을신
+		entry("丙", "寅"), // 병인
+		entry("丁", "未"), // 정미
+		entry("戊", "辰"), // 무진
+		entry("己", "辰"), // 기진
+		entry("庚", "戌"), // 경술
+		entry("辛", "酉"), // 신유
+		entry("壬", "子"), // 임자
+		entry("癸", "申") // 계신
+	);
 
 	// 공망 계산용 60갑자 순서
-	private static final List<String> SIXTY_GAPJA = Arrays.asList(
+	private static final List<String> SIXTY_GAPJA = List.of(
 		"甲子", "乙丑", "丙寅", "丁卯", "戊辰", "己巳", "庚午", "辛未", "壬申", "癸酉", // 갑자순
 		"甲戌", "乙亥", "丙子", "丁丑", "戊寅", "己卯", "庚辰", "辛巳", "壬午", "癸未", // 갑술순
 		"甲申", "乙酉", "丙戌", "丁亥", "戊子", "己丑", "庚寅", "辛卯", "壬辰", "癸巳", // 갑신순
