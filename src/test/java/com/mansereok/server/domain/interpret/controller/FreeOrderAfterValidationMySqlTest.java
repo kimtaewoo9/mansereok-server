@@ -103,7 +103,8 @@ class FreeOrderAfterValidationMySqlTest extends InterpretationMySqlTest {
 
 		// when & then
 		assertThatThrownBy(() -> controller.interpretFree(FREE_FORTUNE_PRODUCT_ID, request, username))
-			.hasMessageContaining("만세력 데이터를 찾을 수 없습니다");
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessage("지원 범위(양력 1900-01-01~2100-12-31) 밖이거나 존재하지 않는 날짜입니다.");
 		assertNoRowsForThisUser();
 	}
 
