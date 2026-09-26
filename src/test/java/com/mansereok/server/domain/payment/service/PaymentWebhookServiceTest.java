@@ -20,6 +20,7 @@ import ch.qos.logback.core.read.ListAppender;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mansereok.server.domain.interpret.service.ResultService;
+import com.mansereok.server.domain.order.entity.AppliedDiscount;
 import com.mansereok.server.domain.order.entity.Order;
 import com.mansereok.server.domain.order.entity.OrderStatus;
 import com.mansereok.server.domain.order.repository.OrderRepository;
@@ -33,6 +34,8 @@ import com.mansereok.server.domain.payment.event.PaymentCompletedEvent;
 import com.mansereok.server.domain.payment.repository.PaymentRepository;
 import com.mansereok.server.global.exception.PaymentException;
 import com.mansereok.server.global.exception.PortOneUnavailableException;
+import com.mansereok.server.support.fixture.TestOrders;
+import com.mansereok.server.support.fixture.TestPayments;
 import java.time.LocalDateTime;
 import java.util.Map;
 import java.util.Optional;
@@ -125,10 +128,13 @@ class PaymentWebhookServiceTest {
 	// ===== 테스트 픽스처 =====
 
 	private Order createOrder(OrderStatus status, String appliedDiscountCode, Long couponId) {
-		Order order = Order.create(MERCHANT_UID, USER_ID, SUB_CATEGORY_ID, PRICE, PRICE,
-			appliedDiscountCode, couponId, status, BUYER_NAME, BUYER_EMAIL);
-		ReflectionTestUtils.setField(order, "id", ORDER_ID);
-		return order;
+		return orderOfThisTest().discount(new AppliedDiscount(appliedDiscountCode, couponId)).inStatus(status);
+	}
+
+	/** 이 테스트의 주문. PAID·CANCELLED 로 만들면 결제 ID 로 PAYMENT_ID 가 기록된다. */
+	private static TestOrders orderOfThisTest() {
+		return TestOrders.order().id(ORDER_ID).merchantUid(MERCHANT_UID).userId(USER_ID).subCategoryId(SUB_CATEGORY_ID)
+			.price(PRICE).buyer(BUYER_NAME, BUYER_EMAIL).paymentId(PAYMENT_ID);
 	}
 
 	private PortOnePaymentResponse portOneResponse(String status, long total) {
@@ -325,8 +331,8 @@ class PaymentWebhookServiceTest {
 			portOneResponseWithCustomData("PAID", PRICE));
 		givenLockedOrder(order);
 		given(paymentRepository.findByImpUid(PAYMENT_ID)).willReturn(
-			Optional.of(Payment.create(PAYMENT_ID, MERCHANT_UID, (long) PRICE, PaymentStatus.CANCELLED,
-				ORDER_ID, USER_ID, SUB_CATEGORY_ID)));
+			Optional.of(TestPayments.payment().paymentId(PAYMENT_ID).merchantUid(MERCHANT_UID).orderId(ORDER_ID)
+				.userId(USER_ID).subCategoryId(SUB_CATEGORY_ID).amount(PRICE).inStatus(PaymentStatus.CANCELLED)));
 
 		// when
 		assertThatCode(() -> paymentWebhookService.processWebhook(webhookBody("Paid")))
@@ -626,8 +632,8 @@ class PaymentWebhookServiceTest {
 			given(portOneClient.getPayment(SECOND_PAYMENT_ID)).willReturn(
 				portOneResponseWithCustomData(SECOND_PAYMENT_ID, "PAID", PRICE));
 			given(paymentRepository.findByImpUid(SECOND_PAYMENT_ID)).willReturn(Optional.of(
-				Payment.create(SECOND_PAYMENT_ID, "order_other_999", (long) PRICE, PaymentStatus.PAID, 99L, 2L,
-					SUB_CATEGORY_ID)));
+				TestPayments.payment().paymentId(SECOND_PAYMENT_ID).merchantUid("order_other_999").orderId(99L).userId(2L)
+					.subCategoryId(SUB_CATEGORY_ID).amount(PRICE).paid()));
 
 			// when
 			assertThatCode(() -> paymentWebhookService.processWebhook(webhookBody(SECOND_PAYMENT_ID, "Paid")))
@@ -652,7 +658,7 @@ class PaymentWebhookServiceTest {
 	@DisplayName("결제 ID 가 기록되지 않은 예전 PAID 주문에 승인된 결제의 웹훅이 오면 같은 결제인지 가릴 수 없어 취소하지 않고 알림만 한 번 보낸다")
 	void processWebhook_paidOrderWithoutRecordedPaymentId_alertsWithoutCancel() {
 		// given
-		Order order = createOrder(OrderStatus.PAID, null, null);
+		Order order = orderOfThisTest().paymentId(null).paid();
 		given(portOneClient.getPayment(PAYMENT_ID)).willReturn(
 			portOneResponseWithCustomData("PAID", PRICE));
 		givenLockedOrder(order);

@@ -4,10 +4,9 @@ import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.catchThrowable;
 
-import com.mansereok.server.domain.order.entity.Order;
-import com.mansereok.server.domain.order.entity.OrderStatus;
 import com.mansereok.server.domain.order.repository.OrderRepository;
 import com.mansereok.server.support.LocalMySqlTest;
+import com.mansereok.server.support.fixture.TestOrders;
 import java.sql.SQLException;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
@@ -49,8 +48,7 @@ class LockTimeoutTranslationMySqlTest extends LocalMySqlTest {
 	@BeforeEach
 	void saveOrder() {
 		transactionTemplate = new TransactionTemplate(transactionManager);
-		orderRepository.save(Order.create(merchantUid, null, 1L, 10000, 10000, null, null,
-			OrderStatus.PENDING, "구매자", "buyer@example.com"));
+		orderRepository.save(TestOrders.order().merchantUid(merchantUid).userId(null).pending());
 	}
 
 	@AfterEach

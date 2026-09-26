@@ -15,11 +15,11 @@ import com.mansereok.server.domain.interpret.service.ManseCalculationService;
 import com.mansereok.server.domain.interpret.service.ManseInterpretationService;
 import com.mansereok.server.domain.interpret.service.ResultService;
 import com.mansereok.server.domain.payment.entity.Payment;
-import com.mansereok.server.domain.payment.entity.PaymentStatus;
 import com.mansereok.server.domain.payment.service.PaymentEntitlementService;
 import com.mansereok.server.domain.payment.service.PaymentOrderService;
 import com.mansereok.server.global.exception.GlobalExceptionHandler;
 import com.mansereok.server.global.exception.PaymentException;
+import com.mansereok.server.support.fixture.TestPayments;
 import java.util.List;
 import java.util.function.Consumer;
 import org.junit.jupiter.api.AfterEach;
@@ -35,7 +35,6 @@ import org.springframework.http.MediaType;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.web.method.annotation.AuthenticationPrincipalArgumentResolver;
-import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
@@ -205,10 +204,8 @@ class ManseryeokControllerEntitlementTest {
 		}
 
 		private Payment freePayment(Long subCategoryId) {
-			Payment payment = Payment.create("free_pay_test", "free_order_test", 0L, PaymentStatus.PAID, 20L, 1L,
-				subCategoryId);
-			ReflectionTestUtils.setField(payment, "id", FREE_PAYMENT_PK_ID);
-			return payment;
+			return TestPayments.payment().id(FREE_PAYMENT_PK_ID).paymentId("free_pay_test")
+				.merchantUid("free_order_test").orderId(20L).userId(1L).subCategoryId(subCategoryId).amount(0L).paid();
 		}
 	}
 

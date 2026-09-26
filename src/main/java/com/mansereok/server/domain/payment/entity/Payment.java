@@ -1,5 +1,6 @@
 package com.mansereok.server.domain.payment.entity;
 
+import com.mansereok.server.domain.order.entity.Order;
 import com.mansereok.server.global.exception.OrderStateException;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -14,7 +15,6 @@ import java.time.LocalDateTime;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
-import org.springframework.data.annotation.CreatedDate;
 
 
 // 인덱스 이름을 고정해 엔티티, schema.sql, 운영 DB 가 같은 이름을 쓰게 한다. 운영은 ddl-auto: validate 라 인덱스를 검사하지도
@@ -63,20 +63,27 @@ public class Payment {
 	private Long amount; // 검증을 위해 필수
 	@Enumerated(EnumType.STRING)
 	private PaymentStatus status; // 결제 상태
-	@CreatedDate
+	// 스프링 데이터의 생성 시각 자동 채움(@CreatedDate)을 켜 두지 않았으므로 paid() 가 직접 넣는다.
 	private LocalDateTime createdAt;
 
-	public static Payment create(String paymentId, String merchantUid, Long amount,
-		PaymentStatus status, Long orderId, Long userId, Long subCategoryId) {
+	/**
+	 * 확정된 주문의 결제를 만든다. 상태는 PAID 로 고정하고, 환불은 전이 메서드(markCancelRequested, markCancelled)로만 간다.
+	 * 주문 번호와 주문·사용자·상품 id 는 주문에서 옮겨 적어, 같은 타입 id 의 순서가 뒤바뀔 자리를 두지 않는다.
+	 *
+	 * @param order     PAID 로 확정한 주문. 저장돼 id 가 있어야 한다.
+	 * @param paymentId 포트원 거래 번호. 포트원 거래가 없는 무료 결제는 free_ 로 시작하는 자체 번호
+	 * @param amount    결제된 금액
+	 */
+	public static Payment paid(Order order, String paymentId, long amount) {
 		Payment payment = new Payment();
 		payment.impUid = paymentId;
-		payment.merchantUid = merchantUid;
+		payment.merchantUid = order.getMerchantUid();
+		payment.orderId = order.getId();
+		payment.userId = order.getUserId();
+		payment.subCategoryId = order.getSubCategoryId();
 		payment.amount = amount;
-		payment.status = status;
+		payment.status = PaymentStatus.PAID;
 		payment.createdAt = LocalDateTime.now();
-		payment.orderId = orderId;
-		payment.userId = userId;
-		payment.subCategoryId = subCategoryId;
 		return payment;
 	}
 

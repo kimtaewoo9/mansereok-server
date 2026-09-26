@@ -27,6 +27,7 @@ import com.mansereok.server.domain.payment.reconciliation.repository.PaymentReco
 import com.mansereok.server.domain.payment.reconciliation.repository.PaymentReconciliationRunRepository;
 import com.mansereok.server.domain.payment.repository.PaymentRepository;
 import com.mansereok.server.global.exception.PortOneUnavailableException;
+import com.mansereok.server.support.fixture.TestPayments;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -129,7 +130,7 @@ class PaymentReconciliationServiceTest {
 	}
 
 	private Payment dbPayment(String impUid, PaymentStatus status, long amount) {
-		return Payment.create(impUid, "order_" + impUid, amount, status, 1L, 1L, 1L);
+		return TestPayments.payment().paymentId(impUid).merchantUid("order_" + impUid).amount(amount).inStatus(status);
 	}
 
 	private void givenPgPayments(PortOnePaymentResponse... pgPayments) {

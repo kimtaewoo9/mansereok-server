@@ -6,8 +6,10 @@ import com.mansereok.server.domain.discount.service.DiscountCodeService;
 import com.mansereok.server.domain.discount.service.DiscountCodeService.DiscountValidationResult;
 import com.mansereok.server.domain.order.dto.request.OrderCreateRequest;
 import com.mansereok.server.domain.order.dto.response.OrderCreateResponse;
+import com.mansereok.server.domain.order.entity.AppliedDiscount;
 import com.mansereok.server.domain.order.entity.Order;
-import com.mansereok.server.domain.order.entity.OrderStatus;
+import com.mansereok.server.domain.order.entity.OrderAmounts;
+import com.mansereok.server.domain.order.entity.OrderBuyer;
 import com.mansereok.server.domain.order.repository.OrderRepository;
 import com.mansereok.server.domain.payment.entity.Payment;
 import com.mansereok.server.domain.product.entity.SubCategory;
@@ -46,14 +48,12 @@ public class PaymentOrderService {
 	 * 쿠폰/할인코드 분기의 결과. 사용 확정(consumeDiscount)에 필요한 정보를 함께 담는다.
 	 *
 	 * @param finalAmount        할인 적용 후 금액
-	 * @param appliedCode        주문에 기록할 코드(쿠폰명 또는 할인 코드), 없으면 null
-	 * @param couponId           쿠폰을 쓴 경우 그 id, 아니면 null
+	 * @param applied            주문에 기록할 할인(쿠폰 id·쿠폰명 또는 할인 코드)
 	 * @param discountCodeEntity 할인 코드를 쓴 경우 그 엔티티, 아니면 null
 	 */
 	private record DiscountResolution(
 		int finalAmount,
-		String appliedCode,
-		Long couponId,
+		AppliedDiscount applied,
 		DiscountCode discountCodeEntity
 	) {
 
@@ -67,7 +67,7 @@ public class PaymentOrderService {
 		SubCategory subCategory = subCategoryRepository.findById(request.getSubCategoryId())
 			.orElseThrow(() -> new PaymentException("존재하지 않는 상품입니다."));
 
-		Integer originalAmount = subCategory.getPrice(); // 1. 원본 금액 .
+		int originalAmount = subCategory.getPrice(); // 1. 원본 금액
 
 		// 2. 쿠폰/할인 코드 검증. 실패(PaymentException)는 GlobalExceptionHandler 가 400 으로,
 		//    DB 장애 같은 예상 못 한 예외는 500 으로 응답하므로 여기서 다시 감싸지 않는다.
@@ -83,25 +83,14 @@ public class PaymentOrderService {
 		String merchantUid = merchantUidGenerator.forOrder();
 
 		// 3. 주문서 생성
-		Order savedOrder = orderRepository.save(
-			Order.create(
-				merchantUid,
-				user.getId(),
-				subCategory.getId(),
-				originalAmount,
-				finalAmount,
-				discount.appliedCode(),
-				discount.couponId(),
-				OrderStatus.PENDING,
-				user.getName(),
-				user.getEmail()
-			)
-		);
+		Order savedOrder = orderRepository.save(Order.pending(merchantUid, OrderBuyer.from(user),
+			subCategory.getId(), new OrderAmounts(originalAmount, finalAmount), discount.applied()));
 
 		// 4. 사용 횟수 증가 (주문 생성 트랜잭션 내에서 즉시 처리)
 		consumeDiscount(discount);
 
-		log.info("주문 생성 완료 (트랜잭션 커밋): orderId={}, merchantUid={}, amount={}",
+		// 클래스 수준 트랜잭션 안이라 아직 커밋 전이다.
+		log.info("주문 저장: orderId={}, merchantUid={}, amount={}",
 			savedOrder.getId(), merchantUid, finalAmount);
 
 		// 5. 프론트에 최종 결제액과 주문번호 전달
@@ -124,7 +113,7 @@ public class PaymentOrderService {
 		// 2. 상품 조회
 		SubCategory subCategory = subCategoryRepository.findById(request.getSubCategoryId())
 			.orElseThrow(() -> new PaymentException("존재하지 않는 상품입니다."));
-		Integer originalAmount = subCategory.getPrice();
+		int originalAmount = subCategory.getPrice();
 
 		// 3. 쿠폰/할인 코드 재검증 (createOrder 와 같은 규칙)
 		DiscountResolution discount = resolveDiscount(user, subCategory, request);
@@ -137,23 +126,13 @@ public class PaymentOrderService {
 
 		// 5. 0원짜리 Order, Payment, Result 동시 생성 (하나의 트랜잭션)
 
-		// 5-1. Order 생성 (상태: PAID)
+		// 5-1. 주문 생성. PENDING 으로 만들고 PAID 전이는 finalizePaid 의 markPaid 가 한다.
 		String merchantUid = merchantUidGenerator.forFree();
-		Order order = Order.create(
-			merchantUid,
-			user.getId(),
-			subCategory.getId(),
-			originalAmount,
-			0, // finalAmount = 0
-			discount.appliedCode(),
-			discount.couponId(),
-			OrderStatus.PENDING, // PAID 전이는 finalizePaid 의 markPaid 가 담당한다
-			user.getName(),
-			user.getEmail()
-		);
+		Order order = Order.pending(merchantUid, OrderBuyer.from(user), subCategory.getId(),
+			new OrderAmounts(originalAmount, 0), discount.applied());
 
 		// 5-2. 주문 PAID 확정, 0원 Payment 저장, 연관관계 연결, 초기 Result 생성
-		String paymentId = MerchantUidGenerator.FREE_PREFIX + merchantUid; // 포트원 paymentId 가 없으니 merchantUid 로 대신한다.
+		String paymentId = MerchantUidGenerator.FREE_PREFIX + merchantUid; // 포트원 거래가 없어 free_ 를 한 번 더 붙인 자체 번호를 쓴다.
 		Payment savedPayment = paidOrderFinalizer.finalizePaid(order, paymentId, 0L,
 			LocalDateTime.now());
 
@@ -188,19 +167,9 @@ public class PaymentOrderService {
 
 		String merchantUid = merchantUidGenerator.forFree();
 
-		// 1. Order 생성 (finalizePaid 에서 PAID 로 전이)
-		Order order = Order.create(
-			merchantUid,
-			user.getId(),
-			subCategory.getId(),
-			0,  // 원가 0원
-			0,  // 결제 금액 0원
-			"EVENT_FREE", // 무료 이벤트 표기,
-			null,
-			OrderStatus.PENDING, // PAID 전이는 finalizePaid 의 markPaid 가 담당한다
-			user.getName(),
-			user.getEmail()
-		);
+		// 1. 주문 생성. 무료 이벤트 상품은 원가·결제 금액을 모두 0원으로 적는다. PAID 전이는 finalizePaid 의 markPaid 가 한다.
+		Order order = Order.pending(merchantUid, OrderBuyer.from(user), subCategory.getId(),
+			new OrderAmounts(0, 0), AppliedDiscount.eventFree());
 
 		// 2. 주문 PAID 확정, 0원 Payment 저장, 연관관계 연결, 초기 Result 생성
 		String paymentId = MerchantUidGenerator.FREE_PREFIX + merchantUid; // redeemFreeProduct 와 같은 규칙
@@ -227,8 +196,8 @@ public class PaymentOrderService {
 				user.getId(),
 				originalAmount
 			);
-			return new DiscountResolution(result.getFinalAmount(), result.getAppliedCode(),
-				request.getCouponId(), null);
+			return new DiscountResolution(result.getFinalAmount(),
+				AppliedDiscount.coupon(request.getCouponId(), result.getAppliedCode()), null);
 		}
 
 		// B. 할인 코드를 직접 입력한 경우
@@ -238,24 +207,25 @@ public class PaymentOrderService {
 				originalAmount,
 				request.getSubCategoryId()
 			);
-			return new DiscountResolution(result.getFinalAmount(), result.getAppliedCode(), null,
-				result.getDiscountCodeEntity());
+			return new DiscountResolution(result.getFinalAmount(),
+				AppliedDiscount.code(result.getAppliedCode()), result.getDiscountCodeEntity());
 		}
 
 		// C. 아무것도 안 쓴 경우
-		return new DiscountResolution(originalAmount, null, null, null);
+		return new DiscountResolution(originalAmount, AppliedDiscount.none(), null);
 	}
 
 	/**
 	 * 검증을 통과한 쿠폰/할인 코드의 사용을 확정한다. 주문 생성과 같은 트랜잭션 안에서 호출한다.
 	 */
 	private void consumeDiscount(DiscountResolution discount) {
-		if (discount.couponId() != null) {
-			couponService.useCoupon(discount.couponId());
-			log.info("쿠폰 사용 처리 완료: couponId={}", discount.couponId());
+		Long couponId = discount.applied().couponId();
+		if (couponId != null) {
+			couponService.useCoupon(couponId);
+			log.info("쿠폰 사용 처리 완료: couponId={}", couponId);
 		} else if (discount.discountCodeEntity() != null) {
 			discountCodeService.incrementUsage(discount.discountCodeEntity());
-			log.info("할인 코드 사용 횟수 증가 완료: {}", discount.appliedCode());
+			log.info("할인 코드 사용 횟수 증가 완료: {}", discount.applied().code());
 		}
 	}
 }

@@ -22,6 +22,7 @@ import com.mansereok.server.domain.discount.service.DiscountCodeService.Discount
 import com.mansereok.server.domain.interpret.service.ResultService;
 import com.mansereok.server.domain.order.dto.request.OrderCreateRequest;
 import com.mansereok.server.domain.order.dto.response.OrderCreateResponse;
+import com.mansereok.server.domain.order.entity.AppliedDiscount;
 import com.mansereok.server.domain.order.entity.Order;
 import com.mansereok.server.domain.order.entity.OrderStatus;
 import com.mansereok.server.domain.order.repository.OrderRepository;
@@ -481,7 +482,7 @@ class PaymentOrderServiceTest {
 		assertThat(savedOrder.getSubCategoryId()).isEqualTo(SUB_CATEGORY_ID);
 		assertThat(savedOrder.getOriginalAmount()).isZero();
 		assertThat(savedOrder.getAmount()).isZero();
-		assertThat(savedOrder.getAppliedDiscountCode()).isEqualTo("EVENT_FREE");
+		assertThat(savedOrder.getAppliedDiscountCode()).isEqualTo(AppliedDiscount.EVENT_FREE_CODE);
 		assertThat(savedOrder.getCouponId()).isNull();
 		assertThat(savedOrder.getMerchantUid()).startsWith("free_");
 		assertThat(savedOrder.getPaidAt()).isNotNull();

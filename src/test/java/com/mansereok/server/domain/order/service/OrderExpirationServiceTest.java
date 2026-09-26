@@ -8,9 +8,11 @@ import static org.mockito.BDDMockito.willThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
+import com.mansereok.server.domain.order.entity.AppliedDiscount;
 import com.mansereok.server.domain.order.entity.Order;
 import com.mansereok.server.domain.order.entity.OrderStatus;
 import com.mansereok.server.domain.order.repository.OrderRepository;
+import com.mansereok.server.support.fixture.TestOrders;
 import java.util.Optional;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -18,7 +20,6 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.test.util.ReflectionTestUtils;
 
 @ExtendWith(MockitoExtension.class)
 class OrderExpirationServiceTest {
@@ -35,10 +36,8 @@ class OrderExpirationServiceTest {
 	private OrderExpirationService orderExpirationService;
 
 	private Order createOrder(OrderStatus status) {
-		Order order = Order.create("merchant_" + ORDER_ID, 1L, 1L, 10000, 5000, null, 100L,
-			status, "테스트", "test@test.com");
-		ReflectionTestUtils.setField(order, "id", ORDER_ID);
-		return order;
+		return TestOrders.order().id(ORDER_ID).merchantUid("merchant_" + ORDER_ID).amounts(10000, 5000)
+			.discount(AppliedDiscount.coupon(100L, "테스트 쿠폰")).inStatus(status);
 	}
 
 	@Test

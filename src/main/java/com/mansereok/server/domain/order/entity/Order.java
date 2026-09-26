@@ -14,6 +14,7 @@ import jakarta.persistence.PrePersist;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
 import java.time.LocalDateTime;
+import java.util.Objects;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -53,9 +54,13 @@ public class Order {
 	private Long id;
 	@Column(nullable = false)
 	private String merchantUid;
-	private String paymentId; // Payment 엔티티의 id
+	/**
+	 * 포트원 거래 번호(Payment.impUid 와 같은 값). 결제가 확정될 때 markPaid 가 채운다. 포트원 거래가 없는 무료 주문은 free_ 로
+	 * 시작하는 자체 번호다. Payment 엔티티의 PK 는 paymentPkId 에 따로 둔다.
+	 */
+	private String paymentId;
 
-	private Long paymentPkId; // Payment 엔티티의 PK ID 저장용 필드 (Long 타입)
+	private Long paymentPkId; // Payment 엔티티의 PK. 결제가 붙기 전에는 null
 
 	private Long userId; // 사용자 ID (누가 주문 했는가)
 	private Long subCategoryId;  // 구매한 상품 ID
@@ -81,24 +86,42 @@ public class Order {
 		createdAt = LocalDateTime.now();
 	}
 
-	public static Order create(String merchantUid, Long userId, Long subCategoryId,
-		Integer originalAmount, Integer finalAmount, String appliedDiscountCode,
-		Long couponId, OrderStatus status, String buyerName, String buyerEmail) {
+	/**
+	 * 결제를 기다리는 새 주문을 만든다. 상태는 PENDING 으로 고정하고, 다른 상태로는 전이 메서드(markPaid, markExpired 등)로만
+	 * 간다. 0원 주문도 PENDING 으로 만든 뒤 PaidOrderFinalizer 가 PAID 로 확정한다.
+	 *
+	 * @param merchantUid   주문 번호
+	 * @param buyer         주문한 사용자와 구매자 이름·이메일
+	 * @param subCategoryId 주문한 상품
+	 * @param amounts       할인 전 금액과 결제할 금액
+	 * @param discount      적용한 쿠폰·할인 코드. 할인이 없으면 {@link AppliedDiscount#none()}
+	 */
+	public static Order pending(String merchantUid, OrderBuyer buyer, Long subCategoryId,
+		OrderAmounts amounts, AppliedDiscount discount) {
+		Objects.requireNonNull(buyer, "buyer");
+		Objects.requireNonNull(amounts, "amounts");
+		Objects.requireNonNull(discount, "discount");
+
 		Order order = new Order();
 		order.merchantUid = merchantUid;
-		order.userId = userId;
+		order.userId = buyer.userId();
+		order.buyerName = buyer.name();
+		order.buyerEmail = buyer.email();
 		order.subCategoryId = subCategoryId;
-		order.originalAmount = originalAmount;
-		order.amount = finalAmount;
-		order.appliedDiscountCode = appliedDiscountCode;
-
-		order.couponId = couponId;
-
-		order.status = status;
-
-		order.buyerName = buyerName;
-		order.buyerEmail = buyerEmail;
+		order.originalAmount = amounts.originalAmount();
+		order.amount = amounts.finalAmount();
+		order.appliedDiscountCode = discount.code();
+		order.couponId = discount.couponId();
+		order.status = OrderStatus.PENDING;
 		return order;
+	}
+
+	/**
+	 * 할인 코드 자리에 시스템 표기(무료 이벤트의 {@link AppliedDiscount#EVENT_FREE_CODE})가 들어 있는지 본다. 이 표기는
+	 * discount_codes 에 없는 값이라 할인을 되돌리거나 다시 쓸 대상이 아니다.
+	 */
+	public boolean hasSystemDiscountCode() {
+		return AppliedDiscount.EVENT_FREE_CODE.equals(appliedDiscountCode);
 	}
 
 	/**

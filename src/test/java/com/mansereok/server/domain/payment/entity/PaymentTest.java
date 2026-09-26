@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.mansereok.server.global.exception.OrderStateException;
 import com.mansereok.server.global.exception.PaymentException;
+import com.mansereok.server.support.fixture.TestPayments;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -13,7 +14,8 @@ import org.junit.jupiter.params.provider.EnumSource;
 class PaymentTest {
 
 	private Payment paymentWith(PaymentStatus status) {
-		return Payment.create("pay_test_001", "order_test_001", 10000L, status, 10L, 1L, 2L);
+		return TestPayments.payment().paymentId("pay_test_001").merchantUid("order_test_001").amount(10000L)
+			.orderId(10L).inStatus(status);
 	}
 
 	// ===== markCancelled =====

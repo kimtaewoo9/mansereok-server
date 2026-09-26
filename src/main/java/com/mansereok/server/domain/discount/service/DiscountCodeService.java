@@ -143,14 +143,13 @@ public class DiscountCodeService {
 		return discountCodeRepository.save(rewardCode);
 	}
 
+	/**
+	 * 할인 코드 사용 횟수를 하나 되돌린다. 무료 이벤트 표기 같은 시스템 표기는 discount_codes 에 없는 값이라, 부르는 쪽
+	 * (OrderDiscountRestorer)이 {@code Order.hasSystemDiscountCode()} 로 걸러 넘기지 않는다.
+	 */
 	@Transactional
 	public void restoreDiscountUsage(String code) {
 		if (code == null || code.isBlank()) {
-			return;
-		}
-
-		// "EVENT_FREE" 같은 시스템 코드는 DB 조회가 안되므로 제외
-		if ("EVENT_FREE".equals(code)) {
 			return;
 		}
 

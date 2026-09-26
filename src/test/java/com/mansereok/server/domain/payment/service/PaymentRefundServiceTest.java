@@ -17,6 +17,7 @@ import static org.mockito.Mockito.verifyNoInteractions;
 
 import com.mansereok.server.domain.interpret.entity.ResultStatus;
 import com.mansereok.server.domain.interpret.service.ResultService;
+import com.mansereok.server.domain.order.entity.AppliedDiscount;
 import com.mansereok.server.domain.order.entity.Order;
 import com.mansereok.server.domain.order.entity.OrderStatus;
 import com.mansereok.server.domain.order.repository.OrderRepository;
@@ -30,6 +31,8 @@ import com.mansereok.server.domain.user.entity.User;
 import com.mansereok.server.domain.user.repository.UserRepository;
 import com.mansereok.server.global.exception.PaymentException;
 import com.mansereok.server.global.exception.PortOneUnavailableException;
+import com.mansereok.server.support.fixture.TestOrders;
+import com.mansereok.server.support.fixture.TestPayments;
 import java.time.LocalDate;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
@@ -104,10 +107,8 @@ class PaymentRefundServiceTest {
 	}
 
 	private Payment payment(PaymentStatus status, long amount, String impUid) {
-		Payment payment = Payment.create(impUid, MERCHANT_UID, amount, status, ORDER_ID, USER_ID,
-			SUB_CATEGORY_ID);
-		ReflectionTestUtils.setField(payment, "id", PAYMENT_PK_ID);
-		return payment;
+		return TestPayments.payment().id(PAYMENT_PK_ID).paymentId(impUid).merchantUid(MERCHANT_UID).orderId(ORDER_ID)
+			.userId(USER_ID).subCategoryId(SUB_CATEGORY_ID).amount(amount).inStatus(status);
 	}
 
 	private Payment paidPayment() {
@@ -115,10 +116,8 @@ class PaymentRefundServiceTest {
 	}
 
 	private Order order(OrderStatus status, Long couponId) {
-		Order order = Order.create(MERCHANT_UID, USER_ID, SUB_CATEGORY_ID, (int) PRICE, (int) PRICE,
-			null, couponId, status, "김태우", "taewoo@example.com");
-		ReflectionTestUtils.setField(order, "id", ORDER_ID);
-		return order;
+		return TestOrders.order().id(ORDER_ID).merchantUid(MERCHANT_UID).userId(USER_ID).subCategoryId(SUB_CATEGORY_ID)
+			.price((int) PRICE).discount(new AppliedDiscount(null, couponId)).paymentId(PAYMENT_ID).inStatus(status);
 	}
 
 	private void givenRequester() {

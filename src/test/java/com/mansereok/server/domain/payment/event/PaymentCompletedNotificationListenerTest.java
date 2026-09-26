@@ -15,11 +15,10 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 
 import com.mansereok.server.domain.notification.service.DiscordNotificationService;
+import com.mansereok.server.domain.order.entity.AppliedDiscount;
 import com.mansereok.server.domain.order.entity.Order;
-import com.mansereok.server.domain.order.entity.OrderStatus;
 import com.mansereok.server.domain.order.repository.OrderRepository;
 import com.mansereok.server.domain.payment.entity.Payment;
-import com.mansereok.server.domain.payment.entity.PaymentStatus;
 import com.mansereok.server.domain.payment.repository.PaymentRepository;
 import com.mansereok.server.domain.product.entity.SubCategory;
 import com.mansereok.server.domain.product.repository.SubCategoryRepository;
@@ -30,6 +29,7 @@ import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
+import com.mansereok.server.support.fixture.TestOrders;
 import java.lang.reflect.Method;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -78,13 +78,10 @@ class PaymentCompletedNotificationListenerTest {
 
 	@BeforeEach
 	void setUp() {
-		order = Order.create(MERCHANT_UID, USER_ID, SUB_CATEGORY_ID, 10000, (int) AMOUNT, "SALE10",
-			null, OrderStatus.PENDING, "김태우", "taewoo@example.com");
-		ReflectionTestUtils.setField(order, "id", ORDER_ID);
-		order.markPaid(PAYMENT_ID, PAID_AT);
-
-		payment = Payment.create(PAYMENT_ID, MERCHANT_UID, AMOUNT, PaymentStatus.PAID, ORDER_ID,
-			USER_ID, SUB_CATEGORY_ID);
+		order = TestOrders.order().id(ORDER_ID).merchantUid(MERCHANT_UID).userId(USER_ID).subCategoryId(SUB_CATEGORY_ID)
+			.amounts(10000, (int) AMOUNT).discount(AppliedDiscount.code("SALE10")).paymentId(PAYMENT_ID).paidAt(PAID_AT)
+			.paid();
+		payment = Payment.paid(order, PAYMENT_ID, AMOUNT);
 		ReflectionTestUtils.setField(payment, "id", PAYMENT_PK_ID);
 	}
 

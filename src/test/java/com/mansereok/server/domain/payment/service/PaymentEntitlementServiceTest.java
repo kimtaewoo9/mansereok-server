@@ -11,6 +11,7 @@ import com.mansereok.server.domain.user.entity.Gender;
 import com.mansereok.server.domain.user.entity.User;
 import com.mansereok.server.domain.user.repository.UserRepository;
 import com.mansereok.server.global.exception.PaymentException;
+import com.mansereok.server.support.fixture.TestPayments;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
@@ -184,9 +185,6 @@ class PaymentEntitlementServiceTest {
 	}
 
 	private static Payment payment(PaymentStatus status, Long ownerId, Long subCategoryId) {
-		Payment payment = Payment.create("pay_test_001", "order_test_001", 10000L, status, 10L, ownerId,
-			subCategoryId);
-		ReflectionTestUtils.setField(payment, "id", PAYMENT_PK_ID);
-		return payment;
+		return TestPayments.payment().id(PAYMENT_PK_ID).userId(ownerId).subCategoryId(subCategoryId).inStatus(status);
 	}
 }

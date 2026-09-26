@@ -6,7 +6,6 @@ import com.mansereok.server.domain.order.entity.OrderStatus;
 import com.mansereok.server.domain.order.repository.OrderRepository;
 import com.mansereok.server.domain.order.service.OrderDiscountRestorer;
 import com.mansereok.server.domain.payment.entity.Payment;
-import com.mansereok.server.domain.payment.entity.PaymentStatus;
 import com.mansereok.server.domain.payment.event.PaymentCompletedEvent;
 import com.mansereok.server.domain.payment.repository.PaymentRepository;
 import com.mansereok.server.global.exception.PaymentException;
@@ -78,17 +77,7 @@ public class PaidOrderFinalizer {
 		}
 
 		// 2. Payment 생성 및 저장
-		Payment savedPayment = savePayment(
-			Payment.create(
-				paymentId,
-				order.getMerchantUid(),
-				amount,
-				PaymentStatus.PAID,
-				order.getId(),
-				order.getUserId(),
-				order.getSubCategoryId()
-			)
-		);
+		Payment savedPayment = savePayment(Payment.paid(order, paymentId, amount));
 
 		// 3. 연관관계 연결
 		order.linkPayment(savedPayment.getId());

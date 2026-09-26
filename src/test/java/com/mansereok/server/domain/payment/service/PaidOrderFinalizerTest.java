@@ -12,6 +12,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 
 import com.mansereok.server.domain.interpret.service.ResultService;
+import com.mansereok.server.domain.order.entity.AppliedDiscount;
 import com.mansereok.server.domain.order.entity.Order;
 import com.mansereok.server.domain.order.entity.OrderStatus;
 import com.mansereok.server.domain.order.repository.OrderRepository;
@@ -21,6 +22,7 @@ import com.mansereok.server.domain.payment.entity.PaymentStatus;
 import com.mansereok.server.domain.payment.event.PaymentCompletedEvent;
 import com.mansereok.server.domain.payment.repository.PaymentRepository;
 import com.mansereok.server.global.exception.PaymentException;
+import com.mansereok.server.support.fixture.TestOrders;
 import java.sql.SQLIntegrityConstraintViolationException;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -72,11 +74,14 @@ class PaidOrderFinalizerTest {
 	/** 주문 저장 시점마다 주문 상태를 기록해 markPaid 가 첫 저장보다 먼저 일어났는지 확인한다. */
 	private final List<OrderStatus> statusAtOrderSave = new ArrayList<>();
 
+	private static TestOrders orderToFinalize() {
+		return TestOrders.order().id(ORDER_ID).merchantUid(MERCHANT_UID).userId(USER_ID).subCategoryId(SUB_CATEGORY_ID)
+			.amounts(10000, 9000).discount(AppliedDiscount.code("SALE10"));
+	}
+
 	@BeforeEach
 	void setUp() {
-		order = Order.create(MERCHANT_UID, USER_ID, SUB_CATEGORY_ID, 10000, 9000, "SALE10", null,
-			OrderStatus.PENDING, "김태우", "taewoo@example.com");
-		ReflectionTestUtils.setField(order, "id", ORDER_ID);
+		order = orderToFinalize().pending();
 
 		given(orderRepository.save(any(Order.class))).willAnswer(invocation -> {
 			Order saved = invocation.getArgument(0);
@@ -267,9 +272,7 @@ class PaidOrderFinalizerTest {
 		@DisplayName("만료(EXPIRED)된 주문을 확정하면 되돌렸던 쿠폰·할인 코드를 같은 호출 안에서 한 번 다시 사용 처리한다")
 		void expiredOrder_reappliesDiscountOnce() {
 			// given
-			Order expiredOrder = Order.create(MERCHANT_UID, USER_ID, SUB_CATEGORY_ID, 10000, 9000, "SALE10", null,
-				OrderStatus.EXPIRED, "김태우", "taewoo@example.com");
-			ReflectionTestUtils.setField(expiredOrder, "id", ORDER_ID);
+			Order expiredOrder = orderToFinalize().inStatus(OrderStatus.EXPIRED);
 			givenPaymentSaveAssignsId();
 
 			// when

@@ -2,9 +2,9 @@ package com.mansereok.server.domain.order.repository;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.mansereok.server.domain.order.entity.Order;
 import com.mansereok.server.domain.order.entity.OrderStatus;
 import com.mansereok.server.support.PaymentMySqlTest;
+import com.mansereok.server.support.fixture.TestOrders;
 import java.util.UUID;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
@@ -114,8 +114,9 @@ class OrderStatusUpdateMySqlTest extends PaymentMySqlTest {
 	}
 
 	private Long saveOrder(OrderStatus status) {
-		return orderRepository.save(Order.create(merchantUid, ANY_USER_ID, ANY_SUB_CATEGORY_ID, PRICE, PRICE, null,
-			null, status, "상태변경", "status_update_" + runId + "@example.com")).getId();
+		return orderRepository.save(TestOrders.order().merchantUid(merchantUid).userId(ANY_USER_ID)
+			.subCategoryId(ANY_SUB_CATEGORY_ID).price(PRICE).buyer("상태변경", "status_update_" + runId + "@example.com")
+			.inStatus(status)).getId();
 	}
 
 	private String statusInDatabase() {

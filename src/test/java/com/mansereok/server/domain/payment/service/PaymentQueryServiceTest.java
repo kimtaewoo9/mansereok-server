@@ -13,15 +13,15 @@ import com.mansereok.server.domain.interpret.entity.ResultStatus;
 import com.mansereok.server.domain.interpret.repository.CompatibilityResultRepository;
 import com.mansereok.server.domain.interpret.repository.ResultRepository;
 import com.mansereok.server.domain.order.entity.Order;
-import com.mansereok.server.domain.order.entity.OrderStatus;
 import com.mansereok.server.domain.order.repository.OrderRepository;
 import com.mansereok.server.domain.payment.dto.response.PaymentResponseDto;
 import com.mansereok.server.domain.payment.entity.Payment;
-import com.mansereok.server.domain.payment.entity.PaymentStatus;
 import com.mansereok.server.domain.payment.repository.PaymentRepository;
 import com.mansereok.server.domain.user.entity.Gender;
 import com.mansereok.server.domain.user.entity.User;
 import com.mansereok.server.domain.user.repository.UserRepository;
+import com.mansereok.server.support.fixture.TestOrders;
+import com.mansereok.server.support.fixture.TestPayments;
 import jakarta.persistence.EntityNotFoundException;
 import java.time.LocalDate;
 import java.util.List;
@@ -68,18 +68,14 @@ class PaymentQueryServiceTest {
 	}
 
 	private Order orderOwnedBy(Long ownerId) {
-		Order order = Order.create("order_test_001", ownerId, 1L, 10000, 10000, null, null,
-			OrderStatus.PAID, "김태우", "taewoo@example.com");
-		ReflectionTestUtils.setField(order, "id", ORDER_ID);
-		ReflectionTestUtils.setField(order, "paymentPkId", PAYMENT_PK_ID);
+		Order order = TestOrders.order().id(ORDER_ID).userId(ownerId).subCategoryId(1L).paid();
+		order.linkPayment(PAYMENT_PK_ID);
 		return order;
 	}
 
 	private Payment paymentWithId(Long id, String impUid) {
-		Payment payment = Payment.create(impUid, "order_" + impUid, 10000L, PaymentStatus.PAID,
-			ORDER_ID, USER_ID, 1L);
-		ReflectionTestUtils.setField(payment, "id", id);
-		return payment;
+		return TestPayments.payment().id(id).paymentId(impUid).merchantUid("order_" + impUid).orderId(ORDER_ID)
+			.userId(USER_ID).subCategoryId(1L).paid();
 	}
 
 	// ===== getOwnedOrder =====
@@ -272,7 +268,7 @@ class PaymentQueryServiceTest {
 		// given
 		given(userRepository.findByUsername(USERNAME)).willReturn(Optional.of(user()));
 		Payment payment = paymentWithId(1L, "imp_001");
-		ReflectionTestUtils.setField(payment, "status", PaymentStatus.CANCEL_REQUESTED);
+		payment.markCancelRequested();
 		given(paymentRepository.findAllByUserIdOrderByCreatedAtDesc(USER_ID))
 			.willReturn(List.of(payment));
 		given(resultRepository.findByPaymentIdIn(List.of(1L)))
