@@ -48,7 +48,8 @@ public class ManseCalculationService {
 
 	public ManseryeokCalculationResponse calculate(ManseryeokCalculationRequest request) {
 		try {
-			log.info("만세력 계산 시작: solarDate={}, gender={}, isLunar={}, leapMonth={}",
+			// 생년월일·출생시간·성별은 개인정보라 DEBUG 로만 남긴다. 운영 로그 수준(INFO)에서는 나오지 않는다.
+			log.debug("만세력 계산 시작: solarDate={}, gender={}, isLunar={}, leapMonth={}",
 				request.getSolarDate(), request.getGender(), request.getIsLunar(),
 				request.getLeapMonth());
 
@@ -326,7 +327,7 @@ public class ManseCalculationService {
 		LocalTime birthtime = time;
 		boolean isYajasi = time != null && !time.isBefore(LocalTime.of(23, 30));
 
-		log.info("만세력 데이터 조회: birthdayType={}, birthday={}, leapMonth={}",
+		log.debug("만세력 데이터 조회: birthdayType={}, birthday={}, leapMonth={}",
 			birthdayType, birthday, leapMonth);
 
 		Manse baseManse;
@@ -360,13 +361,14 @@ public class ManseCalculationService {
 			LocalDate shiftedDate = civilSolarDate.plusDays(1);
 			dayManse = manseRepository.findBySolarDate(shiftedDate)
 				.orElseThrow(() -> new RuntimeException("자시 보정 대상 날짜의 만세력 데이터를 찾을 수 없습니다."));
-			log.info("자시 처리: 일주 기준 날짜를 다음날로 보정 -> {}", shiftedDate);
+			log.debug("자시 처리: 일주 기준 날짜를 다음날로 보정 -> {}", shiftedDate);
 		}
 
 		Manse yearMonthManse = baseManse;
 		boolean seasonBoundaryUncertain = false;
 		if (baseManse.getSeason() != null && !baseManse.getSeason().isEmpty()) {
-			log.info("절입일 처리: season={}, seasonStartTime={}", baseManse.getSeason(),
+			// 절입일에 태어난 경우라 절입 시각의 날짜가 곧 생년월일이다.
+			log.debug("절입일 처리: season={}, seasonStartTime={}", baseManse.getSeason(),
 				baseManse.getSeasonStartTime());
 
 			LocalDateTime seasonTime = baseManse.getSeasonStartTime();
@@ -415,7 +417,7 @@ public class ManseCalculationService {
 			result = false;
 		}
 
-		log.info("대운 방향 판단: gender={}, yearSky={}, minusPlus={}, direction={}",
+		log.debug("대운 방향 판단: gender={}, yearSky={}, minusPlus={}, direction={}",
 			normalizedGender, yearSky, minusPlus, result ? "순행" : "역행");
 
 		return result;
@@ -447,7 +449,8 @@ public class ManseCalculationService {
 				.orElseThrow(() -> new RuntimeException("역행 절입 시간을 찾을 수 없습니다"));
 		}
 
-		log.info("절입시간 조회 완료: seasonStartTime={}, direction={}",
+		// 태어난 때와 가장 가까운 절입 시각이라 생년월일을 한 달 안으로 좁혀 준다.
+		log.debug("절입시간 조회 완료: seasonStartTime={}, direction={}",
 			manse.getSeasonStartTime(), direction ? "순행" : "역행");
 
 		return manse.getSeasonStartTime();
@@ -572,7 +575,7 @@ public class ManseCalculationService {
 
 		if (dayData.containsKey(timeKey)) {
 			String[] timeJu = dayData.get(timeKey);
-			log.info("시주 계산 완료: daySky={}, time={}, timeKey={}, timeSky={}, timeGround={}",
+			log.debug("시주 계산 완료: daySky={}, time={}, timeKey={}, timeSky={}, timeGround={}",
 				daySky, time, timeKey, timeJu[0], timeJu[1]);
 
 			return TimePillarResult.builder()
