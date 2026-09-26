@@ -6,16 +6,22 @@ import com.mansereok.server.domain.auth.util.JwtUtil;
 import com.mansereok.server.global.config.JwtProperties;
 import com.mansereok.server.global.exception.JwtAuthenticationException;
 import com.mansereok.server.global.exception.JwtErrorCode;
+import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
 import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneId;
+import java.util.Date;
 import java.util.Map;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.springframework.http.HttpHeaders;
 import org.springframework.mock.web.MockFilterChain;
 import org.springframework.mock.web.MockHttpServletRequest;
@@ -25,7 +31,7 @@ import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 
 /**
- * 필터가 토큰 검증 결과를 인증 정보나 요청 속성의 오류로 바꾸는지 검증한다. 특히 서명 키는 같지만 발급자가 다른 토큰을
+ * 필터가 토큰 검증 결과를 인증 정보나 요청 속성의 오류로 바꾸는지 검증한다. 특히 서명 키는 같지만 발급자가 다르거나 없는 토큰을
  * 인증하지 않고 서명 오류(SIGNATURE_INVALID)로 남기는지 본다.
  */
 class JwtAuthenticationFilterTest {
@@ -66,15 +72,32 @@ class JwtAuthenticationFilterTest {
 	}
 
 	@Nested
-	@DisplayName("같은 키로 서명했지만 발급자가 다른 토큰이면")
-	class WhenIssuerDiffers {
+	@DisplayName("같은 키로 서명했지만 발급자가 다르거나 없는 토큰이면")
+	class WhenIssuerDiffersOrMissing {
 
-		@Test
+		// 발급자가 다른 토큰은 IncorrectClaimException, 발급자가 없는 토큰은 MissingClaimException 으로 파서를 빠져나온다.
+		// 필터가 둘 중 하나라도 놓치면 그 토큰은 예상하지 못한 오류(INTERNAL_ERROR, 500)로 떨어진다.
+		static Stream<Arguments> tokensNotIssuedByThisServer() {
+			return Stream.of(
+				Arguments.of("발급자가 다른 토큰(staging.namedsaju.com)",
+					jwtUtil("staging.namedsaju.com").generateAccessToken("member", Map.of("role", "ROLE_USER"))),
+				Arguments.of("발급자(iss)가 없는 토큰",
+					Jwts.builder()
+						.subject("member")
+						.claim("role", "ROLE_USER")
+						.issuedAt(Date.from(Instant.parse("2026-01-15T00:00:00Z")))
+						.expiration(Date.from(Instant.parse("2026-01-15T00:30:00Z")))
+						.signWith(Keys.hmacShaKeyFor(SECRET.getBytes(StandardCharsets.UTF_8)))
+						.compact())
+			);
+		}
+
+		@ParameterizedTest(name = "[{index}] {0}")
+		@MethodSource("tokensNotIssuedByThisServer")
 		@DisplayName("인증 정보를 넣지 않고 SIGNATURE_INVALID 오류를 요청 속성에 남긴다")
-		void leavesSignatureInvalid() throws Exception {
+		void leavesSignatureInvalid(String tokenDescription, String token) throws Exception {
 			// given
-			MockHttpServletRequest request = requestWithBearer(
-				jwtUtil("staging.namedsaju.com").generateAccessToken("member", Map.of("role", "ROLE_USER")));
+			MockHttpServletRequest request = requestWithBearer(token);
 
 			// when
 			filter.doFilter(request, new MockHttpServletResponse(), new MockFilterChain());
