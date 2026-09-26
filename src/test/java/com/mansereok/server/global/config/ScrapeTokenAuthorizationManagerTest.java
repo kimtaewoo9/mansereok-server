@@ -39,6 +39,7 @@ class ScrapeTokenAuthorizationManagerTest {
 			'Bearer scrape-token-0123456780',              false
 			# Bearer 가 아닌 방식이거나 방식 이름이 없으면 같은 토큰이라도 막는다.
 			'Basic scrape-token-0123456789',               false
+			'Digest scrape-token-0123456789',              false
 			'scrape-token-0123456789',                     false
 			'Bearer ',                                     false
 			,                                              false
