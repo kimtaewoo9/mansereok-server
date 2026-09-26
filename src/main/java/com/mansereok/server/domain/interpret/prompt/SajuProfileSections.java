@@ -1,7 +1,6 @@
 package com.mansereok.server.domain.interpret.prompt;
 
 import com.mansereok.server.domain.interpret.dto.response.ManseryeokCalculationResponse;
-import com.mansereok.server.domain.interpret.dto.response.ManseryeokCalculationResponse.JijangganInfo;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
@@ -355,92 +354,6 @@ final class SajuProfileSections {
 				SajuElementSections.orUnknown(sky.getFiveCircle()),
 				SajuElementSections.orUnknown(ground.getTenStar()),
 				SajuElementSections.orUnknown(ground.getFiveCircle())));
-	}
-
-	/**
-	 * 프롬프트에 상세한 사주 기둥(Pillar) 정보를 추가하는 헬퍼 메서드 [FIXED] JijangganElement에서 .getTenStar() 호출을 제거하여
-	 * DTO와 일치시킴
-	 */
-	private static void appendDetailedPillarInfo(StringBuilder prompt, String pillarName, String meaning,
-		ManseryeokCalculationResponse.PillarElement sky,
-		ManseryeokCalculationResponse.PillarElement ground) {
-
-		if (sky == null || ground == null) {
-			prompt.append("""
-				- **%s**: (정보 없음)
-				"""
-				.formatted(pillarName));
-			return;
-		}
-
-		prompt.append("""
-			- **%s (%s)**: %s%s
-			"""
-			.formatted(
-				pillarName,
-				meaning,
-				SajuElementSections.orUnknown(sky.getKorean()),
-				SajuElementSections.orUnknown(ground.getKorean())));
-
-		prompt.append("""
-			  - 천간: %s%s (십성: %s)
-			"""
-			.formatted(
-				SajuElementSections.orUnknown(sky.getKorean()),
-				SajuElementSections.orUnknown(sky.getFiveCircle()),
-				SajuElementSections.orUnknown(sky.getTenStar())));
-
-		prompt.append("""
-			  - 지지: %s%s (십성: %s)
-			"""
-			.formatted(
-				SajuElementSections.orUnknown(ground.getKorean()),
-				SajuElementSections.orUnknown(ground.getFiveCircle()),
-				SajuElementSections.orUnknown(ground.getTenStar())));
-
-		if (ground.getUnseong() != null) {
-			prompt.append("""
-				  - 12운성: %s
-				"""
-				.formatted(ground.getUnseong()));
-		}
-
-		JijangganInfo jijanggan = ground.getJijanggan();
-		if (jijanggan != null) {
-			prompt.append("""
-				  - 지장간:
-				""");
-			if (jijanggan.getFirst() != null) {
-				prompt.append("""
-					    - 초기(%d%%): %s%s (십성: %s)
-					"""
-					.formatted(
-						// ⭐ 십성 추가 jijanggan.getFirst().getRate() != null ? jijanggan.getFirst().getRate() : 0,
-						SajuElementSections.orUnknown(jijanggan.getFirst().getKorean()),
-						SajuElementSections.orUnknown(jijanggan.getFirst().getFiveCircle()),
-						SajuElementSections.orUnknown(jijanggan.getFirst().getTenStar())));
-			}
-			if (jijanggan.getSecond() != null) {
-				prompt.append("""
-					    - 중기(%d%%): %s%s (십성: %s)
-					"""
-					.formatted(
-						jijanggan.getSecond().getRate() != null ? jijanggan.getSecond().getRate() : 0,
-						SajuElementSections.orUnknown(jijanggan.getSecond().getKorean()),
-						SajuElementSections.orUnknown(jijanggan.getSecond().getFiveCircle()),
-						SajuElementSections.orUnknown(jijanggan.getSecond().getTenStar())));
-			}
-			if (jijanggan.getThird() != null) {
-				prompt.append("""
-					    - 말기(%d%%): %s%s (십성: %s)
-					"""
-					.formatted(
-						jijanggan.getThird().getRate() != null ? jijanggan.getThird().getRate() : 0,
-						SajuElementSections.orUnknown(jijanggan.getThird().getKorean()),
-						SajuElementSections.orUnknown(jijanggan.getThird().getFiveCircle()),
-						SajuElementSections.orUnknown(jijanggan.getThird().getTenStar())));
-			}
-		}
 	}
 
 	private static String formatMonthPeriod(LocalDateTime value) {

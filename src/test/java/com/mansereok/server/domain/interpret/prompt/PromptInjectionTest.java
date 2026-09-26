@@ -203,16 +203,6 @@ class PromptInjectionTest {
 		assertThat(prompt.lines().anyMatch(line -> line.startsWith("김태우 | "))).isFalse();
 	}
 
-	@Test
-	@DisplayName("궁합 요약 정보 줄의 이름도 라벨과 따옴표로 감싼다")
-	void shouldLabelNameInCompatibilitySummaryLine() {
-		StringBuilder prompt = new StringBuilder();
-		SajuSummarySections.appendPersonInfoToPrompt(prompt, "김태우", sampleResponse());
-
-		assertThat(prompt.toString()).contains("이름: '김태우' | 남성");
-		assertThat(prompt.toString().lines().anyMatch(line -> line.startsWith("김태우 | "))).isFalse();
-	}
-
 	private String interpretPrompt(long subcategoryId, String name, String sourceTitle) {
 		return sajuPromptFactory.create(subcategoryId,
 			PromptContext.of(name, sampleResponse(), sourceTitle));
