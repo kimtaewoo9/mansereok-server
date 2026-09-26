@@ -15,6 +15,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 public final class RefreshTokenFixture {
 
 	private final User user;
+	private Long id;
 	private String token = "presented-token";
 	private LocalDateTime createdAt = LocalDateTime.of(2026, 9, 1, 10, 0);
 	private LocalDateTime expiresAt = LocalDateTime.of(2026, 10, 1, 10, 0);
@@ -30,8 +31,20 @@ public final class RefreshTokenFixture {
 		return new RefreshTokenFixture(user);
 	}
 
+	/** DB 에 넣은 행처럼 id 를 채운다. 기본은 비어 있다. */
+	public RefreshTokenFixture id(Long id) {
+		this.id = id;
+		return this;
+	}
+
 	public RefreshTokenFixture token(String token) {
 		this.token = token;
+		return this;
+	}
+
+	/** 만든 시각을 바꾼다. 만료 시각은 따로 정하지 않으면 2026-10-01 10:00 그대로다. */
+	public RefreshTokenFixture createdAt(LocalDateTime createdAt) {
+		this.createdAt = createdAt;
 		return this;
 	}
 
@@ -52,6 +65,7 @@ public final class RefreshTokenFixture {
 
 	public RefreshToken build() {
 		RefreshToken refreshToken = RefreshToken.issue(token, user, createdAt, Duration.between(createdAt, expiresAt));
+		ReflectionTestUtils.setField(refreshToken, "id", id);
 		ReflectionTestUtils.setField(refreshToken, "usedAt", usedAt);
 		ReflectionTestUtils.setField(refreshToken, "revoked", revoked);
 		return refreshToken;

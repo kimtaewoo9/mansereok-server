@@ -2,6 +2,7 @@ package com.mansereok.server.domain.user.service;
 
 import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.awaitility.Awaitility.await;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.BDDMockito.willAnswer;
@@ -53,8 +54,12 @@ import org.springframework.transaction.support.TransactionTemplate;
  *   <li>같은 토큰으로 재발급이 한꺼번에 와도 조건부 UPDATE 로 "썼음" 표시는 한 번만 되고, 나머지는 잠가 다시 읽어 유예 시간 안이면 새
  *   토큰을 받는다. 유예 시간이 0 이면 한 요청만 성공한다. 트랜잭션이 끝난 뒤에도 돌려받은 회원의 값을 지연 로딩 없이 읽는다.</li>
  *   <li>로그아웃과 재발급이 겹쳐도 500 이 되는 예외가 없고, 끝난 뒤 그 회원에게 쓸 수 있는 토큰이 남지 않는다. 유예 시간 안의 재발급이
- *   토큰을 잠근 동안 온 로그아웃은 그 재발급의 커밋을 기다렸다가 새 토큰까지 폐기한다. 두 기기가 쓴 토큰으로 동시에 로그아웃해도 교착이
- *   나지 않는다. 리프레시 토큰 리포지토리를 스파이로 바꿔 한쪽을 잠금을 쥔 채 멈춰 세운다.</li>
+ *   토큰을 잠근 동안 온 로그아웃은 그 재발급의 커밋을 기다렸다가 새 토큰까지 폐기한다. 커넥션의 기본 격리 수준이 READ COMMITTED 여도
+ *   같다. 두 기기가 쓴 토큰으로 동시에 로그아웃해도 교착이 나지 않는다. 리프레시 토큰 리포지토리를 스파이로 바꿔 한쪽을 잠금을 쥔 채
+ *   멈춰 세운다.</li>
+ *   <li>재발급으로 받은 새 토큰으로 로그아웃하면 그 새 토큰을 낸 옛 토큰과, 옛 토큰으로 유예 시간 안에 받은 다른 새 토큰도 폐기된다.
+ *   옛 쿠키를 싣고 늦게 온 재발급이 옛 토큰을 잠근 동안 로그아웃하면, 로그아웃은 그 재발급의 커밋을 기다렸다가 그 새 토큰까지
+ *   폐기한다.</li>
  *   <li>한 회원의 두 기기 토큰은 서로를 지우지 않는다.</li>
  *   <li>토큰이 없는 신규 회원들이 동시에 로그인해도 교착이 나지 않는다. 예전 발급 방식(user_id 로 지운 뒤 넣기)은 같은 상황에서 교착이
  *   났다는 것도 재현해 둔다.</li>
@@ -208,36 +213,101 @@ class RefreshTokenMySqlTest extends LocalMySqlTest {
 		// given: 한 번 재발급해 이미 쓴 토큰
 		String presented = refreshTokenService.issue(member);
 		refreshTokenService.rotate(presented);
-		CountDownLatch lockedRead = new CountDownLatch(1);
-		CountDownLatch releaseRotation = new CountDownLatch(1);
-		// 같은 토큰의 두 번째 재발급이 토큰 행을 잠가 읽은 직후, 새 토큰을 넣기 전에 멈춘다
-		willAnswer(invocation -> {
-			Object result = callRealRepository(invocation);
-			lockedRead.countDown();
-			waitUpToTenSeconds(releaseRotation);
-			return result;
-		}).given(refreshTokenRepository).findByTokenForUpdate(presented);
 
-		String secondNewToken;
-		ExecutorService executor = Executors.newFixedThreadPool(2);
-		try {
-			Future<RotatedRefreshToken> rotation = executor.submit(() -> refreshTokenService.rotate(presented));
-			assertThat(lockedRead.await(10, SECONDS)).as("재발급이 쓴 토큰을 잠가 읽고 멈췄다").isTrue();
-
-			// when: 재발급이 멈춘 동안 로그아웃한다. 로그아웃이 잠금을 기다리기 시작하면(또는 끝나면) 재발급을 풀어 준다.
-			Future<?> logout = executor.submit(() -> refreshTokenService.revoke(presented));
-			await().atMost(Duration.ofSeconds(10)).until(() -> logout.isDone() || rowLockWaitsInThisSchema() > 0);
-			releaseRotation.countDown();
-			secondNewToken = rotation.get(10, SECONDS).token();
-			logout.get(10, SECONDS);
-		} finally {
-			releaseRotation.countDown();
-			executor.shutdownNow();
-		}
+		// when
+		String newTokenOfPausedRotation = rotateAgainWhileLogoutArrives(refreshTokenService, refreshTokenRepository,
+			presented, presented);
 
 		// then
-		assertThat(jdbcTemplate.queryForObject("SELECT revoked FROM refresh_tokens WHERE token = ?", Boolean.class,
-			secondNewToken)).as("로그아웃 전에 커밋된 두 번째 재발급의 새 토큰").isTrue();
+		assertThat(isRevoked(newTokenOfPausedRotation)).as("로그아웃 전에 커밋된 두 번째 재발급의 새 토큰").isTrue();
+		assertThat(countRowsOfMember("SELECT COUNT(*) FROM refresh_tokens WHERE user_id = ? AND revoked = false"))
+			.as("폐기되지 않은 토큰").isZero();
+	}
+
+	@Nested
+	@TestPropertySource(properties = "spring.datasource.hikari.transaction-isolation=TRANSACTION_READ_COMMITTED")
+	@DisplayName("커넥션의 기본 격리 수준이 READ COMMITTED 면")
+	class WhenDefaultIsolationIsReadCommitted {
+
+		// 이 중첩 클래스의 스프링 컨텍스트(커넥션 기본 격리 수준 READ COMMITTED)에서 받은 서비스와 리포지토리 스파이.
+		// READ COMMITTED 에서는 0 행을 고친 조건부 UPDATE 가 토큰 행의 잠금을 바로 풀어, 재발급이 FOR UPDATE 로 다시 잠가야만
+		// 로그아웃이 재발급의 커밋을 기다린다. 바깥 클래스(REPEATABLE READ)에서는 FOR UPDATE 를 빼도 조건부 UPDATE 의 잠금이 남아
+		// 같은 테스트가 통과한다.
+		@Autowired
+		private RefreshTokenService readCommittedRefreshTokenService;
+		@Autowired
+		private RefreshTokenRepository readCommittedRefreshTokenRepository;
+
+		@Test
+		@DisplayName("유예 시간 안의 재발급이 쓴 토큰을 잠가 읽은 뒤 새 토큰을 넣기 전에 같은 토큰으로 로그아웃해도, 로그아웃은 재발급의 커밋을 기다렸다가 그 새 토큰까지 폐기한다")
+		void logoutWaitsForRotationWithinGraceAndRevokesItsNewToken() throws Exception {
+			// given: 한 번 재발급해 이미 쓴 토큰
+			String presented = readCommittedRefreshTokenService.issue(member);
+			readCommittedRefreshTokenService.rotate(presented);
+
+			// when
+			String newTokenOfPausedRotation = rotateAgainWhileLogoutArrives(readCommittedRefreshTokenService,
+				readCommittedRefreshTokenRepository, presented, presented);
+
+			// then
+			assertThat(isRevoked(newTokenOfPausedRotation)).as("로그아웃 전에 커밋된 두 번째 재발급의 새 토큰").isTrue();
+			assertThat(countRowsOfMember("SELECT COUNT(*) FROM refresh_tokens WHERE user_id = ? AND revoked = false"))
+				.as("폐기되지 않은 토큰").isZero();
+		}
+	}
+
+	@Test
+	@DisplayName("재발급으로 받은 새 토큰으로 로그아웃하면 그 새 토큰을 낸 옛 토큰도 폐기되어, 유예 시간(10초) 안이어도 옛 토큰으로 다시 재발급하지 못한다")
+	void logoutWithNewTokenAlsoRevokesTheTokenItReplaced() {
+		// given: 처음 받은 토큰을 재발급해 새 토큰을 받았다. 브라우저에는 새 토큰만 있다.
+		String oldToken = refreshTokenService.issue(member);
+		String newToken = refreshTokenService.rotate(oldToken).token();
+
+		// when
+		refreshTokenService.revoke(newToken);
+
+		// then: 옛 쿠키를 싣고 늦게 온 재발급은 폐기 사유로 거절된다
+		assertThat(isRevoked(oldToken)).as("새 토큰을 낸 옛 토큰").isTrue();
+		assertThatThrownBy(() -> refreshTokenService.rotate(oldToken))
+			.isInstanceOf(InvalidRefreshTokenException.class)
+			.hasMessage("로그아웃했거나 폐기된 리프레시 토큰입니다. 다시 로그인해주세요.");
+		assertThat(countRowsOfMember("SELECT COUNT(*) FROM refresh_tokens WHERE user_id = ? AND revoked = false"))
+			.as("폐기되지 않은 토큰").isZero();
+	}
+
+	@Test
+	@DisplayName("같은 토큰으로 유예 시간 안에 두 번 재발급해 받은 두 새 토큰 중 브라우저에 남은 쪽으로 로그아웃하면, 다른 쪽 새 토큰도 폐기되어 그 토큰으로 재발급하지 못한다")
+	void logoutWithOneOfTwoTokensFromSameTokenAlsoRevokesTheOther() {
+		// given: 같은 쿠키로 거의 동시에 온 두 재발급이 새 토큰을 하나씩 받았고, 브라우저에는 뒤에 도착한 응답의 토큰만 남았다
+		String oldToken = refreshTokenService.issue(member);
+		String overwrittenToken = refreshTokenService.rotate(oldToken).token();
+		String keptToken = refreshTokenService.rotate(oldToken).token();
+
+		// when
+		refreshTokenService.revoke(keptToken);
+
+		// then
+		assertThat(isRevoked(overwrittenToken)).as("브라우저에 남지 않은 다른 새 토큰").isTrue();
+		assertThatThrownBy(() -> refreshTokenService.rotate(overwrittenToken))
+			.isInstanceOf(InvalidRefreshTokenException.class)
+			.hasMessage("로그아웃했거나 폐기된 리프레시 토큰입니다. 다시 로그인해주세요.");
+		assertThat(countRowsOfMember("SELECT COUNT(*) FROM refresh_tokens WHERE user_id = ? AND revoked = false"))
+			.as("폐기되지 않은 토큰").isZero();
+	}
+
+	@Test
+	@DisplayName("옛 토큰으로 유예 시간 안에 재발급하는 요청이 옛 토큰을 잠가 읽은 뒤 새 토큰을 넣기 전에, 먼저 받은 새 토큰으로 로그아웃하면 로그아웃은 그 재발급의 커밋을 기다렸다가 그 새 토큰까지 폐기한다")
+	void logoutWithNewTokenWaitsForLateRotationOfOldTokenAndRevokesItsNewToken() throws Exception {
+		// given: 처음 받은 토큰을 재발급해 새 토큰을 받았다. 옛 쿠키를 실은 재발급이 하나 더 늦게 온다.
+		String oldToken = refreshTokenService.issue(member);
+		String newToken = refreshTokenService.rotate(oldToken).token();
+
+		// when
+		String newTokenOfLateRotation = rotateAgainWhileLogoutArrives(refreshTokenService, refreshTokenRepository,
+			oldToken, newToken);
+
+		// then
+		assertThat(isRevoked(newTokenOfLateRotation)).as("로그아웃이 기다리는 동안 커밋된 늦은 재발급의 새 토큰").isTrue();
 		assertThat(countRowsOfMember("SELECT COUNT(*) FROM refresh_tokens WHERE user_id = ? AND revoked = false"))
 			.as("폐기되지 않은 토큰").isZero();
 	}
@@ -396,6 +466,47 @@ class RefreshTokenMySqlTest extends LocalMySqlTest {
 	private int countRowsOfMember(String sql) {
 		Integer count = jdbcTemplate.queryForObject(sql, Integer.class, member.getId());
 		return count == null ? 0 : count;
+	}
+
+	private boolean isRevoked(String token) {
+		return Boolean.TRUE.equals(
+			jdbcTemplate.queryForObject("SELECT revoked FROM refresh_tokens WHERE token = ?", Boolean.class, token));
+	}
+
+	/**
+	 * rotatedToken 으로 유예 시간 안의 재발급을 부르되, 토큰 행을 잠가 읽은 직후(새 토큰을 넣기 전) 멈춰 둔다. 그동안 logoutToken 으로
+	 * 로그아웃하고, 로그아웃이 행 잠금을 기다리기 시작하면(또는 끝나면) 재발급을 풀어 준다. 둘 다 끝나면 멈췄던 재발급이 받은 새 토큰을
+	 * 돌려준다.
+	 *
+	 * @param service 재발급과 로그아웃을 부를 서비스. 설정이 다른 중첩 클래스의 스프링 컨텍스트에서 받은 것을 넘길 수 있다.
+	 * @param spyRepository service 와 같은 컨텍스트의 리프레시 토큰 리포지토리 스파이
+	 */
+	private String rotateAgainWhileLogoutArrives(RefreshTokenService service, RefreshTokenRepository spyRepository,
+		String rotatedToken, String logoutToken) throws Exception {
+		CountDownLatch lockedRead = new CountDownLatch(1);
+		CountDownLatch releaseRotation = new CountDownLatch(1);
+		willAnswer(invocation -> {
+			Object result = callRealRepository(invocation);
+			lockedRead.countDown();
+			waitUpToTenSeconds(releaseRotation);
+			return result;
+		}).given(spyRepository).findByTokenForUpdate(rotatedToken);
+
+		ExecutorService executor = Executors.newFixedThreadPool(2);
+		try {
+			Future<RotatedRefreshToken> rotation = executor.submit(() -> service.rotate(rotatedToken));
+			assertThat(lockedRead.await(10, SECONDS)).as("재발급이 쓴 토큰을 잠가 읽고 멈췄다").isTrue();
+
+			Future<?> logout = executor.submit(() -> service.revoke(logoutToken));
+			await().atMost(Duration.ofSeconds(10)).until(() -> logout.isDone() || rowLockWaitsInThisSchema() > 0);
+			releaseRotation.countDown();
+			String newTokenOfPausedRotation = rotation.get(10, SECONDS).token();
+			logout.get(10, SECONDS);
+			return newTokenOfPausedRotation;
+		} finally {
+			releaseRotation.countDown();
+			executor.shutdownNow();
+		}
 	}
 
 	private Callable<Object> logoutOf(String token) {

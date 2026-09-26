@@ -1,6 +1,7 @@
 package com.mansereok.server.domain.user.scheduler;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
 import static org.mockito.Mockito.times;
@@ -17,6 +18,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.dao.CannotAcquireLockException;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
 
@@ -76,6 +78,20 @@ class RefreshTokenCleanupSchedulerTest {
 
 		// then
 		then(refreshTokenRepository).should(times(3)).deleteUsedBefore(ONE_DAY_AGO, 1000);
+	}
+
+	@Test
+	@DisplayName("만료 토큰 배치가 예외로 끝나도 예외를 밖으로 던지지 않고, 쓴 지 하루가 지난 토큰 정리를 이어서 돈다")
+	void deletesLongUsedTokensEvenIfExpiredTokenBatchFails() {
+		// given: 만료 토큰 둘째 배치가 잠금 대기 시간 초과로 실패한다
+		given(refreshTokenRepository.deleteExpiredBefore(NOW, 1000))
+			.willReturn(1000)
+			.willThrow(new CannotAcquireLockException("Lock wait timeout exceeded; try restarting transaction"));
+		given(refreshTokenRepository.deleteUsedBefore(ONE_DAY_AGO, 1000)).willReturn(1000, 0);
+
+		// when & then
+		assertThatCode(() -> scheduler.deleteUnusableTokens()).doesNotThrowAnyException();
+		then(refreshTokenRepository).should(times(2)).deleteUsedBefore(ONE_DAY_AGO, 1000);
 	}
 
 	@Test

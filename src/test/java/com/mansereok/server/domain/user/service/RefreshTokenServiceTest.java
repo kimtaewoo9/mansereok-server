@@ -22,6 +22,8 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.util.ArrayDeque;
+import java.util.Deque;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
@@ -40,14 +42,15 @@ import org.mockito.junit.jupiter.MockitoExtension;
  * 확인한다. 조건부 UPDATE 가 몇 행을 고치는지, 겹친 요청이 서로를 기다리는지는 DB 가 지키는 규칙이라 RefreshTokenMySqlTest 가 본다.
  *
  * <p>리포지토리 목은 돌려줄 값만 정한다. 조회 인자를 정확한 값으로 스텁해 두므로 다른 시각이나 다른 토큰으로 조회하면 strict stubs 가
- * 테스트를 실패시킨다. 새 토큰을 넣는 save 와 토큰을 지우는 deleteByUser 는 상태를 바꾸는 명령이라 호출 여부를 확인한다.
+ * 테스트를 실패시킨다. 새 토큰을 넣는 save, 토큰을 지우는 deleteByUser, 토큰을 폐기하는 revokeByIds 는 상태를 바꾸는 명령이라 호출
+ * 여부를 확인한다.
  */
 @ExtendWith(MockitoExtension.class)
 class RefreshTokenServiceTest {
 
+	private static final ZoneId SEOUL = ZoneId.of("Asia/Seoul");
 	// 2026-09-26 14:45 (서울)
-	private static final Clock FIXED_CLOCK = Clock.fixed(Instant.parse("2026-09-26T05:45:00Z"),
-		ZoneId.of("Asia/Seoul"));
+	private static final Clock FIXED_CLOCK = Clock.fixed(Instant.parse("2026-09-26T05:45:00Z"), SEOUL);
 	private static final LocalDateTime NOW = LocalDateTime.of(2026, 9, 26, 14, 45);
 	private static final String PRESENTED = "presented-token";
 	private static final Long MEMBER_ID = 7L;
@@ -60,11 +63,7 @@ class RefreshTokenServiceTest {
 
 	@BeforeEach
 	void setUp() {
-		// 리프레시 토큰 수명 30일, 쓴 토큰 재발급 유예 10초
-		JwtProperties jwtProperties = new JwtProperties("refresh-token-service-test-secret-0123456789", 1_800_000L,
-			2_592_000_000L, "mansereok");
-		refreshTokenService = new RefreshTokenService(refreshTokenRepository, jwtProperties,
-			new RefreshTokenProperties(Duration.ofSeconds(10)), FIXED_CLOCK);
+		refreshTokenService = serviceWith(FIXED_CLOCK);
 		member = User.create("member@example.com", "회원", "encoded-password", "member@example.com",
 			LocalDate.of(1990, 1, 1), Gender.FEMALE, true, true, false);
 		member.setId(MEMBER_ID);
@@ -132,6 +131,25 @@ class RefreshTokenServiceTest {
 
 			// when & then
 			assertThatThrownBy(() -> refreshTokenService.rotate(PRESENTED))
+				.isInstanceOf(InvalidRefreshTokenException.class)
+				.hasMessage("이미 사용한 리프레시 토큰입니다. 다시 로그인해주세요.");
+			then(refreshTokenRepository).should(never()).save(any());
+		}
+
+		@Test
+		@DisplayName("잠금을 기다리는 동안 쓴 지 유예 시간(10초)이 지났으면, 요청이 들어온 시각이 쓴 시각보다 일러도 이미 사용한 토큰으로 거절한다")
+		void judgesGraceByTimeAfterWaitingForLock() {
+			// given: 요청이 들어와 시계를 읽은 시각은 먼저 온 요청이 쓴 시각(14:45:00)보다 1초 이르고, 잠금을 얻은 뒤 읽은 시각은
+			// 쓴 뒤 11초다
+			RefreshTokenService serviceWithWaitForLock = serviceWith(new InstantsInOrderClock(
+				LocalDateTime.of(2026, 9, 26, 14, 44, 59), LocalDateTime.of(2026, 9, 26, 14, 45, 11)));
+			given(refreshTokenRepository.markUsedIfUsable(PRESENTED, LocalDateTime.of(2026, 9, 26, 14, 44, 59)))
+				.willReturn(0);
+			given(refreshTokenRepository.findByTokenForUpdate(PRESENTED))
+				.willReturn(Optional.of(RefreshTokenFixture.unusedTokenOf(member).usedAt(NOW).build()));
+
+			// when & then
+			assertThatThrownBy(() -> serviceWithWaitForLock.rotate(PRESENTED))
 				.isInstanceOf(InvalidRefreshTokenException.class)
 				.hasMessage("이미 사용한 리프레시 토큰입니다. 다시 로그인해주세요.");
 			then(refreshTokenRepository).should(never()).save(any());
@@ -248,6 +266,29 @@ class RefreshTokenServiceTest {
 		}
 
 		@Test
+		@DisplayName("재발급으로 받은 토큰이면, 그 토큰을 만들기 전 유예 시간(10초) 안에 쓰인 옛 토큰과, 옛 토큰이 쓰인 뒤 유예 시간 안에 만든 다른 토큰도 함께 폐기한다")
+		void alsoRevokesReplacedTokenAndOtherTokensIssuedFromIt() {
+			// given: 옛 토큰(id 11)이 14:44:55 에 쓰였고, 로그아웃한 토큰은 그 뒤 유예 안인 14:44:58 에 만들어졌다
+			LocalDateTime createdAt = LocalDateTime.of(2026, 9, 26, 14, 44, 58);
+			LocalDateTime oldTokenUsedAt = LocalDateTime.of(2026, 9, 26, 14, 44, 55);
+			given(refreshTokenRepository.revokeByToken(PRESENTED)).willReturn(1);
+			given(refreshTokenRepository.findByToken(PRESENTED))
+				.willReturn(Optional.of(RefreshTokenFixture.unusedTokenOf(member).createdAt(createdAt).revoked().build()));
+			given(refreshTokenRepository.findUsedBetween(MEMBER_ID, LocalDateTime.of(2026, 9, 26, 14, 44, 48), createdAt))
+				.willReturn(List.of(RefreshTokenFixture.unusedTokenOf(member).id(11L).token("old-token")
+					.usedAt(oldTokenUsedAt).build()));
+			given(refreshTokenRepository.findUnrevokedIdsCreatedBetween(MEMBER_ID, oldTokenUsedAt,
+				LocalDateTime.of(2026, 9, 26, 14, 45, 5))).willReturn(List.of(12L));
+
+			// when
+			refreshTokenService.revoke(PRESENTED);
+
+			// then: 옛 토큰(11)과, 옛 토큰으로 받은 다른 새 토큰(12)을 폐기한다. 폐기 순서는 RefreshTokenMySqlTest 가 본다.
+			then(refreshTokenRepository).should().revokeByIds(List.of(11L));
+			then(refreshTokenRepository).should().revokeByIds(List.of(12L));
+		}
+
+		@Test
 		@DisplayName("DB 에 없는 토큰이면 더 읽거나 폐기하지 않는다")
 		void doesNothingMoreForUnknownToken() {
 			// given
@@ -259,6 +300,16 @@ class RefreshTokenServiceTest {
 			// then
 			then(refreshTokenRepository).should(never()).revokeByIds(any());
 		}
+	}
+
+	/**
+	 * 리프레시 토큰 수명 30일, 쓴 토큰 재발급 유예 10초인 서비스를 clock 으로 만든다.
+	 */
+	private RefreshTokenService serviceWith(Clock clock) {
+		JwtProperties jwtProperties = new JwtProperties("refresh-token-service-test-secret-0123456789", 1_800_000L,
+			2_592_000_000L, "mansereok");
+		return new RefreshTokenService(refreshTokenRepository, jwtProperties,
+			new RefreshTokenProperties(Duration.ofSeconds(10)), clock);
 	}
 
 	/**
@@ -280,5 +331,39 @@ class RefreshTokenServiceTest {
 		ArgumentCaptor<RefreshToken> saved = ArgumentCaptor.forClass(RefreshToken.class);
 		then(refreshTokenRepository).should(times(1)).save(saved.capture());
 		return saved.getValue();
+	}
+
+	/**
+	 * 서울 시각으로 정해 둔 시각을 부를 때마다 차례로 돌려주는 Clock. 다 쓰면 마지막 시각을 계속 돌려준다. 서비스가 요청 처음과 잠금을
+	 * 얻은 뒤에 시계를 따로 읽을 때, 그사이 잠금을 기다리며 시간이 흐른 것을 흉내 낸다.
+	 */
+	private static final class InstantsInOrderClock extends Clock {
+
+		private final Deque<Instant> instants = new ArrayDeque<>();
+		private Instant last;
+
+		InstantsInOrderClock(LocalDateTime... seoulTimes) {
+			for (LocalDateTime seoulTime : seoulTimes) {
+				instants.add(seoulTime.atZone(SEOUL).toInstant());
+			}
+		}
+
+		@Override
+		public Instant instant() {
+			if (!instants.isEmpty()) {
+				last = instants.poll();
+			}
+			return last;
+		}
+
+		@Override
+		public ZoneId getZone() {
+			return SEOUL;
+		}
+
+		@Override
+		public Clock withZone(ZoneId zone) {
+			throw new UnsupportedOperationException("테스트 시계는 서울 시간대만 쓴다");
+		}
 	}
 }

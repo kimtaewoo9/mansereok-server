@@ -12,8 +12,11 @@ import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.Base64;
 import java.util.List;
+import java.util.Set;
+import java.util.TreeSet;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
@@ -51,7 +54,7 @@ public class RefreshTokenService {
 	 * @return 쿠키로 내려줄 토큰 값
 	 */
 	public String issue(User user) {
-		return save(user, LocalDateTime.now(clock));
+		return insertNewToken(user, LocalDateTime.now(clock));
 	}
 
 	/**
@@ -71,7 +74,12 @@ public class RefreshTokenService {
 	 * 기다렸다가, 이 재발급이 넣은 새 토큰까지 폐기한다. REPEATABLE READ(MySQL 기본값)에서는 0 행을 고친 UPDATE 도 찾은 토큰 행의
 	 * 잠금을 트랜잭션 끝까지 쥐지만, READ COMMITTED 에서는 조건에 맞지 않은 행의 잠금을 바로 푼다. 격리 수준에 기대지 않도록 FOR UPDATE
 	 * 로 다시 잠가 읽는다. 로컬 MySQL 8.0 에서 FOR UPDATE 를 뺐을 때 REPEATABLE READ 에서는 로그아웃이 여전히 기다렸고, READ COMMITTED
-	 * 에서는 기다리지 않아 새 토큰이 폐기되지 않고 남았다.
+	 * 에서는 기다리지 않아 새 토큰이 폐기되지 않고 남았다. RefreshTokenMySqlTest 가 커넥션 기본 격리 수준을 READ COMMITTED 로 두고 이
+	 * 경우를 확인한다.
+	 *
+	 * <p>유예 시간이 지난 재사용은 거절만 한다. 먼저 쓴 쪽이 받은 새 토큰은 폐기하지 않으므로, 훔친 토큰을 정상 사용자보다 먼저 쓴 쪽은
+	 * 그 새 토큰(30일)으로 재발급을 이어 갈 수 있고 정상 사용자만 401 을 받는다. 재사용을 알아챘을 때 회원의 토큰을 모두 폐기할지는
+	 * 아직 정하지 않았다.
 	 *
 	 * @throws InvalidRefreshTokenException 토큰이 없거나, 폐기·만료됐거나, 유예 시간이 지난 뒤 다시 쓰였을 때(401)
 	 */
@@ -100,26 +108,62 @@ public class RefreshTokenService {
 	/**
 	 * 로그아웃한 토큰을 폐기한다. 없는 토큰이면 아무것도 하지 않는다.
 	 *
-	 * <p>그 토큰이 이미 새 토큰으로 바뀌었으면(used_at 이 있으면), 바뀐 시각부터 유예 시간 안에 그 회원에게 만든 토큰도 폐기한다. 로그아웃과
-	 * 재발급이 겹쳐 재발급이 먼저 커밋하면 브라우저에 새 토큰이 남기 때문이다. 재발급은 쓴 토큰 행을 잠근 채 새 토큰을 넣으므로, 첫
-	 * UPDATE 가 그 잠금을 기다린 뒤에는 새 토큰이 이미 커밋돼 있다. 같은 몇 초 사이에 다른 기기에서 로그인해 받은 토큰도 함께 폐기된다.
-	 * 둘을 가를 컬럼이 없어 받아들인 절충이다.
+	 * <p>같은 브라우저가 재발급으로 거쳐 온 토큰이 로그아웃 뒤에 쓸 수 있는 채로 남지 않도록 다음 토큰도 함께 폐기한다. 어느 토큰을 바꿔
+	 * 받은 토큰인지 적는 컬럼이 없어, 쓴 시각과 만든 시각이 유예 시간(reuseGrace) 안에 있는지로 고른다. 한 단계만 본다.
+	 * <ol>
+	 *   <li>이 토큰을 낸 옛 토큰. 이 토큰을 만들기 전 유예 시간 안에 쓰인 토큰이다. 옛 쿠키를 싣고 늦게 온 재발급이 유예 시간 안이라고
+	 *   새 토큰을 다시 받지 못하게 한다.</li>
+	 *   <li>옛 토큰이 쓰인 뒤 유예 시간 안에 만든 다른 토큰. 같은 쿠키로 거의 동시에 온 재발급들이 하나씩 받은 새 토큰이다. 브라우저에는
+	 *   그중 하나만 남고, 로그아웃은 그 토큰으로 온다.</li>
+	 *   <li>이 토큰이 쓰인 뒤 유예 시간 안에 만든 토큰. 로그아웃과 재발급이 겹쳐 재발급이 먼저 커밋하면 브라우저에 새 토큰이 남는다.</li>
+	 * </ol>
+	 * 같은 몇 초 사이에 같은 회원이 다른 기기에서 재발급하거나 로그인해 받은 토큰도 함께 폐기될 수 있다. 둘을 가를 컬럼이 없어 받아들인
+	 * 절충이다. 정확히 가르려면 바꾸기 전 토큰의 id 컬럼(수동 DDL)이 필요하다.
 	 *
-	 * <p>새 토큰은 id 를 잠그지 않고 먼저 읽은 뒤 id 로 폐기한다. user_id 로 훑으며 UPDATE 하면 조건에 맞지 않는 행까지 잠가, 한 회원의
+	 * <p>순서가 중요하다. 먼저 이 토큰을 UPDATE 로 폐기한다. 이 토큰으로 유예 시간 안의 재발급이 행을 잠근 채 새 토큰을 넣는 중이면 그
+	 * 커밋을 기다린다. 다음에 옛 토큰을 폐기한다. 옛 토큰으로 재발급하는 중이면 역시 그 커밋을 기다린다. 그 뒤에 새 토큰들을 읽어야
+	 * 기다리는 동안 커밋된 새 토큰까지 보인다. REPEATABLE READ 는 트랜잭션에서 처음 읽은 때의 데이터를 끝까지 보여 줘서 이 새 토큰을
+	 * 놓친다. 그래서 READ COMMITTED 로 돈다. READ COMMITTED 트랜잭션의 쓰기에는 UserService 클래스 설명의 binlog_format 전제가 같이 걸린다.
+	 *
+	 * <p>함께 폐기할 토큰은 잠그지 않고 먼저 읽은 뒤 id 로 폐기한다. user_id 로 훑으며 UPDATE 하면 조건에 맞지 않는 행까지 잠가, 한 회원의
 	 * 두 기기가 쓴 토큰으로 동시에 로그아웃할 때 서로 상대가 폐기 중인 토큰 행을 기다리다 교착이 났다(READ COMMITTED 에서도 났다).
+	 *
+	 * <p>남은 교착이 하나 있다. 한 회원의 두 기기가 유예 시간 안에 차례로 재발급하고 그 새 토큰으로 동시에 로그아웃하면, 두 로그아웃이
+	 * 서로의 토큰을 함께 폐기할 토큰으로 고른다. 로컬 MySQL 8.0 에서 두 로그아웃이 자기 토큰을 폐기한 뒤 함께 멈췄다 가게 하자 세 번 모두
+	 * 한쪽이 교착(1213)으로 롤백되어 503 이 될 예외를 받았고, 롤백되지 않은 쪽이 두 기기의 새 토큰을 모두 폐기했다. 두 로그아웃이 자기
+	 * 토큰을 폐기한 때부터 함께 폐기할 토큰을 폐기하기까지의 짧은 구간에서 겹쳐야 나는 일이라 재시도를 두지 않았다.
 	 */
+	@Transactional(isolation = Isolation.READ_COMMITTED)
 	public void revoke(String presentedToken) {
 		if (refreshTokenRepository.revokeByToken(presentedToken) == 0) {
 			return;
 		}
 		RefreshToken revoked = refreshTokenRepository.findByToken(presentedToken).orElseThrow();
-		if (revoked.getUsedAt() == null) {
-			return;
+		Long memberId = revoked.getUser().getId();
+		Duration grace = refreshTokenProperties.reuseGrace();
+
+		List<RefreshToken> replacedTokens = refreshTokenRepository.findUsedBetween(memberId,
+			revoked.getCreatedAt().minus(grace), revoked.getCreatedAt());
+		revokeByIdsIfAny(replacedTokens.stream().filter(token -> !token.isRevoked()).map(RefreshToken::getId).toList());
+
+		// 옛 토큰을 폐기한 뒤에 읽는다. 폐기하며 기다린 재발급이 넣은 새 토큰까지 보인다.
+		Set<Long> issuedWithinGrace = new TreeSet<>();
+		for (RefreshToken replaced : replacedTokens) {
+			issuedWithinGrace.addAll(findUnrevokedIdsIssuedWithinGraceAfter(memberId, replaced.getUsedAt(), grace));
 		}
-		List<Long> issuedAfterUse = refreshTokenRepository.findUnrevokedIdsCreatedBetween(revoked.getUser().getId(),
-			revoked.getUsedAt(), revoked.getUsedAt().plus(refreshTokenProperties.reuseGrace()));
-		if (!issuedAfterUse.isEmpty()) {
-			refreshTokenRepository.revokeByIds(issuedAfterUse);
+		if (revoked.getUsedAt() != null) {
+			issuedWithinGrace.addAll(findUnrevokedIdsIssuedWithinGraceAfter(memberId, revoked.getUsedAt(), grace));
+		}
+		revokeByIdsIfAny(List.copyOf(issuedWithinGrace));
+	}
+
+	private List<Long> findUnrevokedIdsIssuedWithinGraceAfter(Long memberId, LocalDateTime usedAt, Duration grace) {
+		return refreshTokenRepository.findUnrevokedIdsCreatedBetween(memberId, usedAt, usedAt.plus(grace));
+	}
+
+	private void revokeByIdsIfAny(List<Long> ids) {
+		if (!ids.isEmpty()) {
+			refreshTokenRepository.revokeByIds(ids);
 		}
 	}
 
@@ -130,10 +174,13 @@ public class RefreshTokenService {
 	 */
 	private RotatedRefreshToken issueNextToken(String usedToken, LocalDateTime now) {
 		User user = refreshTokenRepository.findWithUserByToken(usedToken).orElseThrow().getUser();
-		return new RotatedRefreshToken(save(user, now), user);
+		return new RotatedRefreshToken(insertNewToken(user, now), user);
 	}
 
-	private String save(User user, LocalDateTime now) {
+	/**
+	 * 새 토큰 값을 만들어 회원의 토큰 행으로 넣고, 그 값을 돌려준다. 로그인(issue)과 재발급이 함께 쓴다.
+	 */
+	private String insertNewToken(User user, LocalDateTime now) {
 		Duration lifetime = Duration.ofMillis(jwtProperties.refreshTokenExpiration());
 		return refreshTokenRepository.save(RefreshToken.issue(newTokenValue(), user, now, lifetime)).getToken();
 	}

@@ -52,12 +52,20 @@ public interface RefreshTokenRepository extends JpaRepository<RefreshToken, Long
 	int revokeByToken(@Param("token") String token);
 
 	/**
-	 * 회원의 폐기되지 않은 토큰 중 만든 시각이 from 이상 to 이하인 토큰의 id 를 잠그지 않고 읽는다. 로그아웃한 토큰이 이미 새 토큰으로
-	 * 바뀌었을 때, 그 새 토큰(쓴 시각부터 유예 시간 안에 만든 토큰)을 찾는 데 쓴다.
+	 * 회원의 폐기되지 않은 토큰 중 만든 시각이 from 이상 to 이하인 토큰의 id 를 잠그지 않고 읽는다. 로그아웃 때 어떤 토큰이 쓰인 뒤
+	 * 유예 시간 안에 만든 토큰(그 토큰을 바꿔 받은 새 토큰)을 찾는 데 쓴다.
 	 */
 	@Query("SELECT rt.id FROM RefreshToken rt "
 		+ "WHERE rt.user.id = :userId AND rt.createdAt >= :from AND rt.createdAt <= :to AND rt.revoked = false")
 	List<Long> findUnrevokedIdsCreatedBetween(@Param("userId") Long userId, @Param("from") LocalDateTime from,
+		@Param("to") LocalDateTime to);
+
+	/**
+	 * 회원의 토큰 중 쓴 시각이 from 이상 to 이하인 토큰을 잠그지 않고 읽는다. 폐기된 토큰도 읽는다. 로그아웃 때 로그아웃한 토큰을 만들기
+	 * 전 유예 시간 안에 쓰인 토큰(로그아웃한 토큰을 낸 옛 토큰)을 찾는 데 쓴다.
+	 */
+	@Query("SELECT rt FROM RefreshToken rt WHERE rt.user.id = :userId AND rt.usedAt >= :from AND rt.usedAt <= :to")
+	List<RefreshToken> findUsedBetween(@Param("userId") Long userId, @Param("from") LocalDateTime from,
 		@Param("to") LocalDateTime to);
 
 	/**

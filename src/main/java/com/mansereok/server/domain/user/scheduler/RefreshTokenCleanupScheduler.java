@@ -50,26 +50,37 @@ public class RefreshTokenCleanupScheduler {
 		this.clock = clock;
 	}
 
+	/**
+	 * 만료 토큰과 쓴 지 오래된 토큰을 차례로 지운다. 한쪽이 예외로 멈춰도(잠금 대기 시간 초과 등) 다른 쪽은 돈다. 남은 행은 다음 날
+	 * 실행에서 지운다.
+	 */
 	@Scheduled(cron = "0 30 4 * * *", zone = "Asia/Seoul")
 	public void deleteUnusableTokens() {
 		LocalDateTime now = LocalDateTime.now(clock);
-		int expired = deleteInBatches(() -> refreshTokenRepository.deleteExpiredBefore(now, BATCH_SIZE));
-		int used = deleteInBatches(
+		int expired = deleteInBatches("만료 토큰",
+			() -> refreshTokenRepository.deleteExpiredBefore(now, BATCH_SIZE));
+		int used = deleteInBatches("쓴 지 오래된 토큰",
 			() -> refreshTokenRepository.deleteUsedBefore(now.minus(USED_TOKEN_RETENTION), BATCH_SIZE));
-		log.info("리프레시 토큰 정리 완료: 만료 {}건, 쓴 지 오래된 토큰 {}건", expired, used);
+		log.info("리프레시 토큰 정리 끝: 만료 {}건, 쓴 지 오래된 토큰 {}건", expired, used);
 	}
 
 	/**
-	 * 한 배치를 트랜잭션 하나로 돌리기를 지운 행이 0 이 될 때까지 되풀이하고, 지운 행 수의 합을 돌려준다.
+	 * 한 배치를 트랜잭션 하나로 돌리기를 지운 행이 0 이 될 때까지 되풀이하고, 지운 행 수의 합을 돌려준다. 배치가 예외로 끝나면 대상과
+	 * 그때까지 지운 행 수를 로그로 남기고 그 합을 돌려준다. 예외로 끝난 배치는 롤백되므로 합에 넣지 않는다.
 	 */
-	private int deleteInBatches(IntSupplier deleteOneBatch) {
+	private int deleteInBatches(String target, IntSupplier deleteOneBatch) {
 		int total = 0;
-		while (true) {
-			Integer deleted = readCommittedTransaction.execute(status -> deleteOneBatch.getAsInt());
-			if (deleted == null || deleted == 0) {
-				return total;
+		try {
+			while (true) {
+				int deleted = readCommittedTransaction.execute(status -> deleteOneBatch.getAsInt());
+				if (deleted == 0) {
+					return total;
+				}
+				total += deleted;
 			}
-			total += deleted;
+		} catch (RuntimeException e) {
+			log.error("리프레시 토큰 정리 실패({}): {}건을 지운 뒤 멈췄다. 남은 행은 다음 실행에서 지운다.", target, total, e);
+			return total;
 		}
 	}
 }
