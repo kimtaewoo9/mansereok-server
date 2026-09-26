@@ -308,6 +308,165 @@ class SinsalCalculatorTest {
 			// then
 			assertThat(timePillarSinsal).contains("홍염살");
 		}
+
+		@ParameterizedTest(name = "[{index}] {0} 일간 + 시지 {1}")
+		@DisplayName("문창귀인은 일간마다 정해진 지지에 붙는다")
+		@CsvSource(textBlock = """
+			甲, 巳
+			乙, 午
+			丙, 申
+			丁, 酉
+			戊, 申
+			己, 酉
+			庚, 亥
+			辛, 子
+			壬, 寅
+			癸, 卯
+			""")
+		void munchangAttachesToBranchOfStem(String stem, String timeBranch) {
+			// when
+			List<String> timePillarSinsal = timePillarSinsal(stem, "戌", "戌", timeBranch);
+
+			// then
+			assertThat(timePillarSinsal).contains("문창귀인");
+		}
+
+		@ParameterizedTest(name = "[{index}] {0} 일간 + 시지 {1}")
+		@DisplayName("태극귀인은 일간마다 정해진 지지(두 개, 戊己 는 네 개)에 붙는다")
+		@CsvSource(textBlock = """
+			甲, 子
+			甲, 午
+			乙, 子
+			乙, 午
+			丙, 卯
+			丙, 酉
+			丁, 卯
+			丁, 酉
+			戊, 辰
+			戊, 戌
+			戊, 丑
+			戊, 未
+			己, 辰
+			己, 戌
+			己, 丑
+			己, 未
+			庚, 寅
+			庚, 亥
+			辛, 寅
+			辛, 亥
+			壬, 巳
+			壬, 申
+			癸, 巳
+			癸, 申
+			""")
+		void taegeukAttachesToBranchesOfStem(String stem, String timeBranch) {
+			// when
+			List<String> timePillarSinsal = timePillarSinsal(stem, "戌", "戌", timeBranch);
+
+			// then
+			assertThat(timePillarSinsal).contains("태극귀인");
+		}
+
+		@ParameterizedTest(name = "[{index}] {0} 일간 + 시지 {1}")
+		@DisplayName("국인귀인은 일간마다 정해진 지지에 붙는다")
+		@CsvSource(textBlock = """
+			甲, 戌
+			乙, 亥
+			丙, 丑
+			丁, 寅
+			戊, 丑
+			己, 寅
+			庚, 辰
+			辛, 巳
+			壬, 未
+			癸, 申
+			""")
+		void gukinAttachesToBranchOfStem(String stem, String timeBranch) {
+			// when
+			List<String> timePillarSinsal = timePillarSinsal(stem, "戌", "戌", timeBranch);
+
+			// then
+			assertThat(timePillarSinsal).contains("국인귀인");
+		}
+	}
+
+	/**
+	 * 월지로 정하는 신살을 12개월 모두 본다. 월덕귀인·월덕합은 천간에만 붙고, 천덕귀인·천덕합은 달에 따라 천간이나 지지에 붙는다.
+	 * 기준 글자는 연주에, 합 글자는 시주에 두고 두 기둥의 신살을 본다.
+	 */
+	@Nested
+	@DisplayName("월지 기준 신살은")
+	class ByMonthBranch {
+
+		@ParameterizedTest(name = "[{index}] 월지 {0} → 월덕귀인 {1}, 월덕합 {2}")
+		@DisplayName("월덕귀인과 월덕합은 12개월 모두 월지마다 정해진 천간에 붙는다")
+		@CsvSource(textBlock = """
+			# 월지, 월덕귀인 천간, 월덕합 천간
+			寅, 丙, 辛
+			卯, 甲, 己
+			辰, 壬, 丁
+			巳, 庚, 乙
+			午, 丙, 辛
+			未, 甲, 己
+			申, 壬, 丁
+			酉, 庚, 乙
+			戌, 丙, 辛
+			亥, 甲, 己
+			子, 壬, 丁
+			丑, 庚, 乙
+			""")
+		void woldeokAttachesToStemOfMonth(String monthBranch, String woldeokStem, String woldeokhapStem) {
+			// when
+			Map<String, List<String>> result = calculator.analyzeAllSinsal(
+				"甲", woldeokStem, "戌", "甲", monthBranch, "甲", "戌", woldeokhapStem, "戌");
+
+			// then
+			assertThat(result.get("년주")).contains("월덕귀인");
+			assertThat(result.get("시주")).contains("월덕합");
+		}
+
+		@ParameterizedTest(name = "[{index}] 월지 {0} → 천덕귀인 {1}, 천덕합 {2}")
+		@DisplayName("천덕귀인과 천덕합이 천간인 달(寅辰巳未申戌亥丑)은 월지마다 정해진 천간에 붙는다")
+		@CsvSource(textBlock = """
+			# 월지, 천덕귀인 천간, 천덕합 천간
+			寅, 丁, 壬
+			辰, 壬, 丁
+			巳, 辛, 丙
+			未, 甲, 己
+			申, 癸, 戊
+			戌, 丙, 辛
+			亥, 乙, 庚
+			丑, 庚, 乙
+			""")
+		void cheondeokAttachesToStemOfMonth(String monthBranch, String cheondeokStem, String cheondeokhapStem) {
+			// when
+			Map<String, List<String>> result = calculator.analyzeAllSinsal(
+				"甲", cheondeokStem, "戌", "甲", monthBranch, "甲", "戌", cheondeokhapStem, "戌");
+
+			// then
+			assertThat(result.get("년주")).contains("천덕귀인");
+			assertThat(result.get("시주")).contains("천덕합");
+		}
+
+		@ParameterizedTest(name = "[{index}] 월지 {0} → 천덕귀인 {1}, 천덕합 {2}")
+		@DisplayName("천덕귀인과 천덕합이 지지인 달(卯午酉子)은 월지마다 정해진 지지에 붙는다")
+		@CsvSource(textBlock = """
+			# 월지, 천덕귀인 지지, 천덕합 지지
+			卯, 申, 巳
+			午, 亥, 寅
+			酉, 寅, 亥
+			子, 巳, 申
+			""")
+		void cheondeokAttachesToBranchOfMonth(String monthBranch, String cheondeokBranch,
+			String cheondeokhapBranch) {
+			// when
+			Map<String, List<String>> result = calculator.analyzeAllSinsal(
+				"甲", "甲", cheondeokBranch, "甲", monthBranch, "甲", "戌", null, cheondeokhapBranch);
+
+			// then
+			assertThat(result.get("년주")).contains("천덕귀인");
+			assertThat(result.get("시주")).contains("천덕합");
+		}
 	}
 
 	/**
