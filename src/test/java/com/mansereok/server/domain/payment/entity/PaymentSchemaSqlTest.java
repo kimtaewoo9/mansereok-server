@@ -38,6 +38,11 @@ import org.junit.jupiter.params.provider.MethodSource;
  */
 class PaymentSchemaSqlTest {
 
+	// schema.sql 인덱스 정의의 앞머리(정규식). UNIQUE 는 UNIQUE KEY 로, 일반 인덱스는 INDEX 나 KEY 로 적는다.
+	// 공용 SchemaSqlFile 은 이름이 있는지만 알려 주므로 컬럼 순서는 keyColumnsInSchema 가 읽는다.
+	private static final String UNIQUE_KEY = "UNIQUE\\s+KEY";
+	private static final String INDEX_OR_KEY = "(?:INDEX|KEY)";
+
 	private final SchemaSqlFile schema = SchemaSqlFile.load();
 
 	static Stream<Arguments> entityAndTable() {
@@ -90,7 +95,7 @@ class PaymentSchemaSqlTest {
 			.singleElement()
 			.satisfies(constraint -> assertThat(constraint.columnNames()).containsExactlyElementsOf(columns));
 		assertThat(schema.mentions(table, uniqueName)).as("schema.sql 에 %s 가 있다", uniqueName).isTrue();
-		assertThat(uniqueKeyColumnsInSchema(table, uniqueName)).as("schema.sql 의 UNIQUE KEY %s 컬럼", uniqueName)
+		assertThat(keyColumnsInSchema(table, UNIQUE_KEY, uniqueName)).as("schema.sql 의 UNIQUE KEY %s 컬럼", uniqueName)
 			.containsExactlyElementsOf(columns);
 	}
 
@@ -109,7 +114,7 @@ class PaymentSchemaSqlTest {
 				assertThat(index.unique()).as("엔티티 인덱스 %s 의 unique", indexName).isFalse();
 				assertThat(columnListOf(index)).as("엔티티 인덱스 %s 의 컬럼", indexName).containsExactlyElementsOf(columns);
 			});
-		assertThat(indexColumnsInSchema(table, indexName)).as("schema.sql 의 INDEX %s 컬럼", indexName)
+		assertThat(keyColumnsInSchema(table, INDEX_OR_KEY, indexName)).as("schema.sql 의 INDEX %s 컬럼", indexName)
 			.containsExactlyElementsOf(columns);
 	}
 
@@ -193,19 +198,14 @@ class PaymentSchemaSqlTest {
 			.containsIgnoringCase("DEFAULT 0");
 	}
 
-	/** CREATE TABLE 블록에서 "UNIQUE KEY 이름 (컬럼, ...)" 정의를 찾아 컬럼을 적힌 순서대로 꺼낸다. */
-	private List<String> uniqueKeyColumnsInSchema(String table, String name) {
+	/**
+	 * CREATE TABLE 블록에서 "앞머리 이름 (컬럼, ...)" 정의를 찾아 컬럼을 적힌 순서대로 꺼낸다. keyword 는 정의 앞머리의
+	 * 정규식(UNIQUE_KEY 또는 INDEX_OR_KEY)이다. 쉼표나 여는 괄호 바로 뒤부터 맞추므로 INDEX_OR_KEY 로는 UNIQUE KEY 정의를 찾지
+	 * 않는다. 그래서 schema.sql 에서 일반 인덱스를 UNIQUE KEY 로 바꾸면 일반 인덱스 테스트가 실패한다.
+	 */
+	private List<String> keyColumnsInSchema(String table, String keyword, String name) {
 		Matcher matcher = Pattern.compile(
-				"(?i)[(,]\\s*UNIQUE\\s+KEY\\s+`?" + Pattern.quote(name) + "`?\\s*\\(([^)]*)\\)")
-			.matcher(schema.createTableBlock(table));
-		assertThat(matcher.find()).as("schema.sql 의 %s 에 %s 정의가 있다", table, name).isTrue();
-		return Arrays.stream(matcher.group(1).replace("`", "").split(",")).map(String::trim).toList();
-	}
-
-	/** CREATE TABLE 블록에서 "INDEX 이름 (컬럼, ...)" 또는 "KEY 이름 (컬럼, ...)" 정의를 찾아 컬럼을 적힌 순서대로 꺼낸다. */
-	private List<String> indexColumnsInSchema(String table, String name) {
-		Matcher matcher = Pattern.compile(
-				"(?i)[(,]\\s*(?:INDEX|KEY)\\s+`?" + Pattern.quote(name) + "`?\\s*\\(([^)]*)\\)")
+				"(?i)[(,]\\s*" + keyword + "\\s+`?" + Pattern.quote(name) + "`?\\s*\\(([^)]*)\\)")
 			.matcher(schema.createTableBlock(table));
 		assertThat(matcher.find()).as("schema.sql 의 %s 에 %s 정의가 있다", table, name).isTrue();
 		return Arrays.stream(matcher.group(1).replace("`", "").split(",")).map(String::trim).toList();

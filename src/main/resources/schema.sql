@@ -165,9 +165,11 @@ CREATE TABLE compatibility_results
 );
 
 -- 아래 두 표(payments, orders)는 운영 SHOW CREATE TABLE 결과가 아니다. 원래 있던 정의에 엔티티가 매핑하는데 빠져 있던 컬럼을
--- 채우고, 운영에 손으로 적용하는 DDL(UNIQUE·인덱스, payments.user_id 의 NULL 허용)을 더한 것이다. UNIQUE·인덱스 이름과 컬럼 순서는
--- 엔티티 @Table 선언과 같고, 컬럼과 이름이 엔티티와 맞는지는 PaymentSchemaSqlTest 가 본다. 운영에 같은 컬럼의 인덱스가 다른 이름으로
--- 이미 있으면 새로 만들지 않고 그 인덱스를 쓴다.
+-- 채우고, 운영에 손으로 적용하는 DDL(UNIQUE·인덱스, payments.user_id 의 NULL 허용)을 더한 것이다. 이름 붙인 UNIQUE·인덱스의 이름과
+-- 컬럼 순서는 엔티티 @Table 선언과 같고, 컬럼과 이름이 엔티티와 맞는지는 PaymentSchemaSqlTest 가 본다.
+-- payments 의 idx_order_id 와 imp_uid UNIQUE 는 원래 정의에 있던 것으로 엔티티 @Table 선언 밖이다. 그래서 엔티티로 만드는 로컬·테스트
+-- DB 에는 idx_order_id 가 없고, imp_uid UNIQUE 는 Payment.impUid 의 @Column(unique = true) 로 Hibernate 가 지은 이름(UK 로 시작)으로
+-- 생긴다. 운영에 같은 컬럼·같은 순서의 인덱스가 다른 이름으로 이미 있으면 새로 만들지 않고 그 인덱스를 쓴다.
 
 -- payments 테이블
 CREATE TABLE payments (

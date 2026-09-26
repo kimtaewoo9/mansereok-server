@@ -18,8 +18,9 @@ import org.springframework.data.annotation.CreatedDate;
 
 
 // 인덱스 이름을 고정해 엔티티, schema.sql, 운영 DB 가 같은 이름을 쓰게 한다. 운영은 ddl-auto: validate 라 인덱스를 검사하지도
-// 만들지도 않는다. 이 선언은 엔티티로 만드는 로컬·테스트 DB 가 운영과 같은 인덱스를 갖게 하고, 바꿀 때는 운영 DDL 과 schema.sql 을
-// 함께 고친다.
+// 만들지도 않는다. 여기 선언한 세 인덱스는 엔티티로 만드는 로컬·테스트 DB 에도 운영과 같은 이름으로 생기고, 바꿀 때는 운영 DDL 과
+// schema.sql 을 함께 고친다. schema.sql 의 idx_order_id 는 쓰는 조회가 없어 여기 두지 않았고, imp_uid UNIQUE 는 impUid 의
+// @Column(unique = true) 로 선언해 로컬·테스트 DB 에서는 Hibernate 가 지은 이름으로 생긴다.
 @Entity
 @Table(
 	name = "payments",

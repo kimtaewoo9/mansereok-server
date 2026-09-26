@@ -208,6 +208,13 @@ class OrderPaymentIndexMySqlTest extends PaymentMySqlTest {
 		}
 	}
 
+	/**
+	 * 이 테스트가 잡는 것은 탈퇴가 결제의 사용자 연결을 끊지 않는 회귀(UserService 에서 detachUser 호출이 빠지는 것)다.
+	 *
+	 * <p>Payment.userId 의 NULL 허용 선언은 PaymentSchemaSqlTest 가 지킨다. ddl-auto: update 는 이미 있는 컬럼의 NULL 허용을
+	 * 바꾸지 않으므로, 선언을 nullable = false 로 되돌려도 이미 있는 테스트 DB 에서는 이 테스트가 통과한다. 그렇게 되돌린 채 새로
+	 * 만든 DB 에서만 컬럼이 NOT NULL 로 생겨, 이 테스트가 전제 조건(IS_NULLABLE = YES)에서 실패한다.
+	 */
 	@Nested
 	@DisplayName("결제 이력이 있는 사용자가 탈퇴하면")
 	class Withdrawal {
@@ -215,7 +222,13 @@ class OrderPaymentIndexMySqlTest extends PaymentMySqlTest {
 		@Test
 		@DisplayName("결제 행은 남고 사용자 id 만 NULL 로 비워진다")
 		void keepsPaymentAndClearsUserId() {
-			// given
+			// given: 테스트 DB 의 payments.user_id 가 NULL 을 허용해야 탈퇴의 UPDATE 가 들어간다
+			assertThat(jdbcTemplate.queryForObject("SELECT IS_NULLABLE FROM information_schema.COLUMNS"
+					+ " WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'payments' AND COLUMN_NAME = 'user_id'", String.class))
+				.as("테스트 DB 의 payments.user_id 가 NOT NULL 이다. 엔티티 Payment.userId 를 nullable = false 로 바꿨다면"
+					+ " PaymentSchemaSqlTest 도 함께 실패한다. 엔티티는 NULL 허용인데 이 값이 NO 라면 ddl-auto: update 가 이미 있는 컬럼의"
+					+ " NULL 허용을 바꾸지 않은 것이므로, 테스트 DB 에 ALTER TABLE payments MODIFY user_id BIGINT NULL 을 적용하고 다시 돌린다.")
+				.isEqualTo("YES");
 			Long userId = userRepository.save(User.create(username, "탈퇴", "password", username + "@example.com",
 				LocalDate.of(1990, 1, 1), Gender.MALE, true, true, false)).getId();
 			paymentRepository.saveAndFlush(Payment.create(impUid, merchantUidPrefix + "withdrawn", (long) PRICE,
