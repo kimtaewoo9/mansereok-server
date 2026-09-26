@@ -104,7 +104,7 @@ class PaymentOrderServiceTest {
 		PaidOrderFinalizer paidOrderFinalizer = new PaidOrderFinalizer(orderRepository,
 			paymentRepository, resultService, orderDiscountRestorer, eventPublisher);
 		paymentOrderService = new PaymentOrderService(
-			userRepository,
+			new PaymentUserLookup(userRepository),
 			subCategoryRepository,
 			orderRepository,
 			discountCodeService,

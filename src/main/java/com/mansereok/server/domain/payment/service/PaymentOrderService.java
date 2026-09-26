@@ -15,7 +15,6 @@ import com.mansereok.server.domain.payment.entity.Payment;
 import com.mansereok.server.domain.product.entity.SubCategory;
 import com.mansereok.server.domain.product.repository.SubCategoryRepository;
 import com.mansereok.server.domain.user.entity.User;
-import com.mansereok.server.domain.user.repository.UserRepository;
 import com.mansereok.server.global.exception.PaymentException;
 import java.time.LocalDateTime;
 import lombok.RequiredArgsConstructor;
@@ -35,7 +34,7 @@ import org.springframework.transaction.annotation.Transactional;
 @Slf4j
 public class PaymentOrderService {
 
-	private final UserRepository userRepository;
+	private final PaymentUserLookup paymentUserLookup;
 	private final SubCategoryRepository subCategoryRepository;
 	private final OrderRepository orderRepository;
 	private final DiscountCodeService discountCodeService;
@@ -61,8 +60,7 @@ public class PaymentOrderService {
 
 	// 1단계: 주문 생성 (결제 전)
 	public OrderCreateResponse createOrder(String username, OrderCreateRequest request) {
-		User user = userRepository.findByUsername(username)
-			.orElseThrow(() -> new PaymentException("사용자를 찾을 수 없습니다."));
+		User user = paymentUserLookup.getByUsername(username);
 
 		SubCategory subCategory = subCategoryRepository.findById(request.getSubCategoryId())
 			.orElseThrow(() -> new PaymentException("존재하지 않는 상품입니다."));
@@ -107,8 +105,7 @@ public class PaymentOrderService {
 			request.getSubCategoryId());
 
 		// 1. 사용자 조회
-		User user = userRepository.findByUsername(username)
-			.orElseThrow(() -> new PaymentException("사용자를 찾을 수 없습니다."));
+		User user = paymentUserLookup.getByUsername(username);
 
 		// 2. 상품 조회
 		SubCategory subCategory = subCategoryRepository.findById(request.getSubCategoryId())
@@ -152,8 +149,7 @@ public class PaymentOrderService {
 	}
 
 	public Payment createFreeOrder(String username, Long subCategoryId) {
-		User user = userRepository.findByUsername(username)
-			.orElseThrow(() -> new PaymentException("사용자를 찾을 수 없습니다."));
+		User user = paymentUserLookup.getByUsername(username);
 
 		SubCategory subCategory = subCategoryRepository.findById(subCategoryId)
 			.orElseThrow(() -> new PaymentException("존재하지 않는 상품입니다."));

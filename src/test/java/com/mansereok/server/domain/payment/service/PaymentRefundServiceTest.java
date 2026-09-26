@@ -92,7 +92,7 @@ class PaymentRefundServiceTest {
 		// TransactionTemplate 은 실제 인스턴스. 트랜잭션마다 새 TransactionStatus 를 돌려준다.
 		given(transactionManager.getTransaction(any(TransactionDefinition.class)))
 			.willAnswer(invocation -> new SimpleTransactionStatus(true));
-		paymentRefundService = new PaymentRefundService(userRepository, paymentRepository,
+		paymentRefundService = new PaymentRefundService(new PaymentUserLookup(userRepository), paymentRepository,
 			orderRepository, resultService, orderDiscountRestorer, portOneClient,
 			transactionManager);
 	}

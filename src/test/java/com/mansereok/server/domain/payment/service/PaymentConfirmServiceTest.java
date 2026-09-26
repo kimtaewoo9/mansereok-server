@@ -121,7 +121,7 @@ class PaymentConfirmServiceTest {
 			paymentRepository, resultService, orderDiscountRestorer, eventPublisher);
 		PaymentVerifier paymentVerifier = new PaymentVerifier(objectMapper);
 		paymentConfirmService = new PaymentConfirmService(
-			userRepository,
+			new PaymentUserLookup(userRepository),
 			orderRepository,
 			paymentRepository,
 			portOneClient,

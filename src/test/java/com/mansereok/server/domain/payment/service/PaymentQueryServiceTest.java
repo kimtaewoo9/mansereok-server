@@ -20,18 +20,19 @@ import com.mansereok.server.domain.payment.repository.PaymentRepository;
 import com.mansereok.server.domain.user.entity.Gender;
 import com.mansereok.server.domain.user.entity.User;
 import com.mansereok.server.domain.user.repository.UserRepository;
+import com.mansereok.server.global.exception.PaymentException;
 import com.mansereok.server.support.fixture.TestOrders;
 import com.mansereok.server.support.fixture.TestPayments;
 import jakarta.persistence.EntityNotFoundException;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.access.AccessDeniedException;
@@ -46,9 +47,6 @@ class PaymentQueryServiceTest {
 	private static final Long ORDER_ID = 10L;
 	private static final Long PAYMENT_PK_ID = 100L;
 
-	@InjectMocks
-	private PaymentQueryService paymentQueryService;
-
 	@Mock
 	private OrderRepository orderRepository;
 	@Mock
@@ -59,6 +57,15 @@ class PaymentQueryServiceTest {
 	private ResultRepository resultRepository;
 	@Mock
 	private CompatibilityResultRepository compatibilityResultRepository;
+
+	private PaymentQueryService paymentQueryService;
+
+	@BeforeEach
+	void setUp() {
+		// 사용자 조회는 같은 프로세스의 협력 객체라 진짜를 쓰고, 그 아래 리포지토리만 mock 이다.
+		paymentQueryService = new PaymentQueryService(orderRepository, new PaymentUserLookup(userRepository),
+			paymentRepository, resultRepository, compatibilityResultRepository);
+	}
 
 	// ===== 픽스처 =====
 
@@ -136,15 +143,29 @@ class PaymentQueryServiceTest {
 	}
 
 	@Test
-	@DisplayName("getOwnedOrder: 사용자를 찾을 수 없으면 EntityNotFoundException 을 던진다")
-	void getOwnedOrder_userMissing_throwsNotFound() {
+	@DisplayName("getOwnedOrder: 사용자를 찾을 수 없으면 다른 결제 API 와 같은 PaymentException(400)을 던진다")
+	void getOwnedOrder_userMissing_throwsPaymentException() {
 		// given
 		given(orderRepository.findById(ORDER_ID)).willReturn(Optional.of(orderOwnedBy(USER_ID)));
 		given(userRepository.findByUsername(USERNAME)).willReturn(Optional.empty());
 
 		// when & then
 		assertThatThrownBy(() -> paymentQueryService.getOwnedOrder(ORDER_ID, USERNAME))
-			.isInstanceOf(EntityNotFoundException.class);
+			.isInstanceOf(PaymentException.class)
+			.hasMessage("사용자를 찾을 수 없습니다.");
+	}
+
+	@Test
+	@DisplayName("getOwnedOrderByPaymentPkId: 사용자를 찾을 수 없으면 다른 결제 API 와 같은 PaymentException(400)을 던진다")
+	void getOwnedOrderByPaymentPkId_userMissing_throwsPaymentException() {
+		// given
+		given(orderRepository.findByPaymentPkId(PAYMENT_PK_ID)).willReturn(Optional.of(orderOwnedBy(USER_ID)));
+		given(userRepository.findByUsername(USERNAME)).willReturn(Optional.empty());
+
+		// when & then
+		assertThatThrownBy(() -> paymentQueryService.getOwnedOrderByPaymentPkId(PAYMENT_PK_ID, USERNAME))
+			.isInstanceOf(PaymentException.class)
+			.hasMessage("사용자를 찾을 수 없습니다.");
 	}
 
 	// ===== getOwnedOrderByPaymentPkId =====
@@ -313,26 +334,15 @@ class PaymentQueryServiceTest {
 	}
 
 	@Test
-	@DisplayName("getPayments: 사용자를 찾을 수 없으면 IllegalArgumentException 을 던진다")
-	void getPayments_userMissing_throwsIllegalArgument() {
+	@DisplayName("getPayments: 사용자를 찾을 수 없으면 다른 결제 API 와 같은 PaymentException(400)을 던진다")
+	void getPayments_userMissing_throwsPaymentException() {
 		// given
 		given(userRepository.findByUsername(USERNAME)).willReturn(Optional.empty());
 
 		// when & then
 		assertThatThrownBy(() -> paymentQueryService.getPayments(USERNAME))
-			.isInstanceOf(IllegalArgumentException.class)
+			.isInstanceOf(PaymentException.class)
 			.hasMessage("사용자를 찾을 수 없습니다.");
 		verifyNoInteractions(paymentRepository, resultRepository, compatibilityResultRepository);
-	}
-
-	@Test
-	@DisplayName("getPayment: 결제가 없으면 EntityNotFoundException 을 던진다")
-	void getPayment_missing_throwsNotFound() {
-		// given
-		given(paymentRepository.findById(PAYMENT_PK_ID)).willReturn(Optional.empty());
-
-		// when & then
-		assertThatThrownBy(() -> paymentQueryService.getPayment(PAYMENT_PK_ID))
-			.isInstanceOf(EntityNotFoundException.class);
 	}
 }

@@ -90,6 +90,14 @@ public class Payment {
 	}
 
 	/**
+	 * userId 의 사용자가 한 결제인지 본다. 탈퇴 처리로 결제의 userId 가 비었으면 누구의 결제도 아니므로, 결제 쪽이든 인자 쪽이든
+	 * null 이면 false 다.
+	 */
+	public boolean isOwnedBy(Long userId) {
+		return this.userId != null && this.userId.equals(userId);
+	}
+
+	/**
 	 * 포트원 거래가 없는 무료 결제인지 본다. 무료 발급 경로는 결제 번호를 free_ 로 시작하게 만들고 금액을 0원으로 두므로 둘 중
 	 * 하나라도 맞으면 무료다. 환불 거절, 대사 제외, 결제 목록의 환불 가능 표시, 결제 완료 알림 생략이 모두 이 판정을 쓴다.
 	 */

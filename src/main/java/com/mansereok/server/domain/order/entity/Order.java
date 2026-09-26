@@ -118,6 +118,14 @@ public class Order {
 	}
 
 	/**
+	 * userId 의 사용자가 한 주문인지 본다. 탈퇴 처리로 주문의 userId 가 비었으면 누구의 주문도 아니므로, 주문 쪽이든 인자 쪽이든
+	 * null 이면 false 다.
+	 */
+	public boolean isOwnedBy(Long userId) {
+		return this.userId != null && this.userId.equals(userId);
+	}
+
+	/**
 	 * 결제된 금액이 이 주문의 결제 금액과 같은지 본다. 금액 대조는 이 메서드로 한다. 주문 금액(int)과 포트원 금액(Long)을 박싱한 채
 	 * equals 로 견주면 타입이 달라 늘 false 가 된다.
 	 */

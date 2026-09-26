@@ -196,4 +196,27 @@ class PaymentTest {
 			assertThat(payment.isRefundable(resultStatus)).isEqualTo(expected);
 		}
 	}
+
+	@Nested
+	@DisplayName("isOwnedBy 는")
+	class IsOwnedBy {
+
+		@ParameterizedTest(name = "[{index}] 결제 소유자 {0}, 요청자 {1} → {2}")
+		@CsvSource(nullValues = "null", textBlock = """
+			# 결제 소유자 id, 요청자 id, 본인 여부
+			   7,    7, true
+			   7,    8, false
+			null,    7, false
+			   7, null, false
+			null, null, false
+			""")
+		@DisplayName("소유자와 요청자가 같은 id 일 때만 true 이고, 어느 쪽이든 null 이면(탈퇴로 연결이 끊긴 결제 포함) false 다")
+		void trueOnlyForSameNonNullId(Long ownerId, Long requesterId, boolean expected) {
+			// given
+			Payment payment = TestPayments.payment().userId(ownerId).paid();
+
+			// when & then
+			assertThat(payment.isOwnedBy(requesterId)).isEqualTo(expected);
+		}
+	}
 }

@@ -11,9 +11,7 @@ import com.mansereok.server.domain.payment.entity.Payment;
 import com.mansereok.server.domain.payment.entity.PaymentStatus;
 import com.mansereok.server.domain.payment.repository.PaymentRepository;
 import com.mansereok.server.domain.user.entity.User;
-import com.mansereok.server.domain.user.repository.UserRepository;
 import com.mansereok.server.global.exception.PaymentException;
-import java.util.Objects;
 import java.util.Optional;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -51,7 +49,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 @Slf4j
 public class PaymentRefundService {
 
-	private final UserRepository userRepository;
+	private final PaymentUserLookup paymentUserLookup;
 	private final PaymentRepository paymentRepository;
 	private final OrderRepository orderRepository;
 	private final ResultService resultService;
@@ -60,7 +58,7 @@ public class PaymentRefundService {
 	private final TransactionTemplate transactionTemplate;
 
 	public PaymentRefundService(
-		UserRepository userRepository,
+		PaymentUserLookup paymentUserLookup,
 		PaymentRepository paymentRepository,
 		OrderRepository orderRepository,
 		ResultService resultService,
@@ -68,7 +66,7 @@ public class PaymentRefundService {
 		PortOneClient portOneClient,
 		PlatformTransactionManager transactionManager
 	) {
-		this.userRepository = userRepository;
+		this.paymentUserLookup = paymentUserLookup;
 		this.paymentRepository = paymentRepository;
 		this.orderRepository = orderRepository;
 		this.resultService = resultService;
@@ -123,15 +121,14 @@ public class PaymentRefundService {
 	 */
 	private Long markCancelRequested(String username, String impUid) {
 		// 1. 사용자 조회
-		User user = userRepository.findByUsername(username)
-			.orElseThrow(() -> new PaymentException("사용자를 찾을 수 없습니다."));
+		User user = paymentUserLookup.getByUsername(username);
 
 		// 2. 결제 조회 (행 잠금)
 		Payment payment = paymentRepository.findByImpUidWithLock(impUid)
 			.orElseThrow(() -> new PaymentException("결제 정보를 찾을 수 없습니다."));
 
-		// 3. 소유자 검사
-		if (!Objects.equals(payment.getUserId(), user.getId())) {
+		// 3. 소유자 검사. 탈퇴 처리로 userId 가 빈 결제는 누구의 것도 아니다.
+		if (!payment.isOwnedBy(user.getId())) {
 			throw new PaymentException("본인의 결제 건만 취소할 수 있습니다.");
 		}
 

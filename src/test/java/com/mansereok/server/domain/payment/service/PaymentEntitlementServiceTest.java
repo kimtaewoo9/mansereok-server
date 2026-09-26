@@ -24,7 +24,6 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.EnumSource;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -49,13 +48,19 @@ class PaymentEntitlementServiceTest {
 	private static final Long PAID_PRODUCT_ID = 3L;
 	private static final String REJECTED_MESSAGE = "유효한 결제 정보가 아닙니다.";
 
-	@InjectMocks
-	private PaymentEntitlementService paymentEntitlementService;
-
 	@Mock
 	private UserRepository userRepository;
 	@Mock
 	private PaymentRepository paymentRepository;
+
+	private PaymentEntitlementService paymentEntitlementService;
+
+	@BeforeEach
+	void setUp() {
+		// 사용자 조회는 같은 프로세스의 협력 객체라 진짜를 쓰고, 그 아래 리포지토리만 mock 이다.
+		paymentEntitlementService = new PaymentEntitlementService(new PaymentUserLookup(userRepository),
+			paymentRepository);
+	}
 
 	// 결과 변경이 불린 결제 PK 를 부른 순서대로 모은다.
 	private final List<Long> startedPaymentIds = new ArrayList<>();
