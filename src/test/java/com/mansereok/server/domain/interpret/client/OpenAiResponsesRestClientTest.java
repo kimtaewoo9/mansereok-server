@@ -264,6 +264,51 @@ class OpenAiResponsesRestClientTest {
 	}
 
 	@Test
+	@DisplayName("fallback 이 404 로 거절되면 fallback 모델명과 앞선 재시도 횟수를 담은 OpenAiRequestException 으로 끝난다")
+	void fallbackRejectionNamesFallbackModel() {
+		// given: primary 두 번이 5xx, fallback 은 모델명이 틀린 설정처럼 404
+		OpenAiResponsesRestClient client = clientWith(TestOpenAiProperties.of(2, 1_000L, 2.0));
+		server.expect(ExpectedCount.times(2), requestTo(URL)).andRespond(withServerError());
+		server.expect(ExpectedCount.once(), requestTo(URL))
+			.andExpect(jsonPath("$.model").value("gpt-5.2"))
+			.andRespond(withStatus(HttpStatus.NOT_FOUND));
+
+		// when
+		Throwable thrown = catchThrowable(() -> client.createResponse(primaryRequest()));
+
+		// then
+		assertThat(thrown)
+			.isInstanceOf(OpenAiRequestException.class)
+			.hasMessage("OpenAI fallback 요청이 거절되었습니다 (fallback 모델: gpt-5.2, 앞선 재시도 2회 실패 뒤). "
+				+ "원인: OpenAI 요청이 거절되었습니다. status: 404");
+		server.verify();
+	}
+
+	@Test
+	@DisplayName("light 티어 요청도 재시도를 다 쓰면 fallback 에서 gpt-5.2 와 출력 토큰 32768 로 올라간다")
+	void lightRequestFallsBackToFallbackTier() {
+		// 무료 경로의 비용이 fallback 에서 올라가는 지금의 정책을 고정한다. 정책을 바꾸면 이 기대값도 함께 고친다.
+		OpenAiResponsesRestClient client = clientWith(TestOpenAiProperties.of(2, 1_000L, 2.0));
+		server.expect(ExpectedCount.times(2), requestTo(URL))
+			.andExpect(jsonPath("$.model").value("gpt-5-mini"))
+			.andExpect(jsonPath("$.max_output_tokens").value(8192))
+			.andRespond(withServerError());
+		server.expect(ExpectedCount.once(), requestTo(URL))
+			.andExpect(jsonPath("$.model").value("gpt-5.2"))
+			.andExpect(jsonPath("$.max_output_tokens").value(32768))
+			.andExpect(jsonPath("$.reasoning.effort").value("medium"))
+			.andExpect(jsonPath("$.text.verbosity").value("medium"))
+			.andExpect(jsonPath("$.instructions").value(SYSTEM_INSTRUCTION))
+			.andExpect(jsonPath("$.input").value(PROMPT))
+			.andRespond(withSuccess(completedBody("fallback 성공"), MediaType.APPLICATION_JSON));
+
+		String result = client.createResponse(requestFor(OpenAiProperties.ModelTier.defaultLight()));
+
+		assertThat(result).isEqualTo("fallback 성공");
+		server.verify();
+	}
+
+	@Test
 	@DisplayName("400 은 재시도 없이 한 번만 호출하고 즉시 OpenAiRequestException 이다")
 	void badRequestFailsImmediately() {
 		OpenAiResponsesRestClient client = clientWith(TestOpenAiProperties.of(4, 2_000L, 2.0));

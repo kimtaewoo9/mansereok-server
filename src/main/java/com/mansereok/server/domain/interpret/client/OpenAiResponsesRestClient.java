@@ -133,10 +133,9 @@ public class OpenAiResponsesRestClient implements OpenAiResponsesClient {
 	 * 애초에 다른 모델을 쓰던 경로에서는 아무것도 바꾸지 못한 채 같은 모델로 재호출한다.
 	 */
 	private String callFallback(Gpt5Request request, RetryableFailure lastFailure) {
-		// 후속 판단 거리: fallback 티어가 하나뿐이라 무료(light = gpt-5-mini / 8192) 경로도
-		// 5xx 가 이어지면 gpt-5.2 / 32768 토큰으로 올라간다. 기존 코드는 문자열 치환 버그 때문에
-		// 이 경로의 fallback 이 아무 일도 하지 않았으므로, 버그를 고친 결과로 새로 생기는 비용 노출이다.
-		// 티어별 fallback 을 두거나 light 는 fallback 없이 실패시키는 선택은 다음 PR 로 남긴다.
+		// fallback 티어가 하나뿐이라 무료(light = gpt-5-mini / 8192) 경로도 5xx 가 이어지면
+		// gpt-5.2 / 32768 토큰으로 올라간다. 티어별 fallback 을 두거나 light 는 fallback 없이 실패시키는 선택은
+		// 아직 정하지 않았다. 지금 동작은 OpenAiResponsesRestClientTest 가 고정해 두었으니, 바꿀 때 그 기대값도 함께 고친다.
 		ModelTier fallback = properties.fallback();
 		log.warn("OpenAI {}회 재시도 최종 실패(마지막 원인: {}). fallback 모델 {} 로 1회 더 호출합니다.",
 			properties.maxAttempts(),
@@ -150,6 +149,13 @@ public class OpenAiResponsesRestClient implements OpenAiResponsesClient {
 			throw new OpenAiUnavailableException(
 				"OpenAI 호출이 최종 실패했습니다 (재시도 " + properties.maxAttempts()
 					+ "회 + fallback 1회). 마지막 원인: " + e.getMessage(), e.getCause());
+		} catch (OpenAiRequestException e) {
+			// fallback 이 4xx 를 받으면 대개 fallback 모델명 같은 설정 문제다. primary 에서 난 4xx 와 가려 볼 수 있게
+			// fallback 모델명과 앞선 재시도 횟수를 메시지에 붙인다. 타입은 같게 두어 전역 핸들러의 응답은 바뀌지 않는다.
+			throw new OpenAiRequestException(
+				"OpenAI fallback 요청이 거절되었습니다 (fallback 모델: " + fallback.model()
+					+ ", 앞선 재시도 " + properties.maxAttempts() + "회 실패 뒤). 원인: " + e.getMessage(),
+				e.getCause());
 		}
 	}
 
