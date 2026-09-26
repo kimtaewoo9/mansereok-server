@@ -10,11 +10,12 @@ import com.mansereok.server.domain.review.repository.ReviewRepository;
 import com.mansereok.server.domain.user.entity.Role;
 import com.mansereok.server.domain.user.entity.User;
 import com.mansereok.server.domain.user.service.UserService;
-import com.mansereok.server.global.exception.PaymentException;
+import com.mansereok.server.global.exception.ReviewNotAllowedException;
 import jakarta.persistence.EntityNotFoundException;
-import java.time.LocalDateTime;
-import java.time.temporal.ChronoUnit;
+import java.time.Clock;
+import java.time.LocalDate;
 import java.util.List;
+import java.util.Optional;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -35,8 +36,8 @@ public class ReviewService {
 	private final ReviewRepository reviewRepository;
 	private final OrderRepository orderRepository; //
 	private final UserService userService; //
+	private final Clock clock;
 
-	private static final int REVIEW_DEADLINE_DAYS = 30;
 	private static final int MIN_CONTENT_LENGTH = 20; // 최소 20자 ..
 
 
@@ -61,14 +62,15 @@ public class ReviewService {
 
 		// 길이 체크
 		if (request.getContent().length() < MIN_CONTENT_LENGTH) {
-			throw new PaymentException("리뷰 내용은 최소 " + MIN_CONTENT_LENGTH + "자 이상이어야 합니다.");
+			throw new IllegalArgumentException("리뷰 내용은 최소 " + MIN_CONTENT_LENGTH + "자 이상이어야 합니다.");
 		}
 
+		// 자격 조회 API 와 같은 규칙으로 판단하고, 쓸 수 없으면 그 이유로 거절한다.
 		Order order = orderRepository.findById(request.getOrderId())
-			.orElseThrow(() -> new EntityNotFoundException("주문 정보를 찾을 수 없습니다."));
-
-		// 3. 해당 주문이 리뷰 작성 가능한지 검증
-		validateOrderForReview(order, user, request.getSubCategoryId());
+			.orElseThrow(() -> new ReviewNotAllowedException(RejectionReason.ORDER_NOT_FOUND));
+		findRejection(order, user, request.getSubCategoryId()).ifPresent(reason -> {
+			throw new ReviewNotAllowedException(reason);
+		});
 
 		// --- 리뷰 저장 (찾은 Order ID 사용) ---
 		Review newReview = Review.create(
@@ -122,93 +124,24 @@ public class ReviewService {
 		return role == Role.ADMIN || role == Role.SUPER_ADMIN;
 	}
 
+	/**
+	 * 주문으로 리뷰를 쓸 수 있는지 알려준다. 쓸 수 없어도 예외 없이 이유를 담아 답한다. 규칙은 {@link ReviewEligibilityPolicy} 에
+	 * 있고, 작성 API 도 같은 규칙으로 거절한다.
+	 */
 	public ReviewEligibilityResponse checkReviewEligibility(String username, Long orderId,
 		Long subCategoryId) {
 		User user = userService.findByUsername(username);
 
-		// 1. 주문 존재 여부 확인
-		Order order = orderRepository.findById(orderId).orElse(null);
-		if (order == null) {
-			return ReviewEligibilityResponse.ineligible(
-				ReviewEligibilityResponse.RejectionReason.ORDER_NOT_FOUND,
-				"유효하지 않은 주문 정보입니다."
-			);
-		}
-
-		// 2. 본인의 주문인지 확인
-		if (!order.getUserId().equals(user.getId())) {
-			return ReviewEligibilityResponse.ineligible(
-				ReviewEligibilityResponse.RejectionReason.NOT_OWNER,
-				"본인의 주문에 대해서만 리뷰를 작성할 수 있습니다."
-			);
-		}
-
-		// 3. 상품 일치 여부 확인
-		if (!order.getSubCategoryId().equals(subCategoryId)) {
-			return ReviewEligibilityResponse.ineligible(
-				ReviewEligibilityResponse.RejectionReason.MISMATCH_PRODUCT,
-				"주문한 상품 정보와 일치하지 않습니다."
-			);
-		}
-
-		// 4. 결제 상태 확인
-		if (order.getPaidAt() == null) {
-			return ReviewEligibilityResponse.ineligible(
-				ReviewEligibilityResponse.RejectionReason.NOT_PAID,
-				"결제가 완료되지 않은 주문입니다."
-			);
-		}
-
-		// 5. 기간 확인 (30일 이내)
-		long daysSincePayment = ChronoUnit.DAYS.between(order.getPaidAt().toLocalDate(),
-			LocalDateTime.now().toLocalDate());
-		if (daysSincePayment > REVIEW_DEADLINE_DAYS) {
-			return ReviewEligibilityResponse.ineligible(
-				ReviewEligibilityResponse.RejectionReason.EXPIRED,
-				"구매 후 " + REVIEW_DEADLINE_DAYS + "일이 지나 리뷰를 작성할 수 없습니다."
-			);
-		}
-
-		// 6. 중복 작성 확인
-		if (reviewRepository.existsByOrderId(order.getId())) {
-			return ReviewEligibilityResponse.ineligible(
-				ReviewEligibilityResponse.RejectionReason.ALREADY_WRITTEN,
-				"이미 해당 주문에 대한 리뷰를 작성하셨습니다."
-			);
-		}
-
-		// 통과!
-		return ReviewEligibilityResponse.eligible();
+		return orderRepository.findById(orderId)
+			.map(order -> findRejection(order, user, subCategoryId)
+				.map(ReviewEligibilityResponse::rejected)
+				.orElseGet(ReviewEligibilityResponse::allowed))
+			.orElseGet(() -> ReviewEligibilityResponse.rejected(RejectionReason.ORDER_NOT_FOUND));
 	}
 
-	private void validateOrderForReview(Order order, User user, Long requestedSubCategoryId) {
-		// 1. 본인의 주문인지 확인
-		if (!order.getUserId().equals(user.getId())) {
-			throw new AccessDeniedException("본인의 주문에 대해서만 리뷰를 작성할 수 있습니다.");
-		}
-
-		// 2. 요청한 상품(SubCategory)에 대한 주문인지 확인
-		if (!order.getSubCategoryId().equals(requestedSubCategoryId)) {
-			throw new PaymentException("주문한 상품과 리뷰하려는 상품이 일치하지 않습니다.");
-		}
-
-		// 3. 결제 완료 여부 확인
-		if (order.getPaidAt() == null) {
-			throw new PaymentException("결제가 완료된 주문만 리뷰를 작성할 수 있습니다.");
-		}
-
-		// 4. 기간 확인 (30일 이내)
-		long daysSincePayment = ChronoUnit.DAYS.between(order.getPaidAt().toLocalDate(),
-			LocalDateTime.now().toLocalDate());
-		if (daysSincePayment > REVIEW_DEADLINE_DAYS) {
-			throw new PaymentException(
-				"구매 후 " + REVIEW_DEADLINE_DAYS + "일이 지난 주문은 리뷰를 작성할 수 없습니다.");
-		}
-
-		// 5. 중복 리뷰 확인 (이미 해당 주문으로 리뷰가 존재하는지)
-		if (reviewRepository.existsByOrderId(order.getId())) {
-			throw new PaymentException("해당 주문에 대해 이미 리뷰를 작성했습니다.");
-		}
+	private Optional<RejectionReason> findRejection(Order order, User requester, Long subCategoryId) {
+		return ReviewEligibilityPolicy.findRejection(order, requester.getId(), subCategoryId,
+			LocalDate.now(clock), () -> reviewRepository.existsByOrderId(order.getId()));
 	}
 
 	public Page<ReviewResponse> getReviewsBySubCategory(Long subCategoryId, int page, int size) {

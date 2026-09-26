@@ -1,31 +1,28 @@
 package com.mansereok.server.domain.review.dto.response;
 
-import lombok.AllArgsConstructor;
-import lombok.Getter;
+import com.mansereok.server.domain.review.service.RejectionReason;
 
-@Getter
-@AllArgsConstructor
-public class ReviewEligibilityResponse {
+/**
+ * 리뷰 작성 자격 조회 결과.
+ *
+ * <p>JSON 키는 구성 요소 이름 그대로 eligible, reason, message 다. 프런트가 읽는 키가 eligible 이므로 구성 요소 이름을
+ * isEligible 로 바꾸지 않는다. 바꾸면 컴파일과 서버 테스트는 통과해도 JSON 키가 isEligible 로 바뀐다.
+ *
+ * @param eligible 리뷰를 쓸 수 있으면 true
+ * @param reason   쓸 수 없는 이유. 쓸 수 있으면 null
+ * @param message  사용자에게 보여줄 문구
+ */
+public record ReviewEligibilityResponse(
+	boolean eligible,
+	RejectionReason reason,
+	String message
+) {
 
-	private boolean isEligible;      // 작성 가능 여부
-	private RejectionReason reason;  // 불가능 사유 (가능하면 null)
-	private String message;          // 사용자에게 보여줄 메시지
-
-	public static ReviewEligibilityResponse eligible() {
+	public static ReviewEligibilityResponse allowed() {
 		return new ReviewEligibilityResponse(true, null, "리뷰 작성이 가능합니다.");
 	}
 
-	public static ReviewEligibilityResponse ineligible(RejectionReason reason, String message) {
-		return new ReviewEligibilityResponse(false, reason, message);
-	}
-
-	@Getter
-	public enum RejectionReason {
-		ORDER_NOT_FOUND,    // 주문 정보 없음
-		NOT_OWNER,          // 본인 주문 아님
-		MISMATCH_PRODUCT,   // 상품 정보 불일치
-		NOT_PAID,           // 결제 완료 안됨
-		EXPIRED,            // 30일 경과
-		ALREADY_WRITTEN     // 이미 작성함
+	public static ReviewEligibilityResponse rejected(RejectionReason reason) {
+		return new ReviewEligibilityResponse(false, reason, reason.getMessage());
 	}
 }
