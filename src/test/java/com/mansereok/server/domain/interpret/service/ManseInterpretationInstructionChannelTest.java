@@ -14,11 +14,12 @@ import com.mansereok.server.domain.interpret.client.TestOpenAiProperties;
 import com.mansereok.server.domain.interpret.dto.request.Gpt5Request;
 import com.mansereok.server.domain.interpret.entity.CompatibilityResult;
 import com.mansereok.server.domain.interpret.postprocess.AnalysisNormalizer;
+import com.mansereok.server.domain.interpret.product.InterpretationProduct;
+import com.mansereok.server.domain.interpret.prompt.CompatibilityPromptContext;
 import com.mansereok.server.domain.interpret.prompt.CompatibilityPromptFactory;
 import com.mansereok.server.domain.interpret.prompt.PromptFixtures;
 import com.mansereok.server.domain.interpret.prompt.SajuPromptFactory;
 import com.mansereok.server.domain.interpret.prompt.UserInputSanitizer;
-import com.mansereok.server.domain.interpret.repository.CompatibilityResultRepository;
 import com.mansereok.server.domain.notification.service.DiscordNotificationService;
 import com.mansereok.server.domain.user.service.EmailService;
 import com.mansereok.server.domain.user.service.UserService;
@@ -56,8 +57,6 @@ class ManseInterpretationInstructionChannelTest {
 	@Mock
 	private UserService userService;
 	@Mock
-	private CompatibilityResultRepository compatibilityResultRepository;
-	@Mock
 	private OgImageGenerationService ogImageGenerationService;
 	@Mock
 	private DiscordNotificationService discordNotificationService;
@@ -77,7 +76,6 @@ class ManseInterpretationInstructionChannelTest {
 			openAiResponsesClient,
 			TestOpenAiProperties.defaults(),
 			userService,
-			compatibilityResultRepository,
 			ogImageGenerationService,
 			discordNotificationService,
 			emailService,
@@ -95,8 +93,7 @@ class ManseInterpretationInstructionChannelTest {
 	void shouldSendSystemInstructionThroughInstructionsField() {
 		givenCompatibilityResult();
 
-		service.analyzeCompatibilityWithSubcategory(INJECTED_NAME, PromptFixtures.person1(),
-			"이영희", PromptFixtures.person2(), 4L, 1L, STARTED_AT, "tester", null, null);
+		service.analyzeCompatibilityWithSubcategory(command(InterpretationProduct.LOVE_STORY_4, INJECTED_NAME));
 
 		Gpt5Request request = capturedRequest();
 		assertThat(request.getInstructions()).contains("30년 경력의 전문 사주명리학자");
@@ -110,8 +107,7 @@ class ManseInterpretationInstructionChannelTest {
 	void shouldKeepBoundaryRuleInReunionSystemInstruction() {
 		givenCompatibilityResult();
 
-		service.analyzeCompatibilityWithSubcategory("김태우", PromptFixtures.person1(),
-			"이영희", PromptFixtures.person2(), 19L, 1L, STARTED_AT, "tester", null, null);
+		service.analyzeCompatibilityWithSubcategory(command(InterpretationProduct.REUNION, "김태우"));
 
 		String instructions = capturedRequest().getInstructions();
 		assertThat(instructions).contains("재회 상담가");
@@ -126,12 +122,16 @@ class ManseInterpretationInstructionChannelTest {
 	void shouldStateReunionLengthAsNumberOnly() {
 		givenCompatibilityResult();
 
-		service.analyzeCompatibilityWithSubcategory("김태우", PromptFixtures.person1(),
-			"이영희", PromptFixtures.person2(), 19L, 1L, STARTED_AT, "tester", null, null);
+		service.analyzeCompatibilityWithSubcategory(command(InterpretationProduct.REUNION, "김태우"));
 
 		String instructions = capturedRequest().getInstructions();
 		assertThat(instructions).contains("한 챕터당 최소 **공백 포함 1,000자 이상** 작성해야 합니다.");
 		assertThat(instructions).doesNotContain("최대한 길고 자세하게");
+	}
+
+	private CompatibilityInterpretationCommand command(InterpretationProduct product, String person1Name) {
+		return new CompatibilityInterpretationCommand(1L, STARTED_AT, product, "tester",
+			CompatibilityPromptContext.of(person1Name, PromptFixtures.person1(), "이영희", PromptFixtures.person2()));
 	}
 
 	private void givenCompatibilityResult() {

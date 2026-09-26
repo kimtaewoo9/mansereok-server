@@ -13,12 +13,11 @@ import com.mansereok.server.domain.interpret.dto.response.ManseryeokCalculationR
 import com.mansereok.server.domain.interpret.entity.CompatibilityResult;
 import com.mansereok.server.domain.interpret.entity.Result;
 import com.mansereok.server.domain.interpret.postprocess.AnalysisNormalizer;
-import com.mansereok.server.domain.interpret.prompt.CompatibilityPromptContext;
+import com.mansereok.server.domain.interpret.product.InterpretationProduct;
 import com.mansereok.server.domain.interpret.prompt.CompatibilityPromptFactory;
 import com.mansereok.server.domain.interpret.prompt.PromptContext;
 import com.mansereok.server.domain.interpret.prompt.SajuPromptFactory;
 import com.mansereok.server.domain.interpret.prompt.UserInputSanitizer;
-import com.mansereok.server.domain.interpret.repository.CompatibilityResultRepository;
 import com.mansereok.server.domain.interpret.service.InterpretationPipeline.PostStep;
 import com.mansereok.server.domain.interpret.service.InterpretationPipeline.ResultStatusHandler;
 import com.mansereok.server.domain.notification.service.DiscordNotificationService;
@@ -28,7 +27,6 @@ import com.mansereok.server.domain.user.service.UserService;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
-import java.util.function.Supplier;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
@@ -85,7 +83,7 @@ public class ManseInterpretationService {
 			+ PROMPT_BOUNDARY_RULE;
 
 	/**
-	 * 재회운(subcategoryId == 19) 유료 궁합은 시스템 지시를 통째로 갈아끼운다.
+	 * 재회운(InterpretationProduct.REUNION, 19) 유료 궁합은 시스템 지시를 통째로 갈아끼운다.
 	 * 무료 궁합은 예전부터 기본 지시를 쓰므로 여기서도 유료 경로에서만 쓴다.
 	 */
 	private static final String REUNION_SYSTEM_INSTRUCTION =
@@ -95,8 +93,6 @@ public class ManseInterpretationService {
 			"단순한 사실 전달을 넘어, 내담자의 마음을 어루만지는 **감성적인 문체**로 서술하세요.\n" +
 			"한 챕터당 최소 **공백 포함 1,000자 이상** 작성해야 합니다."
 			+ PROMPT_BOUNDARY_RULE;
-
-	private static final Long REUNION_SUBCATEGORY_ID = 19L;
 
 	/**
 	 * Structured Outputs 스키마. 출력이 API 레벨에서 이 형태로 강제되므로
@@ -159,7 +155,6 @@ public class ManseInterpretationService {
 		OpenAiResponsesClient openAiResponsesClient,
 		OpenAiProperties openAiProperties,
 		UserService userService,
-		CompatibilityResultRepository compatibilityResultRepository,
 		OgImageGenerationService ogImageGenerationService,
 		DiscordNotificationService discordNotificationService,
 		EmailService emailService,
@@ -186,94 +181,69 @@ public class ManseInterpretationService {
 	}
 
 	/**
-	 * 유료 단일 사주 해석. startedAt 은 컨트롤러가 ResultService.startProcessing 으로 해석을 시작한 시각이다. 결과를 쓸 때마다
-	 * 이 값으로 이 실행이 시작한 해석인지 가려, 오래 멈춰 되돌려진 뒤 다시 시작한 결과를 덮어쓰지 않는다. 궁합·무료도 같다.
+	 * 유료 단일 사주 해석. command.startedAt 은 컨트롤러가 ResultService.startProcessing 으로 해석을 시작한 시각이다. 결과를 쓸
+	 * 때마다 이 값으로 이 실행이 시작한 해석인지 가려, 오래 멈춰 되돌려진 뒤 다시 시작한 결과를 덮어쓰지 않는다. 궁합·무료도 같다.
+	 *
+	 * <p>로그와 요청 알림에는 결제 ID 와 상품만 남긴다. 이름·이메일·생년월일은 로그 수집 시스템과 외부 채널(Discord)에 남기지 않는다.
 	 */
 	@Async("gptTaskExecutor")
-	public void interpret(
-		String name,
-		ManseryeokCalculationResponse response,
-		String username,
-		Long subcategoryId,
-		Long paymentId,
-		LocalDateTime startedAt,
-		String sourceTitle
-	) {
-		log.info("✅ 사주 해석 요청 시작 - name: {}, subcategoryId: {}", name, subcategoryId);
-
-		// 알림과 이메일이 같은 사용자를 본다. 한 번만 조회해서 둘이 나눠 쓴다.
-		Supplier<User> user = findUserOnce(username);
+	public void interpret(SajuInterpretationCommand command) {
+		log.info("✅ 사주 해석 요청 시작 - paymentId: {}, product: {}", command.paymentId(), command.product());
 
 		interpretationPipeline.run(
 			"유료 단일 사주 해석",
-			sajuResultStatusHandler(paymentId, startedAt, name, response, subcategoryId),
+			sajuResultStatusHandler(command),
 			() -> discordNotificationService.sendInterpretationRequestNotification(
-				name, user.get().getEmail(),
-				response.getInput().getSolarDate().toString(), subcategoryId),
+				command.paymentId(), productLabel(command.product()), false),
 			() -> callGpt(
 				openAiProperties.primary(),
 				GPT5_SYSTEM_INSTRUCTION,
-				sajuPromptFactory.create(subcategoryId,
-					PromptContext.of(name, response, sourceTitle)),
+				sajuPromptFactory.create(command.product().id(), command.person()),
 				SAJU_OUTPUT_FORMAT,
 				GptSajuResponse.class),
-			List.of(ogImageStep(), resultReadyEmailStep(user))
+			List.of(ogImageStep(), resultReadyEmailStep(command.username()))
 		);
 	}
 
 	@Async("gptTaskExecutor")
-	public void analyzeCompatibilityWithSubcategory(
-		String person1Name, ManseryeokCalculationResponse person1Response,
-		String person2Name, ManseryeokCalculationResponse person2Response,
-		Long subcategoryId, Long paymentId, LocalDateTime startedAt, String username,
-		String person1SourceTitle, String person2SourceTitle
-	) {
-		log.info("✅ 궁합 분석 요청 시작: {} & {}", person1Name, person2Name);
+	public void analyzeCompatibilityWithSubcategory(CompatibilityInterpretationCommand command) {
+		log.info("✅ 궁합 분석 요청 시작 - paymentId: {}, product: {}", command.paymentId(), command.product());
 
-		Supplier<User> user = findUserOnce(username);
-		String systemInstruction = REUNION_SUBCATEGORY_ID.equals(subcategoryId)
+		String systemInstruction = command.product() == InterpretationProduct.REUNION
 			? REUNION_SYSTEM_INSTRUCTION
 			: GPT5_SYSTEM_INSTRUCTION;
 
 		interpretationPipeline.run(
 			"유료 궁합 분석",
-			compatibilityResultStatusHandler(paymentId, startedAt, person1Name, person1Response, person2Name,
-				person2Response),
+			compatibilityResultStatusHandler(command),
 			() -> discordNotificationService.sendCompatibilityRequestNotification(
-				person1Name, person1Response.getInput().getSolarDate().toString(),
-				person2Name, person2Response.getInput().getSolarDate().toString()),
+				command.paymentId(), productLabel(command.product()), false),
 			() -> callGpt(
 				openAiProperties.primary(),
 				systemInstruction,
-				compatibilityPromptFactory.create(subcategoryId,
-					CompatibilityPromptContext.of(
-						person1Name, person1Response, person1SourceTitle,
-						person2Name, person2Response, person2SourceTitle)),
+				compatibilityPromptFactory.create(command.product().id(), command.persons()),
 				COMPATIBILITY_OUTPUT_FORMAT,
 				GptCompatibilityResponse.class),
-			List.of(compatibilityOgImageStep(), compatibilityEmailStep(user))
+			List.of(compatibilityOgImageStep(), compatibilityEmailStep(command.username()))
 		);
 	}
 
+	/**
+	 * 무료 단일 사주 해석. 결과 준비 이메일을 보내지 않으므로 사용자를 조회하지 않는다. 무료 운세 프롬프트는 작품명을 쓰지 않는다.
+	 */
 	@Async("gptFreeTaskExecutor")
-	public void interpretFree(
-		String name, ManseryeokCalculationResponse response,
-		String username, Long subcategoryId, Long paymentId, LocalDateTime startedAt
-	) {
-		log.info("🆓 무료 사주 해석 시작");
-
-		Supplier<User> user = findUserOnce(username);
+	public void interpretFree(SajuInterpretationCommand command) {
+		log.info("🆓 무료 사주 해석 시작 - paymentId: {}, product: {}", command.paymentId(), command.product());
 
 		interpretationPipeline.run(
 			"무료 단일 사주 해석",
-			sajuResultStatusHandler(paymentId, startedAt, name, response, subcategoryId),
+			sajuResultStatusHandler(command),
 			() -> discordNotificationService.sendInterpretationRequestNotification(
-				name, user.get().getEmail(),
-				response.getInput().getSolarDate().toString(), subcategoryId),
+				command.paymentId(), productLabel(command.product()), true),
 			() -> callGpt(
 				openAiProperties.light(),
 				GPT5_SYSTEM_INSTRUCTION,
-				sajuPromptFactory.createFree(subcategoryId, PromptContext.of(name, response)),
+				sajuPromptFactory.createFree(command.product().id(), command.person()),
 				SAJU_OUTPUT_FORMAT,
 				GptSajuResponse.class),
 			List.of(ogImageStep())
@@ -284,32 +254,33 @@ public class ManseInterpretationService {
 	 * 무료 궁합. 예전에는 유료와 같은 primary 티어 + 유료 스레드 풀을 썼지만,
 	 * 무료 경로가 유료 용량을 잠식하지 않도록 light 티어와 무료 전용 풀로 내렸다.
 	 * 품질을 되돌리려면 이 애너테이션을 gptTaskExecutor 로, 아래 티어를 primary() 로 바꾸면 된다.
+	 *
+	 * <p>재회운(19)이어도 재회운 전용 지시가 아닌 기본 지시를 쓴다.
 	 */
 	@Async("gptFreeTaskExecutor")
-	public void analyzeCompatibilityFree(
-		String person1Name, ManseryeokCalculationResponse person1Response,
-		String person2Name, ManseryeokCalculationResponse person2Response,
-		Long subcategoryId, Long paymentId, LocalDateTime startedAt, String username
-	) {
-		log.info("🆓 무료 궁합/재회운 서비스 시작: {} & {}", person1Name, person2Name);
+	public void analyzeCompatibilityFree(CompatibilityInterpretationCommand command) {
+		log.info("🆓 무료 궁합/재회운 서비스 시작 - paymentId: {}, product: {}", command.paymentId(), command.product());
 
 		interpretationPipeline.run(
 			"무료 궁합 분석",
-			compatibilityResultStatusHandler(paymentId, startedAt, person1Name, person1Response, person2Name,
-				person2Response),
+			compatibilityResultStatusHandler(command),
 			() -> discordNotificationService.sendCompatibilityRequestNotification(
-				person1Name, person1Response.getInput().getSolarDate().toString(),
-				person2Name, person2Response.getInput().getSolarDate().toString()),
+				command.paymentId(), productLabel(command.product()), true),
 			() -> callGpt(
 				openAiProperties.light(),
 				GPT5_SYSTEM_INSTRUCTION,
-				compatibilityPromptFactory.create(subcategoryId,
-					CompatibilityPromptContext.of(
-						person1Name, person1Response, person2Name, person2Response)),
+				compatibilityPromptFactory.create(command.product().id(), command.persons()),
 				COMPATIBILITY_OUTPUT_FORMAT,
 				GptCompatibilityResponse.class),
 			List.of(compatibilityOgImageStep())
 		);
+	}
+
+	/**
+	 * 알림에 적을 상품 표기. 상품 상수 이름 뒤에 상품 번호를 붙인다(예: LIFE_OVERALL(1)).
+	 */
+	private static String productLabel(InterpretationProduct product) {
+		return product.name() + "(" + product.id() + ")";
 	}
 
 	/**
@@ -319,10 +290,11 @@ public class ManseInterpretationService {
 	 * <p>되돌리기는 결과 ID 가 아니라 결제 ID 로 한다. 첫 DB 단계(markInProgress)가 실패하면 결과 ID 를 받지 못하는데, 컨트롤러가
 	 * 이미 결과를 해석 중으로 바꿔 두었으므로 그때도 되돌려야 한다. 컨트롤러의 제출 거부 되돌리기와 같은 메서드를 쓴다.
 	 */
-	private ResultStatusHandler<GptSajuResponse, Result> sajuResultStatusHandler(
-		Long paymentId, LocalDateTime startedAt, String name, ManseryeokCalculationResponse response,
-		Long subcategoryId
-	) {
+	private ResultStatusHandler<GptSajuResponse, Result> sajuResultStatusHandler(SajuInterpretationCommand command) {
+		long paymentId = command.paymentId();
+		LocalDateTime startedAt = command.startedAt();
+		Long subcategoryId = command.product().id();
+		PromptContext person = command.person();
 		return new ResultStatusHandler<>() {
 			@Override
 			public Long paymentId() {
@@ -332,7 +304,8 @@ public class ManseInterpretationService {
 			@Override
 			public Long markInProgress() {
 				return sajuResultService
-					.updateInitialStatus(paymentId, startedAt, name, response, extractIlgan(response))
+					.updateInitialStatus(paymentId, startedAt, person.name(), person.response(),
+						extractIlgan(person.response()))
 					.getId();
 			}
 
@@ -358,10 +331,12 @@ public class ManseInterpretationService {
 	 * 시각(startedAt)을 넘기고, 되돌리기는 결제 ID 로 한다. 궁합 본문은 정규화하지 않는다.
 	 */
 	private ResultStatusHandler<GptCompatibilityResponse, CompatibilityResult> compatibilityResultStatusHandler(
-		Long paymentId, LocalDateTime startedAt,
-		String person1Name, ManseryeokCalculationResponse person1Response,
-		String person2Name, ManseryeokCalculationResponse person2Response
+		CompatibilityInterpretationCommand command
 	) {
+		long paymentId = command.paymentId();
+		LocalDateTime startedAt = command.startedAt();
+		PromptContext person1 = command.persons().person1();
+		PromptContext person2 = command.persons().person2();
 		return new ResultStatusHandler<>() {
 			@Override
 			public Long paymentId() {
@@ -372,8 +347,8 @@ public class ManseInterpretationService {
 			public Long markInProgress() {
 				return sajuResultService.updateCompatibilityInitialStatus(
 					paymentId, startedAt,
-					person1Name, extractIlgan(person1Response),
-					person2Name, extractIlgan(person2Response)
+					person1.name(), extractIlgan(person1.response()),
+					person2.name(), extractIlgan(person2.response())
 				).getId();
 			}
 
@@ -426,36 +401,22 @@ public class ManseInterpretationService {
 		return new PostStep<>("OG 이미지 생성", ogImageGenerationService::generateAndUploadOgImage);
 	}
 
-	private PostStep<Result> resultReadyEmailStep(Supplier<User> user) {
-		return new PostStep<>("결과 준비 이메일 발송", saved -> sendResultReadyEmail(user.get()));
+	private PostStep<Result> resultReadyEmailStep(String username) {
+		return new PostStep<>("결과 준비 이메일 발송", saved -> sendResultReadyEmail(username));
 	}
 
-	private PostStep<CompatibilityResult> compatibilityEmailStep(Supplier<User> user) {
-		return new PostStep<>("결과 준비 이메일 발송", saved -> sendResultReadyEmail(user.get()));
-	}
-
-	private void sendResultReadyEmail(User user) {
-		if (user != null && user.getEmail() != null) {
-			emailService.sendResultReadyEmail(user.getEmail(), user.getName());
-		}
+	private PostStep<CompatibilityResult> compatibilityEmailStep(String username) {
+		return new PostStep<>("결과 준비 이메일 발송", saved -> sendResultReadyEmail(username));
 	}
 
 	/**
-	 * 알림과 이메일이 같은 사용자를 보므로 조회를 한 번으로 묶는다.
-	 * 지연 조회라 조회 자체가 실패해도 그 단계에서만 걸리고 해석은 계속된다.
+	 * 이메일 단계에서 사용자를 조회한다. 조회가 실패해도 이 단계만 실패로 남고, 이미 저장한 결과는 그대로다.
 	 */
-	private Supplier<User> findUserOnce(String username) {
-		return new Supplier<>() {
-			private User cached;
-
-			@Override
-			public User get() {
-				if (cached == null) {
-					cached = userService.findByUsername(username);
-				}
-				return cached;
-			}
-		};
+	private void sendResultReadyEmail(String username) {
+		User user = userService.findByUsername(username);
+		if (user != null && user.getEmail() != null) {
+			emailService.sendResultReadyEmail(user.getEmail(), user.getName());
+		}
 	}
 
 	private String extractIlgan(ManseryeokCalculationResponse response) {

@@ -2,8 +2,6 @@ package com.mansereok.server.domain.interpret.controller;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
 import static org.mockito.Mockito.times;
@@ -13,11 +11,14 @@ import com.mansereok.server.domain.interpret.dto.request.ManseInterpretationRequ
 import com.mansereok.server.domain.interpret.entity.CompatibilityResult;
 import com.mansereok.server.domain.interpret.entity.Result;
 import com.mansereok.server.domain.interpret.exception.InterpretationAlreadyStartedException;
+import com.mansereok.server.domain.interpret.product.InterpretationProduct;
 import com.mansereok.server.domain.interpret.prompt.PromptFixtures;
 import com.mansereok.server.domain.interpret.repository.CompatibilityResultRepository;
 import com.mansereok.server.domain.interpret.repository.ResultRepository;
+import com.mansereok.server.domain.interpret.service.CompatibilityInterpretationCommand;
 import com.mansereok.server.domain.interpret.service.ManseCalculationService;
 import com.mansereok.server.domain.interpret.service.ManseInterpretationService;
+import com.mansereok.server.domain.interpret.service.SajuInterpretationCommand;
 import com.mansereok.server.support.ConcurrentCalls;
 import com.mansereok.server.support.ConcurrentCalls.CallResult;
 import com.mansereok.server.support.InterpretationMySqlTest;
@@ -104,11 +105,14 @@ class ControllerStartOnceMySqlTest extends InterpretationMySqlTest {
 			.satisfies(call -> assertThat(call.value().getStatusCode()).as("응답 상태").isEqualTo(HttpStatus.ACCEPTED));
 		assertThat(calls).filteredOn(call -> !call.succeeded()).as("거절된 요청").hasSize(9)
 			.allSatisfy(call -> assertThat(call.error()).isInstanceOf(InterpretationAlreadyStartedException.class));
-		ArgumentCaptor<LocalDateTime> startedAt = ArgumentCaptor.forClass(LocalDateTime.class);
-		then(manseInterpretationService).should(times(1))
-			.interpret(anyString(), any(), anyString(), eq(SUBCATEGORY_ID), eq(paymentId), startedAt.capture(), any());
+		ArgumentCaptor<SajuInterpretationCommand> submitted = ArgumentCaptor.forClass(SajuInterpretationCommand.class);
+		then(manseInterpretationService).should(times(1)).interpret(submitted.capture());
+		assertThat(submitted.getValue())
+			.extracting(SajuInterpretationCommand::paymentId, SajuInterpretationCommand::product)
+			.containsExactly(paymentId, InterpretationProduct.LIFE_OVERALL);
 		assertThat(statusOf("results")).isEqualTo("PROCESSING");
-		assertThat(updatedAtOf("results")).as("해석에 넘긴 시작 시각과 DB 의 updated_at").isEqualTo(startedAt.getValue());
+		assertThat(updatedAtOf("results")).as("해석에 넘긴 시작 시각과 DB 의 updated_at")
+			.isEqualTo(submitted.getValue().startedAt());
 	}
 
 	@Test
@@ -126,13 +130,15 @@ class ControllerStartOnceMySqlTest extends InterpretationMySqlTest {
 			.satisfies(call -> assertThat(call.value().getStatusCode()).as("응답 상태").isEqualTo(HttpStatus.ACCEPTED));
 		assertThat(calls).filteredOn(call -> !call.succeeded()).as("거절된 요청").hasSize(9)
 			.allSatisfy(call -> assertThat(call.error()).isInstanceOf(InterpretationAlreadyStartedException.class));
-		ArgumentCaptor<LocalDateTime> startedAt = ArgumentCaptor.forClass(LocalDateTime.class);
-		then(manseInterpretationService).should(times(1)).analyzeCompatibilityWithSubcategory(anyString(), any(),
-			anyString(), any(), eq(COMPATIBILITY_SUBCATEGORY_ID), eq(paymentId), startedAt.capture(), anyString(), any(),
-			any());
+		ArgumentCaptor<CompatibilityInterpretationCommand> submitted =
+			ArgumentCaptor.forClass(CompatibilityInterpretationCommand.class);
+		then(manseInterpretationService).should(times(1)).analyzeCompatibilityWithSubcategory(submitted.capture());
+		assertThat(submitted.getValue())
+			.extracting(CompatibilityInterpretationCommand::paymentId, CompatibilityInterpretationCommand::product)
+			.containsExactly(paymentId, InterpretationProduct.IDOL_COMPATIBILITY);
 		assertThat(statusOf("compatibility_results")).isEqualTo("PROCESSING");
 		assertThat(updatedAtOf("compatibility_results")).as("해석에 넘긴 시작 시각과 DB 의 updated_at")
-			.isEqualTo(startedAt.getValue());
+			.isEqualTo(submitted.getValue().startedAt());
 	}
 
 	private ManseInterpretationRequest singleRequest() {
