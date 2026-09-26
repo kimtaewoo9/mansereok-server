@@ -23,8 +23,8 @@ import org.junit.jupiter.params.provider.ValueSource;
 @DisplayName("선택 입력이 비어도 프롬프트가 깨지지 않는다")
 class PromptMissingInputTest {
 
-	private static final SajuPromptFactory SAJU = new SajuPromptFactory();
-	private static final CompatibilityPromptFactory COMPATIBILITY = new CompatibilityPromptFactory();
+	private static final SajuPromptFactory SAJU = new SajuPromptFactory(PromptFixtures.FIXED_CLOCK);
+	private static final CompatibilityPromptFactory COMPATIBILITY = new CompatibilityPromptFactory(PromptFixtures.FIXED_CLOCK);
 
 	@Nested
 	@DisplayName("출생시간을 모르면")

@@ -54,18 +54,16 @@ final class SajuProfileSections {
 		return solarTime == null ? UNKNOWN_BIRTH_TIME : solarTime.format(BIRTH_TIME_SHORT_FORMAT);
 	}
 
-	// ==================== 공통 유틸리티 메서드 (기존 유지) ====================
+	/**
+	 * 한 사람의 원국·대운·월운 상세 데이터를 붙인다.
+	 *
+	 * @param referenceYear 기본 정보 줄의 "현재 연도" 이자 대운 "현재" 칸을 고르는 기준 연도. 대부분의 상품은 팩토리가
+	 *                      한국 시각으로 정한 오늘의 연도를 넘기고, 2026년을 두고 푸는 상품(18, 101, 102, 106)은 2026 을 넘긴다.
+	 */
 	static void appendPersonDetailInfo(StringBuilder prompt, String name,
-		ManseryeokCalculationResponse response) {
-		appendPersonDetailInfo(prompt, name, response, null);
-	}
-
-	static void appendPersonDetailInfo(StringBuilder prompt, String name,
-		ManseryeokCalculationResponse response, Integer referenceYear) {
+		ManseryeokCalculationResponse response, int referenceYear) {
 		ManseryeokCalculationResponse.SajuInfo saju = response.getSaju();
 		ManseryeokCalculationResponse.InputInfo input = response.getInput();
-		int targetYear =
-			referenceYear != null ? referenceYear : java.time.LocalDate.now().getYear();
 
 		prompt.append("""
 			### ⚠️ [매우 중요] 일간 확인 ###
@@ -88,7 +86,7 @@ final class SajuProfileSections {
 				"MALE".equalsIgnoreCase(input.getGender()) ? "남성" : "여성",
 				input.getSolarDate(),
 				birthTimeShortText(input.getSolarTime()),
-				targetYear));
+				referenceYear));
 
 		// 2. 사주 팔자
 		prompt.append("""
@@ -174,7 +172,7 @@ final class SajuProfileSections {
 
 			// [수정] birthYear 전달!
 			int birthYear = input.getSolarDate().getYear();
-			DaewoonSections.appendDaewoonPeriods(prompt, saju, input.getGender(), birthYear, targetYear);
+			DaewoonSections.appendDaewoonPeriods(prompt, saju, input.getGender(), birthYear, referenceYear);
 
 		} else if (saju.getBigFortuneNumberMin() != null && saju.getBigFortuneNumberMax() != null) {
 			prompt.append("""

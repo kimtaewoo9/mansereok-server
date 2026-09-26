@@ -1,6 +1,7 @@
 package com.mansereok.server.domain.interpret.prompt;
 
 import com.mansereok.server.domain.interpret.dto.response.ManseryeokCalculationResponse;
+import java.time.LocalDate;
 
 /**
  * 아이돌·배우 궁합 프롬프트.
@@ -15,7 +16,8 @@ final class CelebrityCompatibilityPrompts {
 		String person1Name,
 		ManseryeokCalculationResponse person1Response,
 		String person2Name,
-		ManseryeokCalculationResponse person2Response
+		ManseryeokCalculationResponse person2Response,
+		LocalDate today
 	) {
 		StringBuilder prompt = new StringBuilder();
 
@@ -47,13 +49,13 @@ final class CelebrityCompatibilityPrompts {
 			### 3. 분석 대상자 상세 정보 ###
 			""");
 		prompt.append("--- 첫 번째 아이돌: ").append(person1Name).append(" ---\n");
-		SajuProfileSections.appendPersonDetailInfo(prompt, person1Name, person1Response);
+		SajuProfileSections.appendPersonDetailInfo(prompt, person1Name, person1Response, today.getYear());
 
 		// 🔥 [추가 1] Person 1 팩트 주입
 		SajuKeywordSections.appendKeywords(prompt, person1Response);
 
 		prompt.append("\n--- 두 번째 아이돌: ").append(person2Name).append(" ---\n");
-		SajuProfileSections.appendPersonDetailInfo(prompt, person2Name, person2Response);
+		SajuProfileSections.appendPersonDetailInfo(prompt, person2Name, person2Response, today.getYear());
 
 		SajuKeywordSections.appendKeywords(prompt, person2Response);
 
@@ -210,7 +212,8 @@ final class CelebrityCompatibilityPrompts {
 		String person1Name,
 		ManseryeokCalculationResponse person1Response,
 		String person2Name,
-		ManseryeokCalculationResponse person2Response
+		ManseryeokCalculationResponse person2Response,
+		LocalDate today
 	) {
 		StringBuilder prompt = new StringBuilder();
 
@@ -242,11 +245,11 @@ final class CelebrityCompatibilityPrompts {
 			### 3. 분석 대상자 상세 정보 ###
 			""");
 		prompt.append("--- 첫 번째 배우: ").append(person1Name).append(" ---\n");
-		SajuProfileSections.appendPersonDetailInfo(prompt, person1Name, person1Response);
+		SajuProfileSections.appendPersonDetailInfo(prompt, person1Name, person1Response, today.getYear());
 		SajuKeywordSections.appendKeywords(prompt, person1Response);
 
 		prompt.append("\n--- 두 번째 배우: ").append(person2Name).append(" ---\n");
-		SajuProfileSections.appendPersonDetailInfo(prompt, person2Name, person2Response);
+		SajuProfileSections.appendPersonDetailInfo(prompt, person2Name, person2Response, today.getYear());
 
 		SajuKeywordSections.appendKeywords(prompt, person2Response);
 

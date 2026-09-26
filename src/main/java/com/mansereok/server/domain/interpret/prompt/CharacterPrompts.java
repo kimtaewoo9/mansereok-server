@@ -1,6 +1,7 @@
 package com.mansereok.server.domain.interpret.prompt;
 
 import com.mansereok.server.domain.interpret.dto.response.ManseryeokCalculationResponse;
+import java.time.LocalDate;
 
 /**
  * 아이돌·배우·캐릭터 사주 프롬프트.
@@ -11,7 +12,8 @@ final class CharacterPrompts {
 	}
 
 	// ==================== 5. 아이돌 최애 분석 프롬프트 (혜안 적용) ====================
-	static String createIdolAnalysisPrompt(String name, ManseryeokCalculationResponse response) {
+	static String createIdolAnalysisPrompt(String name, ManseryeokCalculationResponse response,
+		LocalDate today) {
 		StringBuilder prompt = new StringBuilder();
 		ManseryeokCalculationResponse.SajuInfo saju = response.getSaju();
 		ManseryeokCalculationResponse.InputInfo input = response.getInput();
@@ -33,7 +35,7 @@ final class CharacterPrompts {
 		prompt.append("""
 			### 5. 분석 대상자 상세 정보 ###
 			""");
-		SajuProfileSections.appendPersonDetailInfo(prompt, name, response);
+		SajuProfileSections.appendPersonDetailInfo(prompt, name, response, today.getYear());
 
 		SajuKeywordSections.appendKeywords(prompt, response);
 
@@ -97,7 +99,8 @@ final class CharacterPrompts {
 	}
 
 	// ==================== 13. 배우 분석 프롬프트 ====================
-	static String createActorAnalysisPrompt(String name, ManseryeokCalculationResponse response) {
+	static String createActorAnalysisPrompt(String name, ManseryeokCalculationResponse response,
+		LocalDate today) {
 		StringBuilder prompt = new StringBuilder();
 		ManseryeokCalculationResponse.SajuInfo saju = response.getSaju();
 		ManseryeokCalculationResponse.InputInfo input = response.getInput();
@@ -119,7 +122,7 @@ final class CharacterPrompts {
 		prompt.append("""
 			### 분석 대상자 상세 정보 ###
 			""");
-		SajuProfileSections.appendPersonDetailInfo(prompt, name, response);
+		SajuProfileSections.appendPersonDetailInfo(prompt, name, response, today.getYear());
 
 		SajuKeywordSections.appendKeywords(prompt, response);
 
@@ -183,7 +186,7 @@ final class CharacterPrompts {
 
 	// ==================== 9. 캐릭터 사주 프롬프트 (혜안 적용) ====================
 	static String createCharacterSajuPrompt(String name, ManseryeokCalculationResponse response,
-		String sourceTitle) {
+		String sourceTitle, LocalDate today) {
 		StringBuilder prompt = new StringBuilder();
 		ManseryeokCalculationResponse.SajuInfo saju = response.getSaju();
 		String dayIlgan = saju.getDaySky().getKorean() + saju.getDaySky().getFiveCircle(); // 예: 갑목
@@ -204,7 +207,7 @@ final class CharacterPrompts {
 		prompt.append("""
 			### 5. 캐릭터 사주 정보 ###
 			""");
-		SajuProfileSections.appendPersonDetailInfo(prompt, name, response);
+		SajuProfileSections.appendPersonDetailInfo(prompt, name, response, today.getYear());
 
 		SajuKeywordSections.appendKeywords(prompt, response);
 

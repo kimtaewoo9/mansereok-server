@@ -351,13 +351,17 @@ final class PromptSections {
 			""");
 	}
 
-	/** 장문 유료 상품이 공유하는 서버 산출 데이터 구획과 그 사용 규칙. */
+	/**
+	 * 장문 유료 상품이 공유하는 서버 산출 데이터 구획과 그 사용 규칙.
+	 *
+	 * @param referenceYear 기본 정보 줄의 "현재 연도" 이자 대운 "현재" 칸을 고르는 기준 연도
+	 */
 	static void appendLongformAnalysisData(StringBuilder prompt, String name,
-		ManseryeokCalculationResponse response) {
+		ManseryeokCalculationResponse response, int referenceYear) {
 		prompt.append("""
 			### 분석 대상자 데이터 (서버 산출값) ###
 			""");
-		SajuProfileSections.appendPersonDetailInfo(prompt, name, response);
+		SajuProfileSections.appendPersonDetailInfo(prompt, name, response, referenceYear);
 		SajuKeywordSections.appendKeywords(prompt, response);
 		prompt.append("""
 			※ 위 데이터의 수치값은 내부 판단용이다. 최종 본문(fullAnalysis)에는 점수/개수를 직접 쓰지 말고 강약 경향으로만 표현한다.

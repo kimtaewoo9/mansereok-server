@@ -7,12 +7,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
-import java.time.LocalDate;
-import java.time.ZoneId;
-import java.time.format.DateTimeFormatter;
-import java.time.format.TextStyle;
 import java.util.List;
-import java.util.Locale;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -22,28 +17,17 @@ import org.junit.jupiter.params.provider.MethodSource;
  * 프롬프트 리팩토링의 안전망. 리팩토링 이전 구현이 만든 문자열을 그대로 저장해 둔
  * src/test/resources/expected-prompts/*.txt 와 현재 구현의 출력이 같은지 확인한다.
  *
- * <p>시각에 따라 달라지는 값(오늘 날짜, 오늘 일진, 기준 연도)은 기대 결과 파일에 자리표시자로 저장해 두고,
- * 비교 직전에 오늘 값으로 바꿔 넣는다. 실제 프롬프트는 전혀 가공하지 않으므로 자리표시자로 바뀐
- * 값 한 덩어리를 뺀 나머지는 한 글자라도 다르면 실패한다.
- *
- * <p><b>유효기간 주의.</b> 대운 구간과 시작연도는 자리표시자가 아니라 숫자 그대로 박혀 있는데,
- * 기준연도만 자리표시자다. 기준연도가 "오늘의 연도" 인 상품은 해가 바뀌어 대운 구간이 넘어가는 순간
- * 기대 결과 파일이 깨진다. person1 은 2035년, person2 는 2038년에 대운이 다음 칸으로 넘어가므로
- * <b>2035년이 되기 전에 기대 결과 파일을 다시 만들어야 한다.</b>
- *
- * <p>기준연도가 2026 으로 코드에 박혀 있는 상품(18, 101, 102, 106)의 기존 기대 결과 파일은 사정이 더 급하다.
- * 기대 결과 파일을 만든 시점이 2026년이라 코드에 박힌 2026 까지 &lt;&lt;THIS_YEAR&gt;&gt; 로 가려졌고,
- * 이 자리표시자는 "오늘의 연도" 로 펼쳐지므로 <b>2027년 1월 1일에 그 네 상품의 기대 결과 파일이 깨진다.</b>
- * 이번에 추가한 -reverse 기대 결과 파일은 같은 실수를 되풀이하지 않으려고 그 자리를 2026 그대로 두었다.
- * 기존 54개를 다시 만들 때 같은 방식으로 고치면 된다.
+ * <p>팩토리에 고정 시계({@link PromptFixtures#FIXED_CLOCK}, 2026-09-25 10:00 서울)를 넣는다. 그래서 오늘 날짜,
+ * 오늘 일진, 현재 연도도 기대 결과 파일에 값 그대로 들어 있고, 실제 프롬프트와 기대 결과 파일 어느 쪽도 가공하지 않는다.
+ * 한 글자라도 다르면 실패하고, 테스트를 돌리는 날짜와 상관없이 결과가 같다.
  *
  * <p>변이(mutation)로 확인한 덮는 범위:
  * <ul>
  *   <li>대운 역행 분기 - -reverse 기대 결과 파일이 덮는다. 음수 나머지 보정 {@code (x % 60 + 60) % 60} 의
  *       60 을 61 로 바꾸면 세 파일이 모두 깨진다.</li>
  *   <li>궁합 두 번째 사람의 결측 분기 - -edge2 기대 결과 파일이 덮는다.</li>
- *   <li>오늘 일진은 이 테스트가 프로덕션 함수로 기대값을 만들기 때문에 여기서는 잡히지 않는다.
- *       손으로 계산한 기대값은 {@link DaewoonSectionsTest} 가 들고 있다.</li>
+ *   <li>오늘 일진 - 105 기대 결과 파일에 2026-09-25 의 일진이 값 그대로 들어 있어 일진 계산이 틀리면 깨진다.
+ *       여러 날짜를 손으로 계산한 기대값은 {@link DaewoonSectionsTest} 가 들고 있다.</li>
  * </ul>
  */
 @DisplayName("프롬프트가 기대 결과 파일과 같은지")
@@ -55,9 +39,10 @@ class PromptMatchesExpectedFileTest {
 		19L);
 	private static final List<Long> FREE_IDS = List.of(101L, 102L, 103L, 104L, 105L, 106L);
 
-	private static final SajuPromptFactory SAJU_PROMPT_FACTORY = new SajuPromptFactory();
+	private static final SajuPromptFactory SAJU_PROMPT_FACTORY =
+		new SajuPromptFactory(PromptFixtures.FIXED_CLOCK);
 	private static final CompatibilityPromptFactory COMPATIBILITY_PROMPT_FACTORY =
-		new CompatibilityPromptFactory();
+		new CompatibilityPromptFactory(PromptFixtures.FIXED_CLOCK);
 
 	/**
 	 * 대운 역행 기대 결과 파일을 만든 상품. 기준연도가 2026 으로 코드에 박혀 있어 해가 바뀌어도 대운 칸이
@@ -137,29 +122,11 @@ class PromptMatchesExpectedFileTest {
 			default -> throw new IllegalArgumentException("알 수 없는 종류: " + kind);
 		};
 
-		String expected = expandTimeDependentValues(readExpectedFile(subcategoryId + variant + ".txt"));
+		String expected = readExpectedFile(subcategoryId + variant + ".txt");
 
 		assertThat(actual)
 			.as("%s %s%s 프롬프트", kind, subcategoryId, variant)
 			.isEqualTo(expected);
-	}
-
-	/**
-	 * 기대 결과 파일의 자리표시자를 오늘 값으로 바꾼다. 프롬프트가 쓰는 시간대·형식을 그대로 따라간다.
-	 * (일진과 오늘 날짜는 KST, 나머지는 기본 시간대)
-	 */
-	private static String expandTimeDependentValues(String expected) {
-		LocalDate todayInKst = LocalDate.now(ZoneId.of("Asia/Seoul"));
-		LocalDate today = LocalDate.now();
-		DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy년 MM월 dd일");
-		String dayOfWeek = todayInKst.getDayOfWeek()
-			.getDisplayName(TextStyle.FULL, Locale.KOREAN);
-
-		return expected
-			.replace("<<TODAY_WITH_DOW>>", todayInKst.format(formatter) + " " + dayOfWeek)
-			.replace("<<TODAY_ILJU>>", DaewoonSections.calculateTodayDayPillar(todayInKst))
-			.replace("<<TODAY>>", today.format(formatter))
-			.replace("<<THIS_YEAR>>", String.valueOf(today.getYear()));
 	}
 
 	private static String readExpectedFile(String fileName) {

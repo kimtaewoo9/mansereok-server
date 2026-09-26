@@ -1,6 +1,7 @@
 package com.mansereok.server.domain.interpret.prompt;
 
 import com.mansereok.server.domain.interpret.dto.response.ManseryeokCalculationResponse;
+import java.time.LocalDate;
 
 /**
  * 재물운·연애운·신년운세 프롬프트.
@@ -11,7 +12,8 @@ final class FortunePrompts {
 	}
 
 	// ==================== 20. 돈벼락(재물운) 분석 프롬프트 (v6 - 자연문단형) ====================
-	static String createMoneyLuckPrompt(String name, ManseryeokCalculationResponse response) {
+	static String createMoneyLuckPrompt(String name, ManseryeokCalculationResponse response,
+		LocalDate today) {
 		StringBuilder prompt = new StringBuilder();
 		prompt.append("""
 			### 역할 ###
@@ -63,7 +65,7 @@ final class FortunePrompts {
 		prompt.append("""
 			### 분석 대상자 데이터 (만세력) ###
 			""");
-		SajuProfileSections.appendPersonDetailInfo(prompt, name, response);
+		SajuProfileSections.appendPersonDetailInfo(prompt, name, response, today.getYear());
 		SajuKeywordSections.appendKeywords(prompt, response);
 		prompt.append("\n");
 
@@ -73,7 +75,8 @@ final class FortunePrompts {
 	}
 
 	// ==================== 17. 연애운 ====================
-	static String createLoveLuckPrompt(String name, ManseryeokCalculationResponse response) {
+	static String createLoveLuckPrompt(String name, ManseryeokCalculationResponse response,
+		LocalDate today) {
 		StringBuilder prompt = new StringBuilder();
 		ManseryeokCalculationResponse.SajuInfo saju = response.getSaju();
 		ManseryeokCalculationResponse.InputInfo input = response.getInput();
@@ -85,7 +88,7 @@ final class FortunePrompts {
 		prompt.append("""
 			### 5. 분석 대상자 상세 정보 ###
 			""");
-		SajuProfileSections.appendPersonDetailInfo(prompt, name, response);
+		SajuProfileSections.appendPersonDetailInfo(prompt, name, response, today.getYear());
 
 		SajuKeywordSections.appendKeywords(prompt, response);
 

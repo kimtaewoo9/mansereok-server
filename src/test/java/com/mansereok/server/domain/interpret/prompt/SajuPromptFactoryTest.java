@@ -15,7 +15,7 @@ import org.junit.jupiter.params.provider.ValueSource;
 @DisplayName("사주 프롬프트 팩토리")
 class SajuPromptFactoryTest {
 
-	private final SajuPromptFactory factory = new SajuPromptFactory();
+	private final SajuPromptFactory factory = new SajuPromptFactory(PromptFixtures.FIXED_CLOCK);
 	private final ManseryeokCalculationResponse response = PromptFixtures.person1();
 
 	@ParameterizedTest(name = "유료 상품 {0} 은 비어 있지 않은 프롬프트를 만든다")
