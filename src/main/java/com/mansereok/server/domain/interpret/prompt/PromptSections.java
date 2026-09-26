@@ -196,21 +196,6 @@ final class PromptSections {
 	}
 
 	/**
-	 * 라우팅에 쓸 상품 id 를 int 로 좁힌다. Long 을 그대로 intValue() 로 자르면 int 범위를 벗어난 값이
-	 * 조용히 다른 상품으로 잘려 들어가므로, null 과 범위 초과를 먼저 걸러 낸다.
-	 *
-	 * @throws IllegalArgumentException subcategoryId 가 null 이거나 int 범위를 벗어난 경우
-	 */
-	static int requireRoutableSubcategoryId(Long subcategoryId) {
-		if (subcategoryId == null
-			|| subcategoryId < Integer.MIN_VALUE
-			|| subcategoryId > Integer.MAX_VALUE) {
-			throw new IllegalArgumentException("지원하지 않는 카테고리입니다: " + subcategoryId);
-		}
-		return subcategoryId.intValue();
-	}
-
-	/**
 	 * 캐릭터 이름 앞뒤에 붙는 작품명 문구를 만든다. 작품명이 있으면 {@code phraseFormat} 의 {@code %s} 자리에 넣어
 	 * 돌려주고, 없으면(null) 빈 문자열을 돌려준다.
 	 *
