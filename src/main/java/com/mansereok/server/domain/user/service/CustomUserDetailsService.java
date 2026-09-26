@@ -10,6 +10,7 @@ import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.stereotype.Service;
+import org.springframework.util.StringUtils;
 
 @Service
 public class CustomUserDetailsService implements UserDetailsService {
@@ -21,9 +22,18 @@ public class CustomUserDetailsService implements UserDetailsService {
 		this.userRepository = userRepository;
 	}
 
+	/**
+	 * 이메일 로그인에 쓸 회원을 찾는다. 이메일 로그인만 이 메서드를 쓴다.
+	 *
+	 * <p>비밀번호가 없는 회원(소셜 가입자)은 가입하지 않은 이메일처럼 UsernameNotFoundException 을 던진다. 그러면
+	 * DaoAuthenticationProvider 가 가입하지 않은 이메일과 똑같이 미리 만들어 둔 BCrypt 해시와 한 번 비교한 뒤 BadCredentialsException
+	 * 으로 바꾼다. 회원을 그대로 돌려주면 BCryptPasswordEncoder.matches 가 빈 해시를 보고 계산 없이 바로 false 를 돌려줘서, 응답
+	 * 시간(운영 강도 10 에서 약 70ms 와 0.1ms)만으로 소셜 가입 이메일을 가려낼 수 있다.
+	 */
 	@Override
 	public UserDetails loadUserByUsername(String email) throws UsernameNotFoundException {
 		User user = userRepository.findByEmail(email)
+			.filter(found -> StringUtils.hasText(found.getPassword()))
 			.orElseThrow(() -> new UsernameNotFoundException("사용자를 찾을 수 없습니다: " + email));
 
 		return new CustomUserPrincipal(user);
