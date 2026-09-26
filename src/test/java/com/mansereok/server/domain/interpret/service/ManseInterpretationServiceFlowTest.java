@@ -22,6 +22,7 @@ import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mansereok.server.domain.interpret.client.OpenAiProperties;
+import com.mansereok.server.domain.interpret.client.OpenAiProperties.ModelTier;
 import com.mansereok.server.domain.interpret.client.OpenAiResponsesClient;
 import com.mansereok.server.domain.interpret.client.TestOpenAiProperties;
 import com.mansereok.server.domain.interpret.dto.request.Gpt5Request;
@@ -37,17 +38,23 @@ import com.mansereok.server.domain.interpret.prompt.CompatibilityPromptFactory;
 import com.mansereok.server.domain.interpret.prompt.PromptContext;
 import com.mansereok.server.domain.interpret.prompt.PromptFixtures;
 import com.mansereok.server.domain.interpret.prompt.SajuPromptFactory;
+import com.mansereok.server.domain.interpret.repository.CompatibilityResultRepository;
+import com.mansereok.server.domain.interpret.repository.ResultRepository;
 import com.mansereok.server.domain.notification.service.DiscordNotificationService;
+import com.mansereok.server.domain.product.repository.SubCategoryRepository;
 import com.mansereok.server.domain.user.entity.User;
 import com.mansereok.server.domain.user.service.EmailService;
 import com.mansereok.server.domain.user.service.UserService;
 import com.mansereok.server.global.exception.OpenAiIncompleteResponseException;
+import com.mansereok.server.support.fixture.ResultFixture;
 import jakarta.persistence.EntityNotFoundException;
 import java.lang.reflect.Method;
+import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -62,6 +69,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.CannotAcquireLockException;
 import org.springframework.scheduling.annotation.Async;
+import org.springframework.test.util.ReflectionTestUtils;
 
 /**
  * 네 갈래 해석 흐름이 공통 파이프라인을 타고 같은 순서로 도는지, 그리고 곁가지(알림·OG·이메일)
@@ -91,8 +99,11 @@ class ManseInterpretationServiceFlowTest {
 	private static final String BASE_INSTRUCTION_MARK = "30년 경력의 전문 사주명리학자";
 	private static final String REUNION_INSTRUCTION_MARK = "재회 상담가";
 
+	/** GPT 가 돌려준 사주 본문과 요약 원문. 정규화기에는 이 원문이 그대로 들어가야 한다. */
+	private static final String GPT_ANALYSIS = "본문입니다";
+	private static final String GPT_SUMMARY = "요약입니다";
 	private static final String SAJU_JSON =
-		"{\"fullAnalysis\":\"본문입니다\",\"summary\":\"요약입니다\"}";
+		"{\"fullAnalysis\":\"" + GPT_ANALYSIS + "\",\"summary\":\"" + GPT_SUMMARY + "\"}";
 	private static final String COMPATIBILITY_JSON =
 		"{\"score\":88,\"interpretation\":\"궁합 본문\",\"summary\":\"궁합 요약\"}";
 
@@ -151,12 +162,24 @@ class ManseInterpretationServiceFlowTest {
 				.saveCompatibilityFinalResult(anyLong(), any(), any(), any(), any()))
 			.thenReturn(compatibilityResult);
 
-		lenient().when(analysisNormalizer.normalizeAnalysis(anyLong(), any()))
+		// 정규화기에는 상품 번호와 GPT 원문이 그대로 들어가야 한다. 본문과 요약이 뒤바뀌거나 상품 번호 자리에 결제 ID 가 들어가면 스텁이
+		// 맞지 않아 null 이 저장되고, 저장 인자를 확인하는 테스트가 실패한다. 유료·무료 단일 경로가 서로 다른 상품을 쓰고 궁합 경로는
+		// 정규화하지 않아서 lenient 로 둔다.
+		lenient().when(analysisNormalizer.normalizeAnalysis(eq(SAJU_PRODUCT.id()), eq(GPT_ANALYSIS)))
 			.thenReturn("정규화된 본문");
-		lenient().when(analysisNormalizer.normalizeSummary(anyLong(), any()))
+		lenient().when(analysisNormalizer.normalizeSummary(eq(SAJU_PRODUCT.id()), eq(GPT_SUMMARY)))
+			.thenReturn("정규화된 요약");
+		lenient().when(analysisNormalizer.normalizeAnalysis(eq(FREE_FORTUNE_PRODUCT.id()), eq(GPT_ANALYSIS)))
+			.thenReturn("정규화된 본문");
+		lenient().when(analysisNormalizer.normalizeSummary(eq(FREE_FORTUNE_PRODUCT.id()), eq(GPT_SUMMARY)))
 			.thenReturn("정규화된 요약");
 
-		service = new ManseInterpretationService(
+		service = newService(sajuResultService, resultService, analysisNormalizer);
+	}
+
+	private ManseInterpretationService newService(SajuResultService sajuResults, ResultService results,
+		AnalysisNormalizer normalizer) {
+		return new ManseInterpretationService(
 			new ObjectMapper(),
 			openAiResponsesClient,
 			openAiProperties,
@@ -164,11 +187,11 @@ class ManseInterpretationServiceFlowTest {
 			ogImageGenerationService,
 			discordNotificationService,
 			emailService,
-			sajuResultService,
-			resultService,
+			sajuResults,
+			results,
 			sajuPromptFactory,
 			compatibilityPromptFactory,
-			analysisNormalizer,
+			normalizer,
 			new InterpretationPipeline()
 		);
 	}
@@ -233,6 +256,15 @@ class ManseInterpretationServiceFlowTest {
 		ArgumentCaptor<Gpt5Request> captor = ArgumentCaptor.forClass(Gpt5Request.class);
 		verify(openAiResponsesClient).createResponse(captor.capture());
 		return captor.getValue();
+	}
+
+	/** 요청의 모델·출력 토큰 상한·추론 강도·출력 길이 네 값이 모두 tier 의 값인지 본다. */
+	private static void assertUsesTier(Gpt5Request request, ModelTier tier) {
+		assertThat(request)
+			.extracting(Gpt5Request::getModel, Gpt5Request::getMaxOutputTokens,
+				sent -> sent.getReasoning().getEffort(), sent -> sent.getText().getVerbosity())
+			.as("모델, 출력 토큰 상한, 추론 강도, 출력 길이")
+			.containsExactly(tier.model(), tier.maxOutputTokens(), tier.reasoningEffort(), tier.verbosity());
 	}
 
 	private String asyncExecutorOf(String methodName) {
@@ -611,7 +643,7 @@ class ManseInterpretationServiceFlowTest {
 		void rollsBackByPaymentIdWhenNormalizationFails() {
 			// given
 			givenSajuResponse();
-			given(analysisNormalizer.normalizeAnalysis(SAJU_PRODUCT.id(), "본문입니다"))
+			given(analysisNormalizer.normalizeAnalysis(SAJU_PRODUCT.id(), GPT_ANALYSIS))
 				.willThrow(new IllegalArgumentException("정규화 실패"));
 
 			// when
@@ -686,6 +718,235 @@ class ManseInterpretationServiceFlowTest {
 		private InterpretationRunOutdatedException outdated() {
 			return new InterpretationRunOutdatedException(PAYMENT_ID, STARTED_AT, ResultStatus.PROCESSING,
 				LocalDateTime.of(2026, 9, 26, 10, 0));
+		}
+	}
+
+	/**
+	 * 결과를 쓰는 두 서비스(SajuResultService, ResultService)와 결과 엔티티를 진짜로 쓰고 저장소만 목으로 둔다. 저장소 목은 미리 만든
+	 * 해석 중 엔티티를 돌려주기만 하므로, 해석이 끝난 뒤 그 엔티티의 상태가 DB 에 남을 상태다.
+	 *
+	 * <p>위 묶음들은 결과 서비스를 목으로 두어 "되돌리기를 불렀다" 까지만 본다. 되돌리기가 엔티티를 실제로 정보 입력 대기로 바꾸는지는
+	 * 여기서 본다. 궁합 엔티티의 상태 변경이 인자를 무시해도 위 묶음은 통과했다.
+	 */
+	@Nested
+	@DisplayName("실제 엔티티 상태")
+	class RealEntityStatus {
+
+		private static final Long USER_ID = 1L;
+
+		@Mock
+		private ResultRepository resultRepository;
+		@Mock
+		private CompatibilityResultRepository compatibilityResultRepository;
+		@Mock
+		private SubCategoryRepository subCategoryRepository;
+
+		private Result sajuRow;
+		private CompatibilityResult compatibilityRow;
+		private ManseInterpretationService serviceWithRealResults;
+
+		@BeforeEach
+		void setUpRealResultServices() {
+			// 컨트롤러가 STARTED_AT 에 해석을 시작해 둔 행이다.
+			sajuRow = ResultFixture.saju(USER_ID, PAYMENT_ID, ResultStatus.PROCESSING, STARTED_AT);
+			ReflectionTestUtils.setField(sajuRow, "id", RESULT_ID);
+			compatibilityRow = ResultFixture.compatibility(USER_ID, PAYMENT_ID, ResultStatus.PROCESSING, STARTED_AT);
+			ReflectionTestUtils.setField(compatibilityRow, "id", RESULT_ID);
+
+			serviceWithRealResults = newService(
+				new SajuResultService(resultRepository, compatibilityResultRepository),
+				new ResultService(resultRepository, compatibilityResultRepository, subCategoryRepository,
+					Clock.systemDefaultZone()),
+				analysisNormalizer);
+		}
+
+		@Test
+		@DisplayName("유료 단일 해석이 성공하면 사주 결과가 COMPLETED 가 되고 정규화한 본문과 요약이 들어간다")
+		void paidSingleEndsCompleted() {
+			// given
+			givenSajuResponse();
+			givenSajuRowCanBeFilledAndSaved();
+			given(sajuPromptFactory.create(SAJU_PRODUCT.id(), person())).willReturn(PAID_SINGLE_PROMPT);
+
+			// when
+			serviceWithRealResults.interpret(sajuCommand(SAJU_PRODUCT));
+
+			// then
+			assertThat(sajuRow)
+				.extracting(Result::getStatus, Result::getInterpretation, Result::getSummary)
+				.containsExactly(ResultStatus.COMPLETED, "정규화된 본문", "정규화된 요약");
+		}
+
+		@Test
+		@DisplayName("무료 단일 해석이 성공하면 사주 결과가 COMPLETED 가 되고 정규화한 본문과 요약이 들어간다")
+		void freeSingleEndsCompleted() {
+			// given
+			givenSajuResponse();
+			givenSajuRowCanBeFilledAndSaved();
+			given(sajuPromptFactory.createFree(FREE_FORTUNE_PRODUCT.id(), person())).willReturn(FREE_SINGLE_PROMPT);
+
+			// when
+			serviceWithRealResults.interpretFree(sajuCommand(FREE_FORTUNE_PRODUCT));
+
+			// then
+			assertThat(sajuRow)
+				.extracting(Result::getStatus, Result::getInterpretation, Result::getSummary)
+				.containsExactly(ResultStatus.COMPLETED, "정규화된 본문", "정규화된 요약");
+		}
+
+		@Test
+		@DisplayName("유료 궁합 해석이 성공하면 궁합 결과가 COMPLETED 가 되고 본문·점수·요약이 들어간다")
+		void paidCompatibilityEndsCompleted() {
+			// given
+			givenCompatibilityResponse();
+			givenCompatibilityRowCanBeFilledAndSaved();
+			given(compatibilityPromptFactory.create(COMPATIBILITY_PRODUCT.id(), persons()))
+				.willReturn(COMPATIBILITY_PROMPT);
+
+			// when
+			serviceWithRealResults.analyzeCompatibilityWithSubcategory(compatibilityCommand(COMPATIBILITY_PRODUCT));
+
+			// then
+			assertThat(compatibilityRow)
+				.extracting(CompatibilityResult::getStatus, CompatibilityResult::getInterpretation,
+					CompatibilityResult::getCompatibilityScore, CompatibilityResult::getSummary)
+				.containsExactly(ResultStatus.COMPLETED, "궁합 본문", 88, "궁합 요약");
+		}
+
+		@Test
+		@DisplayName("무료 궁합 해석이 성공하면 궁합 결과가 COMPLETED 가 되고 본문·점수·요약이 들어간다")
+		void freeCompatibilityEndsCompleted() {
+			// given
+			givenCompatibilityResponse();
+			givenCompatibilityRowCanBeFilledAndSaved();
+			given(compatibilityPromptFactory.create(COMPATIBILITY_PRODUCT.id(), persons()))
+				.willReturn(COMPATIBILITY_PROMPT);
+
+			// when
+			serviceWithRealResults.analyzeCompatibilityFree(compatibilityCommand(COMPATIBILITY_PRODUCT));
+
+			// then
+			assertThat(compatibilityRow)
+				.extracting(CompatibilityResult::getStatus, CompatibilityResult::getInterpretation,
+					CompatibilityResult::getCompatibilityScore, CompatibilityResult::getSummary)
+				.containsExactly(ResultStatus.COMPLETED, "궁합 본문", 88, "궁합 요약");
+		}
+
+		@Test
+		@DisplayName("유료 단일 해석에서 GPT 가 실패하면 사주 결과가 INPUT_REQUIRED 로 돌아간다")
+		void paidSingleReturnsToInputRequiredOnGptFailure() {
+			// given
+			willThrow(new RuntimeException("GPT 터짐")).given(openAiResponsesClient).createResponse(any());
+			givenSajuRowCanBeFilled();
+			given(sajuPromptFactory.create(SAJU_PRODUCT.id(), person())).willReturn(PAID_SINGLE_PROMPT);
+
+			// when
+			serviceWithRealResults.interpret(sajuCommand(SAJU_PRODUCT));
+
+			// then
+			assertThat(sajuRow.getStatus()).isEqualTo(ResultStatus.INPUT_REQUIRED);
+		}
+
+		@Test
+		@DisplayName("무료 단일 해석이 토큰 상한에 걸리면 사주 결과가 INPUT_REQUIRED 로 돌아간다")
+		void freeSingleReturnsToInputRequiredOnIncompleteResponse() {
+			// given
+			willThrow(new OpenAiIncompleteResponseException("max_output_tokens"))
+				.given(openAiResponsesClient).createResponse(any());
+			givenSajuRowCanBeFilled();
+			given(sajuPromptFactory.createFree(FREE_FORTUNE_PRODUCT.id(), person())).willReturn(FREE_SINGLE_PROMPT);
+
+			// when
+			serviceWithRealResults.interpretFree(sajuCommand(FREE_FORTUNE_PRODUCT));
+
+			// then
+			assertThat(sajuRow.getStatus()).isEqualTo(ResultStatus.INPUT_REQUIRED);
+		}
+
+		@Test
+		@DisplayName("유료 궁합 해석에서 GPT 가 실패하면 궁합 결과가 INPUT_REQUIRED 로 돌아간다")
+		void paidCompatibilityReturnsToInputRequiredOnGptFailure() {
+			// given
+			willThrow(new RuntimeException("GPT 터짐")).given(openAiResponsesClient).createResponse(any());
+			givenCompatibilityRowCanBeFilled();
+			given(compatibilityPromptFactory.create(COMPATIBILITY_PRODUCT.id(), persons()))
+				.willReturn(COMPATIBILITY_PROMPT);
+
+			// when
+			serviceWithRealResults.analyzeCompatibilityWithSubcategory(compatibilityCommand(COMPATIBILITY_PRODUCT));
+
+			// then
+			assertThat(compatibilityRow.getStatus()).isEqualTo(ResultStatus.INPUT_REQUIRED);
+		}
+
+		@Test
+		@DisplayName("무료 궁합 해석이 토큰 상한에 걸리면 궁합 결과가 INPUT_REQUIRED 로 돌아간다")
+		void freeCompatibilityReturnsToInputRequiredOnIncompleteResponse() {
+			// given
+			willThrow(new OpenAiIncompleteResponseException("max_output_tokens"))
+				.given(openAiResponsesClient).createResponse(any());
+			givenCompatibilityRowCanBeFilled();
+			given(compatibilityPromptFactory.create(COMPATIBILITY_PRODUCT.id(), persons()))
+				.willReturn(COMPATIBILITY_PROMPT);
+
+			// when
+			serviceWithRealResults.analyzeCompatibilityFree(compatibilityCommand(COMPATIBILITY_PRODUCT));
+
+			// then
+			assertThat(compatibilityRow.getStatus()).isEqualTo(ResultStatus.INPUT_REQUIRED);
+		}
+
+		/**
+		 * 정규화기를 진짜로 쓰고 사업운(21)으로 돌린다. 정규화기에 상품 번호 대신 결제 ID 를 넘기거나 본문 대신 요약을 넘기면, 규칙 표에
+		 * 없는 번호라 원문이 그대로 저장되어 제목 라벨이 남는다.
+		 */
+		@Test
+		@DisplayName("사업운(21) 해석은 실제 정규화기를 거쳐 GPT 원문의 제목 라벨을 지운 본문을 저장한다")
+		void businessLuckSavesTextWithoutTitleLabel() {
+			// given
+			given(openAiResponsesClient.createResponse(any())).willReturn(
+				"{\"fullAnalysis\":\"[1. 총운]\\n핵심 성향은 임수 일간입니다.\",\"summary\":\"요약입니다\"}");
+			givenSajuRowCanBeFilledAndSaved();
+			given(sajuPromptFactory.create(InterpretationProduct.BUSINESS_LUCK.id(), person()))
+				.willReturn(PAID_SINGLE_PROMPT);
+			ManseInterpretationService serviceWithRealNormalizer = newService(
+				new SajuResultService(resultRepository, compatibilityResultRepository),
+				new ResultService(resultRepository, compatibilityResultRepository, subCategoryRepository,
+					Clock.systemDefaultZone()),
+				new AnalysisNormalizer());
+
+			// when
+			serviceWithRealNormalizer.interpret(sajuCommand(InterpretationProduct.BUSINESS_LUCK));
+
+			// then
+			assertThat(sajuRow.getStatus()).isEqualTo(ResultStatus.COMPLETED);
+			assertThat(sajuRow.getInterpretation())
+				.as("정규화한 본문")
+				.doesNotContain("[1. 총운]")
+				.contains("핵심 성향은 임수 일간입니다.");
+		}
+
+		/** 입력 정보 채우기와 실패 뒤 되돌리기가 결제 ID 로 찾는 행. */
+		private void givenSajuRowCanBeFilled() {
+			given(resultRepository.findByPaymentIdForUpdate(PAYMENT_ID)).willReturn(Optional.of(sajuRow));
+			given(resultRepository.save(sajuRow)).willReturn(sajuRow);
+		}
+
+		/** 위에 더해, 결과 저장이 결과 ID 로 찾는 행. */
+		private void givenSajuRowCanBeFilledAndSaved() {
+			givenSajuRowCanBeFilled();
+			given(resultRepository.findByIdForUpdate(RESULT_ID)).willReturn(Optional.of(sajuRow));
+		}
+
+		private void givenCompatibilityRowCanBeFilled() {
+			given(compatibilityResultRepository.findByPaymentIdForUpdate(PAYMENT_ID))
+				.willReturn(Optional.of(compatibilityRow));
+			given(compatibilityResultRepository.save(compatibilityRow)).willReturn(compatibilityRow);
+		}
+
+		private void givenCompatibilityRowCanBeFilledAndSaved() {
+			givenCompatibilityRowCanBeFilled();
+			given(compatibilityResultRepository.findByIdForUpdate(RESULT_ID)).willReturn(Optional.of(compatibilityRow));
 		}
 	}
 
@@ -913,8 +1174,8 @@ class ManseInterpretationServiceFlowTest {
 	}
 
 	@Nested
-	@DisplayName("비용과 동시성")
-	class CostAndConcurrency {
+	@DisplayName("비용과 스레드 풀")
+	class CostAndThreadPool {
 
 		@Test
 		@DisplayName("무료 궁합은 light 티어 모델과 토큰 상한을 쓴다")
@@ -940,17 +1201,53 @@ class ManseInterpretationServiceFlowTest {
 		}
 
 		@Test
-		@DisplayName("유료 경로는 유료 스레드 풀과 primary 티어를 그대로 쓴다")
-		void paidFlowsKeepPaidExecutorAndPrimaryTier() {
-			givenSajuResponse();
-
-			callInterpret();
-
+		@DisplayName("유료 단일과 유료 궁합은 유료 스레드 풀에서 돈다")
+		void paidFlowsUsePaidExecutor() {
 			assertThat(asyncExecutorOf("interpret")).isEqualTo("gptTaskExecutor");
 			assertThat(asyncExecutorOf("analyzeCompatibilityWithSubcategory"))
 				.isEqualTo("gptTaskExecutor");
-			assertThat(captureRequest().getModel())
-				.isEqualTo(openAiProperties.primary().model());
+		}
+
+		@Test
+		@DisplayName("유료 단일 요청은 primary 티어의 모델·출력 토큰 상한·추론 강도·출력 길이를 쓴다")
+		void paidSingleRequestUsesPrimaryTier() {
+			// given
+			givenSajuResponse();
+
+			// when
+			callInterpret();
+
+			// then
+			assertUsesTier(captureRequest(), openAiProperties.primary());
+		}
+
+		/**
+		 * 유료 궁합이 light 티어로 내려가면 긴 본문이 출력 토큰 상한에 걸려 잘리고 되돌려진다. 유료 단일만 보면 이 회귀를 놓친다.
+		 */
+		@Test
+		@DisplayName("유료 궁합 요청은 primary 티어의 모델·출력 토큰 상한·추론 강도·출력 길이를 쓴다")
+		void paidCompatibilityRequestUsesPrimaryTier() {
+			// given
+			givenCompatibilityResponse();
+
+			// when
+			callCompatibility();
+
+			// then
+			assertUsesTier(captureRequest(), openAiProperties.primary());
+		}
+
+		@Test
+		@DisplayName("유료 재회운(19) 요청은 전용 지시를 쓰면서도 primary 티어의 모델·출력 토큰 상한·추론 강도·출력 길이를 쓴다")
+		void paidReunionRequestUsesPrimaryTier() {
+			// given
+			givenCompatibilityResponse();
+
+			// when
+			callCompatibility(InterpretationProduct.REUNION);
+
+			// then
+			assertUsesTier(captureRequest(), openAiProperties.primary());
 		}
 
 		@Test
