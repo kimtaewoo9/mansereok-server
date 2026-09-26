@@ -65,18 +65,20 @@ class ManseryeokCalculationRequestTest {
 		}
 
 		@ParameterizedTest(name = "[{index}] {0} / 달력 {1} / 시각 {2} / 성별 {3}")
-		@DisplayName("입력이 잘못되면 400 으로 나가는 IllegalArgumentException 을 던진다")
+		@DisplayName("입력이 잘못되면 400 으로 나가는 IllegalArgumentException 을 던지고, 메시지에 생년월일·출생시간·성별 입력값을 넣지 않는다")
 		@CsvSource(textBlock = """
 			# 생년월일,   달력,  출생시간, 성별, 메시지
 			,           S,     12:00,   MALE, 생년월일(birthday)은 필수입니다.
 			'  ',       S,     12:00,   MALE, 생년월일(birthday)은 필수입니다.
-			1995/5/5,   S,     12:00,   MALE, 생년월일은 YYYY/MM/DD 형식의 있는 날짜여야 합니다.
-			1990/13/01, S,     12:00,   MALE, 생년월일은 YYYY/MM/DD 형식의 있는 날짜여야 합니다.
-			1990/02/30, S,     12:00,   MALE, 생년월일은 YYYY/MM/DD 형식의 있는 날짜여야 합니다.
+			1995/5/5,   S,     12:00,   MALE, 생년월일은 YYYY/MM/DD 형식이어야 하고 실제로 있는 날짜여야 합니다.
+			1990/13/01, S,     12:00,   MALE, 생년월일은 YYYY/MM/DD 형식이어야 하고 실제로 있는 날짜여야 합니다.
+			1990/02/30, S,     12:00,   MALE, 생년월일은 YYYY/MM/DD 형식이어야 하고 실제로 있는 날짜여야 합니다.
 			1995/05/05, LUNAR, 12:00,   MALE, 달력(calendar)은 S(양력) 또는 L(음력)이어야 합니다: LUNAR
 			1995/05/05, SOLAR, 12:00,   MALE, 달력(calendar)은 S(양력) 또는 L(음력)이어야 합니다: SOLAR
-			1995/05/05, S,     25:00,   MALE, 지원하지 않는 출생시간 형식입니다: 25:00
-			1995/05/05, S,     12:00,   X,    지원하지 않는 성별 값입니다: X
+			# 시가 한 자리인 "9:07" 은 LocalTime 이 읽지 못한다
+			1995/05/05, S,     9:07,    MALE, 지원하지 않는 출생시간 형식입니다.
+			1995/05/05, S,     25:00,   MALE, 지원하지 않는 출생시간 형식입니다.
+			1995/05/05, S,     12:00,   여자,  지원하지 않는 성별 값입니다.
 			1995/05/05, S,     12:00,   ,     성별(gender)은 필수입니다.
 			""")
 		void rejectsInvalidInput(String birthday, String calendar, String birthtime, String gender,
@@ -101,6 +103,19 @@ class ManseryeokCalculationRequestTest {
 				.isInstanceOf(IllegalArgumentException.class)
 				.hasCauseInstanceOf(DateTimeParseException.class)
 				.message().doesNotContain("1990");
+		}
+
+		@Test
+		@DisplayName("출생시간 형식이 틀리면 원인 예외를 담고, 메시지에는 입력한 출생시간을 넣지 않는다")
+		void keepsParseFailureAsCauseWithoutBirthTimeInMessage() {
+			// given
+			ManseryeokCreateRequest person = person("1995/05/05", "S", "9:07", "MALE");
+
+			// when & then
+			assertThatThrownBy(() -> ManseryeokCalculationRequest.from(person))
+				.isInstanceOf(IllegalArgumentException.class)
+				.hasCauseInstanceOf(DateTimeParseException.class)
+				.message().doesNotContain("9:07");
 		}
 
 		private ManseryeokCreateRequest person(String birthday, String calendar, String birthtime, String gender) {

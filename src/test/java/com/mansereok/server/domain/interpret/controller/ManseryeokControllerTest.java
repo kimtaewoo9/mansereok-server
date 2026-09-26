@@ -185,6 +185,7 @@ class ManseryeokControllerTest {
 
 			// when & then
 			assertThatThrownBy(() -> controller.interpretFree(FREE_FORTUNE_SUBCATEGORY_ID, singleRequest(), USERNAME))
+				.isInstanceOf(RuntimeException.class)
 				.hasMessage("해당 양력 날짜의 만세력 데이터를 찾을 수 없습니다.");
 			verifyNoInteractions(paymentService, resultService, manseInterpretationService);
 		}
