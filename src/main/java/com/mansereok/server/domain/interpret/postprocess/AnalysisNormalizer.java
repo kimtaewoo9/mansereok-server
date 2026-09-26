@@ -13,8 +13,8 @@ import org.springframework.stereotype.Component;
  * GPT 가 돌려준 해석 본문과 요약을 화면에 그대로 쓸 수 있는 모양으로 다듬는다.
  *
  * <p>상품마다 손질이 다르므로 분기 사슬 대신 {@code 상품 -> 규칙} 표를 둔다. 손질이 필요 없는 상품은 원문 유지 목록에
- * 따로 적는다. 모든 상품은 규칙 표와 원문 유지 목록 중 정확히 한쪽에 있어야 하고, 클래스가 올라올 때 이를 확인한다.
- * 그래서 {@link InterpretationProduct} 에 상품을 더하고 여기서 정하지 않으면 애플리케이션이 뜨지 않는다.
+ * 따로 적는다. 모든 상품은 규칙 표와 원문 유지 목록 중 정확히 한쪽에 있어야 하고, 객체를 만들 때 이를 확인한다.
+ * 그래서 {@link InterpretationProduct} 에 상품을 더하고 여기서 정하지 않으면 빈을 만들지 못해 애플리케이션이 뜨지 않는다.
  * 손질이 필요해지면 {@link SubcategoryNormalizationRule} 하나를 더해 표에 등록하고 원문 유지 목록에서 뺀다.
  *
  * <p>상품 목록에 없는 번호나 null 이 들어오면 손대지 않는다.
@@ -53,10 +53,22 @@ public class AnalysisNormalizer {
 		InterpretationProduct.ACTOR_COMPATIBILITY,
 		InterpretationProduct.REUNION));
 
-	private static final Map<InterpretationProduct, SubcategoryNormalizationRule> RULES = buildRules();
+	private final Map<InterpretationProduct, SubcategoryNormalizationRule> rules;
 
-	static {
-		requireEveryProductInExactlyOnePlace(RULES.keySet(), KEEP_ORIGINAL);
+	public AnalysisNormalizer() {
+		this(buildRules(), KEEP_ORIGINAL);
+	}
+
+	/**
+	 * 규칙 표와 원문 유지 목록을 받아 만든다. 운영에서는 위의 기본 생성자가 실제 표를 넘기고, 테스트는 상품이 빠진 표를 넘겨
+	 * 확인이 실제로 도는지 본다.
+	 *
+	 * @throws IllegalStateException 어느 쪽에도 없는 상품이나 양쪽에 모두 있는 상품이 있을 때. 메시지에 그 상품을 담는다
+	 */
+	AnalysisNormalizer(Map<InterpretationProduct, SubcategoryNormalizationRule> rules,
+		Set<InterpretationProduct> keptOriginal) {
+		requireEveryProductInExactlyOnePlace(rules.keySet(), keptOriginal);
+		this.rules = rules;
 	}
 
 	private static Map<InterpretationProduct, SubcategoryNormalizationRule> buildRules() {
@@ -77,12 +89,8 @@ public class AnalysisNormalizer {
 		return Collections.unmodifiableMap(rules);
 	}
 
-	/**
-	 * 모든 상품이 규칙 표와 원문 유지 목록 중 정확히 한쪽에만 있는지 확인한다.
-	 *
-	 * @throws IllegalStateException 어느 쪽에도 없는 상품이나 양쪽에 모두 있는 상품이 있을 때. 메시지에 그 상품을 담는다
-	 */
-	static void requireEveryProductInExactlyOnePlace(Set<InterpretationProduct> withRule,
+	/** 모든 상품이 규칙 표와 원문 유지 목록 중 정확히 한쪽에만 있는지 확인한다. */
+	private static void requireEveryProductInExactlyOnePlace(Set<InterpretationProduct> withRule,
 		Set<InterpretationProduct> keptOriginal) {
 		Set<InterpretationProduct> missing = EnumSet.allOf(InterpretationProduct.class);
 		missing.removeAll(withRule);
@@ -130,7 +138,7 @@ public class AnalysisNormalizer {
 			return PASS_THROUGH;
 		}
 		return InterpretationProduct.find(subcategoryId)
-			.map(product -> RULES.getOrDefault(product, PASS_THROUGH))
+			.map(product -> rules.getOrDefault(product, PASS_THROUGH))
 			.orElse(PASS_THROUGH);
 	}
 }
