@@ -9,8 +9,10 @@ spring:
 
   jpa:
     # 영속성 컨텍스트와 DB 커넥션을 요청이 끝날 때까지 붙잡아 두지 않는다(open-in-view 끔). 트랜잭션이 끝나면 커넥션을 풀에
-    # 돌려주므로, 커밋 뒤 외부 API(포트원, 알림 등)의 응답을 기다리는 동안 커넥션을 쥐지 않는다. 대신 트랜잭션 밖에서 엔티티의
-    # 지연 로딩 연관을 읽으면 LazyInitializationException 이 난다. 필요한 연관은 서비스의 트랜잭션 안에서 읽어 둔다.
+    # 돌려주므로, 트랜잭션이 완전히 끝난 뒤의 외부 호출(예: 결제 스택의 환불에서 커밋 뒤 부르는 포트원 취소)을 기다리는 동안에는
+    # 커넥션을 쥐지 않는다. AFTER_COMMIT 리스너 안의 호출은 트랜잭션 정리 전이라 여전히 커넥션을 쥔다(UserNotificationListener 참고).
+    # 대신 트랜잭션 밖에서 엔티티의 지연 로딩 연관을 읽으면 LazyInitializationException 이 난다. 필요한 연관은 서비스의 트랜잭션
+    # 안에서 읽어 둔다.
     open-in-view: false
     hibernate:
       ddl-auto: update
