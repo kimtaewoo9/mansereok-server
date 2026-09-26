@@ -39,9 +39,8 @@ public class CompatibilityPromptFactory {
 		userValues.put("두 번째 사람 이름", person2.name());
 		userValues.put("두 번째 사람 작품명", person2.sourceTitle());
 
-		LocalDate today = LocalDate.now(clock.withZone(SEOUL));
 		return PromptSections.prependUserInputSection(userValues,
-			createAnalysisPrompt(categoryId, person1, person2, today));
+			createAnalysisPrompt(categoryId, person1, person2, todayInSeoul()));
 	}
 
 	private String createAnalysisPrompt(int subcategoryId, PromptContext person1,
@@ -78,5 +77,9 @@ public class CompatibilityPromptFactory {
 				person2Response, today);
 			default -> throw new IllegalArgumentException("지원하지 않는 카테고리입니다: " + subcategoryId);
 		};
+	}
+
+	private LocalDate todayInSeoul() {
+		return LocalDate.now(clock.withZone(SEOUL));
 	}
 }

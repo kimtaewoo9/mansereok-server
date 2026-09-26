@@ -7,12 +7,17 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.springframework.util.StringUtils;
 
 /**
  * 아이돌 궁합(7)과 배우 궁합(15)이 두 사람을 부르는 말 말고는 같은 프롬프트를 만드는지 확인한다.
  *
  * <p>두 상품은 기대 결과 파일이 따로 있어서, 한쪽 빌더만 고쳐도 고친 쪽 기대 결과 파일만 다시 만들면 테스트가 모두 통과한다.
  * 이 테스트는 두 프롬프트를 서로 비교하므로 두 상품이 갈라지면 바로 실패한다.
+ *
+ * <p>'아이돌' 을 '배우' 로 바꾸는 치환은 프롬프트 전체에 걸린다. 그래서 '아이돌' 이 두 사람을 부르는 라벨 네 자리
+ * (3인칭 지시 제목, 제3자 문구, 첫 번째·두 번째 구분선)에만 나온다는 전제가 있다. 두 상품이 함께 쓰는 구획(혜안 머리말,
+ * 사용자 입력 구획 등)에 '아이돌' 이 들어가면 두 상품이 같아도 치환 비교가 깨지므로, 그 전제를 먼저 따로 확인한다.
  */
 @DisplayName("아이돌·배우 궁합 프롬프트")
 class CelebrityCompatibilityPromptsTest {
@@ -41,6 +46,9 @@ class CelebrityCompatibilityPromptsTest {
 
 		// then
 		assertThat(idolPrompt).contains("라는 제3자(아이돌)들에 대한 것입니다.");
+		assertThat(StringUtils.countOccurrencesOf(idolPrompt, "아이돌"))
+			.as("'아이돌' 은 라벨 네 자리에만 나온다. 공유 구획에 '아이돌' 이 들어가면 아래 치환 비교가 거짓으로 깨진다")
+			.isEqualTo(4);
 		assertThat(idolPrompt.replace("아이돌", "배우")).isEqualTo(actorPrompt);
 	}
 }
