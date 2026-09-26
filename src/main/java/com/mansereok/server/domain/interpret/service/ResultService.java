@@ -3,6 +3,8 @@ package com.mansereok.server.domain.interpret.service;
 import com.mansereok.server.domain.interpret.entity.CompatibilityResult;
 import com.mansereok.server.domain.interpret.entity.Result;
 import com.mansereok.server.domain.interpret.exception.InterpretationAlreadyStartedException;
+import com.mansereok.server.domain.interpret.product.InterpretationProduct;
+import com.mansereok.server.domain.interpret.product.InterpretationProduct.ResultTable;
 import com.mansereok.server.domain.interpret.repository.CompatibilityResultRepository;
 import com.mansereok.server.domain.interpret.repository.ResultRepository;
 import com.mansereok.server.domain.order.entity.Order;
@@ -44,16 +46,8 @@ public class ResultService {
 
 		log.info("[ResultCreationService] subcategoryId = {}", subCategoryId);
 
-		// Category ID에 따라 Result 또는 CompatibilityResult 생성 분기
-		if (subCategoryId == 4 ||
-			subCategoryId == 6 ||
-			subCategoryId == 7 ||
-			subCategoryId == 10 ||
-			subCategoryId == 11 ||
-			subCategoryId == 14 ||
-			subCategoryId == 15 ||
-			subCategoryId == 19
-		) {
+		// 상품 목록(InterpretationProduct)이 정한 표에 Result 또는 CompatibilityResult 를 만든다
+		if (resultTableOf(subCategoryId) == ResultTable.COMPATIBILITY_RESULTS) {
 			if (compatibilityResultRepository.findByPaymentId(paymentPkId).isEmpty()) {
 				CompatibilityResult initialCompResult = CompatibilityResult.createInitial(userId,
 					paymentPkId, productName);
@@ -159,5 +153,18 @@ public class ResultService {
 		compatibilityResultRepository.findByPaymentIdForUpdate(paymentId)
 			.filter(result -> result.isProcessingStartedAt(startedAt))
 			.ifPresent(CompatibilityResult::revertToInputRequired);
+	}
+
+	/**
+	 * 결제 확정 때 첫 결과 행을 만들 표. 상품 목록에 없는 번호는 예전처럼 사주 결과 표(results)에 만들고, 목록을 고쳐야
+	 * 한다는 것을 알 수 있게 경고를 남긴다.
+	 */
+	private static ResultTable resultTableOf(Long subCategoryId) {
+		return InterpretationProduct.find(subCategoryId)
+			.map(InterpretationProduct::resultTable)
+			.orElseGet(() -> {
+				log.warn("해석 상품 목록에 없는 상품이라 사주 결과 표(results)에 만듭니다: subCategoryId={}", subCategoryId);
+				return ResultTable.RESULTS;
+			});
 	}
 }
