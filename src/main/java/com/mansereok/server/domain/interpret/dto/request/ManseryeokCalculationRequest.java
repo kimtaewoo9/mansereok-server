@@ -38,10 +38,6 @@ public class ManseryeokCalculationRequest {
 
 	private Boolean leapMonth;
 
-	public LocalTime getSolarTimeOrDefault() {
-		return solarTime != null ? solarTime : LocalTime.NOON;
-	}
-
 	/**
 	 * 단일 해석 요청(유료·무료)을 계산 입력으로 바꾼다.
 	 */

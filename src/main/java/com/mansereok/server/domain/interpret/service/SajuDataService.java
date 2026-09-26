@@ -549,39 +549,4 @@ public class SajuDataService {
 			"rate", rate
 		);
 	}
-
-	/**
-	 * 60갑자 데이터 (대운 계산용)
-	 */
-	public Map<Integer, String[]> getSixtyGapjaForBigFortuneList() {
-		Map<Integer, String[]> data = new HashMap<>();
-		String[] cheongan = {"甲", "乙", "丙", "丁", "戊", "己", "庚", "辛", "壬", "癸"};
-		String[] jiji = {"子", "丑", "寅", "卯", "辰", "巳", "午", "未", "申", "酉", "戌", "亥"};
-
-		for (int i = 1; i <= 180; i++) {
-			int cheonganIndex = (i - 1) % 10;
-			int jijiIndex = (i - 1) % 12;
-			data.put(i, new String[]{cheongan[cheonganIndex], jiji[jijiIndex]});
-		}
-
-		return data;
-	}
-
-	/**
-	 * 60갑자 데이터 (일반용)
-	 */
-	public Map<Integer, String[]> getSixtyGapja() {
-		Map<Integer, String[]> data = new HashMap<>();
-		String[] cheongan = {"庚", "辛", "壬", "癸", "甲", "乙", "丙", "丁", "戊", "己"}; // 시작점 조정
-		String[] jiji = {"申", "酉", "戌", "亥", "子", "丑", "寅", "卯", "辰", "巳", "午",
-			"未"}; // 시작점 조정
-
-		for (int i = 0; i <= 59; i++) {
-			int cheonganIndex = i % 10;
-			int jijiIndex = i % 12;
-			data.put(i, new String[]{cheongan[cheonganIndex], jiji[jijiIndex]});
-		}
-
-		return data;
-	}
 }
