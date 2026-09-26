@@ -60,9 +60,10 @@ import org.springframework.util.StringUtils;
  * 위해서다.
  *
  * <p>같은 회원의 행은 리프레시 토큰 → users → 재설정 토큰 순서로 잠근다. 탈퇴(deleteUser), 비밀번호 재설정 요청
- * (requestPasswordReset)·확인(resetPassword)이 이 순서를 따른다. 로그인과 토큰 재발급(RefreshTokenService.generateRefreshToken)은
- * 리프레시 토큰을 지운 뒤 새 토큰을 넣으면서 외래 키 확인으로 users 행을 공유 잠금하므로 이미 이 순서다. 순서를 달리 잡은 두 요청이
- * 겹치면 서로의 잠금을 기다리다 MySQL 이 한쪽을 교착(1213)으로 롤백하고, 그 요청은 503 을 받는다.
+ * (requestPasswordReset)·확인(resetPassword)이 이 순서를 따른다. 토큰 재발급(RefreshTokenService.rotate)은 쓴 리프레시 토큰 행을
+ * 잠근 뒤 새 토큰을 넣으면서 외래 키 확인으로 users 행을 공유 잠금하므로 이미 이 순서다. 로그인(RefreshTokenService.issue)은 새 토큰을
+ * 넣으며 users 행을 공유 잠금할 뿐이다. 순서를 달리 잡은 두 요청이 겹치면 서로의 잠금을 기다리다 MySQL 이 한쪽을 교착(1213)으로
+ * 롤백하고, 그 요청은 503 을 받는다.
  *
  * <p>순서만 맞춰서는 회원에게 리프레시 토큰 행이 하나도 없을 때 교착이 남는다. REPEATABLE READ(MySQL 기본값)에서는 0행을 고치거나
  * 지우는 문장도 user_id 인덱스의 그 자리에 틈 잠금을 건다. 그사이 로그인이 users 행을 공유 잠금하고 그 틈에 새 토큰을 넣으려다
@@ -428,8 +429,8 @@ public class UserService {
 	 *
 	 * <p>READ COMMITTED 로 돈다(클래스 설명). 그래서 리프레시 토큰이 없는 회원이면 처음 지운 뒤 users 를 잠그기 전에 로그인이 새
 	 * 토큰을 넣고 커밋할 수 있다. users 를 잠근 뒤 리프레시 토큰을 한 번 더 지워 그 토큰을 치운다. 치우지 않으면 users 삭제가 외래
-	 * 키(ON DELETE CASCADE 가 없을 때)에 걸려 탈퇴가 500 으로 롤백된다. 그 틈에 로그인이 두 번 이어져, 뒤 로그인이 앞 로그인의 토큰을
-	 * 지운 채 users 잠금을 기다리면 두 번째 삭제가 그 토큰을 기다려 교착이 나고 탈퇴가 503 을 받는다.
+	 * 키(ON DELETE CASCADE 가 없을 때)에 걸려 탈퇴가 500 으로 롤백된다. 그 틈에 넣은 토큰으로 곧바로 재발급까지 해서, 재발급이 그
+	 * 토큰을 잠근 채 새 토큰을 넣으려고 users 잠금을 기다리면 두 번째 삭제가 그 토큰을 기다려 교착이 나고 탈퇴가 503 을 받는다.
 	 */
 	@Transactional(isolation = Isolation.READ_COMMITTED)
 	public void deleteUser(String username) {

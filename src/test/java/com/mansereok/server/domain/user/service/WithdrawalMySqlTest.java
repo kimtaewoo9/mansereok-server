@@ -109,8 +109,8 @@ class WithdrawalMySqlTest extends LocalMySqlTest {
 		assertThat(countRowsOfUser("SELECT COUNT(*) FROM password_reset_tokens WHERE user_id = ?",
 			withdrawingUserId)).as("탈퇴 전 재설정 토큰").isEqualTo(1);
 		User withdrawing = userRepository.findById(withdrawingUserId).orElseThrow();
-		refreshTokenRepository.save(new RefreshToken("withdraw-refresh-" + runId, withdrawing,
-			LocalDateTime.now().plusDays(7)));
+		refreshTokenRepository.save(RefreshToken.issue("withdraw-refresh-" + runId, withdrawing, LocalDateTime.now(),
+			Duration.ofDays(7)));
 		resultRepository.save(Result.createInitial(withdrawingUserId, null, "인생 총운"));
 		reviewRepository.save(ReviewFixture.review().forSaving()
 			.userId(withdrawingUserId).orderId(withdrawingReviewOrderId).userEmail(withdrawingEmail).build());

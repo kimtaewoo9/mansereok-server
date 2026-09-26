@@ -115,8 +115,7 @@ CREATE TABLE `refresh_tokens` (
                                   `used_at` TIMESTAMP NULL DEFAULT NULL,
 
                                   PRIMARY KEY (`id`),
-    -- 만료된 토큰과 이미 쓴 토큰을 정리할 때 표 전체를 훑지 않게 한다. 아직 쓰는 코드는 없고, 정리 작업이 들어올 때 쓰려고
-    -- 미리 건다(RefreshToken 의 @Table 주석 참고).
+    -- 정리 작업(RefreshTokenCleanupScheduler)이 만료된 토큰과 쓴 지 오래된 토큰을 지울 때 표 전체를 훑지 않게 한다.
                                   INDEX `idx_refresh_tokens_expires_at` (`expires_at`),
                                   INDEX `idx_refresh_tokens_used_at` (`used_at`),
     -- user_id를 users 테이블의 id에 연결 (계정 삭제 시 토큰도 삭제)

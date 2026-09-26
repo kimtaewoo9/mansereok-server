@@ -11,7 +11,6 @@ import com.mansereok.server.domain.auth.service.oauth.OauthLoginService;
 import com.mansereok.server.domain.auth.service.oauth.OauthProfile;
 import com.mansereok.server.domain.auth.service.oauth.XService;
 import com.mansereok.server.domain.auth.util.JwtUtil;
-import com.mansereok.server.domain.user.entity.RefreshToken;
 import com.mansereok.server.domain.user.entity.User;
 import com.mansereok.server.domain.user.service.RefreshTokenService;
 import jakarta.servlet.http.HttpServletResponse;
@@ -106,10 +105,11 @@ public class OauthController {
 		// ⭐ user.getUsername()을 사용하여 토큰 생성 (네이버의 경우 랜덤 생성된 ID가 사용됨)
 		String accessToken = jwtUtil.generateAccessToken(user.getUsername(), claims);
 
-		RefreshToken refreshToken = refreshTokenService.generateRefreshToken(user);
+		// 이 기기의 토큰만 새로 넣는다. 다른 기기에서 받은 토큰은 그대로 쓸 수 있다.
+		String refreshToken = refreshTokenService.issue(user);
 
 		// refresh 토큰을 쿠키에 저장
-		ResponseCookie refreshCookie = ResponseCookie.from("REFRESH_TOKEN", refreshToken.getToken())
+		ResponseCookie refreshCookie = ResponseCookie.from("REFRESH_TOKEN", refreshToken)
 			.path("/")
 			.sameSite("None")
 			.httpOnly(true)
