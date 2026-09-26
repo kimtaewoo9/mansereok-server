@@ -38,7 +38,7 @@ public class CouponTemplate {
 	private LocalDateTime issueStartDate;
 	private LocalDateTime issueEndDate;
 
-	// 유효 기간 설정 (둘 중 하나 사용)
+	// 유효 기간 설정. 둘 중 하나를 쓰고, 둘 다 있으면 validDaysAfterIssue 가 먼저다. 둘 다 없으면 기간 없는 쿠폰이 된다(couponExpiresAt).
 	private Integer validDaysAfterIssue; // 발급 후 30일간 유효
 	private LocalDateTime validUntil;    // 특정 날짜까지만 유효 (2024-12-31)
 
@@ -58,6 +58,19 @@ public class CouponTemplate {
 	// 이 값을 살려 여러 장을 주려면 그 UNIQUE 를 먼저 지우고(운영 DDL, schema.sql, Coupon 의 @Table), 쿠폰 받기의 이미 받았는지
 	// 확인을 장수 비교로 바꾼다.
 	private int maxCountPerUser;
+
+	/**
+	 * issuedAt 에 받은 쿠폰이 언제 만료되는지 돌려준다. 받은 날부터 며칠(validDaysAfterIssue)이 있으면 그것을, 없으면 정한 날짜
+	 * (validUntil)를 쓴다. 둘 다 없으면 기간 없는 쿠폰이라 null 을 돌려준다.
+	 *
+	 * <p>쿠폰 발급(Coupon.createFromTemplate)과 이벤트 목록의 유효 기간 문구가 이 한 곳의 계산을 함께 쓴다.
+	 */
+	public LocalDateTime couponExpiresAt(LocalDateTime issuedAt) {
+		if (validDaysAfterIssue != null) {
+			return issuedAt.plusDays(validDaysAfterIssue);
+		}
+		return validUntil;
+	}
 
 	/**
 	 * 선착순 상한만큼 모두 발급했으면 true. 상한이 없으면(null) 늘 false 다.

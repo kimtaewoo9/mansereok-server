@@ -24,6 +24,7 @@ public final class CouponTemplateFixture {
 	private LocalDateTime issueStartDate = LocalDateTime.now().minusDays(1);
 	private LocalDateTime issueEndDate = LocalDateTime.now().plusDays(10);
 	private Integer validDaysAfterIssue = 30;
+	private LocalDateTime validUntil = null;
 	private Integer maxIssueCount = null;
 	private int currentIssueCount = 0;
 	private int maxCountPerUser = 1;
@@ -59,6 +60,25 @@ public final class CouponTemplateFixture {
 		return this;
 	}
 
+	/** 받은 날부터 며칠 동안 쓸 수 있는지. null 이면 validUntil 을 쓴다. */
+	public CouponTemplateFixture validDaysAfterIssue(Integer validDaysAfterIssue) {
+		this.validDaysAfterIssue = validDaysAfterIssue;
+		return this;
+	}
+
+	/** 정한 날짜까지만 쓸 수 있게 한다. validDaysAfterIssue 가 있으면 그쪽이 먼저다. */
+	public CouponTemplateFixture validUntil(LocalDateTime validUntil) {
+		this.validUntil = validUntil;
+		return this;
+	}
+
+	/** 유효 기간이 없는(받은 쿠폰이 만료되지 않는) 템플릿으로 만든다. */
+	public CouponTemplateFixture noValidPeriod() {
+		this.validDaysAfterIssue = null;
+		this.validUntil = null;
+		return this;
+	}
+
 	/** 선착순 상한. null 이면 무제한이다. */
 	public CouponTemplateFixture maxIssueCount(Integer maxIssueCount) {
 		this.maxIssueCount = maxIssueCount;
@@ -80,6 +100,7 @@ public final class CouponTemplateFixture {
 		ReflectionTestUtils.setField(template, "issueStartDate", issueStartDate);
 		ReflectionTestUtils.setField(template, "issueEndDate", issueEndDate);
 		ReflectionTestUtils.setField(template, "validDaysAfterIssue", validDaysAfterIssue);
+		ReflectionTestUtils.setField(template, "validUntil", validUntil);
 		ReflectionTestUtils.setField(template, "maxIssueCount", maxIssueCount);
 		ReflectionTestUtils.setField(template, "currentIssueCount", currentIssueCount);
 		ReflectionTestUtils.setField(template, "maxCountPerUser", maxCountPerUser);
