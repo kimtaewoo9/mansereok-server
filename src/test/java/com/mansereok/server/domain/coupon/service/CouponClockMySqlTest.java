@@ -1,13 +1,14 @@
 package com.mansereok.server.domain.coupon.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.BDDMockito.willReturn;
+import static org.mockito.BDDMockito.given;
 
 import com.mansereok.server.domain.coupon.dto.CouponEventDto;
 import com.mansereok.server.domain.coupon.entity.Coupon;
 import com.mansereok.server.domain.coupon.entity.CouponTemplate;
 import com.mansereok.server.domain.coupon.repository.CouponRepository;
 import com.mansereok.server.domain.coupon.repository.CouponTemplateRepository;
+import com.mansereok.server.domain.order.scheduler.OrderExpirationScheduler;
 import com.mansereok.server.support.PaymentMySqlTest;
 import com.mansereok.server.support.fixture.CouponFixture;
 import com.mansereok.server.support.fixture.CouponTemplateFixture;
@@ -23,15 +24,20 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 /**
  * 쿠폰 서비스가 "지금" 을 스프링의 Clock 빈에서 읽고, 그 시각으로 실제 MySQL 에서 내 쿠폰함과 이벤트 목록을 거르는지 확인한다.
  *
- * <p>Clock 빈을 스파이로 감싸 테스트 동안만 지금을 2031-03-14 23:59:59(서울, 자정 직전)로 고정한다. 실제 날짜와 멀리 떨어진
- * 시각이라, 쿼리가 DB 의 NOW() 를 쓰거나 서비스가 시스템 시계를 읽으면 결과가 달라져 실패한다. 목 대신 스파이를 쓰는 까닭은, 컨텍스트가
- * 뜰 때 한 번 도는 주문 만료 스케줄러가 스텁 전의 목에서 null 시각을 읽고 오류 로그를 남기지 않게 하려는 것이다. 테스트 밖에서는
- * 실제 시계로 돌아간다. 만료 시각이 없는(NULL) 쿠폰이 쿠폰함에 나오는지는 쿼리의 NULL 처리라 DB 로만 볼 수 있다.
+ * <p>Clock 빈을 목으로 바꿔 지금을 2031-03-14 23:59:59(서울, 자정 직전)로 고정한다. 실제 날짜와 멀리 떨어진 시각이라, 쿼리가 DB 의
+ * NOW() 를 쓰거나 서비스가 시스템 시계를 읽으면 결과가 달라져 실패한다. 만료 시각이 없는(NULL) 쿠폰이 쿠폰함에 나오는지는 쿼리의
+ * NULL 처리라 DB 로만 볼 수 있다.
+ *
+ * <p>주문 만료 스케줄러도 목으로 바꾼다. 이 클래스는 목 조합이 달라 스프링 컨텍스트를 새로 띄우는데, 그때 스케줄러가 다른 스레드에서
+ * 곧바로 한 번 돌며 같은 Clock 을 읽는다. Mockito 의 스텁 설정은 다른 스레드의 호출과 겹치면 그 호출에 붙을 수 있어, 테스트가 Clock
+ * 을 스텁하는 순간과 겹치면 고정한 시각이 적용되지 않는다(스케줄러를 그대로 둔 채 전체를 돌렸을 때 발급 기간 확인이 실제 시각으로
+ * 돌아 한 번 실패했다). 스텁 전에 돌면 null 시각을 읽어 오류 로그를 남기고, 스텁 뒤에 돌면 2031년 기준으로 다른 테스트의 결제 대기
+ * 주문을 만료시킬 수도 있다.
  *
  * <p>쿠폰은 사용자 id 만 들고 users 표를 참조하지 않으므로 실행 키에서 만든 사용자 id 를 그대로 쓰고, 뒤 정리에서 그 사용자 id 와
  * 이번에 만든 템플릿 id 로만 지운다.
@@ -43,8 +49,10 @@ class CouponClockMySqlTest extends PaymentMySqlTest {
 	private static final Instant FIXED_INSTANT = Instant.parse("2031-03-14T14:59:59Z");
 	private static final LocalDateTime NOW = LocalDateTime.of(2031, 3, 14, 23, 59, 59);
 
-	@MockitoSpyBean
+	@MockitoBean
 	private Clock clock;
+	@MockitoBean
+	private OrderExpirationScheduler orderExpirationScheduler;
 
 	@Autowired
 	private CouponService couponService;
@@ -60,8 +68,8 @@ class CouponClockMySqlTest extends PaymentMySqlTest {
 
 	@BeforeEach
 	void fixClock() {
-		willReturn(FIXED_INSTANT).given(clock).instant();
-		willReturn(SEOUL).given(clock).getZone();
+		given(clock.instant()).willReturn(FIXED_INSTANT);
+		given(clock.getZone()).willReturn(SEOUL);
 	}
 
 	@AfterEach
