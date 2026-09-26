@@ -26,15 +26,23 @@ class SubCategoryFixtureTest {
 	}
 
 	@Test
-	@DisplayName("빌더에서 바꾼 id·제목·가격이 SubCategory 에 담긴다")
+	@DisplayName("빌더에서 바꾼 id·제목·설명·아이콘·가격·카테고리가 SubCategory 에 담긴다")
 	void changedValuesReachTheEntity() {
 		// when
-		SubCategory subCategory = SubCategoryFixture.paidProduct().id(19L).title("궁합").price(5000).build();
+		SubCategory subCategory = SubCategoryFixture.paidProduct()
+			.id(19L)
+			.title("궁합")
+			.description("두 사람의 궁합을 풀이합니다")
+			.icon("heart.png")
+			.price(5000)
+			.categoryId(4L)
+			.build();
 
 		// then
 		assertThat(subCategory)
-			.extracting(SubCategory::getId, SubCategory::getTitle, SubCategory::getPrice)
-			.containsExactly(19L, "궁합", 5000);
+			.extracting(SubCategory::getId, SubCategory::getTitle, SubCategory::getDescription,
+				SubCategory::getIcon, SubCategory::getPrice, SubCategory::getCategoryId)
+			.containsExactly(19L, "궁합", "두 사람의 궁합을 풀이합니다", "heart.png", 5000, 4L);
 	}
 
 	@Test
