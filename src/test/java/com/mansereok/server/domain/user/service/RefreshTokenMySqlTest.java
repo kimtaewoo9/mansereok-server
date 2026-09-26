@@ -52,7 +52,8 @@ import org.springframework.transaction.support.TransactionTemplate;
  *
  * <ol>
  *   <li>같은 토큰으로 재발급이 한꺼번에 와도 조건부 UPDATE 로 "썼음" 표시는 한 번만 되고, 나머지는 잠가 다시 읽어 유예 시간 안이면 새
- *   토큰을 받는다. 유예 시간이 0 이면 한 요청만 성공한다. 트랜잭션이 끝난 뒤에도 돌려받은 회원의 값을 지연 로딩 없이 읽는다.</li>
+ *   토큰을 받는다. 유예 시간이 0 이면 한 요청만 성공한다. 트랜잭션이 끝난 뒤에도 돌려받은 회원의 값을 지연 로딩 없이 읽는다.
+ *   쓰지 않은 토큰이라도 만료됐으면 조건부 UPDATE 가 표시하지 않아 만료 사유로 거절되고 새 토큰이 생기지 않는다.</li>
  *   <li>로그아웃과 재발급이 겹쳐도 500 이 되는 예외가 없고, 끝난 뒤 그 회원에게 쓸 수 있는 토큰이 남지 않는다. 유예 시간 안의 재발급이
  *   토큰을 잠근 동안 온 로그아웃은 그 재발급의 커밋을 기다렸다가 새 토큰까지 폐기한다. 커넥션의 기본 격리 수준이 READ COMMITTED 여도
  *   같다. 두 기기가 쓴 토큰으로 동시에 로그아웃해도 교착이 나지 않는다. 리프레시 토큰 리포지토리를 스파이로 바꿔 한쪽을 잠금을 쥔 채
@@ -169,6 +170,25 @@ class RefreshTokenMySqlTest extends LocalMySqlTest {
 			assertThat(countRowsOfMember("SELECT COUNT(*) FROM refresh_tokens WHERE user_id = ? AND used_at IS NULL"))
 				.as("쓰지 않은 토큰(새 토큰)").isEqualTo(1);
 		}
+	}
+
+	// 쓰지 않고 폐기되지 않은 토큰의 만료는 조건부 UPDATE(markUsedIfUsable)의 만료 조건만 거른다. 이 조건이 빠지면 UPDATE 가 1 을
+	// 돌려줘 잠가 다시 읽는 만료 검사까지 가지 않고 새 토큰이 나간다. 단위 테스트는 UPDATE 결과를 0 으로 정해 두므로 이 조건을 보지 못한다.
+	@Test
+	@DisplayName("쓰지 않은 토큰이라도 만료 시각이 지났으면 재발급을 만료 사유로 거절하고, 새 토큰을 넣지 않으며 그 토큰을 쓴 것으로 표시하지 않는다")
+	void expiredUnusedTokenIsRejectedWithoutNewToken() {
+		// given: 로그인으로 받은 토큰의 만료 시각만 지난 시각으로 옮긴다
+		String expired = refreshTokenService.issue(member);
+		jdbcTemplate.update("UPDATE refresh_tokens SET expires_at = ? WHERE token = ?", LONG_AGO, expired);
+
+		// when & then
+		assertThatThrownBy(() -> refreshTokenService.rotate(expired))
+			.isInstanceOf(InvalidRefreshTokenException.class)
+			.hasMessage("만료된 리프레시 토큰입니다. 다시 로그인해주세요.");
+		assertThat(countRowsOfMember("SELECT COUNT(*) FROM refresh_tokens WHERE user_id = ?"))
+			.as("만료된 토큰 하나뿐이고 새 토큰은 없다").isEqualTo(1);
+		assertThat(countRowsOfMember("SELECT COUNT(*) FROM refresh_tokens WHERE user_id = ? AND used_at IS NULL"))
+			.as("쓴 것으로 표시되지 않은 토큰(만료된 토큰)").isEqualTo(1);
 	}
 
 	// 두 스레드를 한 순간에 출발시켜도 어느 쪽이 먼저 잠그는지는 스레드를 만든 순서에 크게 치우친다. 로그아웃을 먼저 만든 20회에서는
