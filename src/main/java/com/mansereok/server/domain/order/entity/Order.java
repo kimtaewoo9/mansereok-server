@@ -2,21 +2,46 @@ package com.mansereok.server.domain.order.entity;
 
 
 import com.mansereok.server.global.exception.OrderStateException;
+import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.Index;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.Table;
+import jakarta.persistence.UniqueConstraint;
 import java.time.LocalDateTime;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
-@Table(name = "orders")
+// 제약·인덱스 이름을 고정해 엔티티, schema.sql, 운영 DB 가 같은 이름을 쓰게 한다. 운영은 ddl-auto: validate 라 UNIQUE 와 인덱스를
+// 검사하지도 만들지도 않는다. 이 선언은 엔티티로 만드는 로컬·테스트 DB 가 운영과 같은 인덱스를 갖게 하고, 바꿀 때는 운영 DDL 과
+// schema.sql 을 함께 고친다.
+@Table(
+	name = "orders",
+	uniqueConstraints = {
+		// 결제 확정·웹훅·환불이 merchant_uid 로 주문 행을 잠근다(OrderRepository.findByMerchantUidWithLock). InnoDB 는 인덱스가 없는
+		// 컬럼으로 잠그면 훑은 모든 행과 그 사이 틈을 잠가, 다른 주문의 결제와 새 주문 INSERT 까지 멈춘다.
+		@UniqueConstraint(name = "uk_orders_merchant_uid", columnNames = "merchant_uid"),
+		// 결제 한 건은 주문 한 건에만 붙는다. 결제 PK 로 주문 찾기(OrderRepository.findByPaymentPkId)도 이 인덱스를 쓴다.
+		// MySQL 의 UNIQUE 는 NULL 을 여러 개 허용하므로 아직 결제가 붙지 않은 주문끼리는 부딪히지 않는다.
+		@UniqueConstraint(name = "uk_orders_payment_pk_id", columnNames = "payment_pk_id")
+	},
+	indexes = {
+		// 만료 스캔(OrderRepository.findIdsByStatusAndCreatedAtBefore). 같다 조건인 status 를 앞에, 범위 조건인 created_at 을
+		// 뒤에 둔다. 보조 인덱스에는 PK 가 함께 담겨 있어 id 만 읽는 이 조회는 인덱스만 읽고 끝난다.
+		@Index(name = "idx_orders_status_created_at", columnList = "status, created_at"),
+		// 할인 복구가 같은 쿠폰을 쥔 다른 주문이 있는지 본다(OrderRepository.existsByCouponIdAndStatusInAndIdNot).
+		@Index(name = "idx_orders_coupon_id", columnList = "coupon_id"),
+		// 탈퇴 때 그 사용자의 주문에서만 사용자 연결을 끊는다(OrderRepository.detachUser).
+		@Index(name = "idx_orders_user_id", columnList = "user_id")
+	}
+)
 @Entity
 @Getter
 @Slf4j
@@ -26,6 +51,7 @@ public class Order {
 	@Id
 	@GeneratedValue(strategy = GenerationType.IDENTITY)
 	private Long id;
+	@Column(nullable = false)
 	private String merchantUid;
 	private String paymentId; // Payment 엔티티의 id
 
