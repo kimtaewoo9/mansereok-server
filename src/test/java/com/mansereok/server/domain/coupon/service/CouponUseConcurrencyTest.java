@@ -1,6 +1,5 @@
 package com.mansereok.server.domain.coupon.service;
 
-import static java.util.stream.Collectors.joining;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.mansereok.server.domain.coupon.repository.CouponRepository;
@@ -93,7 +92,7 @@ class CouponUseConcurrencyTest extends PaymentMySqlTest {
 			() -> paymentOrderService.createOrder(username, request));
 
 		// then: 요청마다 결과를 확인한다
-		String resultsPerRequest = describe(results);
+		String resultsPerRequest = ConcurrentCalls.describe(results);
 		assertThat(results).filteredOn(CallResult::succeeded)
 			.as("주문을 만든 요청. %s", resultsPerRequest)
 			.singleElement()
@@ -123,7 +122,7 @@ class CouponUseConcurrencyTest extends PaymentMySqlTest {
 		});
 
 		// then
-		String resultsPerRequest = describe(results);
+		String resultsPerRequest = ConcurrentCalls.describe(results);
 		assertThat(results).filteredOn(CallResult::succeeded)
 			.as("사용 처리한 요청. %s", resultsPerRequest)
 			.hasSize(1);
@@ -146,13 +145,5 @@ class CouponUseConcurrencyTest extends PaymentMySqlTest {
 	private boolean couponIsUsed() {
 		return Boolean.TRUE.equals(
 			jdbcTemplate.queryForObject("SELECT is_used FROM coupons WHERE id = ?", Boolean.class, couponId));
-	}
-
-	/** 실패 메시지에 넣을 요청별 결과. 예: "요청별 결과 [성공, PaymentException(이미 사용한 쿠폰입니다.), ...]" */
-	private static String describe(List<? extends CallResult<?>> results) {
-		return results.stream()
-			.map(result -> result.succeeded() ? "성공"
-				: result.error().getClass().getSimpleName() + "(" + result.error().getMessage() + ")")
-			.collect(joining(", ", "요청별 결과 [", "]"));
 	}
 }
