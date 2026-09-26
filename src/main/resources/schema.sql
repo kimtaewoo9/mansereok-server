@@ -206,7 +206,7 @@ CREATE TABLE `orders` (
                           `buyer_email` VARCHAR(255),
                           `amount` INT NOT NULL,
     -- OrderStatus 의 값을 모두 적는다. 원래 있던 네 값 뒤에 나중에 생긴 두 값을 붙인다(ENUM 끝에 값을 붙이는 변경은 표를 다시 만들지
-    -- 않는다). ENUM 을 VARCHAR 로 바꾸는 일은 따로 다룬다.
+    -- 않는다).
                           `status` ENUM('PENDING', 'PAID', 'FAILED', 'CANCELLED', 'VIRTUAL_ACCOUNT_ISSUED', 'EXPIRED') NOT NULL DEFAULT 'PENDING',
                           `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
                           `paid_at` TIMESTAMP NULL DEFAULT NULL,
