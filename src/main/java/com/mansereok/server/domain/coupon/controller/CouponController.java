@@ -46,7 +46,7 @@ public class CouponController {
 		return ResponseEntity.ok().build();
 	}
 
-	// 3. 내 쿠폰함 조회 (결제 시 사용 가능 목록). 엔티티 대신 CouponResponse 로 내보낸다(JSON 키는 예전 엔티티 응답과 같다).
+	// 3. 내 쿠폰함 조회 (결제 시 사용 가능 목록)
 	@GetMapping("/api/coupons/my")
 	public ResponseEntity<List<CouponResponse>> getMyCoupons(
 		@AuthenticationPrincipal String username

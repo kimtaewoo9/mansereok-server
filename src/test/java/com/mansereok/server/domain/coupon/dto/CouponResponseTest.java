@@ -77,21 +77,21 @@ class CouponResponseTest {
 	}
 
 	@Test
-	@DisplayName("from 은 쿠폰의 모든 필드를 같은 이름으로 옮긴다")
+	@DisplayName("from 은 쿠폰의 모든 필드를 같은 이름으로 옮긴다(사용한 쿠폰이면 used 와 usedAt 도)")
 	void fromCopiesAllFields() {
-		// given
+		// given: 필드마다 기본값과 다른 값을 넣어, 한 필드라도 옮기지 않거나 다른 필드에서 옮기면 실패하게 한다
 		LocalDateTime expiresAt = LocalDateTime.of(2026, 10, 26, 12, 0);
+		LocalDateTime usedAt = LocalDateTime.of(2026, 9, 25, 18, 30);
 		Coupon coupon = CouponFixture.usableCoupon().id(7L).userId(USER_ID).name("신규가입 쿠폰")
 			.discountType(DiscountType.PERCENTAGE).discountValue(20).minPurchaseAmount(5000).expiresAt(expiresAt)
-			.build();
-		ReflectionTestUtils.setField(coupon, "templateId", 11L);
+			.usedAt(usedAt).templateId(11L).build();
 
 		// when
 		CouponResponse response = CouponResponse.from(coupon);
 
 		// then
 		assertThat(response).isEqualTo(new CouponResponse(7L, USER_ID, "신규가입 쿠폰", DiscountType.PERCENTAGE, 20,
-			5000, expiresAt, false, null, 11L));
+			5000, expiresAt, true, usedAt, 11L));
 	}
 
 	@Test

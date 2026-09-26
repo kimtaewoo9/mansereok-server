@@ -3,8 +3,8 @@ package com.mansereok.server.domain.discount.entity;
 /**
  * 할인 종류. 종류마다 원래 금액에서 얼마를 빼는지를 스스로 정한다.
  *
- * <p>할인액 계산을 상수마다 두어, 새 종류를 더하면서 계산을 빠뜨리면 컴파일이 되지 않는다. 할인액을 뺀 뒤의 절삭·최소 결제 금액·
- * 원래 금액 상한은 {@link DiscountPolicy} 가 정한다.
+ * <p>할인액 계산을 상수마다 두어, 새 종류를 더하면서 계산을 빠뜨리면 컴파일이 되지 않는다. 할인액을 뺀 뒤의 절삭·최소 결제 금액과,
+ * 할인으로 싸지지 않을 때의 거절은 {@link DiscountPolicy} 가 정한다.
  */
 public enum DiscountType {
 

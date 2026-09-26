@@ -434,6 +434,57 @@ class PaymentOrderServiceTest {
 		verifyNoInteractions(resultService, eventPublisher, discountCodeService);
 	}
 
+	@Test
+	@DisplayName("0원 상품에 정액 쿠폰을 넣어 무료 발급을 요청하면 할인이 없어 거절되고 쿠폰은 미사용으로 남으며 주문·Payment·Result 도 남지 않는다")
+	void redeemFreeProduct_freeProductWithCoupon_isRejectedAndKeepsCouponUnused() {
+		// given
+		Long couponId = 8L;
+		given(userRepository.findByUsername(USERNAME)).willReturn(Optional.of(createUser()));
+		SubCategory freeProduct = SubCategoryFixture.freeProduct().id(SUB_CATEGORY_ID).build();
+		given(subCategoryRepository.findById(SUB_CATEGORY_ID)).willReturn(Optional.of(freeProduct));
+		Coupon coupon = CouponFixture.fixedAmount(3000).id(couponId).userId(USER_ID).build();
+		given(couponRepository.findByIdWithLock(couponId)).willReturn(Optional.of(coupon));
+
+		OrderCreateRequest request = new OrderCreateRequest();
+		request.setSubCategoryId(SUB_CATEGORY_ID);
+		request.setCouponId(couponId);
+
+		// when & then
+		assertThatThrownBy(() -> paymentOrderService.redeemFreeProduct(USERNAME, request))
+			.isInstanceOf(PaymentException.class)
+			.hasMessage("할인을 적용해도 결제 금액이 줄지 않는 상품입니다.");
+
+		assertThat(coupon.isUsed()).as("쿠폰 사용 여부").isFalse();
+		verify(orderRepository, never()).save(any(Order.class));
+		verify(paymentRepository, never()).save(any(Payment.class));
+		verifyNoInteractions(resultService, eventPublisher, discountCodeService);
+	}
+
+	@Test
+	@DisplayName("1,000원보다 싼 상품에 쿠폰을 넣어 주문하면 할인이 없어 거절되고 쿠폰은 미사용으로 남으며 주문도 저장되지 않는다")
+	void createOrder_cheapProductWithCoupon_isRejectedAndKeepsCouponUnused() {
+		// given
+		Long couponId = 9L;
+		given(userRepository.findByUsername(USERNAME)).willReturn(Optional.of(createUser()));
+		SubCategory cheapProduct = SubCategoryFixture.paidProduct().id(SUB_CATEGORY_ID).price(500).build();
+		given(subCategoryRepository.findById(SUB_CATEGORY_ID)).willReturn(Optional.of(cheapProduct));
+		Coupon coupon = CouponFixture.fixedAmount(3000).id(couponId).userId(USER_ID).build();
+		given(couponRepository.findByIdWithLock(couponId)).willReturn(Optional.of(coupon));
+
+		OrderCreateRequest request = new OrderCreateRequest();
+		request.setSubCategoryId(SUB_CATEGORY_ID);
+		request.setCouponId(couponId);
+
+		// when & then
+		assertThatThrownBy(() -> paymentOrderService.createOrder(USERNAME, request))
+			.isInstanceOf(PaymentException.class)
+			.hasMessage("할인을 적용해도 결제 금액이 줄지 않는 상품입니다.");
+
+		assertThat(coupon.isUsed()).as("쿠폰 사용 여부").isFalse();
+		verify(orderRepository, never()).save(any(Order.class));
+		verifyNoInteractions(discountCodeService);
+	}
+
 	// ===== createFreeOrder =====
 
 	@Test

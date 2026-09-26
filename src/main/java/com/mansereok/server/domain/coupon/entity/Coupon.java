@@ -76,10 +76,10 @@ public class Coupon {
 	}
 
 	/**
-	 * 원래 금액에 이 쿠폰의 할인을 적용한 결제 금액. 계산 규칙은 할인 코드와 같고({@link DiscountPolicy}), 100% 정률 쿠폰도 최소 결제
-	 * 금액(1,000원)을 받는다.
+	 * 원래 금액에 이 쿠폰의 할인을 적용한 결제 금액. 계산 규칙은 할인 코드와 같고({@link DiscountPolicy}), 100% 정률 쿠폰도 다른
+	 * 할인처럼 최소 결제 금액(1,000원)을 받는다. 그래서 1,000원 이하 상품에는 어떤 쿠폰도 쓸 수 없다.
 	 *
-	 * @throws PaymentException 원래 금액이 최소 주문 금액보다 적을 때
+	 * @throws PaymentException 원래 금액이 최소 주문 금액보다 적을 때, 할인을 적용해도 결제 금액이 원래 금액보다 싸지 않을 때
 	 */
 	public int applyDiscount(int originalAmount) {
 		return DiscountPolicy.FULL_PERCENTAGE_PAYS_MINIMUM.discountedAmount(originalAmount, this.discountType,

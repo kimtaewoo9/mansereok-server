@@ -67,7 +67,7 @@ public class DiscountCode {
 	 * 원래 금액에 이 코드의 할인을 적용한 결제 금액. 계산 규칙은 쿠폰과 같고({@link DiscountPolicy}), 100% 정률 할인만 0원(무료)이
 	 * 된다.
 	 *
-	 * @throws PaymentException 원래 금액이 최소 주문 금액보다 적을 때
+	 * @throws PaymentException 원래 금액이 최소 주문 금액보다 적을 때, 할인을 적용해도 결제 금액이 원래 금액보다 싸지 않을 때
 	 */
 	public int applyDiscount(int originalAmount) {
 		return DiscountPolicy.FULL_PERCENTAGE_IS_FREE.discountedAmount(originalAmount, this.discountType,
