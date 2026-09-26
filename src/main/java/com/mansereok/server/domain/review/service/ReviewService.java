@@ -11,6 +11,7 @@ import com.mansereok.server.domain.user.entity.Role;
 import com.mansereok.server.domain.user.entity.User;
 import com.mansereok.server.domain.user.service.UserService;
 import com.mansereok.server.global.exception.ReviewNotAllowedException;
+import com.mansereok.server.global.exception.UniqueConstraintViolations;
 import jakarta.persistence.EntityNotFoundException;
 import java.time.Clock;
 import java.time.LocalDate;
@@ -19,6 +20,7 @@ import java.util.Optional;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
@@ -38,9 +40,6 @@ public class ReviewService {
 	private final UserService userService; //
 	private final Clock clock;
 
-	private static final int MIN_CONTENT_LENGTH = 20; // 최소 20자 ..
-
-
 	public List<ReviewResponse> getReviewsBySubCategory(Long subCategoryId) {
 		List<Review> reviews = reviewRepository.findReviewsBySubCategory(
 			subCategoryId);
@@ -56,14 +55,15 @@ public class ReviewService {
 			.collect(Collectors.toList());
 	}
 
+	/**
+	 * 회원이 주문 하나로 리뷰를 쓴다. 본문 길이는 요청 검증과 {@link Review#write} 가 본다.
+	 *
+	 * @throws ReviewNotAllowedException 이 주문으로 리뷰를 쓸 수 없을 때. 같은 주문으로 동시에 들어온 요청이 먼저 저장했으면
+	 *                                   ALREADY_WRITTEN(409) 이다.
+	 */
 	@Transactional
 	public ReviewResponse createReview(String username, ReviewCreateRequest request) {
 		User user = userService.findByUsername(username);
-
-		// 길이 체크
-		if (request.getContent().length() < MIN_CONTENT_LENGTH) {
-			throw new IllegalArgumentException("리뷰 내용은 최소 " + MIN_CONTENT_LENGTH + "자 이상이어야 합니다.");
-		}
 
 		// 자격 조회 API 와 같은 규칙으로 판단하고, 쓸 수 없으면 그 이유로 거절한다.
 		Order order = orderRepository.findById(request.getOrderId())
@@ -72,29 +72,26 @@ public class ReviewService {
 			throw new ReviewNotAllowedException(reason);
 		});
 
-		// --- 리뷰 저장 (찾은 Order ID 사용) ---
-		Review newReview = Review.create(
-			user.getId(),
-			request.getSubCategoryId(),
-			order.getId(),
-			request.getContent(),
-			user.getName(),
-			user.getEmail()
-		);
-		Review savedReview = reviewRepository.save(newReview);
-
-		// TODO: 리뷰 작성 보상 지급
-//		try {
-//			DiscountCode rewardCode = discountCodeService.createReviewRewardCode(user.getId(), REWARD_DISCOUNT_AMOUNT);
-//
-//			// 사용자에게 이메일로 알림 (EmailService에 메서드 추가 가정)
-//			emailService.sendReviewRewardEmail(user.getEmail(), user.getName(), rewardCode.getCode(), REWARD_DISCOUNT_AMOUNT);
-//
-//		} catch (Exception e) {
-//			log.error("리뷰 보상 지급 또는 이메일 전송 실패: userId={}, Error: {}", user.getId(), e.getMessage(), e);
-//		}
-
+		Review savedReview = saveNewReview(Review.write(user, order, request.getContent()));
 		return ReviewResponse.from(savedReview);
+	}
+
+	/**
+	 * 새 리뷰를 INSERT 하고 바로 DB 에 보낸다. 이미 쓴 리뷰가 있는지는 앞에서 잠금 없이 확인하므로, 같은 주문으로 동시에 들어온 두
+	 * 요청이 둘 다 그 확인을 지나칠 수 있다. 그때는 reviews 의 UNIQUE(uk_reviews_order_id)가 두 번째 INSERT 를 막는다.
+	 *
+	 * <p>UNIQUE 위반일 때만 ALREADY_WRITTEN 으로 바꿔 409 가 되게 하고, NOT NULL·길이 초과처럼 다른 위반은 그대로 던진다. 잡은 뒤
+	 * 정상으로 돌아가면 안 된다. 저장소 호출이 이미 트랜잭션을 롤백하기로 표시해 두어, 커밋할 때 UnexpectedRollbackException 이 난다.
+	 */
+	private Review saveNewReview(Review review) {
+		try {
+			return reviewRepository.saveAndFlush(review);
+		} catch (DataIntegrityViolationException e) {
+			if (UniqueConstraintViolations.isUniqueViolation(e)) {
+				throw new ReviewNotAllowedException(RejectionReason.ALREADY_WRITTEN, e);
+			}
+			throw e;
+		}
 	}
 
 	/**

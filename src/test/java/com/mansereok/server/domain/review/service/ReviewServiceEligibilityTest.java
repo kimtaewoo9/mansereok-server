@@ -154,7 +154,7 @@ class ReviewServiceEligibilityTest {
 				.isInstanceOfSatisfying(ReviewNotAllowedException.class,
 					e -> assertThat(e.getReason()).isEqualTo(expected))
 				.hasMessage(expected.getMessage());
-			then(reviewRepository).should(never()).save(any());
+			then(reviewRepository).should(never()).saveAndFlush(any());
 		}
 	}
 
@@ -183,14 +183,14 @@ class ReviewServiceEligibilityTest {
 		void createReviewSaves(String situation, Order order) {
 			// given
 			givenOrderLookup(order, false);
-			given(reviewRepository.save(any(Review.class))).willAnswer(invocation -> invocation.getArgument(0));
+			given(reviewRepository.saveAndFlush(any(Review.class))).willAnswer(invocation -> invocation.getArgument(0));
 
 			// when
 			reviewService.createReview("writer", request());
 
 			// then
 			ArgumentCaptor<Review> saved = ArgumentCaptor.forClass(Review.class);
-			then(reviewRepository).should().save(saved.capture());
+			then(reviewRepository).should().saveAndFlush(saved.capture());
 			assertThat(saved.getValue())
 				.extracting(Review::getUserId, Review::getSubCategoryId, Review::getOrderId, Review::getContent)
 				.containsExactly(WRITER_ID, PRODUCT_ID, ORDER_ID, CONTENT);
