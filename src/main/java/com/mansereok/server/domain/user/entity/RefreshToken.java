@@ -10,21 +10,18 @@ import jakarta.persistence.Index;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
+import java.time.Duration;
 import java.time.LocalDateTime;
+import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
-import lombok.Setter;
 
 // 인덱스 이름을 고정해 엔티티, schema.sql, 운영 DB 가 같은 이름을 쓰게 한다. 운영은 ddl-auto: validate 라 인덱스를 검사하지
 // 않으므로, 바꿀 때는 운영 DDL 과 schema.sql 을 함께 고친다.
-//
-// 아래 두 인덱스는 아직 쓰는 코드가 없다. deleteExpiredTokens 를 부르는 cleanupExpiredTokens 는 부르는 곳이 없고, used_at 을
-// 채우는 markAsUsed 도 부르는 곳이 없어 used_at 은 늘 NULL 이다. 만료·사용한 토큰을 지우는 정리 작업(RefreshTokenCleanupScheduler)이
-// 들어올 때 쓰려고, 인증 표의 운영 DDL 을 한 번에 적용하도록 미리 건다. 그 전까지는 토큰을 쓸 때 인덱스를 고치는 비용만 든다.
 @Table(
 	name = "refresh_tokens",
 	indexes = {
-		// 정리 작업이 만료 시각이 지난 토큰을 찾을 때 쓴다. 없으면 지울 때마다 표 전체를 훑고 잠근다.
+		// 정리 작업(RefreshTokenCleanupScheduler)이 만료 시각이 지난 토큰을 찾을 때 쓴다. 없으면 지울 때마다 표 전체를 훑고 잠근다.
 		@Index(name = "idx_refresh_tokens_expires_at", columnList = "expires_at"),
 		// 정리 작업이 새 토큰으로 바꾼(쓴) 지 오래된 토큰을 쓴 시각으로 찾을 때 쓴다.
 		@Index(name = "idx_refresh_tokens_used_at", columnList = "used_at")
@@ -32,8 +29,7 @@ import lombok.Setter;
 )
 @Entity
 @Getter
-@Setter
-@NoArgsConstructor
+@NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class RefreshToken {
 
 	// 세션과의 차이
@@ -46,7 +42,7 @@ public class RefreshToken {
 	private Long id;
 
 	@Column(unique = true, nullable = false, length = 500)
-	private String token; //
+	private String token;
 
 	@ManyToOne(fetch = FetchType.LAZY)
 	@JoinColumn(name = "user_id", nullable = false)
@@ -58,31 +54,40 @@ public class RefreshToken {
 	@Column(name = "created_at")
 	private LocalDateTime createdAt;
 
+	// 이 토큰으로 새 토큰을 받은(쓴) 시각. 재발급의 조건부 UPDATE(RefreshTokenRepository.markUsedIfUsable)만 채운다.
 	@Column(name = "used_at")
 	private LocalDateTime usedAt;
 
+	// 로그아웃·비밀번호 재설정으로 폐기됐는지. RefreshTokenRepository 의 UPDATE 문만 바꾼다.
 	@Column(nullable = false)
-	private boolean revoked = false; // 토큰 무효화 여부 .
+	private boolean revoked = false;
 
-	// 생성자
-	public RefreshToken(String token, User user, LocalDateTime expiresAt) {
-		this.token = token;
-		this.user = user;
-		this.expiresAt = expiresAt;
-		this.createdAt = LocalDateTime.now();
+	/**
+	 * 회원에게 줄 새 토큰을 만든다. now 부터 lifetime 동안 쓸 수 있다.
+	 *
+	 * @param now 지금 시각. 호출하는 쪽이 주입받은 Clock 으로 구한다.
+	 */
+	public static RefreshToken issue(String token, User user, LocalDateTime now, Duration lifetime) {
+		RefreshToken refreshToken = new RefreshToken();
+		refreshToken.token = token;
+		refreshToken.user = user;
+		refreshToken.createdAt = now;
+		refreshToken.expiresAt = now.plus(lifetime);
+		return refreshToken;
 	}
 
 	/**
-	 * Refresh Token이 만료되었는지 확인한다.
+	 * now 가 만료 시각과 같거나 지났으면 만료로 본다. 재발급의 조건부 UPDATE 도 "만료 시각 &gt; now" 인 행만 고치므로 두 판단의 경계가
+	 * 같다.
 	 */
-	public boolean isExpired() {
-		return LocalDateTime.now().isAfter(expiresAt);
+	public boolean isExpiredAt(LocalDateTime now) {
+		return !now.isBefore(expiresAt);
 	}
 
 	/**
-	 * Refresh Token이 유효한지 확인한다. 만료되지 않았고 무효화되지 않은 경우에만 유효
+	 * 이미 새 토큰으로 바꾼 토큰이고, 바꾼 시각부터 now 까지 grace 를 넘지 않았는지. 경계(정확히 grace 가 지난 순간)는 넘지 않은 쪽이다.
 	 */
-	public boolean isValid() {
-		return !revoked && !isExpired();
+	public boolean wasUsedWithin(Duration grace, LocalDateTime now) {
+		return usedAt != null && !now.isAfter(usedAt.plus(grace));
 	}
 }

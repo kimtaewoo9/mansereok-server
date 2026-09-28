@@ -7,10 +7,10 @@ import com.mansereok.server.domain.auth.dto.request.RegisterRequest;
 import com.mansereok.server.domain.auth.dto.response.TokenRefreshResponse;
 import com.mansereok.server.domain.auth.dto.response.TokenRefreshResponse.UserDto;
 import com.mansereok.server.domain.auth.util.JwtUtil;
-import com.mansereok.server.domain.user.entity.RefreshToken;
 import com.mansereok.server.domain.user.entity.User;
 import com.mansereok.server.domain.user.service.CustomUserDetailsService;
 import com.mansereok.server.domain.user.service.RefreshTokenService;
+import com.mansereok.server.domain.user.service.RotatedRefreshToken;
 import com.mansereok.server.domain.user.service.UserService;
 import com.mansereok.server.global.exception.InvalidRefreshTokenException;
 import jakarta.servlet.http.Cookie;
@@ -94,9 +94,10 @@ public class AuthController {
 			)
 		);
 
-		RefreshToken refreshToken = refreshTokenService.generateRefreshToken(user);
+		// 이 기기의 토큰만 새로 넣는다. 다른 기기에서 받은 토큰은 그대로 쓸 수 있다.
+		String refreshToken = refreshTokenService.issue(user);
 
-		Cookie refreshCookie = new Cookie("REFRESH_TOKEN", refreshToken.getToken());
+		Cookie refreshCookie = new Cookie("REFRESH_TOKEN", refreshToken);
 		refreshCookie.setHttpOnly(true);
 		refreshCookie.setSecure(true);
 		refreshCookie.setPath("/");
@@ -137,27 +138,14 @@ public class AuthController {
 		@CookieValue(value = "REFRESH_TOKEN", required = false) String token,
 		HttpServletResponse response
 	) {
-		// 1. 토큰이 없는 경우
 		if (token == null || token.isBlank()) {
 			throw new InvalidRefreshTokenException("인증 정보가 없습니다.");
 		}
 
-		// 2. 토큰은 있지만 DB에서 만료된 경우
-		RefreshToken refreshToken = refreshTokenService.findByToken(token)
-			.orElseThrow(() -> new InvalidRefreshTokenException("유효하지 않은 리프레시 토큰입니다."));
-
-		if (!refreshToken.isValid()) {
-			// 쿠키 삭제
-			Cookie deleteCookie = new Cookie("REFRESH_TOKEN", "");
-			deleteCookie.setMaxAge(0);
-			deleteCookie.setPath("/");
-			deleteCookie.setHttpOnly(true);
-			response.addCookie(deleteCookie);
-
-			throw new InvalidRefreshTokenException("세션이 만료되었습니다.");
-		}
-
-		User user = refreshToken.getUser();
+		// 쿠키의 토큰 하나만 새 토큰으로 바꾼다(토큰 회전). 같은 회원이 다른 기기에서 받은 토큰은 건드리지 않는다.
+		// 없거나 폐기·만료·재사용된 토큰이면 사유를 담은 InvalidRefreshTokenException(401)이 난다.
+		RotatedRefreshToken rotated = refreshTokenService.rotate(token);
+		User user = rotated.user();
 
 		// 새로운 Access Token 생성
 		Map<String, Object> claims = new java.util.HashMap<>();
@@ -169,12 +157,8 @@ public class AuthController {
 
 		String newAccessToken = jwtUtil.generateAccessToken(user.getUsername(), claims);
 
-		// 새로운 refresh token 생성 ..(토큰 회전)
-		// 기존 토큰은 그대로 유지하여 여러 기기에서 동시 로그인이 가능하도록 합니다.
-		RefreshToken newRefreshToken = refreshTokenService.generateRefreshToken(user);
-
 		// refresh 토큰은 쿠키에 저장해서 전달 .
-		Cookie refreshCookie = new Cookie("REFRESH_TOKEN", newRefreshToken.getToken());
+		Cookie refreshCookie = new Cookie("REFRESH_TOKEN", rotated.token());
 		refreshCookie.setHttpOnly(true);
 		refreshCookie.setSecure(true); // HTTPS 환경에서만
 
@@ -204,9 +188,8 @@ public class AuthController {
 		HttpServletRequest request,
 		HttpServletResponse response
 	) {
-		if (token != null) {
-			refreshTokenService.findByToken(token)
-				.ifPresent(refreshTokenService::revokeToken);
+		if (token != null && !token.isBlank()) {
+			refreshTokenService.revoke(token);
 		}
 
 		Cookie cookie = new Cookie("REFRESH_TOKEN", "");

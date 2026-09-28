@@ -57,8 +57,8 @@ import org.springframework.transaction.support.TransactionTemplate;
  *   폐기된다. 확인이 만료 직전의 옛 토큰을 읽은 뒤 재요청이 토큰 값을 바꾸면 옛 토큰으로는 바꾸지 못한다.</li>
  *   <li>사용자 행을 읽고 이름만 바꾼 트랜잭션이 재설정보다 늦게 커밋해도 새 비밀번호가 되돌아가지 않는다(User 의 바뀐 컬럼만 쓰는
  *   UPDATE).</li>
- *   <li>재설정 확인·요청, 탈퇴, 로그인이 같은 회원의 행을 두고 겹쳐도 잠그는 순서(리프레시 토큰 → users → 재설정 토큰, UserService
- *   클래스 설명)가 같아 교착 없이 한쪽이 다른 쪽의 커밋을 기다린다. 한쪽 트랜잭션을 커밋 직전에 멈춰 잠금을 쥐게 하고, 다른 쪽이
+ *   <li>재설정 확인·요청, 탈퇴, 토큰 재발급이 같은 회원의 행을 두고 겹쳐도 잠그는 순서(리프레시 토큰 → users → 재설정 토큰,
+ *   UserService 클래스 설명)가 같아 교착 없이 한쪽이 다른 쪽의 커밋을 기다린다. 한쪽 트랜잭션을 잠금을 쥔 채 멈추게 하고, 다른 쪽이
  *   잠금을 기다리기 시작한 것을 performance_schema 로 확인한 뒤 풀어 준다.</li>
  *   <li>리프레시 토큰이 하나도 없는 회원이면 순서만으로는 교착을 막지 못한다. 재설정 확인·탈퇴가 리프레시 토큰을 다룬 뒤 users 행을
  *   잠그기 전에 로그인이 새 토큰을 넣어도, 확인·탈퇴가 READ COMMITTED 라 0행을 다룬 문장이 틈 잠금을 걸지 않아 교착 없이 둘 다
@@ -396,45 +396,45 @@ class PasswordResetMySqlTest extends LocalMySqlTest {
 	}
 
 	@Test
-	@DisplayName("로그인이 리프레시 토큰을 지우고 새 토큰을 넣기 전에 재설정 확인이 오면, 교착 없이 로그인이 먼저 커밋되고 확인은 로그인이 넣은 리프레시 토큰까지 폐기한다")
-	void confirmWhileLoginReplacesRefreshTokenRevokesNewToken() throws Exception {
+	@DisplayName("재발급이 쓴 리프레시 토큰을 표시하고 새 토큰을 넣기 전에 재설정 확인이 오면, 교착 없이 재발급이 먼저 커밋되고 확인은 쓴 토큰과 재발급이 넣은 새 토큰을 모두 폐기한다")
+	void confirmWhileRotationHoldsUsedTokenRevokesNewToken() throws Exception {
 		// given: 메일로 받은 토큰과, 전에 로그인해 받은 리프레시 토큰
 		userService.requestPasswordReset(email);
 		String token = storedToken();
-		saveRefreshToken("reset-refresh-old-" + runId);
-		CountDownLatch oldRefreshTokensDeleted = new CountDownLatch(1);
-		CountDownLatch releaseLogin = new CountDownLatch(1);
+		String usedRefreshToken = "reset-refresh-old-" + runId;
+		saveRefreshToken(usedRefreshToken);
+		CountDownLatch usedTokenMarked = new CountDownLatch(1);
+		CountDownLatch releaseRotation = new CountDownLatch(1);
+		// 재발급이 쓴 토큰을 조건부 UPDATE 로 표시한 직후(그 행을 잠근 채), 새 토큰을 넣기 전에 멈춘다. 새 토큰을 넣을 때 외래 키
+		// 확인으로 users 행을 공유 잠금한다.
+		willAnswer(invocation -> {
+			Object result = callRealRepository(invocation);
+			usedTokenMarked.countDown();
+			waitUpToTenSeconds(releaseRotation);
+			return result;
+		}).given(refreshTokenRepository).markUsedIfUsable(eq(usedRefreshToken), any());
 
+		String newRefreshToken;
 		ExecutorService executor = Executors.newFixedThreadPool(2);
 		try {
-			// 로그인·토큰 재발급(RefreshTokenService.generateRefreshToken)과 같은 모양의 트랜잭션: 회원의 리프레시 토큰을 지운 뒤
-			// 멈췄다가 새 토큰을 넣는다. 넣을 때 외래 키 확인으로 users 행을 공유 잠금한다.
-			Future<?> login = executor.submit(() -> new TransactionTemplate(transactionManager)
-				.executeWithoutResult(status -> {
-					User member = userRepository.findById(userId).orElseThrow();
-					refreshTokenRepository.deleteByUser(member);
-					oldRefreshTokensDeleted.countDown();
-					waitUpToTenSeconds(releaseLogin);
-					refreshTokenRepository.save(new RefreshToken("reset-refresh-new-" + runId, member,
-						LocalDateTime.now().plusDays(7)));
-				}));
-			assertThat(oldRefreshTokensDeleted.await(10, SECONDS)).as("로그인이 옛 리프레시 토큰을 지우고 멈췄다").isTrue();
+			Future<RotatedRefreshToken> rotation = executor.submit(() -> refreshTokenService.rotate(usedRefreshToken));
+			assertThat(usedTokenMarked.await(10, SECONDS)).as("재발급이 쓴 토큰을 표시하고 멈췄다").isTrue();
 
 			// when
 			Future<?> confirm = executor.submit(() -> userService.resetPassword(token, "new-password"));
 			await().atMost(Duration.ofSeconds(10)).until(() -> confirm.isDone() || rowLockWaitsInThisSchema() > 0);
-			releaseLogin.countDown();
-			login.get(10, SECONDS);
+			releaseRotation.countDown();
+			newRefreshToken = rotation.get(10, SECONDS).token();
 			confirm.get(10, SECONDS);
 		} finally {
-			releaseLogin.countDown();
+			releaseRotation.countDown();
 			executor.shutdownNow();
 		}
 
 		// then
 		assertThat(passwordEncoder.matches("new-password", storedPasswordHash())).as("확인이 바꾼 비밀번호").isTrue();
 		assertThat(jdbcTemplate.queryForList("SELECT token FROM refresh_tokens WHERE user_id = ? AND revoked = true",
-			String.class, userId)).as("폐기된 리프레시 토큰").containsExactly("reset-refresh-new-" + runId);
+			String.class, userId)).as("폐기된 리프레시 토큰").containsExactlyInAnyOrder(usedRefreshToken, newRefreshToken);
 		assertThat(countRowsOfMember("SELECT COUNT(*) FROM refresh_tokens WHERE user_id = ? AND revoked = false"))
 			.as("폐기되지 않은 리프레시 토큰").isZero();
 	}
@@ -489,7 +489,7 @@ class PasswordResetMySqlTest extends LocalMySqlTest {
 		CountDownLatch withdrawalDeletedRefreshTokens = new CountDownLatch(1);
 		CountDownLatch releaseWithdrawal = new CountDownLatch(1);
 		AtomicBoolean firstDelete = new AtomicBoolean(true);
-		// 탈퇴가 리프레시 토큰을 처음 지운 직후, users 행을 잠그기 전에 멈춘다. 로그인의 삭제와 탈퇴의 두 번째 삭제는 멈추지 않는다.
+		// 탈퇴가 리프레시 토큰을 처음 지운 직후, users 행을 잠그기 전에 멈춘다. 탈퇴의 두 번째 삭제는 멈추지 않는다.
 		willAnswer(invocation -> {
 			Object result = callRealRepository(invocation);
 			if (firstDelete.compareAndSet(true, false)) {
@@ -522,12 +522,12 @@ class PasswordResetMySqlTest extends LocalMySqlTest {
 	}
 
 	/**
-	 * 로그인·토큰 재발급이 쓰는 RefreshTokenService.generateRefreshToken 을 제 트랜잭션으로 부른다. 회원의 리프레시 토큰을 지운 뒤
-	 * 새 토큰을 넣고, 넣을 때 외래 키 확인으로 users 행을 공유 잠금한다.
+	 * 로그인이 쓰는 RefreshTokenService.issue 를 제 트랜잭션으로 부른다. 새 토큰을 넣고, 넣을 때 외래 키 확인으로 users 행을 공유
+	 * 잠금한다.
 	 */
 	private String loginAndGetRefreshToken() {
 		User member = userRepository.findById(userId).orElseThrow();
-		return refreshTokenService.generateRefreshToken(member).getToken();
+		return refreshTokenService.issue(member);
 	}
 
 	/**
@@ -577,7 +577,7 @@ class PasswordResetMySqlTest extends LocalMySqlTest {
 
 	private void saveRefreshToken(String value) {
 		User member = userRepository.findById(userId).orElseThrow();
-		refreshTokenRepository.save(new RefreshToken(value, member, LocalDateTime.now().plusDays(7)));
+		refreshTokenRepository.save(RefreshToken.issue(value, member, LocalDateTime.now(), Duration.ofDays(7)));
 	}
 
 	/**
