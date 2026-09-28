@@ -13,6 +13,8 @@ public final class SubCategoryFixture {
 
 	private Long id = 1L;
 	private String title = "인생 총운";
+	private String description;
+	private String icon;
 	private Integer price = 10000;
 	private Long categoryId = 1L;
 
@@ -39,8 +41,23 @@ public final class SubCategoryFixture {
 		return this;
 	}
 
+	public SubCategoryFixture description(String description) {
+		this.description = description;
+		return this;
+	}
+
+	public SubCategoryFixture icon(String icon) {
+		this.icon = icon;
+		return this;
+	}
+
 	public SubCategoryFixture price(Integer price) {
 		this.price = price;
+		return this;
+	}
+
+	public SubCategoryFixture categoryId(Long categoryId) {
+		this.categoryId = categoryId;
 		return this;
 	}
 
@@ -54,6 +71,8 @@ public final class SubCategoryFixture {
 		SubCategory subCategory = BeanUtils.instantiateClass(SubCategory.class);
 		ReflectionTestUtils.setField(subCategory, "id", id);
 		ReflectionTestUtils.setField(subCategory, "title", title);
+		ReflectionTestUtils.setField(subCategory, "description", description);
+		ReflectionTestUtils.setField(subCategory, "icon", icon);
 		ReflectionTestUtils.setField(subCategory, "price", price);
 		ReflectionTestUtils.setField(subCategory, "categoryId", categoryId);
 		return subCategory;
