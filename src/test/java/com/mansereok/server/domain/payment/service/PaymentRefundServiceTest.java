@@ -58,7 +58,8 @@ class PaymentRefundServiceTest {
 	private static final String USERNAME = "testUser";
 	private static final Long USER_ID = 1L;
 	private static final Long OTHER_USER_ID = 2L;
-	private static final Long SUB_CATEGORY_ID = 1L;
+	// USER_ID 와 다른 값으로 둔다. 같으면 코드가 사용자 id 자리에 상품 id 를 넘기거나 읽어도 테스트가 알아채지 못한다.
+	private static final Long SUB_CATEGORY_ID = 3L;
 	private static final Long ORDER_ID = 10L;
 	private static final Long PAYMENT_PK_ID = 100L;
 	private static final String MERCHANT_UID = "order_test_001";

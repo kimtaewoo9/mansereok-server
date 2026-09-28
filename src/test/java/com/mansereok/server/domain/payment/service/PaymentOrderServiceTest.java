@@ -5,15 +5,18 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.atLeastOnce;
-import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 
+import com.mansereok.server.domain.coupon.entity.Coupon;
+import com.mansereok.server.domain.coupon.repository.CouponRepository;
+import com.mansereok.server.domain.coupon.repository.CouponTemplateRepository;
 import com.mansereok.server.domain.coupon.service.CouponService;
 import com.mansereok.server.domain.discount.entity.DiscountCode;
+import com.mansereok.server.domain.discount.entity.DiscountType;
 import com.mansereok.server.domain.discount.service.DiscountCodeService;
 import com.mansereok.server.domain.discount.service.DiscountCodeService.DiscountValidationResult;
 import com.mansereok.server.domain.interpret.service.ResultService;
@@ -33,6 +36,8 @@ import com.mansereok.server.domain.user.entity.Gender;
 import com.mansereok.server.domain.user.entity.User;
 import com.mansereok.server.domain.user.repository.UserRepository;
 import com.mansereok.server.global.exception.PaymentException;
+import com.mansereok.server.support.fixture.CouponFixture;
+import com.mansereok.server.support.fixture.SubCategoryFixture;
 import java.time.LocalDate;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
@@ -50,7 +55,11 @@ import org.springframework.test.util.ReflectionTestUtils;
  * 주문 생성·0원 발급(100% 할인 코드, 무료 이벤트) 검증.
  *
  * <p>PaidOrderFinalizer 는 mock 하지 않고 mock 리포지토리로 만든 실제 인스턴스를 넘겨 "주문이 PAID 가 되고
- * Payment 와 Result 가 만들어진다"를 계속 검증한다.
+ * Payment 와 Result 가 만들어진다"를 계속 검증한다. CouponService 도 mock 리포지토리로 만든 실제 인스턴스라, 쿠폰 할인가는
+ * 실제 쿠폰 계산(Coupon.applyDiscount)으로 정해지고 쿠폰 사용 여부는 쿠폰 상태로 확인한다.
+ *
+ * <p>USER_ID 와 SUB_CATEGORY_ID 는 서로 다른 값이다. 주문을 만들 때 사용자 id 와 상품 id 를 바꿔 넘기면 저장된 주문의
+ * 사용자·상품 단언이 실패한다.
  */
 @ExtendWith(MockitoExtension.class)
 class PaymentOrderServiceTest {
@@ -59,7 +68,7 @@ class PaymentOrderServiceTest {
 	private static final String BUYER_NAME = "김태우";
 	private static final String BUYER_EMAIL = "taewoo@example.com";
 	private static final Long USER_ID = 1L;
-	private static final Long SUB_CATEGORY_ID = 1L;
+	private static final Long SUB_CATEGORY_ID = 3L;
 	private static final Long ORDER_ID = 10L;
 	private static final Long PAYMENT_PK_ID = 100L;
 	private static final int PRICE = 10000;
@@ -79,7 +88,9 @@ class PaymentOrderServiceTest {
 	@Mock
 	private ResultService resultService;
 	@Mock
-	private CouponService couponService;
+	private CouponRepository couponRepository;
+	@Mock
+	private CouponTemplateRepository couponTemplateRepository;
 	@Mock
 	private FreeProductPolicy freeProductPolicy;
 	@Mock
@@ -96,7 +107,7 @@ class PaymentOrderServiceTest {
 			subCategoryRepository,
 			orderRepository,
 			discountCodeService,
-			couponService,
+			new CouponService(couponRepository, couponTemplateRepository),
 			paidOrderFinalizer,
 			freeProductPolicy,
 			new MerchantUidGenerator() // 접두사·형식 단언을 위해 실제 인스턴스를 쓴다
@@ -112,14 +123,9 @@ class PaymentOrderServiceTest {
 		return user;
 	}
 
-	private SubCategory mockSubCategory() {
-		// protected 생성자 대응. stub 이 들어있으므로 다른 given(...) 의 인자 안에서 호출하면 안 된다.
-		// 공용 픽스처라 호출 경로가 바뀌어도 strict stubs 에 걸리지 않도록 lenient 로 둔다.
-		SubCategory subCategory = mock(SubCategory.class);
-		lenient().when(subCategory.getPrice()).thenReturn(PRICE);
-		lenient().when(subCategory.getId()).thenReturn(SUB_CATEGORY_ID);
-		lenient().when(subCategory.getTitle()).thenReturn("인생 총운");
-		return subCategory;
+	/** PRICE 원짜리 "인생 총운" 상품. */
+	private SubCategory paidProduct() {
+		return SubCategoryFixture.paidProduct().id(SUB_CATEGORY_ID).title("인생 총운").price(PRICE).build();
 	}
 
 	private void givenOrderSaveReturnsArgument() {
@@ -149,11 +155,11 @@ class PaymentOrderServiceTest {
 	// ===== createOrder =====
 
 	@Test
-	@DisplayName("주문 생성 시 구매자 이름과 이메일이 Order 엔티티에 올바르게 저장되어야 한다")
-	void createOrder_ShouldSaveBuyerInfo() {
+	@DisplayName("주문 생성 시 주문한 사용자·상품 id 와 구매자 이름·이메일이 Order 엔티티에 저장된다")
+	void createOrder_savesOwnerProductAndBuyerInfo() {
 		// given
 		given(userRepository.findByUsername(USERNAME)).willReturn(Optional.of(createUser()));
-		SubCategory subCategory = mockSubCategory();
+		SubCategory subCategory = paidProduct();
 		given(subCategoryRepository.findById(SUB_CATEGORY_ID)).willReturn(
 			Optional.of(subCategory));
 		givenOrderSaveReturnsArgument();
@@ -172,14 +178,16 @@ class PaymentOrderServiceTest {
 
 		Order savedOrder = orderCaptor.getValue();
 
-		// 검증: Order 엔티티에 유저 정보(이름, 이메일)가 잘 박제되었는지 확인
+		// 검증: Order 엔티티에 주문한 사용자·상품과 유저 정보(이름, 이메일)가 잘 박제되었는지 확인
+		assertThat(savedOrder.getUserId()).isEqualTo(USER_ID);
+		assertThat(savedOrder.getSubCategoryId()).isEqualTo(SUB_CATEGORY_ID);
 		assertThat(savedOrder.getBuyerName()).isEqualTo(BUYER_NAME);
 		assertThat(savedOrder.getBuyerEmail()).isEqualTo(BUYER_EMAIL);
 		assertThat(savedOrder.getAmount()).isEqualTo(PRICE);
 		assertThat(savedOrder.getStatus()).isEqualTo(OrderStatus.PENDING);
 
-		// 할인 수단이 없으면 할인 코드/쿠폰 서비스는 호출되지 않는다
-		verifyNoInteractions(discountCodeService, couponService);
+		// 할인 수단이 없으면 할인 코드 서비스도 쿠폰 조회도 호출되지 않는다
+		verifyNoInteractions(discountCodeService, couponRepository);
 	}
 
 	@Test
@@ -187,7 +195,7 @@ class PaymentOrderServiceTest {
 	void createOrder_withDiscountCode_validatesAndSavesFinalAmount() {
 		// given
 		given(userRepository.findByUsername(USERNAME)).willReturn(Optional.of(createUser()));
-		SubCategory subCategory = mockSubCategory();
+		SubCategory subCategory = paidProduct();
 		given(subCategoryRepository.findById(SUB_CATEGORY_ID)).willReturn(
 			Optional.of(subCategory));
 		givenOrderSaveReturnsArgument();
@@ -216,22 +224,23 @@ class PaymentOrderServiceTest {
 		assertThat(response.getAmount()).isEqualTo(9000);
 
 		verify(discountCodeService).incrementUsage(discountCode);
-		verifyNoInteractions(couponService);
+		verifyNoInteractions(couponRepository);
 	}
 
 	@Test
-	@DisplayName("쿠폰 id 를 보낸 주문은 쿠폰 검증과 useCoupon 을 호출하고 할인 코드 서비스는 호출하지 않는다")
-	void createOrder_withCouponId_usesCouponServiceOnly() {
+	@DisplayName("쿠폰 id 를 보낸 주문은 쿠폰으로 계산한 금액으로 저장되고 그 쿠폰이 사용 처리되며 할인 코드 서비스는 호출하지 않는다")
+	void createOrder_withCouponId_savesCouponPriceAndMarksCouponUsed() {
 		// given
 		Long couponId = 5L;
 		given(userRepository.findByUsername(USERNAME)).willReturn(Optional.of(createUser()));
-		SubCategory subCategory = mockSubCategory();
+		SubCategory subCategory = paidProduct();
 		given(subCategoryRepository.findById(SUB_CATEGORY_ID)).willReturn(
 			Optional.of(subCategory));
 		givenOrderSaveReturnsArgument();
 
-		given(couponService.validateAndCalculateCoupon(couponId, USER_ID, PRICE))
-			.willReturn(new DiscountValidationResult(8000, "신규가입 쿠폰", null));
+		Coupon coupon = CouponFixture.fixedAmount(2000).id(couponId).userId(USER_ID).name("신규가입 쿠폰")
+			.build();
+		given(couponRepository.findByIdWithLock(couponId)).willReturn(Optional.of(coupon));
 
 		OrderCreateRequest request = new OrderCreateRequest();
 		request.setSubCategoryId(SUB_CATEGORY_ID);
@@ -250,7 +259,7 @@ class PaymentOrderServiceTest {
 		assertThat(savedOrder.getAppliedDiscountCode()).isEqualTo("신규가입 쿠폰");
 		assertThat(response.getAmount()).isEqualTo(8000);
 
-		verify(couponService).useCoupon(couponId);
+		assertThat(coupon.isUsed()).as("주문에 쓴 쿠폰의 사용 여부").isTrue();
 		verifyNoInteractions(discountCodeService);
 	}
 
@@ -259,7 +268,7 @@ class PaymentOrderServiceTest {
 	void createOrder_zeroFinalAmount_throwsAndSavesNothing() {
 		// given
 		given(userRepository.findByUsername(USERNAME)).willReturn(Optional.of(createUser()));
-		SubCategory subCategory = mockSubCategory();
+		SubCategory subCategory = paidProduct();
 		given(subCategoryRepository.findById(SUB_CATEGORY_ID)).willReturn(
 			Optional.of(subCategory));
 		DiscountCode discountCode = mock(DiscountCode.class);
@@ -278,7 +287,7 @@ class PaymentOrderServiceTest {
 
 		verify(orderRepository, never()).save(any(Order.class));
 		verify(discountCodeService, never()).incrementUsage(any());
-		verifyNoInteractions(couponService, paymentRepository, resultService);
+		verifyNoInteractions(couponRepository, paymentRepository, resultService);
 	}
 
 	@Test
@@ -286,7 +295,7 @@ class PaymentOrderServiceTest {
 	void createOrder_dbFailure_propagatesOriginalException() {
 		// given
 		given(userRepository.findByUsername(USERNAME)).willReturn(Optional.of(createUser()));
-		SubCategory subCategory = mockSubCategory();
+		SubCategory subCategory = paidProduct();
 		given(subCategoryRepository.findById(SUB_CATEGORY_ID)).willReturn(
 			Optional.of(subCategory));
 		given(orderRepository.save(any(Order.class)))
@@ -308,7 +317,7 @@ class PaymentOrderServiceTest {
 	void redeemFreeProduct_savesPaidOrderAndZeroPaymentAndCreatesResult() {
 		// given
 		given(userRepository.findByUsername(USERNAME)).willReturn(Optional.of(createUser()));
-		SubCategory subCategory = mockSubCategory();
+		SubCategory subCategory = paidProduct();
 		given(subCategoryRepository.findById(SUB_CATEGORY_ID)).willReturn(
 			Optional.of(subCategory));
 		DiscountCode discountCode = mock(DiscountCode.class);
@@ -331,6 +340,8 @@ class PaymentOrderServiceTest {
 		verify(orderRepository, atLeastOnce()).save(orderCaptor.capture());
 		Order savedOrder = orderCaptor.getValue();
 		assertThat(savedOrder.getStatus()).isEqualTo(OrderStatus.PAID);
+		assertThat(savedOrder.getUserId()).isEqualTo(USER_ID);
+		assertThat(savedOrder.getSubCategoryId()).isEqualTo(SUB_CATEGORY_ID);
 		assertThat(savedOrder.getOriginalAmount()).isEqualTo(PRICE);
 		assertThat(savedOrder.getAmount()).isZero();
 		assertThat(savedOrder.getAppliedDiscountCode()).isEqualTo("FREE100");
@@ -372,8 +383,7 @@ class PaymentOrderServiceTest {
 	void redeemFreeProduct_nonZeroAmount_throwsAndSavesNothing() {
 		// given
 		given(userRepository.findByUsername(USERNAME)).willReturn(Optional.of(createUser()));
-		SubCategory subCategory = mock(SubCategory.class);
-		given(subCategory.getPrice()).willReturn(PRICE);
+		SubCategory subCategory = paidProduct();
 		given(subCategoryRepository.findById(SUB_CATEGORY_ID)).willReturn(
 			Optional.of(subCategory));
 		given(discountCodeService.validateAndCalculateDiscountForPayment("SALE10", PRICE,
@@ -396,40 +406,33 @@ class PaymentOrderServiceTest {
 	}
 
 	@Test
-	@DisplayName("couponId 로 무료 상품을 받으면 쿠폰 검증과 useCoupon 을 거치고 주문에 couponId 가 기록되며 할인 코드 서비스는 호출하지 않는다")
-	void redeemFreeProduct_withCouponId_validatesAndUsesCoupon() {
+	@DisplayName("100% 정률 쿠폰도 할인가가 1,000원 아래로 내려가지 않아 쿠폰으로는 무료 발급이 거절되고 주문·Payment·Result 도 쿠폰 사용도 남지 않는다")
+	void redeemFreeProduct_withFullPercentageCoupon_isRejected() {
+		// 쿠폰은 100% 여도 1,000원이 남아 할인 코드(100% 면 0원)와 결과가 다르다.
+		// 지금 동작을 고정해 두고, 바꿀 때는 이 테스트를 함께 바꾼다.
 		// given
 		Long couponId = 7L;
 		given(userRepository.findByUsername(USERNAME)).willReturn(Optional.of(createUser()));
-		SubCategory subCategory = mockSubCategory();
+		SubCategory subCategory = paidProduct();
 		given(subCategoryRepository.findById(SUB_CATEGORY_ID)).willReturn(
 			Optional.of(subCategory));
-		given(couponService.validateAndCalculateCoupon(couponId, USER_ID, PRICE))
-			.willReturn(new DiscountValidationResult(0, "무료 쿠폰", null));
-		givenOrderSaveAssignsId();
-		givenPaymentSaveAssignsId();
+		Coupon coupon = CouponFixture.usableCoupon().id(couponId).userId(USER_ID)
+			.discountType(DiscountType.PERCENTAGE).discountValue(100).build();
+		given(couponRepository.findByIdWithLock(couponId)).willReturn(Optional.of(coupon));
 
 		OrderCreateRequest request = new OrderCreateRequest();
 		request.setSubCategoryId(SUB_CATEGORY_ID);
 		request.setCouponId(couponId);
 
-		// when
-		OrderCreateResponse response = paymentOrderService.redeemFreeProduct(USERNAME, request);
+		// when & then
+		assertThatThrownBy(() -> paymentOrderService.redeemFreeProduct(USERNAME, request))
+			.isInstanceOf(PaymentException.class)
+			.hasMessage("유효한 100% 할인 코드가 아닙니다.");
 
-		// then
-		ArgumentCaptor<Order> orderCaptor = ArgumentCaptor.forClass(Order.class);
-		verify(orderRepository, atLeastOnce()).save(orderCaptor.capture());
-		Order savedOrder = orderCaptor.getValue();
-		assertThat(savedOrder.getStatus()).isEqualTo(OrderStatus.PAID);
-		assertThat(savedOrder.getAmount()).isZero();
-		assertThat(savedOrder.getCouponId()).isEqualTo(couponId);
-		assertThat(savedOrder.getAppliedDiscountCode()).isEqualTo("무료 쿠폰");
-		assertThat(savedOrder.getMerchantUid()).startsWith("free_");
-
-		verify(couponService).useCoupon(couponId);
-		verifyNoInteractions(discountCodeService);
-		verify(resultService).createInitialResult(any(Payment.class), any(Order.class));
-		assertThat(response.getAmount()).isZero();
+		assertThat(coupon.isUsed()).as("쿠폰 사용 여부").isFalse();
+		verify(orderRepository, never()).save(any(Order.class));
+		verify(paymentRepository, never()).save(any(Payment.class));
+		verifyNoInteractions(resultService, eventPublisher, discountCodeService);
 	}
 
 	// ===== createFreeOrder =====
@@ -439,7 +442,7 @@ class PaymentOrderServiceTest {
 	void createFreeOrder_paidProduct_throwsAndSavesNothing() {
 		// given
 		given(userRepository.findByUsername(USERNAME)).willReturn(Optional.of(createUser()));
-		SubCategory subCategory = mock(SubCategory.class);
+		SubCategory subCategory = paidProduct();
 		given(subCategoryRepository.findById(SUB_CATEGORY_ID)).willReturn(
 			Optional.of(subCategory));
 		given(freeProductPolicy.isFree(subCategory)).willReturn(false);
@@ -452,7 +455,7 @@ class PaymentOrderServiceTest {
 		verify(orderRepository, never()).save(any(Order.class));
 		verify(paymentRepository, never()).save(any(Payment.class));
 		verifyNoInteractions(resultService, eventPublisher, discountCodeService,
-			couponService);
+			couponRepository);
 	}
 
 	@Test
@@ -460,9 +463,7 @@ class PaymentOrderServiceTest {
 	void createFreeOrder_savesPaidOrderAndZeroPaymentAndCreatesResult() {
 		// given
 		given(userRepository.findByUsername(USERNAME)).willReturn(Optional.of(createUser()));
-		// createFreeOrder 는 상품의 id 만 쓰므로 strict stubs 를 위해 getId 만 stub 한다
-		SubCategory subCategory = mock(SubCategory.class);
-		given(subCategory.getId()).willReturn(SUB_CATEGORY_ID);
+		SubCategory subCategory = SubCategoryFixture.freeProduct().id(SUB_CATEGORY_ID).build();
 		given(subCategoryRepository.findById(SUB_CATEGORY_ID)).willReturn(
 			Optional.of(subCategory));
 		given(freeProductPolicy.isFree(subCategory)).willReturn(true);
@@ -478,6 +479,8 @@ class PaymentOrderServiceTest {
 		verify(orderRepository, atLeastOnce()).save(orderCaptor.capture());
 		Order savedOrder = orderCaptor.getValue();
 		assertThat(savedOrder.getStatus()).isEqualTo(OrderStatus.PAID);
+		assertThat(savedOrder.getUserId()).isEqualTo(USER_ID);
+		assertThat(savedOrder.getSubCategoryId()).isEqualTo(SUB_CATEGORY_ID);
 		assertThat(savedOrder.getOriginalAmount()).isZero();
 		assertThat(savedOrder.getAmount()).isZero();
 		assertThat(savedOrder.getAppliedDiscountCode()).isEqualTo("EVENT_FREE");
@@ -503,7 +506,7 @@ class PaymentOrderServiceTest {
 		verify(resultService).createInitialResult(savedPayment, savedOrder);
 
 		// (c) 할인/쿠폰 호출 없음. 완료 이벤트는 amount 0 으로 발행되고 알림 리스너가 0원이면 보내지 않는다
-		verifyNoInteractions(discountCodeService, couponService);
+		verifyNoInteractions(discountCodeService, couponRepository);
 		verify(eventPublisher).publishEvent(new PaymentCompletedEvent(ORDER_ID, PAYMENT_PK_ID, 0L));
 	}
 }
