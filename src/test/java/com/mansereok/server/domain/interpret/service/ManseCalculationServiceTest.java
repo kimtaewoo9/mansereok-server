@@ -8,11 +8,13 @@ import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
 import static org.mockito.Mockito.never;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mansereok.server.domain.interpret.calculator.RelationCalculator;
 import com.mansereok.server.domain.interpret.calculator.SinsalCalculator;
 import com.mansereok.server.domain.interpret.calculator.UnseongCalculator;
 import com.mansereok.server.domain.interpret.calculator.YongsinCalculator;
 import com.mansereok.server.domain.interpret.dto.request.ManseryeokCalculationRequest;
+import com.mansereok.server.domain.interpret.dto.request.ManseryeokCreateRequest;
 import com.mansereok.server.domain.interpret.dto.response.ManseryeokCalculationResponse;
 import com.mansereok.server.domain.interpret.dto.response.ManseryeokCalculationResponse.MonthlyFortune;
 import com.mansereok.server.domain.interpret.dto.response.ManseryeokCalculationResponse.PillarElement;
@@ -29,6 +31,7 @@ import java.time.LocalTime;
 import java.time.ZoneId;
 import java.util.List;
 import java.util.Optional;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -38,6 +41,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.http.converter.json.Jackson2ObjectMapperBuilder;
 
 /**
  * 만세력 계산(네 기둥, 대운수, 대운 시작 연도, 불확정 안내, 월운)을 검증한다.
@@ -242,6 +246,34 @@ class ManseCalculationServiceTest {
 						"丁卯"),
 					tuple("청명", LocalDateTime.of(2026, 11, 24, 12, 0), null, "戊辰"));
 		}
+
+		/**
+		 * 사용자 입력이 아니라 서버가 가진 표(음양 표, 시주 표, 십성 표)에 값이 없는 경우다. 원래 예외를 다른 예외로 감싸지 않아 로그에
+		 * 처음 던진 곳의 스택이 그대로 남는다.
+		 */
+		@ParameterizedTest(name = "[{index}] {0}")
+		@DisplayName("만세력 행의 간지가 서버의 음양 표·시주 표·십성 표에 없으면 IllegalStateException 을 감싸지 않고 그대로 던진다")
+		@CsvSource(delimiter = '|', textBlock = """
+			# 사례                                    | 연간 | 연지 | 일간 | 오류 메시지
+			연간이 음양 표에 없으면 대운 방향을 정하지 못한다 | X    | 午   | 甲   | 연간 X의 음양 정보를 찾을 수 없습니다
+			일간이 시주 표에 없으면 시주를 정하지 못한다      | 庚   | 午   | X    | 일간 X의 시주 데이터를 찾을 수 없습니다
+			연지가 십성 표에 없으면 연지의 십성을 정하지 못한다 | 庚   | X    | 甲   | 간지 X의 십성 정보를 찾을 수 없습니다
+			""")
+		void throwsIllegalStateWhenServerTableLacksGanji(String description, String yearSky, String yearGround,
+			String daySky, String message) {
+			// given: 연간 庚 은 양간이라 남자는 다음 절입(소한)으로 대운을 센다
+			LocalDate birthDate = LocalDate.of(1990, 1, 1);
+			ManseRepository table = ManseTableFixture.of(
+				ManseRow.on(birthDate).yearPillar(yearSky, yearGround).dayPillar(daySky, "子").build(),
+				ManseRow.on(LocalDate.of(1990, 1, 5)).season("소한", LocalDateTime.of(1990, 1, 5, 12, 0)).build()
+			).newRepository();
+			ManseCalculationService serviceWithBrokenRow = serviceWith(table, FIXED_CLOCK);
+
+			// when & then
+			assertThatThrownBy(() -> serviceWithBrokenRow.calculate(solarRequest(birthDate, LocalTime.of(12, 0), "MALE")))
+				.isExactlyInstanceOf(IllegalStateException.class)
+				.hasMessage(message);
+		}
 	}
 
 	@Nested
@@ -397,17 +429,184 @@ class ManseCalculationServiceTest {
 		}
 
 		@ParameterizedTest(name = "[{index}] {0}")
-		@DisplayName("대운을 셀 절입이 표 범위 밖에 있으면 계산이 실패한다")
+		@DisplayName("대운을 셀 절입이 표 범위 밖에 있으면 고칠 입력으로 보고 IllegalArgumentException 을 던진다")
 		@CsvSource(delimiter = '|', textBlock = """
 			# 사례                                                       | 날짜       | 성별 | 오류 메시지
-			1900-01-01 남자(己 음간, 역행)는 표의 첫 절입(1900-01-06 소한) 전이다 | 1900-01-01 | MALE | 만세력 계산 중 오류가 발생했습니다: 역행 절입 시간을 찾을 수 없습니다
-			2100-12-30 남자(庚 양간, 순행)는 표의 마지막 절입(2100-12-07 대설) 뒤다 | 2100-12-30 | MALE | 만세력 계산 중 오류가 발생했습니다: 순행 절입 시간을 찾을 수 없습니다
+			1900-01-01 남자(己 음간, 역행)는 표의 첫 절입(1900-01-06 소한) 전이다 | 1900-01-01 | MALE | 만세력 표에 출생 전의 절입이 없어 대운을 셀 수 없는 생년월일입니다.
+			2100-12-30 남자(庚 양간, 순행)는 표의 마지막 절입(2100-12-07 대설) 뒤다 | 2100-12-30 | MALE | 만세력 표에 출생 뒤의 절입이 없어 대운을 셀 수 없는 생년월일입니다.
 			""")
 		void failsWhenSeasonIsOutsideTable(String description, LocalDate date, String gender, String message) {
 			// when & then
 			assertThatThrownBy(() -> service.calculate(solarRequest(date, LocalTime.of(12, 0), gender)))
-				.isExactlyInstanceOf(RuntimeException.class)
+				.isExactlyInstanceOf(IllegalArgumentException.class)
 				.hasMessage(message);
+		}
+
+		/**
+		 * 표에 없는 날짜는 사용자가 고쳐야 하는 입력이라 400 으로 나가는 IllegalArgumentException 이다. 생년월일은 개인정보이고 이
+		 * 메시지는 경고 로그에 남으므로 메시지에 입력 날짜를 넣지 않는다.
+		 */
+		@Nested
+		@DisplayName("입력 날짜를 만세력 표에서 찾을 수 없으면")
+		class WhenInputDateIsNotInTable {
+
+			@ParameterizedTest(name = "[{index}] {0}")
+			@DisplayName("지원 범위를 알려 주는 IllegalArgumentException 을 던진다")
+			@CsvSource(delimiter = '|', textBlock = """
+				# 사례                                              | 음력  | 날짜       | 시각  | 오류 메시지
+				양력 1899-12-31 은 표 첫날(1900-01-01) 전이다          | false | 1899-12-31 | 12:00 | 지원 범위(양력 1900-01-01~2100-12-31) 밖이거나 존재하지 않는 날짜입니다.
+				음력 2019년 4월은 29일까지라 30일이 없다               | true  | 2019-04-30 | 12:00 | 지원 범위(양력 1900-01-01~2100-12-31) 밖이거나 존재하지 않는 음력 날짜입니다.
+				2100-12-31 23:40 은 일주를 셀 다음 날이 표에 없다      | false | 2100-12-31 | 23:40 | 23:30 이후 출생은 다음 날로 일주를 세는데, 다음 날이 지원 범위(양력 1900-01-01~2100-12-31) 밖입니다.
+				""")
+			void throwsIllegalArgumentWithSupportedRange(String description, boolean lunar, LocalDate date,
+				LocalTime time, String message) {
+				// given
+				ManseryeokCalculationRequest request = ManseryeokCalculationRequest.builder()
+					.name("범위 밖").solarDate(date).solarTime(time).gender("MALE").isLunar(lunar)
+					.build();
+
+				// when & then
+				assertThatThrownBy(() -> service.calculate(request))
+					.isExactlyInstanceOf(IllegalArgumentException.class)
+					.hasMessage(message);
+			}
+		}
+
+		@Test
+		@DisplayName("양력·음력 여부(isLunar)가 비어 있으면 양력으로 짐작하지 않고 IllegalArgumentException 을 던진다")
+		void throwsIllegalArgumentWhenIsLunarIsMissing() {
+			// given
+			ManseryeokCalculationRequest request = ManseryeokCalculationRequest.builder()
+				.name("달력 누락").solarDate(LocalDate.of(1990, 1, 27)).solarTime(LocalTime.of(12, 0)).gender("MALE")
+				.isLunar(null)
+				.build();
+
+			// when & then
+			assertThatThrownBy(() -> service.calculate(request))
+				.isExactlyInstanceOf(IllegalArgumentException.class)
+				.hasMessage("양력·음력 여부는 필수입니다.");
+		}
+
+		/**
+		 * 시주는 23:30 부터 2시간씩 자·축·인… 이다. 1990-01-27 은 일간이 壬 이라 시주가 庚子 부터 시작하고, 다음 날(1990-01-28)은
+		 * 일간이 癸 라 자시가 壬子 다. 경계마다 앞 시주의 마지막 분(hh:29), 그 분의 마지막 초(hh:29:59), 다음 시주의 첫 분(hh:30)을
+		 * 넣는다.
+		 */
+		@ParameterizedTest(name = "[{index}] 1990-01-27 {0} → 일주 {1}, 시주 {2}")
+		@DisplayName("시주 경계에서 hh:29:59 까지는 앞 시주, hh:30 부터는 다음 시주이고, 23:30 부터는 일주도 다음 날이다")
+		@CsvSource(textBlock = """
+			# 시각,     일주, 시주
+			01:29,    壬辰, 庚子
+			01:29:59, 壬辰, 庚子
+			01:30,    壬辰, 辛丑
+			03:29,    壬辰, 辛丑
+			03:29:59, 壬辰, 辛丑
+			03:30,    壬辰, 壬寅
+			05:29,    壬辰, 壬寅
+			05:29:59, 壬辰, 壬寅
+			05:30,    壬辰, 癸卯
+			07:29,    壬辰, 癸卯
+			07:29:59, 壬辰, 癸卯
+			07:30,    壬辰, 甲辰
+			09:29,    壬辰, 甲辰
+			09:29:59, 壬辰, 甲辰
+			09:30,    壬辰, 乙巳
+			11:29,    壬辰, 乙巳
+			11:29:59, 壬辰, 乙巳
+			11:30,    壬辰, 丙午
+			13:29,    壬辰, 丙午
+			13:29:59, 壬辰, 丙午
+			13:30,    壬辰, 丁未
+			15:29,    壬辰, 丁未
+			15:29:59, 壬辰, 丁未
+			15:30,    壬辰, 戊申
+			17:29,    壬辰, 戊申
+			17:29:59, 壬辰, 戊申
+			17:30,    壬辰, 己酉
+			19:29,    壬辰, 己酉
+			19:29:59, 壬辰, 己酉
+			19:30,    壬辰, 庚戌
+			21:29,    壬辰, 庚戌
+			21:29:59, 壬辰, 庚戌
+			21:30,    壬辰, 辛亥
+			23:29,    壬辰, 辛亥
+			23:29:59, 壬辰, 辛亥
+			23:30,    癸巳, 壬子
+			""")
+		void timePillarChangesExactlyAtHalfPast(LocalTime time, String dayPillar, String timePillar) {
+			// when
+			SajuInfo saju = service.calculate(solarRequest(LocalDate.of(1990, 1, 27), time, "MALE")).getSaju();
+
+			// then
+			assertThat(chineseOf(saju.getDaySky()) + chineseOf(saju.getDayGround())).as("일주").isEqualTo(dayPillar);
+			assertThat(chineseOf(saju.getTimeSky()) + chineseOf(saju.getTimeGround())).as("시주").isEqualTo(timePillar);
+		}
+
+		/**
+		 * 위 경계 표를 보완하는 전수 확인이다. 경계 표는 시주가 바뀌는 시각을 값으로 고정하고, 이 테스트는 경계 사이의 초 단위 시각에서도
+		 * 시주가 비지 않는지만 본다. 시각 목록을 만드느라 테스트 안에서 반복하지만, 어느 시각이 빠졌는지는 실패 메시지에 그대로 나온다.
+		 */
+		@Test
+		@DisplayName("하루를 30초 간격으로 모두 넣어도 시주가 빠지는 시각이 없다")
+		void everyThirtySecondsOfDayHasTimePillar() {
+			// given: 00:00:00 부터 23:59:30 까지 2,880 개 시각
+			Stream<LocalTime> everyThirtySeconds = Stream.iterate(LocalTime.MIDNIGHT, time -> time.plusSeconds(30))
+				.limit(2_880);
+
+			// when
+			List<LocalTime> timesWithoutTimePillar = everyThirtySeconds
+				.filter(time -> service.calculate(solarRequest(LocalDate.of(1990, 1, 27), time, "MALE"))
+					.getSaju().getTimeGround() == null)
+				.toList();
+
+			// then
+			assertThat(timesWithoutTimePillar).as("시주가 빠진 출생시각").isEmpty();
+		}
+
+		/**
+		 * 초가 붙은 출생시간은 두 경로로 들어온다. 단일 해석·유료 궁합·/calculate 요청 본문의 LocalTime 은 Jackson 이 "01:29:30" 을
+		 * 받아 주고, 무료 궁합의 문자열 출생시간은 LocalTime.parse 가 받아 준다. 계산은 초를 버린 분 단위 시각을 쓰고 입력 정보에도
+		 * 그 시각을 돌려준다.
+		 */
+		@Nested
+		@DisplayName("출생시간에 초가 붙어 들어오면")
+		class WhenBirthTimeHasSeconds {
+
+			@Test
+			@DisplayName("Jackson 으로 읽은 01:29:30 은 초를 버린 01:29 로 계산해 자시(庚子)가 된다")
+			void jacksonTimeWithSecondsFallsInJasi() throws Exception {
+				// given
+				ObjectMapper objectMapper = Jackson2ObjectMapperBuilder.json().build();
+				ManseryeokCalculationRequest request = objectMapper.readValue("""
+					{"name":"초 입력","solarDate":"1990-01-27","solarTime":"01:29:30","gender":"MALE","isLunar":false}
+					""", ManseryeokCalculationRequest.class);
+
+				// when
+				ManseryeokCalculationResponse response = service.calculate(request);
+
+				// then
+				assertThat(response.getInput().getSolarTime()).isEqualTo(LocalTime.of(1, 29));
+				assertThat(pillarsOf(response.getSaju())).isEqualTo("己巳 丁丑 壬辰 庚子");
+			}
+
+			@Test
+			@DisplayName("무료 궁합 입력의 \"03:29:45\" 는 LocalTime.parse 로 읽혀 초를 버린 03:29 로 계산해 축시(辛丑)가 된다")
+			void parsedTimeWithSecondsFallsInChuksi() {
+				// given
+				ManseryeokCreateRequest freeRequest = new ManseryeokCreateRequest();
+				freeRequest.setName("초 입력");
+				freeRequest.setBirthday("1990/01/27");
+				freeRequest.setBirthtime("03:29:45");
+				freeRequest.setGender("MALE");
+				freeRequest.setCalendar("S");
+
+				// when
+				ManseryeokCalculationResponse response = service.calculate(ManseryeokCalculationRequest.from(freeRequest));
+
+				// then
+				assertThat(response.getInput().getSolarTime()).isEqualTo(LocalTime.of(3, 29));
+				assertThat(pillarsOf(response.getSaju())).isEqualTo("己巳 丁丑 壬辰 辛丑");
+			}
 		}
 
 		@Test

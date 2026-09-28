@@ -1,6 +1,5 @@
 package com.mansereok.server.domain.interpret.service;
 
-import java.time.LocalTime;
 import java.util.HashMap;
 import java.util.Map;
 import org.springframework.stereotype.Service;
@@ -39,26 +38,6 @@ public class SajuDataService {
 		data.put("酉", "음");
 		data.put("亥", "음");
 
-		return data;
-	}
-
-	/**
-	 * 시간대별 시주 범위 데이터
-	 */
-	public Map<String, LocalTime[]> getTimeJuData() {
-		Map<String, LocalTime[]> data = new HashMap<>();
-		data.put("0", new LocalTime[]{LocalTime.of(23, 30), LocalTime.of(1, 29)});  // 자시
-		data.put("1", new LocalTime[]{LocalTime.of(1, 30), LocalTime.of(3, 29)});   // 축시
-		data.put("2", new LocalTime[]{LocalTime.of(3, 30), LocalTime.of(5, 29)});   // 인시
-		data.put("3", new LocalTime[]{LocalTime.of(5, 30), LocalTime.of(7, 29)});   // 묘시
-		data.put("4", new LocalTime[]{LocalTime.of(7, 30), LocalTime.of(9, 29)});   // 진시
-		data.put("5", new LocalTime[]{LocalTime.of(9, 30), LocalTime.of(11, 29)});  // 사시
-		data.put("6", new LocalTime[]{LocalTime.of(11, 30), LocalTime.of(13, 29)}); // 오시
-		data.put("7", new LocalTime[]{LocalTime.of(13, 30), LocalTime.of(15, 29)}); // 미시
-		data.put("8", new LocalTime[]{LocalTime.of(15, 30), LocalTime.of(17, 29)}); // 신시
-		data.put("9", new LocalTime[]{LocalTime.of(17, 30), LocalTime.of(19, 29)}); // 유시
-		data.put("10", new LocalTime[]{LocalTime.of(19, 30), LocalTime.of(21, 29)}); // 술시
-		data.put("11", new LocalTime[]{LocalTime.of(21, 30), LocalTime.of(23, 29)}); // 해시
 		return data;
 	}
 

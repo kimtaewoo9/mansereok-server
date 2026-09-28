@@ -15,6 +15,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.ZoneId;
+import java.time.temporal.ChronoField;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
@@ -36,6 +37,16 @@ public class ManseCalculationService {
 	// 월운은 지금이 든 절기부터 12개월이다. 마지막 달이 끝나는 시각까지 알려면 절입이 하나 더 필요해 달 수 + 1 개를 한 번에 읽는다.
 	private static final int MONTHLY_FORTUNE_MONTHS = 12;
 	private static final Limit MONTHLY_SEASON_LIMIT = Limit.of(MONTHLY_FORTUNE_MONTHS + 1);
+	// 자시가 시작하는 시각. 이때부터 일주를 다음 날로 넘기고(야자시), 시주도 이 시각부터 2시간씩 자·축·인… 순서로 센다.
+	private static final LocalTime JASI_START = LocalTime.of(23, 30);
+	private static final int JASI_START_MINUTE_OF_DAY = JASI_START.get(ChronoField.MINUTE_OF_DAY);
+	private static final int MINUTES_PER_DAY = 24 * 60;
+	private static final int MINUTES_PER_TIME_PILLAR = 2 * 60;
+	// 만세력 표(manses)에 들어 있는 양력 날짜 범위. 표에서 날짜를 못 찾으면 입력 오류로 보고 이 범위를 알려 준다.
+	// 범위 안이라도 가장자리 날짜는 계산이 실패할 수 있다. 표의 절입은 1900-01-06 04:08~2100-12-07 10:04 만 있어
+	// 1900-01-06 04:08 전 출생의 역행 대운과 2100-12-07 10:04 이후 출생의 순행 대운은 셀 절입이 없고,
+	// 2100-12-31 23:30 이후 출생은 야자시로 표에 없는 다음 날 일주가 필요하다.
+	private static final String SUPPORTED_RANGE = "지원 범위(양력 1900-01-01~2100-12-31)";
 
 	private final ManseRepository manseRepository;
 	private final SajuDataService sajuDataService;
@@ -53,7 +64,10 @@ public class ManseCalculationService {
 				request.getSolarDate(), request.getGender(), request.getIsLunar(),
 				request.getLeapMonth());
 
-			LocalTime rawSolarTime = request.getSolarTime();
+			// 응답·프롬프트에 돌려주는 출생시각을 분 단위로 맞추고, 분 단위인 절입 시각과의 비교와 대운 날수 계산도 같은 단위로 하려고
+			// 초를 버린다. 시주 번호는 시·분만 보므로 초가 남아도 시주가 빠지지는 않는다.
+			LocalTime rawSolarTime = request.getSolarTime() == null ? null
+				: request.getSolarTime().truncatedTo(ChronoUnit.MINUTES);
 			boolean timeUnknown = rawSolarTime == null;
 			List<String> uncertaintyNotes = new ArrayList<>();
 			if (timeUnknown) {
@@ -62,7 +76,7 @@ public class ManseCalculationService {
 			}
 
 			SamjuResult samju = convertBirthToSamju(
-				request.getIsLunar() ? "LUNAR" : "SOLAR",
+				CalendarType.of(request.getIsLunar()),
 				request.getSolarDate(),
 				rawSolarTime,
 				request.getLeapMonth()
@@ -198,9 +212,6 @@ public class ManseCalculationService {
 			} catch (IllegalArgumentException e) {
 				log.warn("만세력 계산 입력값 오류: {}", e.getMessage());
 				throw e;
-			} catch (Exception e) {
-				log.error("만세력 계산 중 오류 발생", e);
-				throw new RuntimeException("만세력 계산 중 오류가 발생했습니다: " + e.getMessage());
 			}
 		}
 
@@ -288,17 +299,17 @@ public class ManseCalculationService {
 
 		Map<String, String> tenStar = tenStarData.get(daySky);
 		if (tenStar == null) {
-			throw new RuntimeException("일간 " + daySky + "의 십성 데이터를 찾을 수 없습니다");
+			throw new IllegalStateException("일간 " + daySky + "의 십성 데이터를 찾을 수 없습니다");
 		}
 
 		String tenStarInfo = tenStar.get(chinese);
 		if (tenStarInfo == null) {
-			throw new RuntimeException("간지 " + chinese + "의 십성 정보를 찾을 수 없습니다");
+			throw new IllegalStateException("간지 " + chinese + "의 십성 정보를 찾을 수 없습니다");
 		}
 
 		String[] tenStarParts = tenStarInfo.split(",");
 		if (tenStarParts.length != 2) {
-			throw new RuntimeException("십성 정보 형식이 올바르지 않습니다: " + tenStarInfo);
+			throw new IllegalStateException("십성 정보 형식이 올바르지 않습니다: " + tenStarInfo);
 		}
 
 		ManseryeokCalculationResponse.PillarElement.PillarElementBuilder builder =
@@ -322,23 +333,28 @@ public class ManseCalculationService {
 		return formatChineseToBuilder(chinese, daySky, isGround, ilganChinese).build();
 	}
 
-	private SamjuResult convertBirthToSamju(String birthdayType, LocalDate birthday,
+	/**
+	 * 생년월일로 만세력 표를 찾아 연주·월주·일주를 정한다. 표에 없는 날짜는 사용자가 고칠 입력이라 IllegalArgumentException(400)
+	 * 으로 알린다. 날짜는 개인정보라 메시지에 넣지 않는다(메시지가 경고 로그에 남는다).
+	 */
+	private SamjuResult convertBirthToSamju(CalendarType calendarType, LocalDate birthday,
 		LocalTime time, Boolean leapMonth) {
 		LocalTime birthtime = time;
-		boolean isYajasi = time != null && !time.isBefore(LocalTime.of(23, 30));
+		boolean isYajasi = time != null && !time.isBefore(JASI_START);
 
-		log.debug("만세력 데이터 조회: birthdayType={}, birthday={}, leapMonth={}",
-			birthdayType, birthday, leapMonth);
+		log.debug("만세력 데이터 조회: calendarType={}, birthday={}, leapMonth={}",
+			calendarType, birthday, leapMonth);
 
 		Manse baseManse;
-		if ("SOLAR".equals(birthdayType)) {
+		if (calendarType == CalendarType.SOLAR) {
 			baseManse = manseRepository.findBySolarDate(birthday)
-				.orElseThrow(() -> new RuntimeException("해당 양력 날짜의 만세력 데이터를 찾을 수 없습니다."));
+				.orElseThrow(() -> new IllegalArgumentException(
+					SUPPORTED_RANGE + " 밖이거나 존재하지 않는 날짜입니다."));
 		} else {
 			List<Manse> lunarCandidates = manseRepository.findAllByLunarDateOrderBySolarDateAsc(
 				birthday);
 			if (lunarCandidates.isEmpty()) {
-				throw new RuntimeException("해당 음력 날짜의 만세력 데이터를 찾을 수 없습니다.");
+				throw new IllegalArgumentException(SUPPORTED_RANGE + " 밖이거나 존재하지 않는 음력 날짜입니다.");
 			}
 
 			if (lunarCandidates.size() == 1) {
@@ -360,7 +376,8 @@ public class ManseCalculationService {
 		if (isYajasi) {
 			LocalDate shiftedDate = civilSolarDate.plusDays(1);
 			dayManse = manseRepository.findBySolarDate(shiftedDate)
-				.orElseThrow(() -> new RuntimeException("자시 보정 대상 날짜의 만세력 데이터를 찾을 수 없습니다."));
+				.orElseThrow(() -> new IllegalArgumentException(
+					"23:30 이후 출생은 다음 날로 일주를 세는데, 다음 날이 " + SUPPORTED_RANGE + " 밖입니다."));
 			log.debug("자시 처리: 일주 기준 날짜를 다음날로 보정 -> {}", shiftedDate);
 		}
 
@@ -383,7 +400,8 @@ public class ManseCalculationService {
 				if (solarDatetime.isBefore(seasonTime)) {
 					log.debug("절입시간 이전 출생: 이전 날짜 만세력 사용(월주 변경), 일주는 유지");
 					yearMonthManse = manseRepository.findBySolarDate(solarDate.minusDays(1))
-						.orElseThrow(() -> new RuntimeException("이전 날짜의 만세력 데이터를 찾을 수 없습니다"));
+						.orElseThrow(() -> new IllegalArgumentException(
+							"절입 시각 전 출생은 전날로 연주·월주를 세는데, 전날이 " + SUPPORTED_RANGE + " 밖입니다."));
 				}
 			}
 		}
@@ -407,7 +425,7 @@ public class ManseCalculationService {
 		String minusPlus = sajuDataService.getMinusPlus().get(yearSky);
 
 		if (minusPlus == null) {
-			throw new RuntimeException("연간 " + yearSky + "의 음양 정보를 찾을 수 없습니다");
+			throw new IllegalStateException("연간 " + yearSky + "의 음양 정보를 찾을 수 없습니다");
 		}
 
 		boolean result;
@@ -444,11 +462,13 @@ public class ManseCalculationService {
 		if (direction) {
 			manse = manseRepository.findFirstBySeasonStartTimeGreaterThanOrderBySeasonStartTimeAsc(
 					solarDatetime)
-				.orElseThrow(() -> new RuntimeException("순행 절입 시간을 찾을 수 없습니다"));
+				.orElseThrow(() -> new IllegalArgumentException(
+					"만세력 표에 출생 뒤의 절입이 없어 대운을 셀 수 없는 생년월일입니다."));
 		} else {
 			manse = manseRepository.findFirstBySeasonStartTimeLessThanEqualOrderBySeasonStartTimeDesc(
 					solarDatetime)
-				.orElseThrow(() -> new RuntimeException("역행 절입 시간을 찾을 수 없습니다"));
+				.orElseThrow(() -> new IllegalArgumentException(
+					"만세력 표에 출생 전의 절입이 없어 대운을 셀 수 없는 생년월일입니다."));
 		}
 
 		// 태어난 때와 가장 가까운 절입 시각이라 생년월일을 한 달 안으로 좁혀 준다.
@@ -563,18 +583,11 @@ public class ManseCalculationService {
 		}
 
 		String timeKey = getTimeJuIndex(time);
-		if (timeKey == null) {
-			return TimePillarResult.builder()
-				.timeSky(null)
-				.timeGround(null)
-				.build();
-		}
-
 		Map<String, Map<String, String[]>> timeJuData2 = sajuDataService.getTimeJuData2();
 		Map<String, String[]> dayData = timeJuData2.get(daySky);
 
 		if (dayData == null) {
-			throw new RuntimeException("일간 " + daySky + "의 시주 데이터를 찾을 수 없습니다");
+			throw new IllegalStateException("일간 " + daySky + "의 시주 데이터를 찾을 수 없습니다");
 		}
 
 		if (dayData.containsKey(timeKey)) {
@@ -588,25 +601,18 @@ public class ManseCalculationService {
 				.build();
 		}
 
-		throw new RuntimeException("시주 계산 실패: daySky=" + daySky + ", timeKey=" + timeKey);
+		// 닿지 않는 방어 코드다. getTimeJuIndex 는 0~11 만 돌려주고 시주 표는 일간마다 0~11 을 모두 갖는다.
+		throw new IllegalStateException("시주 계산 실패: daySky=" + daySky + ", timeKey=" + timeKey);
 	}
 
-	private String getTimeJuIndex(LocalTime time) {
-		Map<String, LocalTime[]> timeJuData = sajuDataService.getTimeJuData();
-
-		for (Map.Entry<String, LocalTime[]> entry : timeJuData.entrySet()) {
-			LocalTime[] timeRange = entry.getValue();
-			if (time.compareTo(timeRange[0]) >= 0 && time.compareTo(timeRange[1]) <= 0) {
-				return entry.getKey();
-			}
-		}
-
-		if (time.compareTo(LocalTime.of(23, 30)) >= 0 ||
-			time.compareTo(LocalTime.of(1, 29)) <= 0) {
-			return "0";
-		}
-
-		return null;
+	/**
+	 * 출생 시각이 드는 시주 번호(0 자시 ~ 11 해시)를 센다. 자시 시작(23:30)부터 지난 분을 2시간으로 나눈 몫이라 하루의 모든 분이
+	 * 빈틈없이 한 번호에 든다. 자정을 넘는 자시(23:30~01:29)도 따로 다루지 않는다. 초는 보지 않는다.
+	 */
+	private static String getTimeJuIndex(LocalTime time) {
+		int minutesSinceJasiStart = Math.floorMod(time.get(ChronoField.MINUTE_OF_DAY) - JASI_START_MINUTE_OF_DAY,
+			MINUTES_PER_DAY);
+		return String.valueOf(minutesSinceJasiStart / MINUTES_PER_TIME_PILLAR);
 	}
 
 	private String getColor(String value) {
@@ -670,6 +676,25 @@ public class ManseCalculationService {
 			.rate((Integer) elementData.get("rate"))
 			.tenStar(tenStar)
 			.build();
+	}
+
+	/**
+	 * 입력 생년월일이 양력인지 음력인지. 만세력 표를 양력 날짜로 찾을지 음력 날짜로 찾을지를 가른다.
+	 */
+	private enum CalendarType {
+		SOLAR, LUNAR;
+
+		/**
+		 * 요청의 isLunar 를 바꾼다. 비어 있으면 양력으로 짐작하지 않고 입력 오류로 돌려보낸다. 짐작이 틀리면 다른 사주가 나온다.
+		 *
+		 * @throws IllegalArgumentException isLunar 가 null 일 때
+		 */
+		static CalendarType of(Boolean isLunar) {
+			if (isLunar == null) {
+				throw new IllegalArgumentException("양력·음력 여부는 필수입니다.");
+			}
+			return isLunar ? LUNAR : SOLAR;
+		}
 	}
 
 	@lombok.Data
