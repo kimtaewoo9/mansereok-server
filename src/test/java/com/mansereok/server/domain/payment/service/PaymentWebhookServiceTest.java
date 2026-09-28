@@ -5,11 +5,18 @@ import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.BDDMockito.willThrow;
 import static org.mockito.Mockito.inOrder;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mansereok.server.domain.interpret.service.ResultService;
@@ -21,24 +28,34 @@ import com.mansereok.server.domain.payment.client.PortOneClient;
 import com.mansereok.server.domain.payment.dto.response.PortOnePaymentResponse;
 import com.mansereok.server.domain.payment.entity.Payment;
 import com.mansereok.server.domain.payment.entity.PaymentStatus;
+import com.mansereok.server.domain.payment.event.PaymentAnomalyEvent;
 import com.mansereok.server.domain.payment.event.PaymentCompletedEvent;
 import com.mansereok.server.domain.payment.repository.PaymentRepository;
 import com.mansereok.server.global.exception.PaymentException;
 import com.mansereok.server.global.exception.PortOneUnavailableException;
+import java.time.LocalDateTime;
+import java.util.Map;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.converter.json.Jackson2ObjectMapperBuilder;
 import org.springframework.test.util.ReflectionTestUtils;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.TransactionStatus;
+import org.springframework.transaction.support.SimpleTransactionStatus;
 
 /**
  * 포트원 웹훅 처리 "파싱 → Paid 필터 → 재조회 → 잠금·멱등 → 금액 → 확정" 검증.
@@ -57,6 +74,7 @@ class PaymentWebhookServiceTest {
 	private static final Long PAYMENT_PK_ID = 100L;
 	private static final String MERCHANT_UID = "order_test_001";
 	private static final String PAYMENT_ID = "pay_test_001";
+	private static final String SECOND_PAYMENT_ID = "pay_test_002";
 	private static final int PRICE = 10000;
 	private static final String CUSTOM_DATA = "{\"merchantUid\":\"" + MERCHANT_UID
 		+ "\",\"subCategoryId\":1}";
@@ -79,19 +97,27 @@ class PaymentWebhookServiceTest {
 	private OrderDiscountRestorer orderDiscountRestorer;
 	@Mock
 	private ApplicationEventPublisher eventPublisher;
+	@Mock
+	private PlatformTransactionManager transactionManager;
 
 	@BeforeEach
 	void setUp() {
+		// 트랜잭션 시작은 주문을 잠그는 테스트에서만 일어나므로 strict stubs 에 걸리지 않도록 lenient 로 둔다.
+		lenient().when(transactionManager.getTransaction(any(TransactionDefinition.class)))
+			.thenAnswer(invocation -> new SimpleTransactionStatus(true));
 		PaidOrderFinalizer paidOrderFinalizer = new PaidOrderFinalizer(orderRepository,
 			paymentRepository, resultService, orderDiscountRestorer, eventPublisher);
+		PaymentVerifier paymentVerifier = new PaymentVerifier(objectMapper); // customData 파싱·금액·상태 규칙을 실제로 검증한다
 		paymentWebhookService = new PaymentWebhookService(
 			objectMapper,
 			portOneClient,
-			new PaymentVerifier(objectMapper), // customData 파싱·금액·상태 규칙을 실제로 검증한다
+			paymentVerifier,
 			orderRepository,
 			paymentRepository,
 			paidOrderFinalizer,
-			orderDiscountRestorer
+			orderDiscountRestorer,
+			new DuplicatePaymentCanceller(portOneClient, paymentVerifier, paymentRepository, eventPublisher),
+			transactionManager
 		);
 	}
 
@@ -119,9 +145,33 @@ class PaymentWebhookServiceTest {
 	}
 
 	private PortOnePaymentResponse portOneResponseWithCustomData(String status, long total) {
-		PortOnePaymentResponse response = portOneResponse(status, total);
+		return portOneResponseWithCustomData(PAYMENT_ID, status, total);
+	}
+
+	/** 이 주문(MERCHANT_UID)을 customData 에 담은 결제 paymentId 의 포트원 응답. */
+	private PortOnePaymentResponse portOneResponseWithCustomData(String paymentId, String status,
+		long total) {
+		PortOnePaymentResponse response = portOneResponse(paymentId, status, total);
 		response.setCustomData(CUSTOM_DATA);
 		return response;
+	}
+
+	/** 결제 recordedPaymentId 로 이미 확정된 주문. */
+	private Order paidOrder(String recordedPaymentId) {
+		Order order = createOrder(OrderStatus.PENDING, null, null);
+		order.markPaid(recordedPaymentId, LocalDateTime.of(2026, 9, 26, 12, 0));
+		return order;
+	}
+
+	private void givenLockedOrder(Order order) {
+		given(orderRepository.findByMerchantUidWithLock(MERCHANT_UID)).willReturn(Optional.of(order));
+	}
+
+	/** eventPublisher 에 한 번 발행된 결제 이상 이벤트를 꺼낸다. 두 번 이상 발행됐으면 verify 가 실패한다. */
+	private PaymentAnomalyEvent capturedAnomalyEvent() {
+		ArgumentCaptor<PaymentAnomalyEvent> captor = ArgumentCaptor.forClass(PaymentAnomalyEvent.class);
+		verify(eventPublisher, times(1)).publishEvent(captor.capture());
+		return captor.getValue();
 	}
 
 	private static String webhookBody(String status) {
@@ -243,14 +293,13 @@ class PaymentWebhookServiceTest {
 	}
 
 	@Test
-	@DisplayName("이미 PAID 인 주문에 같은 웹훅이 다시 오면 아무것도 저장하지 않고 정상 반환한다")
-	void processWebhook_alreadyPaid_ignored() {
+	@DisplayName("같은 결제로 이미 PAID 인 주문에 같은 웹훅이 다시 오면 아무것도 저장·취소·알림하지 않고 정상 반환한다")
+	void processWebhook_alreadyPaidWithSamePayment_ignored() {
 		// given
-		Order order = createOrder(OrderStatus.PAID, null, null);
+		Order order = paidOrder(PAYMENT_ID);
 		given(portOneClient.getPayment(PAYMENT_ID)).willReturn(
 			portOneResponseWithCustomData("PAID", PRICE));
-		given(orderRepository.findByMerchantUidWithLock(MERCHANT_UID)).willReturn(
-			Optional.of(order));
+		givenLockedOrder(order);
 
 		// when
 		assertThatCode(() -> paymentWebhookService.processWebhook(webhookBody("Paid")))
@@ -259,8 +308,33 @@ class PaymentWebhookServiceTest {
 		// then
 		assertThat(order.getStatus()).isEqualTo(OrderStatus.PAID);
 		verify(orderRepository, never()).save(any(Order.class));
+		verify(portOneClient, never()).cancelPayment(any(), any());
 		verifyNoInteractions(paymentRepository, orderDiscountRestorer, resultService,
 			eventPublisher);
+	}
+
+	@Test
+	@DisplayName("환불로 CANCELLED 가 된 주문에 같은 결제 ID 의 Payment 가 이미 있으면 원래 결제의 웹훅이 늦게 와도 아무것도 하지 않고 정상 반환한다")
+	void processWebhook_cancelledOrderWithRecordedPayment_ignored() {
+		// given
+		Order order = createOrder(OrderStatus.CANCELLED, "WELCOME10", null);
+		given(portOneClient.getPayment(PAYMENT_ID)).willReturn(
+			portOneResponseWithCustomData("PAID", PRICE));
+		givenLockedOrder(order);
+		given(paymentRepository.findByImpUid(PAYMENT_ID)).willReturn(
+			Optional.of(Payment.create(PAYMENT_ID, MERCHANT_UID, (long) PRICE, PaymentStatus.CANCELLED,
+				ORDER_ID, USER_ID, SUB_CATEGORY_ID)));
+
+		// when
+		assertThatCode(() -> paymentWebhookService.processWebhook(webhookBody("Paid")))
+			.doesNotThrowAnyException();
+
+		// then
+		assertThat(order.getStatus()).isEqualTo(OrderStatus.CANCELLED);
+		verify(orderRepository, never()).save(any(Order.class));
+		verify(paymentRepository, never()).save(any(Payment.class));
+		verify(portOneClient, never()).cancelPayment(any(), any());
+		verifyNoInteractions(orderDiscountRestorer, resultService, eventPublisher);
 	}
 
 	@Test
@@ -413,5 +487,259 @@ class PaymentWebhookServiceTest {
 		assertThat(order.getStatus()).isEqualTo(OrderStatus.FAILED);
 		verify(orderDiscountRestorer).restore(order);
 		verify(paymentRepository, never()).save(any(Payment.class));
+	}
+
+	// ===== 이미 다른 결제로 확정된 주문에 결제가 또 옴 =====
+
+	@Nested
+	@DisplayName("결제 pay_test_001 로 이미 PAID 가 된 주문에 다른 결제 pay_test_002 의 Paid 웹훅이 오면")
+	class WhenSecondPaymentWebhookArrivesForPaidOrder {
+
+		private final Order order = paidOrder(PAYMENT_ID);
+
+		@BeforeEach
+		void givenPaidOrder() {
+			givenLockedOrder(order);
+		}
+
+		/** 두 번째 결제는 payments 표에 아직 기록되지 않았다. 자동 취소까지 가는 테스트에서만 부른다. */
+		private void givenSecondPaymentNotRecorded() {
+			given(paymentRepository.findByImpUid(SECOND_PAYMENT_ID)).willReturn(Optional.empty());
+		}
+
+		@Test
+		@DisplayName("포트원에서 승인된 결제면 그 결제를 취소하고 알림을 한 번 보낸 뒤 예외 없이 끝내며 주문은 첫 결제 그대로 둔다")
+		void cancelsSecondPaymentAndReturnsNormally() {
+			// given
+			given(portOneClient.getPayment(SECOND_PAYMENT_ID)).willReturn(
+				portOneResponseWithCustomData(SECOND_PAYMENT_ID, "PAID", PRICE));
+			givenSecondPaymentNotRecorded();
+
+			// when
+			assertThatCode(() -> paymentWebhookService.processWebhook(webhookBody(SECOND_PAYMENT_ID, "Paid")))
+				.doesNotThrowAnyException();
+
+			// then
+			verify(portOneClient, times(1)).cancelPayment(SECOND_PAYMENT_ID, "같은 주문의 중복 결제 자동 취소");
+			PaymentAnomalyEvent alert = capturedAnomalyEvent();
+			assertThat(alert.summary()).contains("자동으로 취소했습니다");
+			assertThat(alert.details())
+				.containsEntry("주문에 기록된 결제 ID", PAYMENT_ID)
+				.containsEntry("한 번 더 온 결제 ID", SECOND_PAYMENT_ID);
+			assertThat(order.getStatus()).isEqualTo(OrderStatus.PAID);
+			assertThat(order.getPaymentId()).isEqualTo(PAYMENT_ID);
+			verify(orderRepository, never()).save(any(Order.class));
+			verify(paymentRepository, never()).save(any(Payment.class));
+			verifyNoInteractions(orderDiscountRestorer, resultService);
+		}
+
+		@Test
+		@DisplayName("두 번째 결제의 취소는 주문을 잠근 트랜잭션이 커밋된 뒤에 부른다")
+		void cancelsAfterTransactionCommits() {
+			// given
+			given(portOneClient.getPayment(SECOND_PAYMENT_ID)).willReturn(
+				portOneResponseWithCustomData(SECOND_PAYMENT_ID, "PAID", PRICE));
+			givenSecondPaymentNotRecorded();
+
+			// when
+			paymentWebhookService.processWebhook(webhookBody(SECOND_PAYMENT_ID, "Paid"));
+
+			// then
+			InOrder inOrder = inOrder(orderRepository, transactionManager, portOneClient);
+			inOrder.verify(orderRepository).findByMerchantUidWithLock(MERCHANT_UID);
+			inOrder.verify(transactionManager).commit(any(TransactionStatus.class));
+			inOrder.verify(portOneClient).cancelPayment(SECOND_PAYMENT_ID, "같은 주문의 중복 결제 자동 취소");
+		}
+
+		@Test
+		@DisplayName("포트원 취소가 실패해도 예외 없이 끝내 포트원에 200 을 돌려주고, 손으로 취소하라는 알림을 한 번 보낸다")
+		void returnsNormallyAndAlertsWhenCancelFails() {
+			// given
+			given(portOneClient.getPayment(SECOND_PAYMENT_ID)).willReturn(
+				portOneResponseWithCustomData(SECOND_PAYMENT_ID, "PAID", PRICE));
+			givenSecondPaymentNotRecorded();
+			willThrow(new PaymentException("결제 취소 연동 중 오류가 발생했습니다."))
+				.given(portOneClient).cancelPayment(SECOND_PAYMENT_ID, "같은 주문의 중복 결제 자동 취소");
+			given(portOneClient.findPayment(SECOND_PAYMENT_ID)).willReturn(
+				Optional.of(portOneResponseWithCustomData(SECOND_PAYMENT_ID, "PAID", PRICE)));
+
+			// when
+			assertThatCode(() -> paymentWebhookService.processWebhook(webhookBody(SECOND_PAYMENT_ID, "Paid")))
+				.doesNotThrowAnyException();
+
+			// then
+			assertThat(capturedAnomalyEvent().summary()).contains("자동 취소에 실패했습니다");
+			verify(paymentRepository, never()).save(any(Payment.class));
+			verifyNoInteractions(resultService);
+		}
+
+		@ParameterizedTest(name = "포트원 재조회 상태 {0}")
+		@ValueSource(strings = {"READY", "FAILED", "CANCELLED"})
+		@DisplayName("두 번째 결제가 포트원에서 승인 전이거나 실패·전액 취소 상태면 돈이 빠져나가지 않았으므로 취소·알림 없이 정상 반환한다")
+		void ignoresSecondPaymentThatIsNotPaid(String status) {
+			// given
+			given(portOneClient.getPayment(SECOND_PAYMENT_ID)).willReturn(
+				portOneResponseWithCustomData(SECOND_PAYMENT_ID, status, PRICE));
+
+			// when
+			paymentWebhookService.processWebhook(webhookBody(SECOND_PAYMENT_ID, "Paid"));
+
+			// then
+			assertThat(order.getPaymentId()).isEqualTo(PAYMENT_ID);
+			verify(portOneClient, never()).cancelPayment(any(), any());
+			verifyNoInteractions(eventPublisher, paymentRepository, resultService);
+		}
+
+		@ParameterizedTest(name = "포트원 재조회 상태 {0}")
+		@ValueSource(strings = {"PARTIAL_CANCELLED", "partial_cancelled"})
+		@DisplayName("두 번째 결제가 포트원에서 부분 취소 상태면 남은 금액이 청구돼 있으므로, 취소하지 않고 확인해 달라는 알림을 한 번 보낸 뒤 정상 반환한다")
+		void alertsWithoutCancelWhenSecondPaymentIsPartiallyCancelled(String status) {
+			// given
+			given(portOneClient.getPayment(SECOND_PAYMENT_ID)).willReturn(
+				portOneResponseWithCustomData(SECOND_PAYMENT_ID, status, PRICE));
+
+			// when
+			assertThatCode(() -> paymentWebhookService.processWebhook(webhookBody(SECOND_PAYMENT_ID, "Paid")))
+				.doesNotThrowAnyException();
+
+			// then
+			assertThat(order.getPaymentId()).isEqualTo(PAYMENT_ID);
+			verify(portOneClient, never()).cancelPayment(any(), any());
+			PaymentAnomalyEvent alert = capturedAnomalyEvent();
+			assertThat(alert.summary()).isEqualTo("이미 결제가 끝난 주문에 다른 결제가 부분 취소 상태로 왔습니다. "
+				+ "남은 금액이 아직 청구돼 있으니 확인해 주세요. 자동 취소는 하지 않았습니다.");
+			assertThat(alert.details())
+				.containsEntry("한 번 더 온 결제 ID", SECOND_PAYMENT_ID)
+				.containsEntry("포트원 결제 상태", status);
+			verify(orderRepository, never()).save(any(Order.class));
+			verify(paymentRepository, never()).save(any(Payment.class));
+			verifyNoInteractions(orderDiscountRestorer, resultService);
+		}
+
+		@Test
+		@DisplayName("두 번째 결제가 payments 표에 이미 다른 주문의 결제로 기록돼 있으면, 운영자가 웹훅을 다시 보내도 취소하지 않고 확인해 달라는 알림을 한 번 보낸 뒤 정상 반환한다")
+		void alertsWithoutCancelWhenSecondPaymentIsRecordedForAnotherOrder() {
+			// given: customData 대조가 없던 예전 코드가 이 결제를 다른 주문 order_other_999 의 결제로 기록했다
+			given(portOneClient.getPayment(SECOND_PAYMENT_ID)).willReturn(
+				portOneResponseWithCustomData(SECOND_PAYMENT_ID, "PAID", PRICE));
+			given(paymentRepository.findByImpUid(SECOND_PAYMENT_ID)).willReturn(Optional.of(
+				Payment.create(SECOND_PAYMENT_ID, "order_other_999", (long) PRICE, PaymentStatus.PAID, 99L, 2L,
+					SUB_CATEGORY_ID)));
+
+			// when
+			assertThatCode(() -> paymentWebhookService.processWebhook(webhookBody(SECOND_PAYMENT_ID, "Paid")))
+				.doesNotThrowAnyException();
+
+			// then
+			assertThat(order.getPaymentId()).isEqualTo(PAYMENT_ID);
+			verify(portOneClient, never()).cancelPayment(any(), any());
+			PaymentAnomalyEvent alert = capturedAnomalyEvent();
+			assertThat(alert.summary()).isEqualTo("이미 결제 기록이 있는 결제가 결제가 끝난 주문에 또 왔습니다. "
+				+ "다른 주문의 결제로 기록됐을 수 있어 자동 취소는 하지 않았습니다. 결제가 기록된 주문을 확인해 주세요.");
+			assertThat(alert.details())
+				.containsEntry("한 번 더 온 결제 ID", SECOND_PAYMENT_ID)
+				.containsEntry("결제가 기록된 주문 번호", "order_other_999");
+			verify(orderRepository, never()).save(any(Order.class));
+			verify(paymentRepository, never()).save(any(Payment.class));
+			verifyNoInteractions(orderDiscountRestorer, resultService);
+		}
+	}
+
+	@Test
+	@DisplayName("결제 ID 가 기록되지 않은 예전 PAID 주문에 승인된 결제의 웹훅이 오면 같은 결제인지 가릴 수 없어 취소하지 않고 알림만 한 번 보낸다")
+	void processWebhook_paidOrderWithoutRecordedPaymentId_alertsWithoutCancel() {
+		// given
+		Order order = createOrder(OrderStatus.PAID, null, null);
+		given(portOneClient.getPayment(PAYMENT_ID)).willReturn(
+			portOneResponseWithCustomData("PAID", PRICE));
+		givenLockedOrder(order);
+
+		// when
+		assertThatCode(() -> paymentWebhookService.processWebhook(webhookBody("Paid")))
+			.doesNotThrowAnyException();
+
+		// then
+		verify(portOneClient, never()).cancelPayment(any(), any());
+		PaymentAnomalyEvent alert = capturedAnomalyEvent();
+		assertThat(alert.summary()).contains("자동 취소는 하지 않았습니다");
+		assertThat(alert.details()).containsEntry("주문에 기록된 결제 ID", "없음");
+		verifyNoInteractions(paymentRepository, resultService);
+	}
+
+	// ===== 포트원 재조회 상태별 처리 =====
+
+	/**
+	 * 포트원 재조회 상태(상수 이름 그대로)마다 PENDING 주문이 웹훅 뒤 어느 상태가 돼야 하는지 적은 표. PaymentStatus 에 상수가
+	 * 늘면 {@link #statusTableCoversEveryPaymentStatus()} 가 실패해 이 표를 채우게 한다. CANCEL_REQUESTED 는 포트원
+	 * 상태에서 나오지 않는 내부 상태라 모르는 상태와 같이 주문을 그대로 둔다.
+	 */
+	private static final Map<PaymentStatus, OrderStatus> ORDER_STATUS_AFTER_WEBHOOK = Map.of(
+		PaymentStatus.PAID, OrderStatus.PAID,
+		PaymentStatus.READY, OrderStatus.PENDING,
+		PaymentStatus.VIRTUAL_ACCOUNT_ISSUED, OrderStatus.PENDING,
+		PaymentStatus.FAILED, OrderStatus.FAILED,
+		PaymentStatus.CANCELLED, OrderStatus.FAILED,
+		PaymentStatus.CANCEL_REQUESTED, OrderStatus.PENDING
+	);
+
+	@Test
+	@DisplayName("상태별 기대 결과 표에는 PaymentStatus 의 모든 상수가 있다")
+	void statusTableCoversEveryPaymentStatus() {
+		assertThat(ORDER_STATUS_AFTER_WEBHOOK).containsOnlyKeys(PaymentStatus.values());
+	}
+
+	@ParameterizedTest(name = "포트원 재조회 상태 {0}")
+	@EnumSource(PaymentStatus.class)
+	@DisplayName("포트원 재조회 상태마다 표에 적은 대로 PENDING 주문을 확정·실패 기록하거나 그대로 둔다")
+	void processWebhook_eachPortOneStatus_followsStatusTable(PaymentStatus status) {
+		// given
+		Order order = createOrder(OrderStatus.PENDING, null, null);
+		given(portOneClient.getPayment(PAYMENT_ID)).willReturn(
+			portOneResponseWithCustomData(status.name(), PRICE));
+		givenLockedOrder(order);
+		given(paymentRepository.findByImpUid(PAYMENT_ID)).willReturn(Optional.empty());
+		// 저장은 확정(PAID)·실패 기록(FAILED) 상태에서만 일어나므로 lenient 로 둔다.
+		lenient().when(orderRepository.save(any(Order.class))).thenAnswer(invocation -> invocation.getArgument(0));
+		lenient().when(paymentRepository.save(any(Payment.class))).thenAnswer(invocation -> {
+			Payment payment = invocation.getArgument(0);
+			ReflectionTestUtils.setField(payment, "id", PAYMENT_PK_ID);
+			return payment;
+		});
+
+		// when
+		paymentWebhookService.processWebhook(webhookBody("Paid"));
+
+		// then
+		assertThat(order.getStatus()).isEqualTo(ORDER_STATUS_AFTER_WEBHOOK.get(status));
+	}
+
+	// ===== 웹훅 본문 형식 =====
+
+	@Test
+	@DisplayName("status 없이 type 만 있는 신형 웹훅 본문이 오면 포트원·주문을 건드리지 않고 warn 로그를 남긴 뒤 정상 반환한다")
+	void processWebhook_newFormatBody_logsWarnAndIgnores() {
+		// given: 포트원 콘솔에서 웹훅 버전을 2024-04-25 로 바꾸면 오는 형식
+		String newFormatBody = "{\"type\":\"Transaction.Paid\",\"timestamp\":\"2026-01-01T00:00:00Z\","
+			+ "\"data\":{\"paymentId\":\"" + PAYMENT_ID + "\",\"storeId\":\"store_1\",\"transactionId\":\"tx_1\"}}";
+		Logger logger = (Logger) LoggerFactory.getLogger(PaymentWebhookService.class);
+		ListAppender<ILoggingEvent> appender = new ListAppender<>();
+		appender.start();
+		logger.addAppender(appender);
+
+		try {
+			// when
+			paymentWebhookService.processWebhook(newFormatBody);
+
+			// then
+			assertThat(appender.list).anySatisfy(logEvent -> {
+				assertThat(logEvent.getLevel()).isEqualTo(Level.WARN);
+				assertThat(logEvent.getFormattedMessage())
+					.contains("status 없이 type 만 있는 웹훅 본문")
+					.contains("Transaction.Paid");
+			});
+			verifyNoInteractions(portOneClient, orderRepository, paymentRepository, eventPublisher);
+		} finally {
+			logger.detachAppender(appender);
+		}
 	}
 }

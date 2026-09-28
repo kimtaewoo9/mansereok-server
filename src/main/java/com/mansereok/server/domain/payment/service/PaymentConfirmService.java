@@ -8,6 +8,8 @@ import com.mansereok.server.domain.payment.dto.request.PaymentCompleteRequest;
 import com.mansereok.server.domain.payment.dto.response.PortOnePaymentResponse;
 import com.mansereok.server.domain.payment.entity.PaymentStatus;
 import com.mansereok.server.domain.payment.repository.PaymentRepository;
+import com.mansereok.server.domain.payment.service.ConfirmOutcome.DuplicatePayment;
+import com.mansereok.server.domain.payment.service.ConfirmOutcome.Finished;
 import com.mansereok.server.domain.user.entity.User;
 import com.mansereok.server.domain.user.repository.UserRepository;
 import com.mansereok.server.global.exception.PaymentException;
@@ -26,8 +28,10 @@ import org.springframework.transaction.support.TransactionTemplate;
  * <ol>
  *   <li>트랜잭션 밖: 포트원 결제 조회 → 결제 ID 대조. 타임아웃 없는 외부 호출이 행 락과 DB 커넥션 점유 시간이 되지 않게 하고,
  *       요청과 다른 결제를 받아 왔으면 주문을 잠그기 전에 거부한다.</li>
- *   <li>트랜잭션 안: 잠금 조회 → 소유자 검사 → PAID 멱등 반환 → 결제 중복 검사 → customData 대조 → 금액 검증
- *       → 상태 매핑 → 확정({@link PaidOrderFinalizer#finalizePaid}).</li>
+ *   <li>트랜잭션 안: 잠금 조회 → 소유자 검사 → PAID 주문이면 같은 결제인지 가리기 → 결제 중복 검사 → customData 대조
+ *       → 금액 검증 → 상태 매핑 → 확정({@link PaidOrderFinalizer#finalizePaid}).</li>
+ *   <li>트랜잭션 밖: 이미 다른 결제로 확정된 주문에 결제가 한 번 더 승인됐으면 그 결제를 포트원에서 취소하고 알린 뒤
+ *       PaymentException(400)을 던진다({@link DuplicatePaymentCanceller}).</li>
  * </ol>
  *
  * <p>결제 ID 대조를 통과한 뒤에는 요청값이 아니라 포트원 응답의 결제 ID 로 중복을 검사하고 Payment.impUid 에 저장한다.
@@ -36,11 +40,14 @@ import org.springframework.transaction.support.TransactionTemplate;
  * finalizePaid 가 발행한 이벤트를 커밋 뒤 비동기 리스너가 받아 보낸다.
  *
  * <p>포트원 응답은 트랜잭션 밖에서 받은 스냅샷이다. 그 사이 웹훅이 같은 주문을 먼저 확정했으면 잠금 조회 뒤의
- * PAID 멱등 반환·결제 중복 검사가 걸러낸다.
+ * PAID 주문 검사·결제 중복 검사가 걸러낸다.
  */
 @Service
 @Slf4j
 public class PaymentConfirmService {
+
+	/** 이미 결제가 끝난 주문에 결제가 한 번 더 승인됐을 때 돌려주는 안내. 자동 취소에 실패해도 같은 문구를 쓴다(운영자가 손으로 취소한다). */
+	static final String DUPLICATE_PAYMENT_MESSAGE = "이미 결제가 끝난 주문입니다. 중복 결제는 자동으로 취소됩니다.";
 
 	private final UserRepository userRepository;
 	private final OrderRepository orderRepository;
@@ -48,6 +55,7 @@ public class PaymentConfirmService {
 	private final PortOneClient portOneClient;
 	private final PaymentVerifier paymentVerifier;
 	private final PaidOrderFinalizer paidOrderFinalizer;
+	private final DuplicatePaymentCanceller duplicatePaymentCanceller;
 	private final TransactionTemplate transactionTemplate;
 
 	public PaymentConfirmService(
@@ -57,6 +65,7 @@ public class PaymentConfirmService {
 		PortOneClient portOneClient,
 		PaymentVerifier paymentVerifier,
 		PaidOrderFinalizer paidOrderFinalizer,
+		DuplicatePaymentCanceller duplicatePaymentCanceller,
 		PlatformTransactionManager transactionManager
 	) {
 		this.userRepository = userRepository;
@@ -65,6 +74,7 @@ public class PaymentConfirmService {
 		this.portOneClient = portOneClient;
 		this.paymentVerifier = paymentVerifier;
 		this.paidOrderFinalizer = paidOrderFinalizer;
+		this.duplicatePaymentCanceller = duplicatePaymentCanceller;
 		this.transactionTemplate = new TransactionTemplate(transactionManager);
 	}
 
@@ -73,7 +83,7 @@ public class PaymentConfirmService {
 	 *
 	 * @throws AccessDeniedException 요청자가 주문 소유자가 아닐 때 (403)
 	 * @throws PaymentException      결제 ID 불일치 · 사용자 없음 · 주문 없음 · 결제 중복 · customData 없음 · 주문 번호 불일치
-	 *                               · 금액 불일치 (400)
+	 *                               · 금액 불일치 · 이미 다른 결제로 확정된 주문에 한 번 더 승인된 결제(자동 취소 뒤) (400)
 	 * @throws com.mansereok.server.global.exception.PortOneUnavailableException 포트원 일시 장애 (503, 트랜잭션 시작 전)
 	 */
 	public Order complete(String username, PaymentCompleteRequest request) {
@@ -85,10 +95,21 @@ public class PaymentConfirmService {
 		paymentVerifier.assertPaymentIdMatches(request.getPaymentId(), paymentResponse);
 
 		// 2. 트랜잭션 안: 잠금·검증·확정
-		return transactionTemplate.execute(status -> confirm(username, request, paymentResponse));
+		ConfirmOutcome outcome = transactionTemplate.execute(
+			status -> confirm(username, request, paymentResponse));
+
+		// 3. 트랜잭션 밖: 중복 결제 취소. 잠금과 트랜잭션을 놓은 뒤 포트원을 부른다.
+		//    open-in-view 가 켜져 있어 DB 커넥션은 요청이 끝날 때까지 잡혀 있다(포트원 읽기 시간 제한 안에서).
+		return switch (outcome) {
+			case Finished finished -> finished.order();
+			case DuplicatePayment duplicate -> {
+				duplicatePaymentCanceller.cancel(duplicate);
+				throw new PaymentException(DUPLICATE_PAYMENT_MESSAGE);
+			}
+		};
 	}
 
-	private Order confirm(String username, PaymentCompleteRequest request,
+	private ConfirmOutcome confirm(String username, PaymentCompleteRequest request,
 		PortOnePaymentResponse paymentResponse) {
 		// complete 에서 요청값과 대조를 마친 포트원 결제 ID. 중복 검사와 Payment.impUid 저장에 쓴다.
 		String paymentId = paymentResponse.getId();
@@ -103,10 +124,9 @@ public class PaymentConfirmService {
 		// 소유자 대조. 멱등 반환보다 먼저 해서 타인의 PAID 주문 정보도 새지 않게 한다.
 		assertOrderOwnedBy(order, user);
 
-		// 멱등성 보장: 이미 처리된 주문이면 바로 반환
+		// 이미 결제가 끝난 주문: 같은 결제의 재요청이면 그대로 돌려주고, 한 번 더 승인된 다른 결제면 트랜잭션 밖에서 취소한다
 		if (order.getStatus() == OrderStatus.PAID) {
-			log.info("이미 처리된 주문입니다. orderId={}", order.getId());
-			return order;
+			return duplicatePaymentCanceller.classifyPaymentOnPaidOrder(order, paymentId, paymentResponse);
 		}
 
 		if (paymentRepository.findByImpUid(paymentId).isPresent()) {
@@ -126,7 +146,7 @@ public class PaymentConfirmService {
 		Optional<PaymentStatus> paymentStatus = paymentVerifier.resolveStatus(order, paymentId,
 			paymentResponse);
 		if (paymentStatus.isEmpty()) {
-			return order;
+			return new Finished(order);
 		}
 
 		if (paymentStatus.get() == PaymentStatus.PAID) {
@@ -141,12 +161,12 @@ public class PaymentConfirmService {
 			log.info("결제 완료 API 로 결제 확정: orderId={}, paymentId={}, status={}",
 				order.getId(), paymentId, order.getStatus());
 
-			return order;  // 이제 PAID 상태로 반환
+			return new Finished(order);  // 이제 PAID 상태로 반환
 		}
 
 		// PAID 가 아닌 경우
 		log.warn("결제가 아직 완료되지 않았습니다: status={}", paymentStatus.get());
-		return order;
+		return new Finished(order);
 	}
 
 	/**
