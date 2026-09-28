@@ -28,6 +28,11 @@ public class RefreshTokenService {
 	 * @return 생성된 RefreshToken 엔티티
 	 */
 	public RefreshToken generateRefreshToken(User user) {
+		// 리프레시 토큰을 지운 뒤 넣는다. 넣을 때 외래 키 확인으로 users 행을 공유 잠금하므로 같은 회원의 행을 리프레시 토큰 → users
+		// 순서로 잠근다. 재설정 확인·탈퇴도 이 순서를 따른다(UserService 클래스 설명). users 행을 먼저 잠그도록 바꾸면 그 둘과
+		// 교착이 날 수 있다. 순서만으로는 리프레시 토큰이 하나도 없는 회원일 때 교착이 남는다. 재설정 확인·탈퇴가 0행을 고치거나
+		// 지우며 건 틈 잠금을 여기서 새 토큰을 넣을 때 기다리기 때문이다. 그래서 재설정 확인·탈퇴는 틈 잠금을 걸지 않는
+		// READ COMMITTED 로 돌고, 이 메서드는 기본 격리 수준 그대로 둔다.
 		cleanupOldTokens(user);
 
 		// 새로운 토큰 생성

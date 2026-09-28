@@ -250,13 +250,13 @@ public class AuthController {
 	}
 
 	@PostMapping("/api/auth/password-reset/request")
-	public ResponseEntity<?> requestPasswordReset(@RequestBody PasswordResetRequestDto requestDto) {
+	public ResponseEntity<?> requestPasswordReset(@Valid @RequestBody PasswordResetRequestDto requestDto) {
 		userService.requestPasswordReset(requestDto.email());
 		return ResponseEntity.ok(Map.of("message", "비밀번호 재설정 메일이 전송되었습니다."));
 	}
 
 	@PostMapping("/api/auth/password-reset/confirm")
-	public ResponseEntity<?> confirmPasswordReset(@RequestBody PasswordResetConfirmDto confirmDto) {
+	public ResponseEntity<?> confirmPasswordReset(@Valid @RequestBody PasswordResetConfirmDto confirmDto) {
 		userService.resetPassword(confirmDto.token(), confirmDto.newPassword());
 		return ResponseEntity.ok(Map.of("message", "비밀번호가 성공적으로 변경되었습니다."));
 	}

@@ -11,8 +11,10 @@ import jakarta.persistence.JoinColumn;
 import jakarta.persistence.OneToOne;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.UUID;
+import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
@@ -29,8 +31,11 @@ import lombok.NoArgsConstructor;
 	}
 )
 @Getter
-@NoArgsConstructor
+@NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class PasswordResetToken {
+
+	// 재설정 링크를 쓸 수 있는 시간
+	private static final Duration VALID_FOR = Duration.ofMinutes(15);
 
 	@Id
 	@GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -46,13 +51,38 @@ public class PasswordResetToken {
 	@Column(nullable = false)
 	private LocalDateTime expiryDate;
 
-	public PasswordResetToken(User user) {
+	/**
+	 * 사용자의 첫 재설정 토큰을 만든다. now 부터 15분 동안 쓸 수 있다.
+	 *
+	 * @param now 지금 시각. 호출하는 쪽이 주입받은 Clock 으로 구한다.
+	 */
+	public PasswordResetToken(User user, LocalDateTime now) {
 		this.user = user;
-		this.token = UUID.randomUUID().toString();
-		this.expiryDate = LocalDateTime.now().plusMinutes(15); // 15분 유효
+		this.token = newTokenValue();
+		this.expiryDate = now.plus(VALID_FOR);
 	}
 
-	public boolean isExpired() {
-		return LocalDateTime.now().isAfter(expiryDate);
+	/**
+	 * 토큰이 만료된 사용자가 다시 요청하면 행을 지우고 새로 넣는 대신, 이 행의 토큰 값을 새로 만들고 만료 시각을 now 부터 15분 뒤로
+	 * 바꾼다. 앞서 보낸 링크의 토큰 값은 더 이상 어느 행에도 없으므로 쓸 수 없다. 만료 전의 재요청은 이 메서드를 부르지 않고 같은 토큰을
+	 * 다시 보낸다(UserService.requestPasswordReset).
+	 *
+	 * @param now 지금 시각. 호출하는 쪽이 주입받은 Clock 으로 구한다.
+	 */
+	public void reissue(LocalDateTime now) {
+		this.token = newTokenValue();
+		this.expiryDate = now.plus(VALID_FOR);
+	}
+
+	/**
+	 * now 가 만료 시각과 같거나 지났으면 만료로 본다. 토큰을 쓸 때의 조건부 DELETE(PasswordResetTokenRepository.consume)도
+	 * "만료 시각 &gt; now" 인 행만 지우므로, 두 판단의 경계가 같다.
+	 */
+	public boolean isExpiredAt(LocalDateTime now) {
+		return !now.isBefore(expiryDate);
+	}
+
+	private static String newTokenValue() {
+		return UUID.randomUUID().toString();
 	}
 }

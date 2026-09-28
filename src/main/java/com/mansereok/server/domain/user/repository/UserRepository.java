@@ -2,8 +2,10 @@ package com.mansereok.server.domain.user.repository;
 
 import com.mansereok.server.domain.user.entity.SocialType;
 import com.mansereok.server.domain.user.entity.User;
+import jakarta.persistence.LockModeType;
 import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
@@ -29,5 +31,16 @@ public interface UserRepository extends JpaRepository<User, Long> {
 	Optional<User> findBySocialTypeAndSocialId(SocialType socialType, String socialId);
 
 	boolean existsByEmail(String email);
+
+	/**
+	 * 사용자 행을 SELECT ... FOR UPDATE 로 읽어 트랜잭션이 끝날 때까지 잠근다. 같은 사용자의 비밀번호 재설정 요청을 한 줄로 세우고,
+	 * 재설정 확인과 탈퇴는 재설정 토큰을 쓰거나 지우기 전에 이 잠금을 먼저 잡아 잠그는 순서를 맞춘다(UserService 클래스 설명).
+	 *
+	 * <p>잠금을 기다린 뒤 일반 SELECT 로 앞 요청이 커밋한 행을 보려면 부르는 트랜잭션이 READ COMMITTED 여야 한다. REPEATABLE READ
+	 * 에서는 잠금 전 첫 조회 때의 스냅숏을 계속 읽는다(UserService.requestPasswordReset 참고).
+	 */
+	@Lock(LockModeType.PESSIMISTIC_WRITE)
+	@Query("select u from User u where u.id = :id")
+	Optional<User> findByIdForUpdate(@Param("id") Long id);
 
 }

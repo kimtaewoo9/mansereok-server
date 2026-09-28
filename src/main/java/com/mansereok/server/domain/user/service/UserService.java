@@ -19,6 +19,7 @@ import com.mansereok.server.domain.user.dto.request.ProfileUpdateRequestDto;
 import com.mansereok.server.domain.user.entity.Gender;
 import com.mansereok.server.domain.user.entity.SocialType;
 import com.mansereok.server.domain.user.entity.User;
+import com.mansereok.server.domain.user.event.PasswordResetRequestedEvent;
 import com.mansereok.server.domain.user.event.UserRegisteredEvent;
 import com.mansereok.server.domain.user.event.UserWithdrawnEvent;
 import com.mansereok.server.domain.user.repository.RefreshTokenRepository;
@@ -26,7 +27,9 @@ import com.mansereok.server.domain.user.repository.UserRepository;
 import com.mansereok.server.global.exception.DuplicateEmailException;
 import com.mansereok.server.global.exception.UniqueConstraintViolations;
 import jakarta.persistence.EntityNotFoundException;
+import java.time.Clock;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
@@ -40,6 +43,7 @@ import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.util.StringUtils;
@@ -54,6 +58,17 @@ import org.springframework.util.StringUtils;
  * <p>가입은 메서드에 {@code @Transactional} 을 붙이지 않고 {@link TransactionTemplate} 으로 저장 구간만 트랜잭션으로 묶는다.
  * 비밀번호 암호화(BCrypt)를 트랜잭션 전에 끝내고, 트랜잭션이 끝난 뒤 밖에서 UNIQUE 위반을 DuplicateEmailException 으로 바꾸기
  * 위해서다.
+ *
+ * <p>같은 회원의 행은 리프레시 토큰 → users → 재설정 토큰 순서로 잠근다. 탈퇴(deleteUser), 비밀번호 재설정 요청
+ * (requestPasswordReset)·확인(resetPassword)이 이 순서를 따른다. 로그인과 토큰 재발급(RefreshTokenService.generateRefreshToken)은
+ * 리프레시 토큰을 지운 뒤 새 토큰을 넣으면서 외래 키 확인으로 users 행을 공유 잠금하므로 이미 이 순서다. 순서를 달리 잡은 두 요청이
+ * 겹치면 서로의 잠금을 기다리다 MySQL 이 한쪽을 교착(1213)으로 롤백하고, 그 요청은 503 을 받는다.
+ *
+ * <p>순서만 맞춰서는 회원에게 리프레시 토큰 행이 하나도 없을 때 교착이 남는다. REPEATABLE READ(MySQL 기본값)에서는 0행을 고치거나
+ * 지우는 문장도 user_id 인덱스의 그 자리에 틈 잠금을 건다. 그사이 로그인이 users 행을 공유 잠금하고 그 틈에 새 토큰을 넣으려다
+ * 기다리면, 뒤이어 users 행을 잠그려는 쪽과 서로를 기다린다. READ COMMITTED 에서는 틈 잠금을 걸지 않아 로그인이 먼저 넣고 커밋한다.
+ * 그래서 리프레시 토큰을 먼저 다루는 확인과 탈퇴도 요청처럼 READ COMMITTED 로 돈다. READ COMMITTED 트랜잭션의 쓰기는 binlog_format
+ * 이 STATEMENT 면 MySQL 이 1665 로 거절하므로, 운영 DB 의 binlog_format 이 ROW 나 MIXED 인지 배포 전에 확인한다.
  */
 @Service
 @Slf4j
@@ -78,6 +93,7 @@ public class UserService {
 
 	private final ApplicationEventPublisher eventPublisher;
 	private final TransactionTemplate transactionTemplate;
+	private final Clock clock;
 
 	public UserService(
 		UserRepository userRepository,
@@ -91,7 +107,8 @@ public class UserService {
 		EmailService emailService,
 		ReviewRepository reviewRepository,
 		ApplicationEventPublisher eventPublisher,
-		PlatformTransactionManager transactionManager
+		PlatformTransactionManager transactionManager,
+		Clock clock
 	) {
 		this.userRepository = userRepository;
 		this.resultRepository = resultRepository;
@@ -105,6 +122,7 @@ public class UserService {
 		this.reviewRepository = reviewRepository;
 		this.eventPublisher = eventPublisher;
 		this.transactionTemplate = new TransactionTemplate(transactionManager);
+		this.clock = clock;
 	}
 
 	/**
@@ -404,8 +422,16 @@ public class UserService {
 	 *
 	 * <p>탈퇴 알림은 여기서 보내지 않고 탈퇴 이벤트만 발행한다. 알림은 커밋 뒤에 UserNotificationListener 가 보낸다. 트랜잭션
 	 * 안에서 보내면 1 에서 잠근 주문·결제 행과 DB 커넥션을 쥔 채 외부 응답을 기다리고, 커밋이 실패해도 탈퇴 알림이 이미 나간다.
+	 *
+	 * <p>재설정 토큰은 users 행을 잠근 뒤에 지운다(잠금 순서는 클래스 설명). 예전처럼 먼저 지우면, users 행을 잠그고 재설정 토큰을
+	 * 넣거나 바꾸려는 같은 회원의 재설정 요청과 서로를 기다리다 한쪽이 교착으로 롤백됐다.
+	 *
+	 * <p>READ COMMITTED 로 돈다(클래스 설명). 그래서 리프레시 토큰이 없는 회원이면 처음 지운 뒤 users 를 잠그기 전에 로그인이 새
+	 * 토큰을 넣고 커밋할 수 있다. users 를 잠근 뒤 리프레시 토큰을 한 번 더 지워 그 토큰을 치운다. 치우지 않으면 users 삭제가 외래
+	 * 키(ON DELETE CASCADE 가 없을 때)에 걸려 탈퇴가 500 으로 롤백된다. 그 틈에 로그인이 두 번 이어져, 뒤 로그인이 앞 로그인의 토큰을
+	 * 지운 채 users 잠금을 기다리면 두 번째 삭제가 그 토큰을 기다려 교착이 나고 탈퇴가 503 을 받는다.
 	 */
-	@Transactional
+	@Transactional(isolation = Isolation.READ_COMMITTED)
 	public void deleteUser(String username) {
 		User user = findByUsername(username);
 		Long userId = user.getId();
@@ -415,14 +441,18 @@ public class UserService {
 		orderRepository.detachUser(userId);
 
 		// 2. 사용자를 가리키는 행을 사용자보다 먼저 지운다 (Hard Delete)
-		//    순서: 재설정 토큰 → 리프레시 토큰 → 사주 결과·궁합 결과·리뷰 → (3) 사용자
+		//    순서: 리프레시 토큰 → 사주 결과·궁합 결과·리뷰 → users 행 잠금 → 리프레시 토큰 한 번 더 → 재설정 토큰 → (3) 사용자
 		//    재설정 토큰과 리프레시 토큰은 users 를 외래 키로 가리켜, 남아 있으면 3 의 DELETE 가 막히고 탈퇴 전체가 롤백된다.
 		//    리뷰는 작성자 이름·이메일 사본을 들고 있어 개인정보 파기를 위해 지운다.
-		passwordResetTokenRepository.deleteAllByUserId(userId); // 재설정 토큰 삭제
 		refreshTokenRepository.deleteByUser(user);       // 리프레시 토큰 삭제
 		resultRepository.deleteAllByUserId(userId);      // 사주 결과 삭제
 		compatibilityResultRepository.deleteAllByUserId(userId); // 궁합 결과 삭제
 		reviewRepository.deleteAllByUserId(userId);      // 리뷰 삭제
+		// 그사이 다른 요청이 먼저 탈퇴시켰으면 행이 없다
+		userRepository.findByIdForUpdate(userId)
+			.orElseThrow(() -> new EntityNotFoundException("사용자를 찾을 수 없습니다."));
+		refreshTokenRepository.deleteByUser(user);       // 처음 지운 뒤 로그인이 넣고 커밋한 리프레시 토큰 삭제
+		passwordResetTokenRepository.deleteAllByUserId(userId); // 재설정 토큰 삭제
 
 		// 3. 유저 삭제 (Hard Delete)
 		userRepository.delete(user);
@@ -433,7 +463,24 @@ public class UserService {
 		eventPublisher.publishEvent(new UserWithdrawnEvent(userId, user.getName(), user.getEmail()));
 	}
 
-	@Transactional
+	/**
+	 * 비밀번호 재설정 메일을 요청한다. 가입하지 않은 이메일이면 아무것도 하지 않는다(계정이 있는지 알려 주지 않는다). 소셜 가입자에게는
+	 * 비밀번호가 없다는 안내 메일을 보낸다.
+	 *
+	 * <p>이메일 가입자는 사용자당 토큰 한 행을 둔다. 행이 없으면 새로 넣고(INSERT), 행의 토큰이 만료됐으면 토큰 값과 만료 시각만
+	 * 바꾼다(UPDATE). 아직 만료 전이면 행을 그대로 두고 같은 토큰을 다시 보낸다. 그래서 메일로 나간 토큰은 만료 전까지 모두 DB 에 있고,
+	 * 버튼을 두 번 누르거나 남이 이메일만 알고 요청을 되풀이해도 먼저 받은 링크가 죽지 않는다. 만료 시각도 늘리지 않는다. 예전처럼 지우고
+	 * 넣으면 INSERT 가 미뤄진 DELETE 보다 먼저 나가 user_id UNIQUE 에 걸렸다.
+	 *
+	 * <p>같은 사용자의 요청이 겹치면(버튼 두 번 누르기) 둘 다 "행 없음" 을 보고 INSERT 해 하나가 UNIQUE 에 걸린다. 그래서 users 행을
+	 * 잠가 한 줄로 세운다. 뒤 요청은 앞 요청이 커밋할 때까지 기다린 뒤 토큰 행을 읽는다. 이 읽기가 앞 요청이 넣은 행을 보려면
+	 * READ COMMITTED 여야 한다. MySQL 기본값인 REPEATABLE READ 에서는 잠금을 기다리기 전의 첫 조회(findByEmail) 때 찍은 스냅숏을
+	 * 계속 읽어 행이 없다고 보고 다시 INSERT 한다.
+	 *
+	 * <p>메일은 여기서 보내지 않고 {@link PasswordResetRequestedEvent} 를 발행한다. PasswordResetMailListener 가 커밋 뒤에 보내므로
+	 * 커밋된 토큰의 링크만 나간다. 겹친 요청도 각자 메일을 보내고, 모두 같은 토큰이라 어느 메일의 링크로도 재설정할 수 있다.
+	 */
+	@Transactional(isolation = Isolation.READ_COMMITTED)
 	public void requestPasswordReset(String email) {
 		User user = userRepository.findByEmail(email)
 			.orElse(null);
@@ -449,31 +496,75 @@ public class UserService {
 			return;
 		}
 
-		// 기존에 발급된 토큰이 있다면 삭제 (한 사람이 여러 번 요청했을 때 처리)
-		passwordResetTokenRepository.deleteByUserId(user.getId());
+		// 같은 사용자의 요청을 한 줄로 세운다. 그사이 탈퇴해 행이 없으면 미가입 이메일과 같게 끝낸다.
+		if (userRepository.findByIdForUpdate(user.getId()).isEmpty()) {
+			return;
+		}
 
-		// 새 토큰 생성 및 저장
-		PasswordResetToken token = new PasswordResetToken(user);
-		passwordResetTokenRepository.save(token);
+		LocalDateTime now = LocalDateTime.now(clock);
+		PasswordResetToken token;
+		Optional<PasswordResetToken> existingToken = passwordResetTokenRepository.findByUserId(user.getId());
+		if (existingToken.isEmpty()) {
+			token = passwordResetTokenRepository.save(new PasswordResetToken(user, now));
+		} else {
+			token = existingToken.get();
+			// 만료 전이면 바꾸지 않고 같은 토큰을 다시 보낸다
+			if (token.isExpiredAt(now)) {
+				token.reissue(now); // 커밋할 때 UPDATE 된다
+			}
+		}
 
-		// 이메일 발송
-		emailService.sendPasswordResetEmail(user.getEmail(), token.getToken());
+		eventPublisher.publishEvent(new PasswordResetRequestedEvent(user.getId(), user.getEmail(), token.getToken()));
 	}
 
-	@Transactional
+	/**
+	 * 메일로 받은 토큰으로 비밀번호를 바꾸고, 그 사용자의 리프레시 토큰을 모두 폐기한다. 폐기된 리프레시 토큰으로는 새 액세스 토큰을
+	 * 받지 못한다. 다만 이미 발급된 액세스 토큰(JWT)은 필터가 DB 를 보지 않고 서명과 만료만 확인하므로 만료(access-token-expiration,
+	 * 운영 30분)까지 그대로 통한다. 곧바로 끊으려면 users 에 비밀번호를 바꾼 시각을 두고 그보다 먼저 발급된(iat) 토큰을 거부해야 한다.
+	 *
+	 * <p>토큰은 조건부 DELETE(consume) 한 문장으로 쓴다. 같은 토큰으로 두 요청이 겹치면 DELETE 가 1 인 한 요청만 비밀번호를 바꾸고,
+	 * 다른 요청은 400 을 받는다. 예전에는 이중 사용을 Hibernate 의 삭제 행 수 검사가 우연히 막아 뒤 요청이 500 을 받았다. 행 id 가
+	 * 아니라 토큰 값으로 지운다. 만료된 토큰의 재요청은 행을 그대로 두고 값만 바꾸므로, 이 요청이 만료 직전의 토큰을 읽은 뒤 재요청이
+	 * 커밋됐다면 id 로 지울 때는 옛 링크로 비밀번호가 바뀌고 새 링크가 죽는다.
+	 *
+	 * <p>리프레시 토큰 폐기 → users 행 잠금 → 재설정 토큰 쓰기 순서로 잠근다(클래스 설명). 토큰을 쓰지 못해 예외가 나면 앞의 폐기도
+	 * 함께 롤백된다.
+	 *
+	 * <p>READ COMMITTED 로 돈다(클래스 설명). 리프레시 토큰이 없는 회원이면 폐기가 행도 틈도 잠그지 않아, 폐기와 users 잠금 사이에
+	 * 로그인이 새 토큰을 넣고 커밋할 수 있다. 확인은 교착 없이 이어 가지만 그 토큰은 폐기되지 않고 남는다. 새 비밀번호가 커밋되기
+	 * 전에 들어온 로그인이다. 리프레시 토큰이 있는 회원도, 로그인이 확인이 잠근 토큰을 기다렸다가 확인이 커밋한 뒤 새 토큰을 넣으면 그
+	 * 토큰은 남는다. 재설정과 겹친 로그인까지 끊는 것은 위의 비밀번호를 바꾼 시각 확인이 맡을 몫이다.
+	 *
+	 * <p>없는 토큰과 만료된 토큰은 400 이다. 만료된 토큰은 지우지 않는다. 예외로 트랜잭션이 롤백되므로 지워도 반영되지 않는다. 같은
+	 * 사용자가 다시 요청하면 그 행의 값이 바뀐다.
+	 *
+	 * @throws IllegalArgumentException 토큰이 없거나, 만료됐거나, 이미 쓰였거나, 그사이 회원이 탈퇴했을 때(400)
+	 */
+	@Transactional(isolation = Isolation.READ_COMMITTED)
 	public void resetPassword(String token, String newPassword) {
+		LocalDateTime now = LocalDateTime.now(clock);
 		PasswordResetToken resetToken = passwordResetTokenRepository.findByToken(token)
 			.orElseThrow(() -> new IllegalArgumentException("유효하지 않은 토큰입니다."));
 
-		if (resetToken.isExpired()) {
-			passwordResetTokenRepository.delete(resetToken); // 만료된 토큰 삭제
+		if (resetToken.isExpiredAt(now)) {
 			throw new IllegalArgumentException("만료된 토큰입니다. 다시 요청해주세요.");
 		}
 
-		User user = resetToken.getUser();
-		user.setPassword(passwordEncoder.encode(newPassword)); // 비밀번호 암호화 후 저장
+		// BCrypt 는 수십~100ms 걸린다. 행을 잠그기 전에 끝내 그동안 잠금을 쥐지 않는다.
+		String encodedPassword = passwordEncoder.encode(newPassword);
 
-		// 사용된 토큰 삭제
-		passwordResetTokenRepository.delete(resetToken);
+		// 탈취된 리프레시 토큰으로 재설정 뒤에도 새 액세스 토큰을 받지 못하게 한다.
+		refreshTokenRepository.revokeAllUserTokens(resetToken.getUser());
+
+		// 그사이 탈퇴했으면 사용자 행이 없고, 재설정 토큰도 탈퇴가 함께 지웠다
+		User user = userRepository.findByIdForUpdate(resetToken.getUser().getId())
+			.orElseThrow(() -> new IllegalArgumentException("유효하지 않은 토큰입니다."));
+
+		boolean consumed = passwordResetTokenRepository.consume(token, now) == 1;
+		if (!consumed) {
+			throw new IllegalArgumentException("이미 사용되었거나 만료된 토큰입니다.");
+		}
+
+		user.changePassword(encodedPassword);
 	}
 }
