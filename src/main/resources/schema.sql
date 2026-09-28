@@ -5,20 +5,25 @@ DROP TABLE IF EXISTS `manses`;
 DROP TABLE IF EXISTS `users`;
 
 -- 1. 사용자 정보 테이블 (users)
+-- users·refresh_tokens·password_reset_tokens 는 엔티티 선언(@Table)과 같은 컬럼, UNIQUE·인덱스 이름으로 적는다(AuthSchemaSqlTest 가
+-- 확인한다). 운영에는 이 파일을 돌리지 않고, 바뀐 부분만 DDL 로 손으로 적용해 운영도 같은 이름을 쓰게 한다.
 CREATE TABLE `users` (
                          `id` BIGINT NOT NULL AUTO_INCREMENT,
-                         `username` VARCHAR(255) UNIQUE,
-                         `email` VARCHAR(255) UNIQUE,
+                         `username` VARCHAR(255),
+                         `email` VARCHAR(255),
                          `password` VARCHAR(255),
                          `name` VARCHAR(255),
 
-    -- Role enum ('ADMIN', 'MANAGER', 'USER')
-                         `role` ENUM('ADMIN', 'MANAGER', 'USER') DEFAULT 'USER',
+    -- Role enum ('ADMIN', 'MANAGER', 'SUPER_ADMIN', 'USER')
+                         `role` ENUM('ADMIN', 'MANAGER', 'SUPER_ADMIN', 'USER') DEFAULT 'USER',
                          `enabled` BOOLEAN NOT NULL DEFAULT TRUE,
 
     -- SocialType enum and social_id
                          `social_type` VARCHAR(255), -- Changed from TINYINT to VARCHAR based on @Enumerated(EnumType.STRING)
                          `social_id` VARCHAR(255),
+
+    -- 마케팅 수신 동의
+                         `marketing_agreed` BOOLEAN NOT NULL DEFAULT FALSE,
 
     -- Added profile info
                          `birth_date` DATE NULL, -- Changed based on LocalDate
@@ -32,7 +37,12 @@ CREATE TABLE `users` (
                          `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
                          `updated_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
 
-                         PRIMARY KEY (`id`)
+                         PRIMARY KEY (`id`),
+    -- 같은 이메일·username·소셜 계정의 두 번째 가입을 DB 가 마지막으로 막는다. NULL 은 여러 행이어도 걸리지 않는다.
+                         UNIQUE KEY `uk_users_email` (`email`),
+                         UNIQUE KEY `uk_users_username` (`username`),
+    -- social_id 를 앞에 두어 social_id 만으로 찾는 조회도 이 인덱스를 쓴다.
+                         UNIQUE KEY `uk_users_social_id_type` (`social_id`, `social_type`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 
@@ -105,8 +115,26 @@ CREATE TABLE `refresh_tokens` (
                                   `used_at` TIMESTAMP NULL DEFAULT NULL,
 
                                   PRIMARY KEY (`id`),
+    -- 만료된 토큰과 이미 쓴 토큰을 정리할 때 표 전체를 훑지 않게 한다. 아직 쓰는 코드는 없고, 정리 작업이 들어올 때 쓰려고
+    -- 미리 건다(RefreshToken 의 @Table 주석 참고).
+                                  INDEX `idx_refresh_tokens_expires_at` (`expires_at`),
+                                  INDEX `idx_refresh_tokens_used_at` (`used_at`),
     -- user_id를 users 테이블의 id에 연결 (계정 삭제 시 토큰도 삭제)
                                   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- 5. 비밀번호 재설정 토큰 테이블 (password_reset_tokens)
+CREATE TABLE `password_reset_tokens` (
+                                         `id` BIGINT NOT NULL AUTO_INCREMENT,
+                                         `token` VARCHAR(255) NOT NULL,
+                                         `user_id` BIGINT NOT NULL,
+                                         `expiry_date` DATETIME(6) NOT NULL,
+
+                                         PRIMARY KEY (`id`),
+                                         UNIQUE KEY `uk_password_reset_tokens_token` (`token`),
+    -- 사용자 한 명에 토큰 하나. 이 UNIQUE 가 user_id 외래 키의 인덱스를 겸한다.
+                                         UNIQUE KEY `uk_password_reset_tokens_user_id` (`user_id`),
+                                         FOREIGN KEY (`user_id`) REFERENCES `users` (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- 개인 사주 해석 결과 저장 테이블

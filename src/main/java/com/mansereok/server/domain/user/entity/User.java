@@ -8,6 +8,7 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
+import jakarta.persistence.UniqueConstraint;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
@@ -16,7 +17,21 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
-@Table(name = "users")
+// 제약 이름을 고정해 엔티티, schema.sql, 운영 DB 가 같은 이름을 쓰게 한다. 운영은 ddl-auto: validate 라 UNIQUE 를 검사하지
+// 않으므로, 바꿀 때는 운영 DDL 과 schema.sql 을 함께 고친다.
+@Table(
+	name = "users",
+	uniqueConstraints = {
+		// 가입 전 existsByEmail 확인만으로는 동시에 들어온 같은 이메일 가입을 막지 못한다. 마지막으로 DB 가 막는다.
+		// 이메일이 없는(NULL) 소셜 계정은 여러 개여도 걸리지 않는다.
+		@UniqueConstraint(name = "uk_users_email", columnNames = "email"),
+		// 로그인한 사용자를 username 으로 찾는다(JWT subject). 두 행이 같은 username 이면 그 사용자의 모든 요청이 실패한다.
+		@UniqueConstraint(name = "uk_users_username", columnNames = "username"),
+		// 소셜 계정 하나에 회원 하나. 소셜 로그인의 첫 조회(findBySocialTypeAndSocialId)가 이 인덱스로 한 행만 본다.
+		// social_id 를 앞에 두어 social_id 만으로 찾는 조회도 이 인덱스를 쓴다. 일반 가입자는 두 컬럼이 모두 NULL 이라 걸리지 않는다.
+		@UniqueConstraint(name = "uk_users_social_id_type", columnNames = {"social_id", "social_type"})
+	}
+)
 @Entity
 @Getter
 @Setter

@@ -156,8 +156,10 @@ public class UserService {
 	 * 규칙을 그대로 옮겼다. username 은 가입할 때 한 번 저장되고 다시 계산하지 않으므로, 규칙을 바꿔도 이미 가입한 사용자에게는
 	 * 영향이 없다.
 	 *
-	 * <p>남는 위험: 제공자가 달라도 사용자 번호가 같으면 username 이 겹칠 수 있다. 운영 DB 에 username UNIQUE 가 있으면 뒤에
-	 * 오는 가입이 실패한다. 없으면 같은 username 행이 둘 생기고, username 으로 회원을 찾는 요청이 두 사용자 모두 실패한다.
+	 * <p>남는 위험: 제공자가 달라도 사용자 번호가 같으면 username 이 겹칠 수 있다. uk_users_username 이 걸린 DB 에서는 뒤에 오는
+	 * 가입의 저장이 DataIntegrityViolationException 으로 거절되어 500 으로 끝난다. 그 사용자는 (socialType, socialId) 로 다시 찾아도
+	 * 계정이 없으므로 가입할 수 없다. UNIQUE 가 없으면 같은 username 행이 둘 생기고, username 으로 회원을 찾는 요청이 두 사용자
+	 * 모두 실패한다. 새 가입부터 username 을 "제공자_번호" 로 만드는 것은 후속 과제로 남긴다.
 	 */
 	private static String oauthUsername(OauthProfile profile) {
 		if (profile.socialType() == SocialType.NAVER) {
