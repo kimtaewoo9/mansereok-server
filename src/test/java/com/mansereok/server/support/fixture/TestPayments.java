@@ -6,8 +6,8 @@ import com.mansereok.server.domain.payment.entity.PaymentStatus;
 import org.springframework.test.util.ReflectionTestUtils;
 
 /**
- * 테스트용 결제를 만든다. 결제는 운영 코드처럼 {@link Payment#paid} 로만 만들고, CANCEL_REQUESTED·CANCELLED 는 운영 코드와 같은
- * 전이 메서드로 만든다.
+ * 테스트용 결제를 만든다. 결제는 운영 코드처럼 PAID 로 확정한 주문을 {@link Payment#paid} 에 넘겨서만 만들고,
+ * CANCEL_REQUESTED·CANCELLED 는 운영 코드와 같은 전이 메서드로 만든다.
  *
  * <p>READY·FAILED·VIRTUAL_ACCOUNT_ISSUED 는 운영 코드에 그 상태로 결제를 만들거나 바꾸는 길이 없다. 그런 결제를 막는 검사를
  * 확인하는 테스트를 위해 이 세 상태만 필드를 직접 바꾼다. 그 우회는 이 클래스 한 곳에만 둔다.
@@ -66,8 +66,9 @@ public final class TestPayments {
 		return this;
 	}
 
+	/** 운영 코드처럼 같은 결제 번호로 PAID 확정한 주문에서 결제를 만든다. */
 	public Payment paid() {
-		Order paidOrder = order.pending();
+		Order paidOrder = order.paymentId(paymentId).paid();
 		Payment payment = Payment.paid(paidOrder, paymentId, amount);
 		if (id != null) {
 			ReflectionTestUtils.setField(payment, "id", id);

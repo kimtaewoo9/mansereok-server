@@ -157,7 +157,7 @@ class PaymentOrderServiceTest {
 
 	@Test
 	@DisplayName("주문 생성 시 주문한 사용자·상품 id 와 구매자 이름·이메일이 Order 엔티티에 저장된다")
-	void createOrder_ShouldSaveBuyerInfo() {
+	void createOrder_savesOwnerProductAndBuyerInfo() {
 		// given
 		given(userRepository.findByUsername(USERNAME)).willReturn(Optional.of(createUser()));
 		SubCategory subCategory = paidProduct();
@@ -230,7 +230,7 @@ class PaymentOrderServiceTest {
 
 	@Test
 	@DisplayName("쿠폰 id 를 보낸 주문은 쿠폰으로 계산한 금액으로 저장되고 그 쿠폰이 사용 처리되며 할인 코드 서비스는 호출하지 않는다")
-	void createOrder_withCouponId_usesCouponServiceOnly() {
+	void createOrder_withCouponId_savesCouponPriceAndMarksCouponUsed() {
 		// given
 		Long couponId = 5L;
 		given(userRepository.findByUsername(USERNAME)).willReturn(Optional.of(createUser()));
@@ -262,6 +262,31 @@ class PaymentOrderServiceTest {
 
 		assertThat(coupon.isUsed()).as("주문에 쓴 쿠폰의 사용 여부").isTrue();
 		verifyNoInteractions(discountCodeService);
+	}
+
+	@Test
+	@DisplayName("쿠폰의 최소 결제 금액 1000원 때문에 결제할 금액이 500원짜리 상품 가격보다 커지면 주문을 저장하지 않고 쿠폰도 쓰지 않은 채 IllegalArgumentException 으로 거부한다")
+	void createOrder_couponRaisesAmountAbovePrice_rejectsWithoutSavingOrUsingCoupon() {
+		// given
+		Long couponId = 5L;
+		given(userRepository.findByUsername(USERNAME)).willReturn(Optional.of(createUser()));
+		SubCategory cheapProduct = SubCategoryFixture.paidProduct().id(SUB_CATEGORY_ID).price(500).build();
+		given(subCategoryRepository.findById(SUB_CATEGORY_ID)).willReturn(Optional.of(cheapProduct));
+		// 500원에서 200원을 빼면 300원이지만 쿠폰 계산은 결제 금액을 1000원 밑으로 내리지 않는다
+		Coupon coupon = CouponFixture.fixedAmount(200).id(couponId).userId(USER_ID).build();
+		given(couponRepository.findByIdWithLock(couponId)).willReturn(Optional.of(coupon));
+
+		OrderCreateRequest request = new OrderCreateRequest();
+		request.setSubCategoryId(SUB_CATEGORY_ID);
+		request.setCouponId(couponId);
+
+		// when & then
+		assertThatThrownBy(() -> paymentOrderService.createOrder(USERNAME, request))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessage("결제할 금액은 0원 이상이고 할인 전 금액을 넘을 수 없습니다. 할인 전=500, 결제할 금액=1000");
+
+		verify(orderRepository, never()).save(any(Order.class));
+		assertThat(coupon.isUsed()).as("주문에 쓰려던 쿠폰의 사용 여부").isFalse();
 	}
 
 	@Test
@@ -409,6 +434,8 @@ class PaymentOrderServiceTest {
 	@Test
 	@DisplayName("100% 정률 쿠폰도 할인가가 1,000원 아래로 내려가지 않아 쿠폰으로는 무료 발급이 거절되고 주문·Payment·Result 도 쿠폰 사용도 남지 않는다")
 	void redeemFreeProduct_withFullPercentageCoupon_isRejected() {
+		// 쿠폰은 100% 여도 1,000원이 남아 할인 코드(100% 면 0원)와 결과가 다르다.
+		// 지금 동작을 고정해 두고, 바꿀 때는 이 테스트를 함께 바꾼다.
 		// given
 		Long couponId = 7L;
 		given(userRepository.findByUsername(USERNAME)).willReturn(Optional.of(createUser()));

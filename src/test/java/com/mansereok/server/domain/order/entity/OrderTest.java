@@ -246,7 +246,7 @@ class OrderTest {
 		void startsPendingWithGivenValues() {
 			// when
 			Order order = Order.pending("order_pending_001", new OrderBuyer(7L, "김태우", "taewoo@example.com"), 3L,
-				new OrderAmounts(10000, 9000), AppliedDiscount.coupon(100L, "가입 쿠폰"));
+				new OrderAmounts(10000, 9000), AppliedDiscount.coupon("가입 쿠폰", 100L));
 
 			// then
 			assertThat(order.getStatus()).isEqualTo(OrderStatus.PENDING);
@@ -311,18 +311,17 @@ class OrderTest {
 		}
 
 		@ParameterizedTest(name = "[{index}] 할인 전 {0}원, 결제할 금액 {1}원")
-		@CsvSource(textBlock = """
-			# 할인 전 금액, 결제할 금액
-			10000, 10001
-			10000,    -1
-			    0,  1000
+		@CsvSource(delimiter = '|', textBlock = """
+			# 할인 전 금액 | 결제할 금액 | 오류 문구
+			10000 | 10001 | 결제할 금액은 0원 이상이고 할인 전 금액을 넘을 수 없습니다. 할인 전=10000, 결제할 금액=10001
+			10000 |    -1 | 결제할 금액은 0원 이상이고 할인 전 금액을 넘을 수 없습니다. 할인 전=10000, 결제할 금액=-1
+			    0 |  1000 | 결제할 금액은 0원 이상이고 할인 전 금액을 넘을 수 없습니다. 할인 전=0, 결제할 금액=1000
 			""")
 		@DisplayName("결제할 금액이 음수이거나 할인 전 금액보다 크면 IllegalArgumentException 으로 거부한다")
-		void rejectsFinalAmountOutsideRange(int originalAmount, int finalAmount) {
+		void rejectsFinalAmountOutsideRange(int originalAmount, int finalAmount, String expectedMessage) {
 			assertThatThrownBy(() -> new OrderAmounts(originalAmount, finalAmount))
 				.isInstanceOf(IllegalArgumentException.class)
-				.hasMessage("결제할 금액은 0원 이상이고 할인 전 금액을 넘을 수 없습니다. 할인 전=" + originalAmount
-					+ ", 결제할 금액=" + finalAmount);
+				.hasMessage(expectedMessage);
 		}
 	}
 
@@ -334,7 +333,7 @@ class OrderTest {
 			return Stream.of(
 				Arguments.of("무료 이벤트", AppliedDiscount.eventFree(), true),
 				Arguments.of("할인 코드", AppliedDiscount.code("SALE10"), false),
-				Arguments.of("쿠폰", AppliedDiscount.coupon(100L, "가입 쿠폰"), false),
+				Arguments.of("쿠폰", AppliedDiscount.coupon("가입 쿠폰", 100L), false),
 				Arguments.of("할인 없음", AppliedDiscount.none(), false));
 		}
 

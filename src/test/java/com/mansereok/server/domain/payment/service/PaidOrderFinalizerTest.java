@@ -186,7 +186,7 @@ class PaidOrderFinalizerTest {
 	}
 
 	@Test
-	@DisplayName("확정이 끝나면 orderId, 저장된 Payment 의 PK, 결제 금액을 실은 PaymentCompletedEvent 를 한 번 발행한다")
+	@DisplayName("유료 결제 확정이 끝나면 orderId, 저장된 Payment 의 PK, 무료 아님(free=false)을 실은 PaymentCompletedEvent 를 한 번 발행한다")
 	void finalizePaid_publishesPaymentCompletedEvent() {
 		// given
 		givenPaymentSaveAssignsId();
@@ -201,7 +201,7 @@ class PaidOrderFinalizerTest {
 
 	@Test
 	@DisplayName("무료 결제도 이벤트를 발행하되 free 를 true 로 싣는다 (보낼지 말지는 리스너가 free 로 정한다)")
-	void finalizePaid_zeroAmount_publishesEventWithZeroAmount() {
+	void finalizePaid_freePayment_publishesEventMarkedFree() {
 		// given
 		givenPaymentSaveAssignsId();
 

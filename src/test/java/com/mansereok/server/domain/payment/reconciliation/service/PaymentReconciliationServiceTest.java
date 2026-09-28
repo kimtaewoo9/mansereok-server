@@ -42,6 +42,8 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Captor;
 import org.mockito.Mock;
@@ -248,6 +250,27 @@ class PaymentReconciliationServiceTest {
 		verify(portOneClient).findPayment(IMP_UID);
 		assertThat(savedMismatches()).extracting(PaymentReconciliationMismatch::getType)
 			.containsExactly(MismatchType.MISSING_IN_PG);
+	}
+
+	@ParameterizedTest(name = "[{index}] 결제 번호 {0}, 금액 {1}원")
+	@CsvSource(textBlock = """
+		# 포트원 거래가 없는 무료 결제. free_ 로 시작하거나 금액이 0원이다
+		free_free_1727000000000_ab12cd34, 0
+		free_free_1727000000000_ab12cd34, 500
+		pay_01J000000000000000000000,     0
+		""")
+	@DisplayName("PG 목록에 없는 DB 결제라도 무료 결제면 포트원 단건 조회를 하지 않고 불일치로도 남기지 않는다")
+	void reconcile_dbOnlyFreePayment_isNotLookedUp(String impUid, long amount) {
+		// given
+		givenPgPayments();
+		givenDbPayments(dbPayment(impUid, PaymentStatus.PAID, amount));
+
+		// when
+		paymentReconciliationService.reconcile(TARGET_DATE);
+
+		// then
+		verify(portOneClient, never()).findPayment(impUid);
+		assertThat(savedMismatches()).isEmpty();
 	}
 
 	@Test

@@ -90,8 +90,10 @@ class RefundAndInterpretationStartConcurrencyTest extends PaymentMySqlTest {
 		paymentPkId = paymentRepository.save(Payment.paid(order, impUid, PRICE)).getId();
 		resultRepository.save(Result.createInitial(userId, paymentPkId, "일반 사주 상품"));
 		// 이 결제를 이 사유로 취소한 횟수만 센다. 인자가 다르면 세지 않아 끝 상태가 허용한 두 가지와 어긋난다.
-		willAnswer(invocation -> portOneCancelCalls.incrementAndGet())
-			.given(portOneClient).cancelPayment(impUid, REFUND_REASON);
+		willAnswer(invocation -> {
+			portOneCancelCalls.incrementAndGet();
+			return null;
+		}).given(portOneClient).cancelPayment(impUid, REFUND_REASON);
 	}
 
 	@AfterEach

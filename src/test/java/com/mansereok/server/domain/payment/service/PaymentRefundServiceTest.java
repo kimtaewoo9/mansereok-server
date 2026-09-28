@@ -457,7 +457,7 @@ class PaymentRefundServiceTest {
 	@DisplayName("free_ 접두사 결제는 금액과 무관하게 환불 대상이 아니라서 거부한다")
 	void cancel_freePrefixedImpUid_rejects() {
 		// given
-		String freeImpUid = MerchantUidGenerator.FREE_PREFIX + "free_order_001";
+		String freeImpUid = "free_free_order_001";
 		givenRequester();
 		Payment payment = payment(PaymentStatus.PAID, PRICE, freeImpUid);
 		given(paymentRepository.findByImpUidWithLock(freeImpUid)).willReturn(Optional.of(payment));

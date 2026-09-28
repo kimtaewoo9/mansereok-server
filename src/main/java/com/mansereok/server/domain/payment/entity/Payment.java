@@ -2,7 +2,7 @@ package com.mansereok.server.domain.payment.entity;
 
 import com.mansereok.server.domain.interpret.entity.ResultStatus;
 import com.mansereok.server.domain.order.entity.Order;
-import com.mansereok.server.domain.payment.service.MerchantUidGenerator;
+import com.mansereok.server.domain.order.entity.OrderStatus;
 import com.mansereok.server.global.exception.OrderStateException;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -19,8 +19,9 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 
 
-// 인덱스 이름을 고정해 엔티티, schema.sql, 운영 DB 가 같은 이름을 쓰게 한다. 운영은 ddl-auto: validate 라 인덱스를 검사하지도
-// 만들지도 않는다. 여기 선언한 세 인덱스는 엔티티로 만드는 로컬·테스트 DB 에도 운영과 같은 이름으로 생기고, 바꿀 때는 운영 DDL 과
+// 인덱스 이름을 고정해 엔티티로 만드는 로컬·테스트 DB 와 schema.sql 이 같은 이름을 쓰게 한다. 운영은 ddl-auto: validate 라 인덱스를
+// 검사하지도 만들지도 않는다. 여기 선언한 세 인덱스는 로컬·테스트 DB 에도 운영과 같은 컬럼으로 생긴다. 운영은 배포 전 DDL 로 이 이름대로
+// 만들되, 같은 컬럼·같은 순서의 인덱스가 다른 이름으로 이미 있으면 새로 만들지 않고 그 이름을 그대로 쓴다. 바꿀 때는 운영 DDL 과
 // schema.sql 을 함께 고친다. schema.sql 의 idx_order_id 는 쓰는 조회가 없어 여기 두지 않았고, imp_uid UNIQUE 는 impUid 의
 // @Column(unique = true) 로 선언해 로컬·테스트 DB 에서는 Hibernate 가 지은 이름으로 생긴다.
 @Entity
@@ -40,6 +41,12 @@ import lombok.NoArgsConstructor;
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class Payment {
+
+	/**
+	 * 포트원 거래가 없는 무료 결제의 결제 번호 접두사. 무료 발급 경로가 {@code MerchantUidGenerator.freePaymentIdFor} 로 붙인다.
+	 * 무료 판정({@link #isFreePayment})이 이 접두사를 본다.
+	 */
+	public static final String FREE_PAYMENT_ID_PREFIX = "free_";
 
 	@Id
 	@GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -75,8 +82,14 @@ public class Payment {
 	 * @param order     PAID 로 확정한 주문. 저장돼 id 가 있어야 한다.
 	 * @param paymentId 포트원 거래 번호. 포트원 거래가 없는 무료 결제는 free_ 로 시작하는 자체 번호
 	 * @param amount    결제된 금액
+	 * @throws OrderStateException 주문이 PAID 가 아닐 때. 결제 완료로 확정하지 않은 주문에 결제가 붙지 않게 한다
 	 */
 	public static Payment paid(Order order, String paymentId, long amount) {
+		if (order.getStatus() != OrderStatus.PAID) {
+			throw new OrderStateException(
+				String.format("결제 완료(PAID)로 확정한 주문으로만 결제를 만들 수 있습니다. 주문 상태=%s, merchantUid=%s",
+					order.getStatus(), order.getMerchantUid()));
+		}
 		Payment payment = new Payment();
 		payment.impUid = paymentId;
 		payment.merchantUid = order.getMerchantUid();
@@ -98,11 +111,24 @@ public class Payment {
 	}
 
 	/**
-	 * 포트원 거래가 없는 무료 결제인지 본다. 무료 발급 경로는 결제 번호를 free_ 로 시작하게 만들고 금액을 0원으로 두므로 둘 중
-	 * 하나라도 맞으면 무료다. 환불 거절, 대사 제외, 결제 목록의 환불 가능 표시, 결제 완료 알림 생략이 모두 이 판정을 쓴다.
+	 * 포트원 거래가 없는 무료 결제인지 본다. 환불 거절, 대사 제외, 결제 목록의 환불 가능 표시, 결제 완료 알림 생략이 모두 이 판정을
+	 * 쓴다. 규칙은 {@link #isFreePayment} 한 곳에 있다.
 	 */
 	public boolean isFree() {
-		return impUid.startsWith(MerchantUidGenerator.FREE_PREFIX) || amount == 0L;
+		return isFreePayment(impUid, amount);
+	}
+
+	/**
+	 * 결제 번호와 금액으로 무료 결제인지 본다. 무료 발급 경로는 결제 번호를 free_ 로 시작하게 만들고 금액을 0원으로 두므로 둘 중
+	 * 하나라도 맞으면 무료다. DB 결제는 {@link #isFree()} 로, 대사가 받은 포트원 거래는 응답의 결제 번호와 금액으로 이 규칙을
+	 * 쓴다. 규칙을 바꿀 때는 이 메서드만 고친다.
+	 *
+	 * @param paymentId 결제 번호. null 이면 접두사로는 무료로 보지 않는다
+	 * @param amount    결제 금액. null 이면 금액으로는 무료로 보지 않는다
+	 */
+	public static boolean isFreePayment(String paymentId, Long amount) {
+		return (paymentId != null && paymentId.startsWith(FREE_PAYMENT_ID_PREFIX))
+			|| (amount != null && amount == 0L);
 	}
 
 	/**

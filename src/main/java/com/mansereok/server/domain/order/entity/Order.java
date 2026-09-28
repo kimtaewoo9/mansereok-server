@@ -20,9 +20,10 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
-// 제약·인덱스 이름을 고정해 엔티티, schema.sql, 운영 DB 가 같은 이름을 쓰게 한다. 운영은 ddl-auto: validate 라 UNIQUE 와 인덱스를
-// 검사하지도 만들지도 않는다. 이 선언은 엔티티로 만드는 로컬·테스트 DB 가 운영과 같은 인덱스를 갖게 하고, 바꿀 때는 운영 DDL 과
-// schema.sql 을 함께 고친다.
+// 제약·인덱스 이름을 고정해 엔티티로 만드는 로컬·테스트 DB 와 schema.sql 이 같은 이름을 쓰게 한다. 운영은 ddl-auto: validate 라
+// UNIQUE 와 인덱스를 검사하지도 만들지도 않는다. 이 선언은 로컬·테스트 DB 가 운영과 같은 컬럼의 인덱스를 갖게 한다. 운영은 배포 전
+// DDL 로 이 이름대로 만들되, 같은 컬럼·같은 순서의 인덱스가 다른 이름으로 이미 있으면 새로 만들지 않고 그 이름을 그대로 쓴다.
+// 바꿀 때는 운영 DDL 과 schema.sql 을 함께 고친다.
 @Table(
 	name = "orders",
 	uniqueConstraints = {

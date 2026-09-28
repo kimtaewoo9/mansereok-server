@@ -37,7 +37,7 @@ class OrderExpirationServiceTest {
 
 	private Order createOrder(OrderStatus status) {
 		return TestOrders.order().id(ORDER_ID).merchantUid("merchant_" + ORDER_ID).amounts(10000, 5000)
-			.discount(AppliedDiscount.coupon(100L, "테스트 쿠폰")).inStatus(status);
+			.discount(AppliedDiscount.coupon("테스트 쿠폰", 100L)).inStatus(status);
 	}
 
 	@Test

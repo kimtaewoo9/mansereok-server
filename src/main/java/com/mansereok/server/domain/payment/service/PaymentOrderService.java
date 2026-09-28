@@ -193,7 +193,7 @@ public class PaymentOrderService {
 				originalAmount
 			);
 			return new DiscountResolution(result.getFinalAmount(),
-				AppliedDiscount.coupon(request.getCouponId(), result.getAppliedCode()), null);
+				AppliedDiscount.coupon(result.getAppliedCode(), request.getCouponId()), null);
 		}
 
 		// B. 할인 코드를 직접 입력한 경우

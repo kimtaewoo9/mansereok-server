@@ -188,8 +188,9 @@ class CouponTest {
 		assertThat(coupon.getUsedAt()).isNull();
 	}
 
+	// 할인 코드와 규칙이 다르다. 100% 할인 코드는 0원이 되고, 그 규칙은 DiscountCodeTest 가 확인한다.
 	@Test
-	@DisplayName("100% 정률 쿠폰도 할인가가 1,000원 아래로 내려가지 않는다(100% 할인 코드는 0원이 된다)")
+	@DisplayName("100% 정률 쿠폰도 할인가가 1,000원 아래로 내려가지 않는다")
 	void fullPercentageCouponKeepsMinimumPayableAmount() {
 		// given
 		Coupon coupon = CouponFixture.usableCoupon().discountType(DiscountType.PERCENTAGE).discountValue(100)

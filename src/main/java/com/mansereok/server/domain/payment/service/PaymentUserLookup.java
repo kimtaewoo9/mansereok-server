@@ -9,8 +9,10 @@ import org.springframework.stereotype.Component;
 /**
  * 결제·쿠폰 API 가 요청자(로그인한 username)를 사용자로 바꾸는 한 곳.
  *
- * <p>JWT 필터는 DB 에서 사용자를 확인하지 않아, 탈퇴 직후 남은 토큰으로 요청하면 여기서 사용자가 없다. 그때 어느 API 든 같은
- * PaymentException("사용자를 찾을 수 없습니다.")(400 PAYMENT_ERROR)으로 답해, 프론트가 한 가지 처리로 다시 로그인하게 할 수 있다.
+ * <p>JWT 필터는 DB 에서 사용자를 확인하지 않아, 탈퇴 직후 남은 토큰으로 요청하면 여기서 사용자가 없다. 그때 결제·쿠폰 API 는
+ * 모두 같은 PaymentException("사용자를 찾을 수 없습니다."), 곧 400 PAYMENT_ERROR 와 같은 문구로 답한다. PAYMENT_ERROR 는 다른
+ * 결제 업무 오류도 함께 쓰는 코드라 사용자 없음은 문구로만 구별된다. UserService.findByUsername 을 쓰는 프로필·리뷰 API 는
+ * EntityNotFoundException 을 거쳐 404 NOT_FOUND 로 답하므로, 앱 전체로 보면 사용자 없음 응답은 아직 두 가지다.
  */
 @Component
 @RequiredArgsConstructor

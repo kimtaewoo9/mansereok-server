@@ -48,7 +48,7 @@ class PaymentUserLookupTest {
 	}
 
 	@Test
-	@DisplayName("사용자가 없으면(탈퇴 직후 남은 토큰 등) 결제 API 가 400 PAYMENT_ERROR 로 답하는 PaymentException 을 던진다")
+	@DisplayName("사용자가 없으면(탈퇴 직후 남은 토큰 등) '사용자를 찾을 수 없습니다.' PaymentException 을 던진다")
 	void throwsPaymentExceptionWhenMissing() {
 		// given
 		given(userRepository.findByUsername(USERNAME)).willReturn(Optional.empty());
