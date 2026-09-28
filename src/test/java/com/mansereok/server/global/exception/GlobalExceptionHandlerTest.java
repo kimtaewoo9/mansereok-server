@@ -84,18 +84,6 @@ class GlobalExceptionHandlerTest {
 		assertThatMessageHidesInternals(response);
 	}
 
-	@Test
-	@DisplayName("새 OpenAI 예외들은 기존 GptApiFailedException 계층과 섞이지 않는다")
-	void openAiExceptionsAreSeparateHierarchy() {
-		assertThat(new OpenAiUnavailableException("x"))
-			.isNotInstanceOf(GptApiFailedException.class)
-			.isInstanceOf(OpenAiException.class);
-		assertThat(new OpenAiRequestException("x")).isInstanceOf(OpenAiException.class);
-		assertThat(new OpenAiIncompleteResponseException("max_output_tokens"))
-			.isInstanceOf(OpenAiException.class);
-		assertThat(new OpenAiRefusalException("r")).isInstanceOf(OpenAiException.class);
-	}
-
 	/**
 	 * 모델명·시도 횟수·본문 길이 같은 내부 메시지가 사용자 응답 message 로 새지 않는지 본다.
 	 */

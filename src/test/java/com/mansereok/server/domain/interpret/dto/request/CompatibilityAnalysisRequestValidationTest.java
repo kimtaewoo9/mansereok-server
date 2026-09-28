@@ -2,6 +2,7 @@ package com.mansereok.server.domain.interpret.dto.request;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.validation.ConstraintViolation;
 import jakarta.validation.Validation;
 import jakarta.validation.Validator;
@@ -11,10 +12,15 @@ import java.util.stream.Collectors;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.NullAndEmptySource;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.springframework.boot.autoconfigure.AutoConfigurations;
+import org.springframework.boot.autoconfigure.jackson.JacksonAutoConfiguration;
+import org.springframework.boot.test.context.ConfigDataApplicationContextInitializer;
+import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 
 /**
  * 무료 궁합 엔드포인트가 받는 DTO. 이름이 그대로 프롬프트에 들어가므로
@@ -47,11 +53,6 @@ class CompatibilityAnalysisRequestValidationTest {
 		person.setCalendar("S");
 		person.setBirthday("1995/05/05");
 		person.setBirthtime("12:00");
-		person.setYear(1995);
-		person.setMonth(5);
-		person.setDay(5);
-		person.setHour(12);
-		person.setMin(0);
 		return person;
 	}
 
@@ -151,5 +152,64 @@ class CompatibilityAnalysisRequestValidationTest {
 
 		// when & then
 		assertThat(violatedFields(request(person("김태우"), person2))).containsExactly("person2.gender");
+	}
+
+	@Nested
+	@DisplayName("화면이 서버가 읽지 않는 필드까지 담아 보내면")
+	class WhenRequestHasFieldsTheServerDoesNotRead {
+
+		// 화면은 서버가 읽지 않는 필드(궁합 유형, 연·월·일·시·분 숫자, 장소, 시간 모름·자정 보정)도 보낼 수 있다.
+		private static final String REQUEST_BODY = """
+			{
+			  "compatibilityType": "MARRIAGE",
+			  "person1": {
+			    "name": "김태우", "gender": "MALE", "calendar": "S", "leapMonth": false,
+			    "birthday": "1995/05/05", "birthtime": "12:00",
+			    "year": 1995, "month": 5, "day": 5, "hour": 12, "min": 0,
+			    "hmUnsure": false, "midnightAdjust": true,
+			    "locationId": 1835847, "locationName": "서울특별시, 대한민국"
+			  },
+			  "person2": {
+			    "name": "이영희", "gender": "FEMALE", "calendar": "L", "leapMonth": true,
+			    "birthday": "1996-02-29", "birthtime": "",
+			    "year": 1996, "month": 2, "day": 29, "hour": 0, "min": 0,
+			    "hmUnsure": true, "midnightAdjust": false,
+			    "locationId": 1838524, "locationName": "부산광역시, 대한민국"
+			  }
+			}
+			""";
+
+		/**
+		 * 운영은 Dockerfile 과 docker-compose.prod.yml 이 켜는 prod 프로필로 돈다. 프로필별 yml 에서 spring.jackson 설정을 바꿔
+		 * 모르는 필드를 거절하게 되면 그 프로필 줄이 실패하도록, src/main/resources 의 세 설정(기본, dev, prod)을 모두 돌린다.
+		 */
+		@ParameterizedTest(name = "[{index}] 프로필 {0}")
+		@DisplayName("애플리케이션 설정의 ObjectMapper 는 모르는 필드를 무시하고 남은 필드를 그대로 읽는다")
+		@ValueSource(strings = {"default", "dev", "prod"})
+		void ignoresUnreadFieldsAndKeepsTheRest(String profile) {
+			// given: 그 프로필의 yml 에 있는 spring.jackson 설정까지 반영한, 컨트롤러가 쓰는 것과 같은 ObjectMapper
+			ApplicationContextRunner applicationJackson = new ApplicationContextRunner()
+				.withPropertyValues("spring.profiles.active=" + profile)
+				.withInitializer(new ConfigDataApplicationContextInitializer())
+				.withConfiguration(AutoConfigurations.of(JacksonAutoConfiguration.class));
+
+			applicationJackson.run(context -> {
+				// when
+				CompatibilityAnalysisRequest request = context.getBean(ObjectMapper.class)
+					.readValue(REQUEST_BODY, CompatibilityAnalysisRequest.class);
+
+				// then
+				assertThat(request.getPerson1())
+					.extracting(ManseryeokCreateRequest::getName, ManseryeokCreateRequest::getGender,
+						ManseryeokCreateRequest::getCalendar, ManseryeokCreateRequest::getLeapMonth,
+						ManseryeokCreateRequest::getBirthday, ManseryeokCreateRequest::getBirthtime)
+					.containsExactly("김태우", "MALE", "S", false, "1995/05/05", "12:00");
+				assertThat(request.getPerson2())
+					.extracting(ManseryeokCreateRequest::getName, ManseryeokCreateRequest::getGender,
+						ManseryeokCreateRequest::getCalendar, ManseryeokCreateRequest::getLeapMonth,
+						ManseryeokCreateRequest::getBirthday, ManseryeokCreateRequest::getBirthtime)
+					.containsExactly("이영희", "FEMALE", "L", true, "1996-02-29", "");
+			});
+		}
 	}
 }

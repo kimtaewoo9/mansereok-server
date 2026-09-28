@@ -15,7 +15,6 @@ import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
-import org.springframework.web.client.HttpStatusCodeException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 @Slf4j
@@ -249,32 +248,4 @@ public class GlobalExceptionHandler {
 		);
 		return new ResponseEntity<>(response, HttpStatus.BAD_GATEWAY);
 	}
-
-	@ExceptionHandler(GptApiFailedException.class)
-	public ResponseEntity<ErrorResponse> handleGptApiFailed(GptApiFailedException e) {
-		log.error("🚨 외부 API (GPT) 호출 최종 실패: {}", e.getMessage(), e.getCause());
-
-		HttpStatus status = HttpStatus.SERVICE_UNAVAILABLE; // 기본값 503
-
-		if (e.getCause() instanceof HttpStatusCodeException) {
-			try {
-				HttpStatusCodeException httpEx = (HttpStatusCodeException) e.getCause();
-				status = HttpStatus.resolve(httpEx.getStatusCode().value());
-				if (status == null) {
-					status = HttpStatus.SERVICE_UNAVAILABLE;
-				}
-			} catch (Exception ex) {
-				log.warn("상태 코드 파싱 실패, 기본값(503) 사용", ex);
-			}
-		}
-
-		ErrorResponse response = ErrorResponse.of(
-			status.value(),
-			"EXTERNAL_API_FAILURE",
-			"사주 해석 서비스에 일시적인 오류가 발생했습니다. 잠시 후 다시 시도해주세요."
-		);
-		return new ResponseEntity<>(response, status);
-	}
-
-
 }

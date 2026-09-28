@@ -492,17 +492,6 @@ public class SinsalCalculator {
 	}
 
 	/**
-	 * 공망에 걸린 지지인지 확인
-	 *
-	 * @param jiji         확인할 지지
-	 * @param gongmangList 공망 지지 목록
-	 * @return 공망 여부
-	 */
-	public boolean isInGongmang(String jiji, List<String> gongmangList) {
-		return gongmangList != null && gongmangList.contains(jiji);
-	}
-
-	/**
 	 * 신살 설명
 	 *
 	 * @param sinsal 신살명
