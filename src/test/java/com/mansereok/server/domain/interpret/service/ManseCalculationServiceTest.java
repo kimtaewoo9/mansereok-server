@@ -34,6 +34,7 @@ import java.time.ZoneId;
 import java.util.List;
 import java.util.Optional;
 import java.util.stream.Stream;
+import org.assertj.core.groups.Tuple;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -398,22 +399,26 @@ class ManseCalculationServiceTest {
 			@Test
 			@DisplayName("같은 오행이면 천간·지지 글자와 지장간 글자의 색이 같다")
 			void paintsSameElementWithSameColorInPillarsAndHiddenStems() {
-				// when: 네 기둥 여덟 글자와 지지 네 개의 지장간 열한 글자. 목은 지장간(乙·甲)에만 있다
+				// when
 				SajuInfo saju = service.calculate(request).getSaju();
-				List<Object> letters = List.of(
-					saju.getYearSky(), saju.getYearGround(), saju.getMonthSky(), saju.getMonthGround(),
-					saju.getDaySky(), saju.getDayGround(), saju.getTimeSky(), saju.getTimeGround(),
-					saju.getYearGround().getJijanggan().getFirst(), saju.getYearGround().getJijanggan().getSecond(),
-					saju.getYearGround().getJijanggan().getThird(),
-					saju.getMonthGround().getJijanggan().getFirst(), saju.getMonthGround().getJijanggan().getSecond(),
-					saju.getMonthGround().getJijanggan().getThird(),
-					saju.getDayGround().getJijanggan().getFirst(), saju.getDayGround().getJijanggan().getSecond(),
-					saju.getDayGround().getJijanggan().getThird(),
-					saju.getTimeGround().getJijanggan().getFirst(), saju.getTimeGround().getJijanggan().getSecond());
 
-				// then: 오행과 색 짝이 다섯 가지뿐이다. 한쪽 색만 바뀌면 짝이 여섯 가지가 된다
-				assertThat(letters)
-					.extracting("fiveCircle", "fiveCircleColor")
+				// then: 네 기둥 여덟 글자와 지지 네 개의 지장간 열한 글자에서 오행과 색 짝을 따로 꺼낸다. 목은 지장간(乙·甲)에만 있다
+				Stream<Tuple> pillarColors = Stream.of(
+						saju.getYearSky(), saju.getYearGround(), saju.getMonthSky(), saju.getMonthGround(),
+						saju.getDaySky(), saju.getDayGround(), saju.getTimeSky(), saju.getTimeGround())
+					.map(letter -> tuple(letter.getFiveCircle(), letter.getFiveCircleColor()));
+				Stream<Tuple> hiddenStemColors = Stream.of(
+						saju.getYearGround().getJijanggan().getFirst(), saju.getYearGround().getJijanggan().getSecond(),
+						saju.getYearGround().getJijanggan().getThird(),
+						saju.getMonthGround().getJijanggan().getFirst(), saju.getMonthGround().getJijanggan().getSecond(),
+						saju.getMonthGround().getJijanggan().getThird(),
+						saju.getDayGround().getJijanggan().getFirst(), saju.getDayGround().getJijanggan().getSecond(),
+						saju.getDayGround().getJijanggan().getThird(),
+						saju.getTimeGround().getJijanggan().getFirst(), saju.getTimeGround().getJijanggan().getSecond())
+					.map(hidden -> tuple(hidden.getFiveCircle(), hidden.getFiveCircleColor()));
+
+				// 합친 오행과 색 짝이 다섯 가지뿐이다. 한쪽 색만 바뀌면 짝이 여섯 가지가 된다
+				assertThat(Stream.concat(pillarColors, hiddenStemColors))
 					.containsOnly(
 						tuple("목", "#4CAF50"),
 						tuple("화", "#F44336"),

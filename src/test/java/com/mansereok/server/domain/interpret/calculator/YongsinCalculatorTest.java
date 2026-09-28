@@ -139,6 +139,26 @@ class YongsinCalculatorTest {
 	}
 
 	@Test
+	@DisplayName("지지에 지장간이 없으면 지지 오행을 기둥 가중치 그대로 세고, 일간과 같은 오행의 지지는 뿌리 가중치의 0.6 을 나의 점수에 더한다")
+	void countsBranchElementAndFixedRootRateWhenHiddenStemsAreMissing() {
+		// given: 만세력 계산은 지장간을 늘 채우므로 운영에서는 닿지 않는 대비 경로다. 지장간을 모두 뺀다
+		SajuInfo saju = saju("甲子", "丙戌", "戊辰", "庚申");
+		saju.getYearGround().setJijanggan(null);
+		saju.getMonthGround().setJijanggan(null);
+		saju.getDayGround().setJijanggan(null);
+		saju.getTimeGround().setJijanggan(null);
+
+		// when
+		YongsinResult result = calculator.analyzeYongsin(saju);
+
+		// then: 戊(토) 일간. 나의 점수는 토 4.3 + 화 1.4 + 戌월 득령 1.6 + 뿌리(戌 0.9 + 辰 0.7) x 0.6 = 8.26,
+		// 남의 점수는 목 1.0 + 금 1.7 + 수 1.0 = 3.7 이다. 뿌리 비율이 0.5 면 8.1/11.8 이 된다
+		assertThat(result)
+			.extracting(YongsinCalculatorTest::strengthLabel, YongsinResult::getMyScore, YongsinResult::getTotalScore)
+			.containsExactly("신강(身强)", 8.3, 12.0);
+	}
+
+	@Test
 	@DisplayName("적용한 규칙 코드와 이름을 함께 돌려준다")
 	void returnsAppliedRuleset() {
 		// when
