@@ -20,6 +20,20 @@ public class YongsinCalculator {
 	private static final String RULESET_CODE = "EOKBU_JOHU_V1";
 	private static final String RULESET_NAME = "억부 중심 + 조후 보정";
 
+	// 오행 점수에 더하는 기둥별 가중치. 지지는 지장간(통근)을 우선 반영하고 월지에 가장 큰 가중치를 둔다
+	private static final PillarWeights STEM_WEIGHTS = new PillarWeights(1.0, 1.4, 1.2, 0.8);
+	private static final PillarWeights BRANCH_WEIGHTS = new PillarWeights(1.0, 1.8, 1.3, 0.9);
+	// 지지에 일간과 같은 오행의 뿌리가 있을 때 나의 점수에 더하는 기둥별 가중치
+	private static final PillarWeights ROOT_WEIGHTS = new PillarWeights(0.4, 0.9, 0.7, 0.4);
+	// 지장간이 없는 지지는 지지 오행이 일간과 같을 때 뿌리를 이 비율로 본다
+	private static final double ROOT_RATE_WITHOUT_HIDDEN_STEMS = 0.6;
+
+	// 월지로 본 계절 보정. 더하는 값은 나의 점수에, 빼는 값은 절댓값을 남의 점수에 더한다
+	private static final double IN_SEASON_BONUS = 1.6;
+	private static final double SUPPORTED_SEASON_BONUS = 0.8;
+	private static final double CONTROLLED_SEASON_PENALTY = -1.2;
+	private static final double DRAINED_SEASON_PENALTY = -0.6;
+
 	// 월령(득령) 강세 구간
 	private static final Map<FiveElement, Set<String>> STRONG_MONTH_MAP = Map.of(
 		FiveElement.WOOD, Set.of("寅", "卯", "辰"),
@@ -68,9 +82,9 @@ public class YongsinCalculator {
 			decision.yongsin().luckyDirection());
 
 		return new YongsinResult(
-			metrics.strengthLabel,
-			roundOne(metrics.myScore),
-			roundOne(metrics.totalScore),
+			metrics.strength(),
+			roundOne(metrics.myScore()),
+			roundOne(metrics.totalScore()),
 			decision.yongsin().korean(),
 			desc,
 			RULESET_CODE,
@@ -84,16 +98,15 @@ public class YongsinCalculator {
 			scores.put(element, 0.0);
 		}
 
-		addStemScore(scores, saju.getYearSky(), 1.0);
-		addStemScore(scores, saju.getMonthSky(), 1.4);
-		addStemScore(scores, saju.getDaySky(), 1.2);
-		addStemScore(scores, saju.getTimeSky(), 0.8);
+		addStemScore(scores, saju.getYearSky(), STEM_WEIGHTS.year());
+		addStemScore(scores, saju.getMonthSky(), STEM_WEIGHTS.month());
+		addStemScore(scores, saju.getDaySky(), STEM_WEIGHTS.day());
+		addStemScore(scores, saju.getTimeSky(), STEM_WEIGHTS.time());
 
-		// 지지는 지장간(통근)을 우선 반영, 월지에 가장 큰 가중치
-		addGroundScore(scores, saju.getYearGround(), 1.0);
-		addGroundScore(scores, saju.getMonthGround(), 1.8);
-		addGroundScore(scores, saju.getDayGround(), 1.3);
-		addGroundScore(scores, saju.getTimeGround(), 0.9);
+		addGroundScore(scores, saju.getYearGround(), BRANCH_WEIGHTS.year());
+		addGroundScore(scores, saju.getMonthGround(), BRANCH_WEIGHTS.month());
+		addGroundScore(scores, saju.getDayGround(), BRANCH_WEIGHTS.day());
+		addGroundScore(scores, saju.getTimeGround(), BRANCH_WEIGHTS.time());
 
 		return scores;
 	}
@@ -122,43 +135,59 @@ public class YongsinCalculator {
 			totalScore = 1.0;
 		}
 
-		double ratio = myScore / totalScore;
-		String strength = ratio >= 0.58 ? "신강(身强)" : ratio <= 0.42 ? "신약(身弱)" : "중화(中和)";
-
-		return new StrengthMetrics(strength, myScore, totalScore, ratio);
+		return new StrengthMetrics(Strength.of(myScore / totalScore), myScore, totalScore);
 	}
 
 	private YongsinDecision decideYongsin(FiveElement ilgan, String monthBranch,
 		Map<FiveElement, Double> elementScores, StrengthMetrics metrics) {
 		FiveElement climateYongsin = determineClimateYongsin(monthBranch);
 
-		if (metrics.ratio >= 0.58) { // 신강: 제어/설기
-			FiveElement control = ilgan.controlledBy();
-			FiveElement drain = ilgan.generates();
-			FiveElement balancingYongsin = chooseLowerScoreElement(elementScores, control, drain);
-			FiveElement balancingHeesin = balancingYongsin == control ? drain : control;
+		return switch (metrics.strength()) {
+			case STRONG -> decideForStrong(ilgan, climateYongsin, elementScores);
+			case WEAK -> decideForWeak(ilgan, climateYongsin, elementScores);
+			case BALANCED -> decideForBalanced(ilgan, climateYongsin, elementScores);
+		};
+	}
 
-			if (climateYongsin != null) {
-				return new YongsinDecision(climateYongsin, balancingYongsin,
-					"조후+억부용신(한난 조절 후 강한 기운 제어)");
-			}
-			return new YongsinDecision(balancingYongsin, balancingHeesin, "억부용신(신강 사주 제어)");
+	/**
+	 * 신강: 관살(제어)과 식상(설기) 중 점수가 낮은 쪽으로 강한 기운을 뺀다.
+	 */
+	private YongsinDecision decideForStrong(FiveElement ilgan, FiveElement climateYongsin,
+		Map<FiveElement, Double> elementScores) {
+		FiveElement control = ilgan.controlledBy();
+		FiveElement drain = ilgan.generates();
+		FiveElement balancingYongsin = chooseLowerScoreElement(elementScores, control, drain);
+		FiveElement balancingHeesin = balancingYongsin == control ? drain : control;
+
+		if (climateYongsin != null) {
+			return new YongsinDecision(climateYongsin, balancingYongsin,
+				"조후+억부용신(한난 조절 후 강한 기운 제어)");
 		}
+		return new YongsinDecision(balancingYongsin, balancingHeesin, "억부용신(신강 사주 제어)");
+	}
 
-		if (metrics.ratio <= 0.42) { // 신약: 생조/비겁
-			FiveElement resource = ilgan.generatedBy();
-			FiveElement self = ilgan;
-			FiveElement balancingYongsin = chooseLowerScoreElement(elementScores, resource, self);
-			FiveElement balancingHeesin = balancingYongsin == resource ? self : resource;
+	/**
+	 * 신약: 인성(생조)과 비겁 중 점수가 낮은 쪽으로 약한 기운을 채운다.
+	 */
+	private YongsinDecision decideForWeak(FiveElement ilgan, FiveElement climateYongsin,
+		Map<FiveElement, Double> elementScores) {
+		FiveElement resource = ilgan.generatedBy();
+		FiveElement self = ilgan;
+		FiveElement balancingYongsin = chooseLowerScoreElement(elementScores, resource, self);
+		FiveElement balancingHeesin = balancingYongsin == resource ? self : resource;
 
-			if (climateYongsin != null) {
-				return new YongsinDecision(climateYongsin, balancingYongsin,
-					"조후+억부용신(한난 조절 후 약한 기운 보강)");
-			}
-			return new YongsinDecision(balancingYongsin, balancingHeesin, "억부용신(신약 사주 보강)");
+		if (climateYongsin != null) {
+			return new YongsinDecision(climateYongsin, balancingYongsin,
+				"조후+억부용신(한난 조절 후 약한 기운 보강)");
 		}
+		return new YongsinDecision(balancingYongsin, balancingHeesin, "억부용신(신약 사주 보강)");
+	}
 
-		// 중화: 결핍된 오행으로 균형
+	/**
+	 * 중화: 가장 모자란 오행으로 균형을 맞춘다.
+	 */
+	private YongsinDecision decideForBalanced(FiveElement ilgan, FiveElement climateYongsin,
+		Map<FiveElement, Double> elementScores) {
 		FiveElement balanceYongsin = findMostDeficientElement(elementScores);
 		if (climateYongsin != null) {
 			return new YongsinDecision(climateYongsin, balanceYongsin, "조후용신(한난 조절 우선)");
@@ -172,27 +201,27 @@ public class YongsinCalculator {
 		}
 
 		if (STRONG_MONTH_MAP.get(ilgan).contains(monthBranch)) {
-			return 1.6;
+			return IN_SEASON_BONUS;
 		}
 		if (SUPPORT_MONTH_MAP.get(ilgan).contains(monthBranch)) {
-			return 0.8;
+			return SUPPORTED_SEASON_BONUS;
 		}
 		if (WEAK_MONTH_MAP.get(ilgan).contains(monthBranch)) {
-			return -1.2;
+			return CONTROLLED_SEASON_PENALTY;
 		}
-
+		// 일간이 생하는 오행(식상)이 왕한 달이면 힘이 빠진다
 		if (STRONG_MONTH_MAP.get(ilgan.generates()).contains(monthBranch)) {
-			return -0.6;
+			return DRAINED_SEASON_PENALTY;
 		}
 		return 0.0;
 	}
 
 	private double calculateTonggeunBonus(SajuInfo saju, FiveElement ilgan) {
 		double bonus = 0.0;
-		bonus += calculateGroundRootBonus(saju.getYearGround(), ilgan, 0.4);
-		bonus += calculateGroundRootBonus(saju.getMonthGround(), ilgan, 0.9);
-		bonus += calculateGroundRootBonus(saju.getDayGround(), ilgan, 0.7);
-		bonus += calculateGroundRootBonus(saju.getTimeGround(), ilgan, 0.4);
+		bonus += calculateGroundRootBonus(saju.getYearGround(), ilgan, ROOT_WEIGHTS.year());
+		bonus += calculateGroundRootBonus(saju.getMonthGround(), ilgan, ROOT_WEIGHTS.month());
+		bonus += calculateGroundRootBonus(saju.getDayGround(), ilgan, ROOT_WEIGHTS.day());
+		bonus += calculateGroundRootBonus(saju.getTimeGround(), ilgan, ROOT_WEIGHTS.time());
 		return bonus;
 	}
 
@@ -214,7 +243,7 @@ public class YongsinCalculator {
 		}
 
 		if (isElement(ground.getFiveCircle(), ilgan)) {
-			return weight * 0.6;
+			return weight * ROOT_RATE_WITHOUT_HIDDEN_STEMS;
 		}
 		return 0.0;
 	}
@@ -353,7 +382,7 @@ public class YongsinCalculator {
 	@lombok.AllArgsConstructor
 	public static class YongsinResult {
 
-		private String strength;
+		private Strength strength;
 		private double myScore;
 		private double totalScore;
 		private String yongsin;
@@ -362,19 +391,15 @@ public class YongsinCalculator {
 		private String appliedRuleName;
 	}
 
-	private static class StrengthMetrics {
+	private record StrengthMetrics(Strength strength, double myScore, double totalScore) {
 
-		final String strengthLabel;
-		final double myScore;
-		final double totalScore;
-		final double ratio;
+	}
 
-		StrengthMetrics(String strengthLabel, double myScore, double totalScore, double ratio) {
-			this.strengthLabel = strengthLabel;
-			this.myScore = myScore;
-			this.totalScore = totalScore;
-			this.ratio = ratio;
-		}
+	/**
+	 * 연·월·일·시 기둥에 주는 가중치.
+	 */
+	private record PillarWeights(double year, double month, double day, double time) {
+
 	}
 
 	private record YongsinDecision(FiveElement yongsin, FiveElement heesin, String yongsinType) {

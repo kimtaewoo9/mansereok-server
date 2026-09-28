@@ -65,7 +65,7 @@ class YongsinCalculatorTest {
 
 			// then
 			assertThat(result)
-				.extracting(YongsinResult::getStrength, YongsinResult::getMyScore, YongsinResult::getTotalScore,
+				.extracting(YongsinCalculatorTest::strengthLabel, YongsinResult::getMyScore, YongsinResult::getTotalScore,
 					YongsinResult::getYongsin, YongsinResult::getDescription)
 				.containsExactly(strength, myScore, totalScore, yongsin, description);
 		}
@@ -91,7 +91,7 @@ class YongsinCalculatorTest {
 
 			// then
 			assertThat(result)
-				.extracting(YongsinResult::getStrength, YongsinResult::getMyScore, YongsinResult::getTotalScore,
+				.extracting(YongsinCalculatorTest::strengthLabel, YongsinResult::getMyScore, YongsinResult::getTotalScore,
 					YongsinResult::getYongsin, YongsinResult::getDescription)
 				.containsExactly(strength, myScore, totalScore, yongsin, description);
 		}
@@ -116,7 +116,7 @@ class YongsinCalculatorTest {
 		YongsinResult result = calculator.analyzeYongsin(saju(year, month, day, time));
 
 		// then
-		assertThat(result.getStrength()).isEqualTo(strength);
+		assertThat(result.getStrength().label()).isEqualTo(strength);
 	}
 
 	@Test
@@ -132,7 +132,7 @@ class YongsinCalculatorTest {
 
 		// then: 申월은 甲(목) 일간에게 힘을 빼는 달이라, 월지를 못 읽으면 전체 점수가 10.6 이 아니라 9.4 가 된다
 		assertThat(result)
-			.extracting(YongsinResult::getStrength, YongsinResult::getMyScore, YongsinResult::getTotalScore,
+			.extracting(YongsinCalculatorTest::strengthLabel, YongsinResult::getMyScore, YongsinResult::getTotalScore,
 				YongsinResult::getYongsin, YongsinResult::getDescription)
 			.containsExactly("신약(身弱)", 3.8, 10.6, "수",
 				"억부용신(신약 사주 보강) / 희신:목 / 행운색:검정, 남색, 방향:북쪽");
@@ -147,6 +147,13 @@ class YongsinCalculatorTest {
 		// then
 		assertThat(result.getAppliedRuleCode()).isEqualTo("EOKBU_JOHU_V1");
 		assertThat(result.getAppliedRuleName()).isEqualTo("억부 중심 + 조후 보정");
+	}
+
+	/**
+	 * 표에는 응답 JSON 과 프롬프트에 나가는 강약 이름("신강(身强)")을 그대로 적는다.
+	 */
+	private static String strengthLabel(YongsinResult result) {
+		return result.getStrength().label();
 	}
 
 	/**

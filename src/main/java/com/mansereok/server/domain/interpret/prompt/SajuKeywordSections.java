@@ -94,21 +94,23 @@ final class SajuKeywordSections {
 				- 용신 판단 규칙: %s (%s)
 				"""
 				.formatted(
-					saju.getYongsinInfo().getStrength(),
+					saju.getYongsinInfo().getStrength().label(),
 					saju.getYongsinInfo().getMyScore(),
 					(saju.getYongsinInfo().getTotalScore() - saju.getYongsinInfo().getMyScore()),
 					saju.getYongsinInfo().getAppliedRuleName(),
 					saju.getYongsinInfo().getAppliedRuleCode()));
 
-			// AI에게 '신강/신약'에 따른 처세술 힌트 제공
-			if (saju.getYongsinInfo().getMyScore() >= saju.getYongsinInfo().getTotalScore() / 2) {
-				prompt.append("""
+			// AI에게 '신강/신약'에 따른 처세술 힌트 제공. 점수로 다시 판정하지 않고 계산기의 판정을 그대로 따른다.
+			// 중화는 어느 쪽으로도 기울지 않았다는 판정이라 지침을 붙이지 않는다.
+			switch (saju.getYongsinInfo().getStrength()) {
+				case STRONG -> prompt.append("""
 					  -> (지침) 주관이 뚜렷하고 고집이 셉니다. '독단적인 행동'을 주의하라고 조언하세요.
 					""");
-			} else {
-				prompt.append("""
+				case WEAK -> prompt.append("""
 					  -> (지침) 주변 환경에 잘 휩쓸립니다. '자기 주관'을 가지라고 조언하세요.
 					""");
+				case BALANCED -> {
+				}
 			}
 
 			prompt.append(

@@ -276,7 +276,7 @@ final class SajuProfileSections {
 				※ 이 용신 정보를 바탕으로 사용자에게 행운의 조언을 해주세요.
 				"""
 				.formatted(
-					saju.getYongsinInfo().getStrength(),
+					saju.getYongsinInfo().getStrength().label(),
 					saju.getYongsinInfo().getMyScore(),
 					(saju.getYongsinInfo().getTotalScore() - saju.getYongsinInfo().getMyScore()),
 					saju.getYongsinInfo().getAppliedRuleName(),
