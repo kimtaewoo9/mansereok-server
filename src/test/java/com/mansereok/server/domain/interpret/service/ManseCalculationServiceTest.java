@@ -259,7 +259,7 @@ class ManseCalculationServiceTest {
 			# 사례                                    | 연간 | 연지 | 일간 | 오류 메시지
 			연간이 음양 표에 없으면 대운 방향을 정하지 못한다 | X    | 午   | 甲   | 연간 X의 음양 정보를 찾을 수 없습니다
 			일간이 시주 표에 없으면 시주를 정하지 못한다      | 庚   | 午   | X    | 일간 X의 시주 데이터를 찾을 수 없습니다
-			연지가 십성 표에 없으면 연지의 십성을 정하지 못한다 | 庚   | X    | 甲   | 간지 X의 십성 정보를 찾을 수 없습니다
+			연지가 십성 표에 없으면 연지의 십성을 정하지 못한다 | 庚   | X    | 甲   | 일간 甲 기준 간지 X의 십성 정보를 찾을 수 없습니다
 			""")
 		void throwsIllegalStateWhenServerTableLacksGanji(String description, String yearSky, String yearGround,
 			String daySky, String message) {
