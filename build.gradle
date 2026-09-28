@@ -82,6 +82,24 @@ dependencies {
     implementation 'io.micrometer:micrometer-registry-prometheus'
 }
 
+// 기본 test 는 빠르고 외부 준비물이 없는 테스트만 돌린다.
+// 실제 MySQL 에 N 개 스레드로 동시에 붙는 테스트는 @Tag("concurrency") 로 표시하고 concurrencyTest 로 따로 돌린다.
 tasks.named('test') {
-    useJUnitPlatform()
+    useJUnitPlatform {
+        excludeTags 'concurrency'
+    }
+}
+
+tasks.register('concurrencyTest', Test) {
+    description = '로컬 MySQL 에 붙어 동시 요청을 재현하는 테스트(@Tag("concurrency"))만 돌린다.'
+    group = 'verification'
+    testClassesDirs = sourceSets.test.output.classesDirs
+    classpath = sourceSets.test.runtimeClasspath
+    useJUnitPlatform {
+        includeTags 'concurrency'
+    }
+    // 결과가 DB 상태와 CONCURRENCY_DB_* 환경변수에 달려 있는데 Gradle 은 이를 입력으로 모른다.
+    // 소스가 그대로면 UP-TO-DATE 로 건너뛰므로(--rerun 을 잊으면 실제로는 돌지 않는다) 늘 다시 돌린다.
+    outputs.upToDateWhen { false }
+    shouldRunAfter tasks.named('test')
 }
