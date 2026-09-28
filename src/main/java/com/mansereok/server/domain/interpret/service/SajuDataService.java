@@ -1,16 +1,92 @@
 package com.mansereok.server.domain.interpret.service;
 
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.function.Function;
 import org.springframework.stereotype.Service;
 
+/**
+ * 사주 계산에 쓰는 고정 조회표(음양, 시주, 십성, 한글 이름, 지장간)를 들고 한 칸씩 찾아 준다.
+ *
+ * <p>표는 바뀌지 않으므로 클래스를 처음 불러올 때 한 번만 만들어 고칠 수 없는 맵으로 들고 있는다. 표 자체는 밖으로 내보내지 않고
+ * 조회 메서드만 연다. 조회 메서드는 표에 없는 글자나 null 을 받으면 예외 없이 null 을 돌려준다.
+ */
 @Service
 public class SajuDataService {
+
+	// 천간·지지 → "양" 또는 "음"
+	private static final Map<String, String> YIN_YANG = Map.copyOf(buildYinYang());
+	// 일간 → 시 번호("0" 자시 ~ "11" 해시) → [시간, 시지]
+	private static final Map<String, Map<String, List<String>>> TIME_PILLAR_BY_DAY_STEM =
+		copyNested(buildTimePillars(), List::of);
+	// 일간 → 천간·지지 → "십성,오행"
+	private static final Map<String, Map<String, String>> TEN_STARS =
+		copyNested(buildTenStars(), Function.identity());
+	// 천간·지지 한자 → 한글 이름
+	private static final Map<String, String> KOREAN_BY_HANJA = Map.copyOf(buildKoreanByHanja());
+	// 지지 → 지장간
+	private static final Map<String, HiddenStems> HIDDEN_STEMS = Map.copyOf(buildHiddenStems());
+
+	/**
+	 * 천간·지지 한 글자의 음양("양" 또는 "음"). 표에 없거나 null 이면 null.
+	 */
+	public String yinYangOf(String hanja) {
+		return find(YIN_YANG, hanja);
+	}
+
+	/**
+	 * 일간과 시 번호(0 자시 ~ 11 해시)로 정해지는 시주 [시간, 시지]. 돌려주는 목록은 고칠 수 없다. 표에 없거나 일간이 null 이면 null.
+	 */
+	public List<String> timePillarOf(String dayStem, int hourIndex) {
+		Map<String, List<String>> byHour = find(TIME_PILLAR_BY_DAY_STEM, dayStem);
+		return byHour == null ? null : byHour.get(String.valueOf(hourIndex));
+	}
+
+	/**
+	 * 일간에서 본 천간·지지 한 글자의 십성과 그 글자의 오행을 "십성,오행"(예: "비견,목")으로 돌려준다. 표에 없거나 null 이면 null.
+	 */
+	public String tenStarOf(String dayStem, String hanja) {
+		Map<String, String> byHanja = find(TEN_STARS, dayStem);
+		return byHanja == null ? null : find(byHanja, hanja);
+	}
+
+	/**
+	 * 천간·지지 한자의 한글 이름(예: 甲 → 갑). 표에 없거나 null 이면 null.
+	 */
+	public String koreanOf(String hanja) {
+		return find(KOREAN_BY_HANJA, hanja);
+	}
+
+	/**
+	 * 지지 속에 든 천간(지장간). 표에 없거나 null 이면 null.
+	 */
+	public HiddenStems hiddenStemsOf(String branch) {
+		return find(HIDDEN_STEMS, branch);
+	}
+
+	// 고칠 수 없는 맵은 null 로 찾으면 NullPointerException 을 던진다. 조회 메서드는 null 을 받아도 null 을 돌려주도록 먼저 거른다.
+	private static <V> V find(Map<String, V> table, String key) {
+		return key == null ? null : table.get(key);
+	}
+
+	// 바깥 맵과 안쪽 맵을 모두 고칠 수 없는 맵으로 복사한다. 안쪽 값은 copyValue 로 바꿔 담는다.
+	private static <T, V> Map<String, Map<String, V>> copyNested(Map<String, Map<String, T>> table,
+		Function<T, V> copyValue) {
+		Map<String, Map<String, V>> copy = new HashMap<>();
+		table.forEach((outerKey, inner) -> {
+			Map<String, V> innerCopy = new HashMap<>();
+			inner.forEach((innerKey, value) -> innerCopy.put(innerKey, copyValue.apply(value)));
+			copy.put(outerKey, Map.copyOf(innerCopy));
+		});
+		return Map.copyOf(copy);
+	}
 
 	/**
 	 * 천간, 지지의 음양 데이터
 	 */
-	public Map<String, String> getMinusPlus() {
+	private static Map<String, String> buildYinYang() {
 		Map<String, String> data = new HashMap<>();
 		// 천간 음양
 		data.put("甲", "양");
@@ -44,7 +120,7 @@ public class SajuDataService {
 	/**
 	 * 일간별 시주 계산 데이터 (완전판)
 	 */
-	public Map<String, Map<String, String[]>> getTimeJuData2() {
+	private static Map<String, Map<String, String[]>> buildTimePillars() {
 		Map<String, Map<String, String[]>> data = new HashMap<>();
 
 		// 甲일, 己일
@@ -138,7 +214,7 @@ public class SajuDataService {
 	/**
 	 * 일간에 따른 십성 데이터 (완전판 - 10개 일간 모두)
 	 */
-	public Map<String, Map<String, String>> getTenStar() {
+	private static Map<String, Map<String, String>> buildTenStars() {
 		Map<String, Map<String, String>> data = new HashMap<>();
 
 		// 甲일간 십성
@@ -407,7 +483,7 @@ public class SajuDataService {
 	/**
 	 * 한글 한자 변환
 	 */
-	public Map<String, String> convertChineseToKorean() {
+	private static Map<String, String> buildKoreanByHanja() {
 		Map<String, String> data = new HashMap<>();
 		// 천간
 		data.put("甲", "갑");
@@ -437,116 +513,98 @@ public class SajuDataService {
 	}
 
 	/**
-	 * 지장간 데이터 (12지지 완전판)
+	 * 지장간 데이터 (12지지 완전판). first 가 정기이고, 한 지지의 비율(rate)을 모두 더하면 30 이다.
 	 */
-	public Map<String, Map<String, Object>> getJijangan() {
-		Map<String, Map<String, Object>> data = new HashMap<>();
+	private static Map<String, HiddenStems> buildHiddenStems() {
+		Map<String, HiddenStems> data = new HashMap<>();
 
 		// 子: 癸
-		Map<String, Object> ja = new HashMap<>();
-		ja.put("first", hidden("癸", "계", "수", "음", 30));
-		ja.put("second", null);
-		ja.put("third", null);
-		data.put("子", ja);
+		data.put("子", new HiddenStems(
+			new HiddenStem("癸", "계", "수", "음", 30), null, null));
 
 		// 丑: 己 癸 辛
-		Map<String, Object> chuk = new HashMap<>();
-		chuk.put("first", hidden("己", "기", "토", "음", 18));
-		chuk.put("second", hidden("癸", "계", "수", "음", 9));
-		chuk.put("third", hidden("辛", "신", "금", "음", 3));
-		data.put("丑", chuk);
+		data.put("丑", new HiddenStems(
+			new HiddenStem("己", "기", "토", "음", 18),
+			new HiddenStem("癸", "계", "수", "음", 9),
+			new HiddenStem("辛", "신", "금", "음", 3)));
 
 		// 寅: 甲 丙 戊
-		Map<String, Object> in = new HashMap<>();
-		in.put("first", hidden("甲", "갑", "목", "양", 16));
-		in.put("second", hidden("丙", "병", "화", "양", 7));
-		in.put("third", hidden("戊", "무", "토", "양", 7));
-		data.put("寅", in);
+		data.put("寅", new HiddenStems(
+			new HiddenStem("甲", "갑", "목", "양", 16),
+			new HiddenStem("丙", "병", "화", "양", 7),
+			new HiddenStem("戊", "무", "토", "양", 7)));
 
 		// 卯: 乙
-		Map<String, Object> myo = new HashMap<>();
-		myo.put("first", hidden("乙", "을", "목", "음", 30));
-		myo.put("second", null);
-		myo.put("third", null);
-		data.put("卯", myo);
+		data.put("卯", new HiddenStems(
+			new HiddenStem("乙", "을", "목", "음", 30), null, null));
 
 		// 辰: 戊 乙 癸
-		Map<String, Object> jin = new HashMap<>();
-		jin.put("first", hidden("戊", "무", "토", "양", 18));
-		jin.put("second", hidden("乙", "을", "목", "음", 9));
-		jin.put("third", hidden("癸", "계", "수", "음", 3));
-		data.put("辰", jin);
+		data.put("辰", new HiddenStems(
+			new HiddenStem("戊", "무", "토", "양", 18),
+			new HiddenStem("乙", "을", "목", "음", 9),
+			new HiddenStem("癸", "계", "수", "음", 3)));
 
 		// 巳: 丙 庚 戊
-		Map<String, Object> sa = new HashMap<>();
-		sa.put("first", hidden("丙", "병", "화", "양", 16));
-		sa.put("second", hidden("庚", "경", "금", "양", 7));
-		sa.put("third", hidden("戊", "무", "토", "양", 7));
-		data.put("巳", sa);
+		data.put("巳", new HiddenStems(
+			new HiddenStem("丙", "병", "화", "양", 16),
+			new HiddenStem("庚", "경", "금", "양", 7),
+			new HiddenStem("戊", "무", "토", "양", 7)));
 
 		// 午: 丁 己
-		Map<String, Object> o = new HashMap<>();
-		o.put("first", hidden("丁", "정", "화", "음", 20));
-		o.put("second", hidden("己", "기", "토", "음", 10));
-		o.put("third", null);
-		data.put("午", o);
+		data.put("午", new HiddenStems(
+			new HiddenStem("丁", "정", "화", "음", 20),
+			new HiddenStem("己", "기", "토", "음", 10), null));
 
 		// 未: 己 丁 乙
-		Map<String, Object> mi = new HashMap<>();
-		mi.put("first", hidden("己", "기", "토", "음", 18));
-		mi.put("second", hidden("丁", "정", "화", "음", 9));
-		mi.put("third", hidden("乙", "을", "목", "음", 3));
-		data.put("未", mi);
+		data.put("未", new HiddenStems(
+			new HiddenStem("己", "기", "토", "음", 18),
+			new HiddenStem("丁", "정", "화", "음", 9),
+			new HiddenStem("乙", "을", "목", "음", 3)));
 
 		// 申: 庚 壬 戊
-		Map<String, Object> sin = new HashMap<>();
-		sin.put("first", hidden("庚", "경", "금", "양", 16));
-		sin.put("second", hidden("壬", "임", "수", "양", 7));
-		sin.put("third", hidden("戊", "무", "토", "양", 7));
-		data.put("申", sin);
+		data.put("申", new HiddenStems(
+			new HiddenStem("庚", "경", "금", "양", 16),
+			new HiddenStem("壬", "임", "수", "양", 7),
+			new HiddenStem("戊", "무", "토", "양", 7)));
 
 		// 酉: 辛
-		Map<String, Object> yu = new HashMap<>();
-		yu.put("first", hidden("辛", "신", "금", "음", 30));
-		yu.put("second", null);
-		yu.put("third", null);
-		data.put("酉", yu);
+		data.put("酉", new HiddenStems(
+			new HiddenStem("辛", "신", "금", "음", 30), null, null));
 
 		// 戌: 戊 辛 丁
-		Map<String, Object> sul = new HashMap<>();
-		sul.put("first", hidden("戊", "무", "토", "양", 18));
-		sul.put("second", hidden("辛", "신", "금", "음", 9));
-		sul.put("third", hidden("丁", "정", "화", "음", 3));
-		data.put("戌", sul);
+		data.put("戌", new HiddenStems(
+			new HiddenStem("戊", "무", "토", "양", 18),
+			new HiddenStem("辛", "신", "금", "음", 9),
+			new HiddenStem("丁", "정", "화", "음", 3)));
 
 		// 亥: 壬 甲
-		Map<String, Object> hae = new HashMap<>();
-		hae.put("first", hidden("壬", "임", "수", "양", 20));
-		hae.put("second", hidden("甲", "갑", "목", "양", 10));
-		hae.put("third", null);
-		data.put("亥", hae);
+		data.put("亥", new HiddenStems(
+			new HiddenStem("壬", "임", "수", "양", 20),
+			new HiddenStem("甲", "갑", "목", "양", 10), null));
 
 		return data;
 	}
 
-	private Map<String, Object> hidden(String chinese, String korean, String fiveCircle,
-		String minusPlus, int rate) {
-		String color = switch (fiveCircle) {
-			case "목" -> "#4CAF50";
-			case "화" -> "#F44336";
-			case "토" -> "#FFD600";
-			case "금" -> "#E0E0E0";
-			case "수" -> "#039BE5";
-			default -> "";
-		};
+	/**
+	 * 지장간 하나. rate 는 한 지지 안에서 이 천간이 차지하는 비율로, 한 지지의 rate 를 모두 더하면 30 이다.
+	 *
+	 * @param chinese    천간 한자
+	 * @param korean     천간 한글 이름
+	 * @param fiveCircle 오행(목·화·토·금·수)
+	 * @param minusPlus  음양("양" 또는 "음")
+	 * @param rate       비율
+	 */
+	public record HiddenStem(String chinese, String korean, String fiveCircle, String minusPlus, int rate) {
 
-		return Map.of(
-			"chinese", chinese,
-			"korean", korean,
-			"fiveCircle", fiveCircle,
-			"fiveCircleColor", color,
-			"minusPlus", minusPlus,
-			"rate", rate
-		);
+	}
+
+	/**
+	 * 한 지지의 지장간. first(정기)는 늘 있고, second·third 는 지지에 따라 없으면 null 이다.
+	 */
+	public record HiddenStems(HiddenStem first, HiddenStem second, HiddenStem third) {
+
+		public HiddenStems {
+			Objects.requireNonNull(first, "지장간 정기(first)는 비어 있을 수 없습니다");
+		}
 	}
 }

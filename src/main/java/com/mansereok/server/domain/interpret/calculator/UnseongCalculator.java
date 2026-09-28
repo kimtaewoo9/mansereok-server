@@ -14,10 +14,12 @@ import org.springframework.stereotype.Component;
 @Slf4j
 public class UnseongCalculator {
 
-	// 일간별 12운성 매핑 테이블
-	private static final Map<String, Map<String, String>> UNSEONG_TABLE = new HashMap<>();
+	// 일간별 12운성 매핑 테이블. 클래스를 불러올 때 한 번 만들고, 바깥 맵과 일간별 맵 모두 고칠 수 없다.
+	private static final Map<String, Map<String, String>> UNSEONG_TABLE = buildUnseongTable();
 
-	static {
+	private static Map<String, Map<String, String>> buildUnseongTable() {
+		Map<String, Map<String, String>> table = new HashMap<>();
+
 		// 甲(갑) 일간
 		Map<String, String> gapMap = new HashMap<>();
 		gapMap.put("亥", "장생");
@@ -32,7 +34,7 @@ public class UnseongCalculator {
 		gapMap.put("申", "절");
 		gapMap.put("酉", "태");
 		gapMap.put("戌", "양");
-		UNSEONG_TABLE.put("甲", gapMap);
+		table.put("甲", Map.copyOf(gapMap));
 
 		// 乙(을) 일간
 		Map<String, String> eulMap = new HashMap<>();
@@ -48,7 +50,7 @@ public class UnseongCalculator {
 		eulMap.put("酉", "절");
 		eulMap.put("申", "태");
 		eulMap.put("未", "양");
-		UNSEONG_TABLE.put("乙", eulMap);
+		table.put("乙", Map.copyOf(eulMap));
 
 		// 丙(병) 일간
 		Map<String, String> byeongMap = new HashMap<>();
@@ -64,7 +66,7 @@ public class UnseongCalculator {
 		byeongMap.put("亥", "절");
 		byeongMap.put("子", "태");
 		byeongMap.put("丑", "양");
-		UNSEONG_TABLE.put("丙", byeongMap);
+		table.put("丙", Map.copyOf(byeongMap));
 
 		// 丁(정) 일간
 		Map<String, String> jeongMap = new HashMap<>();
@@ -80,7 +82,7 @@ public class UnseongCalculator {
 		jeongMap.put("子", "절");
 		jeongMap.put("亥", "태");
 		jeongMap.put("戌", "양");
-		UNSEONG_TABLE.put("丁", jeongMap);
+		table.put("丁", Map.copyOf(jeongMap));
 
 		// 戊(무) 일간
 		Map<String, String> muMap = new HashMap<>();
@@ -96,7 +98,7 @@ public class UnseongCalculator {
 		muMap.put("亥", "절");
 		muMap.put("子", "태");
 		muMap.put("丑", "양");
-		UNSEONG_TABLE.put("戊", muMap);
+		table.put("戊", Map.copyOf(muMap));
 
 		// 己(기) 일간
 		Map<String, String> giMap = new HashMap<>();
@@ -112,7 +114,7 @@ public class UnseongCalculator {
 		giMap.put("子", "절");
 		giMap.put("亥", "태");
 		giMap.put("戌", "양");
-		UNSEONG_TABLE.put("己", giMap);
+		table.put("己", Map.copyOf(giMap));
 
 		// 庚(경) 일간
 		Map<String, String> gyeongMap = new HashMap<>();
@@ -128,7 +130,7 @@ public class UnseongCalculator {
 		gyeongMap.put("寅", "절");
 		gyeongMap.put("卯", "태");
 		gyeongMap.put("辰", "양");
-		UNSEONG_TABLE.put("庚", gyeongMap);
+		table.put("庚", Map.copyOf(gyeongMap));
 
 		// 辛(신) 일간
 		Map<String, String> sinMap = new HashMap<>();
@@ -144,7 +146,7 @@ public class UnseongCalculator {
 		sinMap.put("卯", "절");
 		sinMap.put("寅", "태");
 		sinMap.put("丑", "양");
-		UNSEONG_TABLE.put("辛", sinMap);
+		table.put("辛", Map.copyOf(sinMap));
 
 		// 壬(임) 일간
 		Map<String, String> imMap = new HashMap<>();
@@ -160,7 +162,7 @@ public class UnseongCalculator {
 		imMap.put("巳", "절");
 		imMap.put("午", "태");
 		imMap.put("未", "양");
-		UNSEONG_TABLE.put("壬", imMap);
+		table.put("壬", Map.copyOf(imMap));
 
 		// 癸(계) 일간
 		Map<String, String> gyeMap = new HashMap<>();
@@ -176,7 +178,9 @@ public class UnseongCalculator {
 		gyeMap.put("午", "절");
 		gyeMap.put("巳", "태");
 		gyeMap.put("辰", "양");
-		UNSEONG_TABLE.put("癸", gyeMap);
+		table.put("癸", Map.copyOf(gyeMap));
+
+		return Map.copyOf(table);
 	}
 
 	/**

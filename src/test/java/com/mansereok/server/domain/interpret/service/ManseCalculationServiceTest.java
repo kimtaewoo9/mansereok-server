@@ -16,6 +16,8 @@ import com.mansereok.server.domain.interpret.calculator.YongsinCalculator;
 import com.mansereok.server.domain.interpret.dto.request.ManseryeokCalculationRequest;
 import com.mansereok.server.domain.interpret.dto.request.ManseryeokCreateRequest;
 import com.mansereok.server.domain.interpret.dto.response.ManseryeokCalculationResponse;
+import com.mansereok.server.domain.interpret.dto.response.ManseryeokCalculationResponse.JijangganElement;
+import com.mansereok.server.domain.interpret.dto.response.ManseryeokCalculationResponse.JijangganInfo;
 import com.mansereok.server.domain.interpret.dto.response.ManseryeokCalculationResponse.MonthlyFortune;
 import com.mansereok.server.domain.interpret.dto.response.ManseryeokCalculationResponse.PillarElement;
 import com.mansereok.server.domain.interpret.dto.response.ManseryeokCalculationResponse.SajuInfo;
@@ -257,7 +259,7 @@ class ManseCalculationServiceTest {
 			# 사례                                    | 연간 | 연지 | 일간 | 오류 메시지
 			연간이 음양 표에 없으면 대운 방향을 정하지 못한다 | X    | 午   | 甲   | 연간 X의 음양 정보를 찾을 수 없습니다
 			일간이 시주 표에 없으면 시주를 정하지 못한다      | 庚   | 午   | X    | 일간 X의 시주 데이터를 찾을 수 없습니다
-			연지가 십성 표에 없으면 연지의 십성을 정하지 못한다 | 庚   | X    | 甲   | 간지 X의 십성 정보를 찾을 수 없습니다
+			연지가 십성 표에 없으면 연지의 십성을 정하지 못한다 | 庚   | X    | 甲   | 일간 甲 기준 간지 X의 십성 정보를 찾을 수 없습니다
 			""")
 		void throwsIllegalStateWhenServerTableLacksGanji(String description, String yearSky, String yearGround,
 			String daySky, String message) {
@@ -326,6 +328,73 @@ class ManseCalculationServiceTest {
 				.as("대운 시작 연도와 그 최소·최대")
 				.containsOnly(bigFortuneStartYear);
 			assertThat(saju.getUncertaintyNotes()).as("출생시간을 알면 불확정 안내가 없다").isNull();
+		}
+
+		/**
+		 * 1990-01-27 23:29 남자(己巳 丁丑 壬辰 辛亥, 일간 壬)의 기둥 한 칸이 SajuDataService 조회표에서 채우는 값(한글 이름, 오행, 색, 십성,
+		 * 음양, 지장간)을 천간·지지·지장간마다 본다. 12운성은 UnseongCalculatorTest 가 본다. 십성은 일간 壬(양수)에서 본 관계이고, 색은
+		 * 오행마다 정해진 값(토 #FFD600, 화 #F44336, 수 #039BE5, 목 #4CAF50)이다.
+		 */
+		@Nested
+		@DisplayName("기둥 한 칸을 채울 때")
+		class WhenFillingPillarElement {
+
+			private final ManseryeokCalculationRequest request =
+				solarRequest(LocalDate.of(1990, 1, 27), LocalTime.of(23, 29), "MALE");
+
+			@Test
+			@DisplayName("천간은 한자·한글 이름·오행·색·일간 기준 십성·음양을 채운다")
+			void fillsStemFromLookupTables() {
+				// when
+				SajuInfo saju = service.calculate(request).getSaju();
+
+				// then
+				assertThat(List.of(saju.getYearSky(), saju.getDaySky()))
+					.extracting(PillarElement::getChinese, PillarElement::getKorean, PillarElement::getFiveCircle,
+						PillarElement::getFiveCircleColor, PillarElement::getTenStar, PillarElement::getMinusPlus)
+					.containsExactly(
+						tuple("己", "기", "토", "#FFD600", "정관", "음"),
+						tuple("壬", "임", "수", "#039BE5", "비견", "양"));
+			}
+
+			@Test
+			@DisplayName("지지는 한자·한글 이름·오행·색·일간 기준 십성·음양을 채운다")
+			void fillsBranchFromLookupTables() {
+				// when
+				SajuInfo saju = service.calculate(request).getSaju();
+
+				// then: 巳·亥 는 표시 음양(음)과 십성을 가르는 음양(정기 丙·壬 의 양)이 다르다
+				assertThat(List.of(saju.getYearGround(), saju.getDayGround(), saju.getTimeGround()))
+					.extracting(PillarElement::getChinese, PillarElement::getKorean, PillarElement::getFiveCircle,
+						PillarElement::getFiveCircleColor, PillarElement::getTenStar, PillarElement::getMinusPlus)
+					.containsExactly(
+						tuple("巳", "사", "화", "#F44336", "편재", "음"),
+						tuple("辰", "진", "토", "#FFD600", "편관", "양"),
+						tuple("亥", "해", "수", "#039BE5", "비견", "음"));
+			}
+
+			@Test
+			@DisplayName("지지의 지장간은 한자·한글 이름·오행·색·음양·비율과 일간 기준 십성을 채우고, 없는 칸은 비운다")
+			void fillsHiddenStemsFromLookupTables() {
+				// when
+				SajuInfo saju = service.calculate(request).getSaju();
+
+				// then: 일지 辰 은 戊 乙 癸, 시지 亥 는 壬 甲 두 칸이다
+				JijangganInfo dayBranch = saju.getDayGround().getJijanggan();
+				JijangganInfo timeBranch = saju.getTimeGround().getJijanggan();
+				assertThat(List.of(dayBranch.getFirst(), dayBranch.getSecond(), dayBranch.getThird(),
+					timeBranch.getFirst(), timeBranch.getSecond()))
+					.extracting(JijangganElement::getChinese, JijangganElement::getKorean,
+						JijangganElement::getFiveCircle, JijangganElement::getFiveCircleColor,
+						JijangganElement::getMinusPlus, JijangganElement::getRate, JijangganElement::getTenStar)
+					.containsExactly(
+						tuple("戊", "무", "토", "#FFD600", "양", 18, "편관"),
+						tuple("乙", "을", "목", "#4CAF50", "음", 9, "상관"),
+						tuple("癸", "계", "수", "#039BE5", "음", 3, "겁재"),
+						tuple("壬", "임", "수", "#039BE5", "양", 20, "비견"),
+						tuple("甲", "갑", "목", "#4CAF50", "양", 10, "식신"));
+				assertThat(timeBranch.getThird()).isNull();
+			}
 		}
 
 		@Nested

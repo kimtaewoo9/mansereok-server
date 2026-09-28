@@ -10,6 +10,8 @@ import com.mansereok.server.domain.interpret.dto.response.ManseryeokCalculationR
 import com.mansereok.server.domain.interpret.dto.response.ManseryeokCalculationResponse.SajuInfo;
 import com.mansereok.server.domain.interpret.entity.Manse;
 import com.mansereok.server.domain.interpret.repository.ManseRepository;
+import com.mansereok.server.domain.interpret.service.SajuDataService.HiddenStem;
+import com.mansereok.server.domain.interpret.service.SajuDataService.HiddenStems;
 import java.time.Clock;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -293,18 +295,9 @@ public class ManseCalculationService {
 	private ManseryeokCalculationResponse.PillarElement.PillarElementBuilder formatChineseToBuilder(
 		String chinese, String daySky, boolean isGround, String ilganChinese) {
 
-		Map<String, String> koreanData = sajuDataService.convertChineseToKorean();
-		Map<String, Map<String, String>> tenStarData = sajuDataService.getTenStar();
-		Map<String, String> minusPlusData = sajuDataService.getMinusPlus();
-
-		Map<String, String> tenStar = tenStarData.get(daySky);
-		if (tenStar == null) {
-			throw new IllegalStateException("일간 " + daySky + "의 십성 데이터를 찾을 수 없습니다");
-		}
-
-		String tenStarInfo = tenStar.get(chinese);
+		String tenStarInfo = sajuDataService.tenStarOf(daySky, chinese);
 		if (tenStarInfo == null) {
-			throw new IllegalStateException("간지 " + chinese + "의 십성 정보를 찾을 수 없습니다");
+			throw new IllegalStateException("일간 " + daySky + " 기준 간지 " + chinese + "의 십성 정보를 찾을 수 없습니다");
 		}
 
 		String[] tenStarParts = tenStarInfo.split(",");
@@ -315,11 +308,11 @@ public class ManseCalculationService {
 		ManseryeokCalculationResponse.PillarElement.PillarElementBuilder builder =
 			ManseryeokCalculationResponse.PillarElement.builder()
 				.chinese(chinese)
-				.korean(koreanData.get(chinese))
+				.korean(sajuDataService.koreanOf(chinese))
 				.fiveCircle(tenStarParts[1])
 				.fiveCircleColor(getColor(tenStarParts[1]))
 				.tenStar(tenStarParts[0])
-				.minusPlus(minusPlusData.get(chinese));
+				.minusPlus(sajuDataService.yinYangOf(chinese));
 
 		if (isGround) {
 			builder.jijanggan(getJijangganInfo(chinese, ilganChinese));
@@ -422,7 +415,7 @@ public class ManseCalculationService {
 
 	private boolean isRightDirection(String gender, String yearSky) {
 		String normalizedGender = normalizeGender(gender);
-		String minusPlus = sajuDataService.getMinusPlus().get(yearSky);
+		String minusPlus = sajuDataService.yinYangOf(yearSky);
 
 		if (minusPlus == null) {
 			throw new IllegalStateException("연간 " + yearSky + "의 음양 정보를 찾을 수 없습니다");
@@ -582,37 +575,30 @@ public class ManseCalculationService {
 				.build();
 		}
 
-		String timeKey = getTimeJuIndex(time);
-		Map<String, Map<String, String[]>> timeJuData2 = sajuDataService.getTimeJuData2();
-		Map<String, String[]> dayData = timeJuData2.get(daySky);
-
-		if (dayData == null) {
+		// 시 번호는 늘 0~11 이라, 표에서 못 찾는 경우는 일간이 표에 없을 때뿐이다.
+		int timeKey = getTimeJuIndex(time);
+		List<String> timeJu = sajuDataService.timePillarOf(daySky, timeKey);
+		if (timeJu == null) {
 			throw new IllegalStateException("일간 " + daySky + "의 시주 데이터를 찾을 수 없습니다");
 		}
 
-		if (dayData.containsKey(timeKey)) {
-			String[] timeJu = dayData.get(timeKey);
-			log.debug("시주 계산 완료: daySky={}, time={}, timeKey={}, timeSky={}, timeGround={}",
-				daySky, time, timeKey, timeJu[0], timeJu[1]);
+		log.debug("시주 계산 완료: daySky={}, time={}, timeKey={}, timeSky={}, timeGround={}",
+			daySky, time, timeKey, timeJu.get(0), timeJu.get(1));
 
-			return TimePillarResult.builder()
-				.timeSky(timeJu[0])
-				.timeGround(timeJu[1])
-				.build();
-		}
-
-		// 닿지 않는 방어 코드다. getTimeJuIndex 는 0~11 만 돌려주고 시주 표는 일간마다 0~11 을 모두 갖는다.
-		throw new IllegalStateException("시주 계산 실패: daySky=" + daySky + ", timeKey=" + timeKey);
+		return TimePillarResult.builder()
+			.timeSky(timeJu.get(0))
+			.timeGround(timeJu.get(1))
+			.build();
 	}
 
 	/**
 	 * 출생 시각이 드는 시주 번호(0 자시 ~ 11 해시)를 센다. 자시 시작(23:30)부터 지난 분을 2시간으로 나눈 몫이라 하루의 모든 분이
 	 * 빈틈없이 한 번호에 든다. 자정을 넘는 자시(23:30~01:29)도 따로 다루지 않는다. 초는 보지 않는다.
 	 */
-	private static String getTimeJuIndex(LocalTime time) {
+	private static int getTimeJuIndex(LocalTime time) {
 		int minutesSinceJasiStart = Math.floorMod(time.get(ChronoField.MINUTE_OF_DAY) - JASI_START_MINUTE_OF_DAY,
 			MINUTES_PER_DAY);
-		return String.valueOf(minutesSinceJasiStart / MINUTES_PER_TIME_PILLAR);
+		return minutesSinceJasiStart / MINUTES_PER_TIME_PILLAR;
 	}
 
 	private String getColor(String value) {
@@ -628,52 +614,37 @@ public class ManseCalculationService {
 
 	private ManseryeokCalculationResponse.JijangganInfo getJijangganInfo(String jiji,
 		String ilganChinese) {
-		Map<String, Map<String, Object>> jijangganData = sajuDataService.getJijangan();
-		Map<String, Object> jijiData = jijangganData.get(jiji);
-
-		if (jijiData == null) {
+		HiddenStems hiddenStems = sajuDataService.hiddenStemsOf(jiji);
+		if (hiddenStems == null) {
 			return null;
 		}
 
 		return ManseryeokCalculationResponse.JijangganInfo.builder()
-			.first(
-				createJijangganElement((Map<String, Object>) jijiData.get("first"), ilganChinese))
-			.second(
-				createJijangganElement((Map<String, Object>) jijiData.get("second"), ilganChinese))
-			.third(
-				createJijangganElement((Map<String, Object>) jijiData.get("third"), ilganChinese))
+			.first(createJijangganElement(hiddenStems.first(), ilganChinese))
+			.second(createJijangganElement(hiddenStems.second(), ilganChinese))
+			.third(createJijangganElement(hiddenStems.third(), ilganChinese))
 			.build();
 	}
 
-	@SuppressWarnings("unchecked")
 	private ManseryeokCalculationResponse.JijangganElement createJijangganElement(
-		Map<String, Object> elementData, String ilganChinese) {
-		if (elementData == null) {
+		HiddenStem hiddenStem, String ilganChinese) {
+		if (hiddenStem == null) {
 			return null;
 		}
 
-		String chinese = (String) elementData.get("chinese");
-
 		String tenStar = null;
-		if (chinese != null && ilganChinese != null) {
-			Map<String, Map<String, String>> tenStarData = sajuDataService.getTenStar();
-			Map<String, String> ilganTenStarMap = tenStarData.get(ilganChinese);
-			if (ilganTenStarMap != null) {
-				String tenStarInfo = ilganTenStarMap.get(chinese);
-				if (tenStarInfo != null) {
-					String[] parts = tenStarInfo.split(",");
-					tenStar = parts.length > 0 ? parts[0] : null;
-				}
-			}
+		String tenStarInfo = sajuDataService.tenStarOf(ilganChinese, hiddenStem.chinese());
+		if (tenStarInfo != null) {
+			tenStar = tenStarInfo.split(",")[0];
 		}
 
 		return ManseryeokCalculationResponse.JijangganElement.builder()
-			.chinese(chinese)
-			.korean((String) elementData.get("korean"))
-			.fiveCircle((String) elementData.get("fiveCircle"))
-			.fiveCircleColor((String) elementData.get("fiveCircleColor"))
-			.minusPlus((String) elementData.get("minusPlus"))
-			.rate((Integer) elementData.get("rate"))
+			.chinese(hiddenStem.chinese())
+			.korean(hiddenStem.korean())
+			.fiveCircle(hiddenStem.fiveCircle())
+			.fiveCircleColor(getColor(hiddenStem.fiveCircle()))
+			.minusPlus(hiddenStem.minusPlus())
+			.rate(hiddenStem.rate())
 			.tenStar(tenStar)
 			.build();
 	}
