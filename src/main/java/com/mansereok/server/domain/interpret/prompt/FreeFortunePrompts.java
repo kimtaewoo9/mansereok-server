@@ -1,6 +1,7 @@
 package com.mansereok.server.domain.interpret.prompt;
 
 import com.mansereok.server.domain.interpret.dto.response.ManseryeokCalculationResponse;
+import java.time.LocalDate;
 
 /**
  * 무료 운세 프롬프트(2026 변화·키워드·플러팅·케미·오늘의 운세·3월 월운).
@@ -116,7 +117,8 @@ final class FreeFortunePrompts {
 	}
 
 	// 103번 나의 플러팅 기술
-	static String createFlirtingPrompt(String name, ManseryeokCalculationResponse response) {
+	static String createFlirtingPrompt(String name, ManseryeokCalculationResponse response,
+		LocalDate today) {
 		StringBuilder prompt = new StringBuilder();
 
 		// 1. 역할 정의 (세련된 연애 프로파일러)
@@ -133,7 +135,7 @@ final class FreeFortunePrompts {
 		prompt.append("""
 			### 1. 분석 대상자 정보 ###
 			""");
-		SajuProfileSections.appendPersonDetailInfo(prompt, name, response);
+		SajuProfileSections.appendPersonDetailInfo(prompt, name, response, today.getYear());
 
 		prompt.append("""
 
@@ -180,7 +182,8 @@ final class FreeFortunePrompts {
 	}
 
 	// 104. 사떡 궁합
-	static String createChemistryMatchPrompt(String name, ManseryeokCalculationResponse response) {
+	static String createChemistryMatchPrompt(String name, ManseryeokCalculationResponse response,
+		LocalDate today) {
 		StringBuilder prompt = new StringBuilder();
 		String userGender = response != null && response.getInput() != null
 			? response.getInput().getGender()
@@ -206,7 +209,7 @@ final class FreeFortunePrompts {
 		prompt.append("""
 			### 1. 분석 대상자 정보 ###
 			""");
-		SajuProfileSections.appendPersonDetailInfo(prompt, name, response);
+		SajuProfileSections.appendPersonDetailInfo(prompt, name, response, today.getYear());
 
 		prompt.append("""
 
@@ -264,11 +267,11 @@ final class FreeFortunePrompts {
 	}
 
 	// 105. 오늘의 운세
-	static String createTodayFortunePrompt(String name, ManseryeokCalculationResponse response) {
+	static String createTodayFortunePrompt(String name, ManseryeokCalculationResponse response,
+		LocalDate today) {
 		StringBuilder prompt = new StringBuilder();
 
-		// ===== 1. 오늘 날짜 정보 (KST 기준) =====
-		java.time.LocalDate today = java.time.LocalDate.now(java.time.ZoneId.of("Asia/Seoul"));
+		// ===== 1. 오늘 날짜 정보 (팩토리가 한국 시각으로 정해 넘긴 날짜) =====
 		String formattedDate = today.format(
 			java.time.format.DateTimeFormatter.ofPattern("yyyy년 MM월 dd일"));
 		String dayOfWeek = today.getDayOfWeek()
@@ -291,7 +294,7 @@ final class FreeFortunePrompts {
 		prompt.append("""
 			### 1. 분석 대상자 정보 ###
 			""");
-		SajuProfileSections.appendPersonDetailInfo(prompt, name, response);
+		SajuProfileSections.appendPersonDetailInfo(prompt, name, response, today.getYear());
 
 		// ===== 5. 오늘 날짜 및 일진 정보 =====
 		prompt.append("""

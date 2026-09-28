@@ -8,9 +8,12 @@ import com.mansereok.server.domain.interpret.dto.response.ManseryeokCalculationR
 import com.mansereok.server.domain.interpret.dto.response.ManseryeokCalculationResponse.MonthlyFortune;
 import com.mansereok.server.domain.interpret.dto.response.ManseryeokCalculationResponse.PillarElement;
 import com.mansereok.server.domain.interpret.dto.response.ManseryeokCalculationResponse.SajuInfo;
+import java.time.Clock;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -21,6 +24,15 @@ import java.util.Map;
  * 값을 바꾸면 기대 결과 파일도 다시 만들어야 한다.
  */
 public final class PromptFixtures {
+
+	/**
+	 * 기대 결과 파일을 만든 시각. 2026-09-25 10:00 (서울).
+	 *
+	 * <p>프롬프트의 "현재 연도", 오늘 날짜, 오늘 일진이 이 시각으로 정해진다. 날짜를 보지 않는 테스트도 이 시계를 써서
+	 * 언제 돌려도 같은 프롬프트를 만든다. 바꾸면 기대 결과 파일도 다시 만들어야 한다.
+	 */
+	public static final Clock FIXED_CLOCK = Clock.fixed(Instant.parse("2026-09-25T01:00:00Z"),
+		ZoneId.of("Asia/Seoul"));
 
 	private PromptFixtures() {
 	}

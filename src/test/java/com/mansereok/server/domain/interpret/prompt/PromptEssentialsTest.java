@@ -27,9 +27,9 @@ import org.junit.jupiter.params.provider.ValueSource;
 @DisplayName("프롬프트 필수 요소")
 class PromptEssentialsTest {
 
-	private static final SajuPromptFactory SAJU = new SajuPromptFactory();
+	private static final SajuPromptFactory SAJU = new SajuPromptFactory(PromptFixtures.FIXED_CLOCK);
 	private static final CompatibilityPromptFactory COMPATIBILITY =
-		new CompatibilityPromptFactory();
+		new CompatibilityPromptFactory(PromptFixtures.FIXED_CLOCK);
 
 	private static String saju(long subcategoryId) {
 		return SAJU.create(subcategoryId,

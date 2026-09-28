@@ -3,6 +3,7 @@ package com.mansereok.server.domain.interpret.prompt;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.mansereok.server.domain.interpret.dto.response.ManseryeokCalculationResponse;
+import java.time.LocalDate;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -14,12 +15,15 @@ import org.junit.jupiter.api.Test;
 @DisplayName("상품별 프롬프트 문구")
 class PromptBuilderContentTest {
 
+	// 이 테스트가 보는 문구는 날짜와 상관없다. 빌더가 오늘 날짜를 받으므로 고정값을 넘긴다.
+	private static final LocalDate TODAY = LocalDate.of(2026, 9, 25);
+
 	private final ManseryeokCalculationResponse response = PromptFixtures.person1();
 
 	@Test
 	@DisplayName("사업운 프롬프트는 새 섹션 구조와 페이지 분리 규칙을 담는다")
 	void businessPromptHasNewSectionStructureAndPageBreakRules() {
-		String prompt = BusinessAndAcademicPrompts.createBusinessLuckPrompt("김태우", response);
+		String prompt = BusinessAndAcademicPrompts.createBusinessLuckPrompt("김태우", response, TODAY);
 
 		assertThat(prompt).isNotNull();
 		assertThat(prompt).contains("fullAnalysis 총 분량은 최소 4000자 이상으로 작성한다.");
@@ -51,7 +55,7 @@ class PromptBuilderContentTest {
 	@Test
 	@DisplayName("재물운 프롬프트는 알파벳 프레임 없이 목표 분량만 지시한다")
 	void moneyLuckPromptHasNoLetteredFrameAndKeepsTargetLength() {
-		String prompt = FortunePrompts.createMoneyLuckPrompt("김태우", response);
+		String prompt = FortunePrompts.createMoneyLuckPrompt("김태우", response, TODAY);
 
 		assertThat(prompt).isNotNull();
 		assertThat(prompt).contains("fullAnalysis 총 분량은 3800자 이상 4600자 이하로 작성한다.");
@@ -81,7 +85,7 @@ class PromptBuilderContentTest {
 	@Test
 	@DisplayName("케미 프롬프트는 추천 인물 구성과 문단 규칙을 담는다")
 	void chemistryPromptHasParagraphRules() {
-		String prompt = FreeFortunePrompts.createChemistryMatchPrompt("은정", response);
+		String prompt = FreeFortunePrompts.createChemistryMatchPrompt("은정", response, TODAY);
 
 		assertThat(prompt).isNotNull();
 		assertThat(prompt).contains("추천 대상은 반드시 여성으로만 선정하세요.");

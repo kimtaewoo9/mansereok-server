@@ -85,66 +85,6 @@ final class SajuElementSections {
 		prompt.append(String.join(", ", jijangganElements) + "\n");
 	}
 
-	static void appendJijangganInline(StringBuilder prompt, PillarElement pillar) {
-		if (pillar == null || pillar.getJijanggan() == null) {
-			prompt.append("정보 없음");
-			return;
-		}
-
-		JijangganInfo ji = pillar.getJijanggan();
-		List<String> elements = new ArrayList<>();
-
-		if (ji.getFirst() != null) {
-			elements.add(String.format("%s%s(%s,%d%%)",
-				orUnknown(ji.getFirst().getKorean()),
-				orUnknown(ji.getFirst().getFiveCircle()),
-				orUnknown(ji.getFirst().getTenStar()),
-				ji.getFirst().getRate() != null ? ji.getFirst().getRate() : 0));
-		}
-		if (ji.getSecond() != null) {
-			elements.add(String.format("%s%s(%s,%d%%)",
-				orUnknown(ji.getSecond().getKorean()),
-				orUnknown(ji.getSecond().getFiveCircle()),
-				orUnknown(ji.getSecond().getTenStar()),
-				ji.getSecond().getRate() != null ? ji.getSecond().getRate() : 0));
-		}
-		if (ji.getThird() != null) {
-			elements.add(String.format("%s%s(%s,%d%%)",
-				orUnknown(ji.getThird().getKorean()),
-				orUnknown(ji.getThird().getFiveCircle()),
-				orUnknown(ji.getThird().getTenStar()),
-				ji.getThird().getRate() != null ? ji.getThird().getRate() : 0));
-		}
-
-		prompt.append(String.join(", ", elements));
-	}
-
-	static String getJijangganSummary(PillarElement pillar) {
-		if (pillar == null || pillar.getJijanggan() == null) {
-			return "?";
-		}
-		JijangganInfo ji = pillar.getJijanggan();
-
-		List<String> elements = new ArrayList<>();
-		if (ji.getFirst() != null && ji.getFirst().getKorean() != null
-			&& ji.getFirst().getFiveCircle() != null && ji.getFirst().getRate() != null) {
-			elements.add(ji.getFirst().getKorean() + ji.getFirst().getFiveCircle()
-				+ "(" + ji.getFirst().getRate() + "%)");
-		}
-		if (ji.getSecond() != null && ji.getSecond().getKorean() != null
-			&& ji.getSecond().getFiveCircle() != null && ji.getSecond().getRate() != null) {
-			elements.add(ji.getSecond().getKorean() + ji.getSecond().getFiveCircle()
-				+ "(" + ji.getSecond().getRate() + "%)");
-		}
-		if (ji.getThird() != null && ji.getThird().getKorean() != null
-			&& ji.getThird().getFiveCircle() != null && ji.getThird().getRate() != null) {
-			elements.add(ji.getThird().getKorean() + ji.getThird().getFiveCircle()
-				+ "(" + ji.getThird().getRate() + "%)");
-		}
-
-		return elements.isEmpty() ? "?" : String.join(", ", elements);
-	}
-
 	static void calculateDistributionWithJijanggan(
 		ManseryeokCalculationResponse.SajuInfo saju,
 		Map<String, Double> ohaengCounts,

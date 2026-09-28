@@ -1,6 +1,7 @@
 package com.mansereok.server.domain.interpret.prompt;
 
 import com.mansereok.server.domain.interpret.dto.response.ManseryeokCalculationResponse;
+import java.time.LocalDate;
 
 /**
  * 직업적성 프롬프트.
@@ -11,7 +12,8 @@ final class CareerPrompts {
 	}
 
 	// ==================== 3. 직업 적성 프롬프트  ====================
-	static String createCareerAptitudePrompt(String name, ManseryeokCalculationResponse response) {
+	static String createCareerAptitudePrompt(String name, ManseryeokCalculationResponse response,
+		LocalDate today) {
 		StringBuilder prompt = new StringBuilder();
 		ManseryeokCalculationResponse.SajuInfo saju = response.getSaju();
 		ManseryeokCalculationResponse.InputInfo input = response.getInput();
@@ -23,7 +25,7 @@ final class CareerPrompts {
 		prompt.append("""
 			### 5. 분석 대상자 상세 정보 (Data for Analysis) ###
 			""");
-		SajuProfileSections.appendPersonDetailInfo(prompt, name, response);
+		SajuProfileSections.appendPersonDetailInfo(prompt, name, response, today.getYear());
 
 		// 3. 절대 기준
 		SajuKeywordSections.appendKeywords(prompt, response);

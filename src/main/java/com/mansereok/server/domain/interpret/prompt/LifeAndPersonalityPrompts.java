@@ -1,6 +1,7 @@
 package com.mansereok.server.domain.interpret.prompt;
 
 import com.mansereok.server.domain.interpret.dto.response.ManseryeokCalculationResponse;
+import java.time.LocalDate;
 
 /**
  * 인생총운·성격분석·인생조언 프롬프트.
@@ -10,7 +11,8 @@ final class LifeAndPersonalityPrompts {
 	private LifeAndPersonalityPrompts() {
 	}
 
-	static String createLifeOverallPrompt(String name, ManseryeokCalculationResponse response) {
+	static String createLifeOverallPrompt(String name, ManseryeokCalculationResponse response,
+		LocalDate today) {
 		StringBuilder prompt = new StringBuilder();
 
 		PromptSections.appendHyeanPersonaHeader(prompt);
@@ -18,7 +20,7 @@ final class LifeAndPersonalityPrompts {
 		prompt.append("""
 			### 5. 분석 대상자 상세 정보 (Data for Analysis) ###
 			""");
-		SajuProfileSections.appendPersonDetailInfo(prompt, name, response);
+		SajuProfileSections.appendPersonDetailInfo(prompt, name, response, today.getYear());
 
 		SajuKeywordSections.appendKeywords(prompt, response);
 
@@ -75,7 +77,7 @@ final class LifeAndPersonalityPrompts {
 
 	// ==================== 2. 성격 분석 프롬프트 ====================
 	static String createPersonalityAnalysisPrompt(String name,
-		ManseryeokCalculationResponse response) {
+		ManseryeokCalculationResponse response, LocalDate today) {
 		StringBuilder prompt = new StringBuilder();
 		ManseryeokCalculationResponse.SajuInfo saju = response.getSaju();
 		ManseryeokCalculationResponse.InputInfo input = response.getInput();
@@ -87,7 +89,7 @@ final class LifeAndPersonalityPrompts {
 		prompt.append("""
 			### 5. 분석 대상자 상세 정보 (Data for Analysis) ###
 			""");
-		SajuProfileSections.appendPersonDetailInfo(prompt, name, response);
+		SajuProfileSections.appendPersonDetailInfo(prompt, name, response, today.getYear());
 
 		SajuKeywordSections.appendKeywords(prompt, response);
 
@@ -170,7 +172,8 @@ final class LifeAndPersonalityPrompts {
 		return prompt.toString();
 	}
 
-	static String createLifeAdvicePrompt(String name, ManseryeokCalculationResponse response) {
+	static String createLifeAdvicePrompt(String name, ManseryeokCalculationResponse response,
+		LocalDate today) {
 		StringBuilder prompt = new StringBuilder();
 
 		prompt.append("""
@@ -288,7 +291,7 @@ final class LifeAndPersonalityPrompts {
 
 		PromptSections.appendLongformNarrationStyle(prompt);
 
-		PromptSections.appendLongformAnalysisData(prompt, name, response);
+		PromptSections.appendLongformAnalysisData(prompt, name, response, today.getYear());
 
 		PromptSections.appendBusinessOutputFormat(prompt);
 		return prompt.toString();

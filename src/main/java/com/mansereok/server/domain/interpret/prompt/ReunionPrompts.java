@@ -14,10 +14,10 @@ final class ReunionPrompts {
 
 	static String createReunionPrompt(
 		String person1Name, ManseryeokCalculationResponse person1,
-		String person2Name, ManseryeokCalculationResponse person2) {
+		String person2Name, ManseryeokCalculationResponse person2, LocalDate today) {
 		StringBuilder prompt = new StringBuilder();
 
-		String todayDate = LocalDate.now().format(DateTimeFormatter.ofPattern("yyyy년 MM월 dd일"));
+		String todayDate = today.format(DateTimeFormatter.ofPattern("yyyy년 MM월 dd일"));
 
 		// ==========================================
 		// 0. 시스템 페르소나

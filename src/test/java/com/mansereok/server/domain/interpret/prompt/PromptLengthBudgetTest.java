@@ -26,9 +26,9 @@ import org.junit.jupiter.params.provider.MethodSource;
 @DisplayName("프롬프트 길이 예산")
 class PromptLengthBudgetTest {
 
-	private static final SajuPromptFactory SAJU = new SajuPromptFactory();
+	private static final SajuPromptFactory SAJU = new SajuPromptFactory(PromptFixtures.FIXED_CLOCK);
 	private static final CompatibilityPromptFactory COMPATIBILITY =
-		new CompatibilityPromptFactory();
+		new CompatibilityPromptFactory(PromptFixtures.FIXED_CLOCK);
 
 	/** 상품별 상한. 값은 현재 길이(2026-09 기준)에 여유를 더한 것이다. */
 	private static final Map<Long, Integer> SAJU_MAX = Map.ofEntries(

@@ -15,7 +15,7 @@ import org.junit.jupiter.params.provider.ValueSource;
 @DisplayName("궁합 프롬프트 팩토리")
 class CompatibilityPromptFactoryTest {
 
-	private final CompatibilityPromptFactory factory = new CompatibilityPromptFactory();
+	private final CompatibilityPromptFactory factory = new CompatibilityPromptFactory(PromptFixtures.FIXED_CLOCK);
 
 	private CompatibilityPromptContext context() {
 		return CompatibilityPromptContext.of(

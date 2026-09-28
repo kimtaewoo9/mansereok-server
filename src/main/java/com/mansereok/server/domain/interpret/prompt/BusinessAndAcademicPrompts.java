@@ -1,6 +1,7 @@
 package com.mansereok.server.domain.interpret.prompt;
 
 import com.mansereok.server.domain.interpret.dto.response.ManseryeokCalculationResponse;
+import java.time.LocalDate;
 
 /**
  * 사업운·학업운 프롬프트.
@@ -11,7 +12,8 @@ final class BusinessAndAcademicPrompts {
 	}
 
 	// 21. 사업운 분석 프롬프트
-	static String createBusinessLuckPrompt(String name, ManseryeokCalculationResponse response) {
+	static String createBusinessLuckPrompt(String name, ManseryeokCalculationResponse response,
+		LocalDate today) {
 		StringBuilder prompt = new StringBuilder();
 
 		prompt.append("""
@@ -172,13 +174,14 @@ final class BusinessAndAcademicPrompts {
 			문장 시작을 반복하지 말고 접속어와 질문형 전환을 섞어 리듬을 만든다.
 			""");
 
-		PromptSections.appendLongformAnalysisData(prompt, name, response);
+		PromptSections.appendLongformAnalysisData(prompt, name, response, today.getYear());
 
 		PromptSections.appendBusinessOutputFormat(prompt);
 		return prompt.toString();
 	}
 
-	static String createAcademicLuckPrompt(String name, ManseryeokCalculationResponse response) {
+	static String createAcademicLuckPrompt(String name, ManseryeokCalculationResponse response,
+		LocalDate today) {
 		StringBuilder prompt = new StringBuilder();
 
 		prompt.append("""
@@ -313,7 +316,7 @@ final class BusinessAndAcademicPrompts {
 
 		PromptSections.appendLongformNarrationStyle(prompt);
 
-		PromptSections.appendLongformAnalysisData(prompt, name, response);
+		PromptSections.appendLongformAnalysisData(prompt, name, response, today.getYear());
 
 		PromptSections.appendBusinessOutputFormat(prompt);
 		return prompt.toString();

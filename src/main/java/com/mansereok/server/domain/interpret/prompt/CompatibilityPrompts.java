@@ -1,6 +1,7 @@
 package com.mansereok.server.domain.interpret.prompt;
 
 import com.mansereok.server.domain.interpret.dto.response.ManseryeokCalculationResponse;
+import java.time.LocalDate;
 
 /**
  * 연애·삼각관계 궁합 프롬프트.
@@ -15,7 +16,8 @@ final class CompatibilityPrompts {
 		String person1Name,
 		ManseryeokCalculationResponse person1Response,
 		String person2Name,
-		ManseryeokCalculationResponse person2Response
+		ManseryeokCalculationResponse person2Response,
+		LocalDate today
 	) {
 		StringBuilder prompt = new StringBuilder();
 
@@ -30,14 +32,14 @@ final class CompatibilityPrompts {
 
 		// --- 사람 1 ---
 		prompt.append("--- 첫 번째 사람 정보: ").append(person1Name).append(" ---\n");
-		SajuProfileSections.appendPersonDetailInfo(prompt, person1Name, person1Response);
+		SajuProfileSections.appendPersonDetailInfo(prompt, person1Name, person1Response, today.getYear());
 
 		// 🔥 [추가 1] Person 1 팩트 주입
 		SajuKeywordSections.appendKeywords(prompt, person1Response);
 
 		// --- 사람 2 ---
 		prompt.append("\n--- 두 번째 사람 정보: ").append(person2Name).append(" ---\n");
-		SajuProfileSections.appendPersonDetailInfo(prompt, person2Name, person2Response);
+		SajuProfileSections.appendPersonDetailInfo(prompt, person2Name, person2Response, today.getYear());
 
 		// 🔥 [추가 2] Person 2 팩트 주입
 		SajuKeywordSections.appendKeywords(prompt, person2Response);
@@ -161,7 +163,8 @@ final class CompatibilityPrompts {
 		String person1Name,
 		ManseryeokCalculationResponse person1Response,
 		String person2Name,
-		ManseryeokCalculationResponse person2Response
+		ManseryeokCalculationResponse person2Response,
+		LocalDate today
 	) {
 		StringBuilder prompt = new StringBuilder();
 
@@ -183,9 +186,9 @@ final class CompatibilityPrompts {
 			### 5. 분석 대상자 상세 정보 ###
 			""");
 		prompt.append("--- 첫 번째 사람: ").append(person1Name).append(" ---\n");
-		SajuProfileSections.appendPersonDetailInfo(prompt, person1Name, person1Response);
+		SajuProfileSections.appendPersonDetailInfo(prompt, person1Name, person1Response, today.getYear());
 		prompt.append("\n--- 두 번째 사람: ").append(person2Name).append(" ---\n");
-		SajuProfileSections.appendPersonDetailInfo(prompt, person2Name, person2Response);
+		SajuProfileSections.appendPersonDetailInfo(prompt, person2Name, person2Response, today.getYear());
 
 		// 4. 분석 요청
 		prompt.append("""

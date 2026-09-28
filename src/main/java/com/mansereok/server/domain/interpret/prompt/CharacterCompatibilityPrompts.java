@@ -1,6 +1,7 @@
 package com.mansereok.server.domain.interpret.prompt;
 
 import com.mansereok.server.domain.interpret.dto.response.ManseryeokCalculationResponse;
+import java.time.LocalDate;
 
 /**
  * 캐릭터가 끼는 궁합 프롬프트.
@@ -15,7 +16,8 @@ final class CharacterCompatibilityPrompts {
 	static String createCharacterCompatibilityPrompt(
 		String userName, ManseryeokCalculationResponse userSaju,
 		String charName, ManseryeokCalculationResponse charSaju,
-		String sourceTitle
+		String sourceTitle,
+		LocalDate today
 	) {
 		StringBuilder prompt = new StringBuilder();
 
@@ -45,13 +47,13 @@ final class CharacterCompatibilityPrompts {
 			--- 캐릭터 (최애): %s%s ---
 			"""
 			.formatted(charName, PromptSections.sourceTitlePhrase(sourceTitle, " (%s)")));
-		SajuProfileSections.appendPersonDetailInfo(prompt, charName, charSaju);
+		SajuProfileSections.appendPersonDetailInfo(prompt, charName, charSaju, today.getYear());
 
 		// 🔥 [추가 1] 캐릭터의 절대 기준(Fact) 주입
 		SajuKeywordSections.appendKeywords(prompt, charSaju);
 
 		prompt.append("\n--- 사용자 (나): ").append(userName).append(" ---\n");
-		SajuProfileSections.appendPersonDetailInfo(prompt, userName, userSaju);
+		SajuProfileSections.appendPersonDetailInfo(prompt, userName, userSaju, today.getYear());
 
 		// 🔥 [추가 2] 나의 절대 기준(Fact) 주입
 		SajuKeywordSections.appendKeywords(prompt, userSaju);
@@ -184,7 +186,8 @@ final class CharacterCompatibilityPrompts {
 	// 11번 캐릭터와 캐릭터 궁합.
 	static String createCharacterToCharacterCompatibilityPrompt(
 		String char1Name, ManseryeokCalculationResponse char1Saju, String char1Source,
-		String char2Name, ManseryeokCalculationResponse char2Saju, String char2Source
+		String char2Name, ManseryeokCalculationResponse char2Saju, String char2Source,
+		LocalDate today
 	) {
 		StringBuilder prompt = new StringBuilder();
 
@@ -214,7 +217,7 @@ final class CharacterCompatibilityPrompts {
 			--- 캐릭터 1: %s%s ---
 			"""
 			.formatted(char1Name, PromptSections.sourceTitlePhrase(char1Source, " (%s)")));
-		SajuProfileSections.appendPersonDetailInfo(prompt, char1Name, char1Saju);
+		SajuProfileSections.appendPersonDetailInfo(prompt, char1Name, char1Saju, today.getYear());
 
 		// 🔥 [추가 1] 캐릭터 1의 팩트 주입
 		SajuKeywordSections.appendKeywords(prompt, char1Saju);
@@ -224,7 +227,7 @@ final class CharacterCompatibilityPrompts {
 			--- 캐릭터 2: %s%s ---
 			"""
 			.formatted(char2Name, PromptSections.sourceTitlePhrase(char2Source, " (%s)")));
-		SajuProfileSections.appendPersonDetailInfo(prompt, char2Name, char2Saju);
+		SajuProfileSections.appendPersonDetailInfo(prompt, char2Name, char2Saju, today.getYear());
 
 		// 🔥 [추가 2] 캐릭터 2의 팩트 주입
 		SajuKeywordSections.appendKeywords(prompt, char2Saju);

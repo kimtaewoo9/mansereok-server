@@ -83,8 +83,8 @@ class ManseInterpretationInstructionChannelTest {
 			emailService,
 			sajuResultService,
 			resultService,
-			new SajuPromptFactory(),
-			new CompatibilityPromptFactory(),
+			new SajuPromptFactory(PromptFixtures.FIXED_CLOCK),
+			new CompatibilityPromptFactory(PromptFixtures.FIXED_CLOCK),
 			new AnalysisNormalizer(),
 			new InterpretationPipeline()
 		);
