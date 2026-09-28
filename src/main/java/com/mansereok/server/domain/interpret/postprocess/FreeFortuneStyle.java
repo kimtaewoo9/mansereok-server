@@ -1,5 +1,6 @@
 package com.mansereok.server.domain.interpret.postprocess;
 
+import com.mansereok.server.domain.interpret.product.InterpretationProduct;
 import java.util.List;
 
 /**
@@ -14,7 +15,7 @@ import java.util.List;
 enum FreeFortuneStyle {
 
 	/** 2026 변화 운세. 다섯 생활 영역을 소제목으로 쓴다. */
-	CHANGES_2026(101L) {
+	CHANGES_2026(InterpretationProduct.CHANGES_2026) {
 		@Override
 		String applyToAnalysis(String text) {
 			return ParagraphSplitter.ensureContextAwareParagraphBreaks(text,
@@ -24,7 +25,7 @@ enum FreeFortuneStyle {
 	},
 
 	/** 2026 키워드 운세. 상담 멘트를 지우고 제목 아래 본문만 문단으로 나눈다. */
-	KEYWORD(102L) {
+	KEYWORD(InterpretationProduct.KEYWORD_2026) {
 		@Override
 		String applyToAnalysis(String text) {
 			return KeywordParagraphs.ensureParagraphBreaks(
@@ -38,7 +39,7 @@ enum FreeFortuneStyle {
 	},
 
 	/** 플러팅 운세. 문단이 셋으로 정해져 있어 기준 길이가 짧다. */
-	FLIRTING(103L) {
+	FLIRTING(InterpretationProduct.FLIRTING) {
 		@Override
 		String applyToAnalysis(String text) {
 			return ParagraphSplitter.ensureContextAwareParagraphBreaks(text,
@@ -48,7 +49,7 @@ enum FreeFortuneStyle {
 	},
 
 	/** 케미 궁합. 대괄호 추천 라벨을 지우고 추천 항목 단위로 문단을 나눈다. */
-	CHEMISTRY(104L) {
+	CHEMISTRY(InterpretationProduct.CHEMISTRY_MATCH) {
 		@Override
 		String applyToAnalysis(String text) {
 			String withoutLabels =
@@ -58,7 +59,7 @@ enum FreeFortuneStyle {
 	},
 
 	/** 오늘의 운세. 하루치라 문단이 가장 짧다. */
-	TODAY(105L) {
+	TODAY(InterpretationProduct.TODAY_FORTUNE) {
 		@Override
 		String applyToAnalysis(String text) {
 			return ParagraphSplitter.ensureContextAwareParagraphBreaks(text,
@@ -68,21 +69,22 @@ enum FreeFortuneStyle {
 	},
 
 	/** 3월 월운. 화면이 섹션 단위로 고정돼 있어 섹션 재조립이 필요하다. */
-	MARCH_MONTHLY(106L) {
+	MARCH_MONTHLY(InterpretationProduct.MARCH_MONTHLY_FORTUNE) {
 		@Override
 		String applyToAnalysis(String text) {
 			return MarchMonthlySections.normalize(text);
 		}
 	};
 
-	private final Long subcategoryId;
+	private final InterpretationProduct product;
 
-	FreeFortuneStyle(Long subcategoryId) {
-		this.subcategoryId = subcategoryId;
+	FreeFortuneStyle(InterpretationProduct product) {
+		this.product = product;
 	}
 
-	Long subcategoryId() {
-		return subcategoryId;
+	/** 이 손질을 쓰는 무료 운세 상품. */
+	InterpretationProduct product() {
+		return product;
 	}
 
 	/** 공통 앞단을 거친 본문에 상품별 문단 정리를 적용한다. */

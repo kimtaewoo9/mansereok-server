@@ -1,7 +1,6 @@
 package com.mansereok.server.domain.interpret.prompt;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.util.LinkedHashMap;
 import java.util.SequencedMap;
@@ -14,19 +13,6 @@ import org.junit.jupiter.params.provider.CsvSource;
 
 @DisplayName("프롬프트 공통 조각")
 class PromptSectionsTest {
-
-	@Test
-	@DisplayName("라우팅용 상품 id 는 int 범위를 벗어나면 잘리지 않고 예외가 된다")
-	void requireRoutableSubcategoryIdRejectsOutOfRange() {
-		assertThat(PromptSections.requireRoutableSubcategoryId(1L)).isEqualTo(1);
-
-		assertThatThrownBy(() -> PromptSections.requireRoutableSubcategoryId(4294967297L))
-			.isInstanceOf(IllegalArgumentException.class)
-			.hasMessageContaining("지원하지 않는 카테고리입니다");
-		assertThatThrownBy(() -> PromptSections.requireRoutableSubcategoryId(null))
-			.isInstanceOf(IllegalArgumentException.class)
-			.hasMessageContaining("지원하지 않는 카테고리입니다");
-	}
 
 	@ParameterizedTest(name = "[{index}] 작품명 \"{0}\" + 문구 \"{1}\" → \"{2}\"")
 	@CsvSource(delimiter = '|', textBlock = """

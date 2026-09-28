@@ -1,6 +1,7 @@
 package com.mansereok.server.domain.interpret.prompt;
 
 import com.mansereok.server.domain.interpret.dto.response.ManseryeokCalculationResponse;
+import com.mansereok.server.domain.interpret.product.InterpretationProduct;
 import java.time.Clock;
 import java.time.LocalDate;
 import java.time.ZoneId;
@@ -16,6 +17,9 @@ import org.springframework.stereotype.Component;
  *
  * <p>프롬프트의 "현재 연도"·"오늘 날짜" 도 여기서 한 번만 정한다. 개별 빌더는 시계를 읽지 않고 넘겨받은 날짜만 쓴다.
  * 2026년을 두고 푸는 상품(18, 101, 102, 106)은 예외로, 날짜를 넘겨받지 않고 빌더가 기준연도 2026 을 쓴다.
+ *
+ * <p>상품 분기는 {@link InterpretationProduct} 에 대한 default 없는 switch 다. 상품이 늘면 두 메서드 모두 그 상품을
+ * 어떻게 다룰지 적어야 컴파일된다.
  */
 @Component
 @RequiredArgsConstructor
@@ -30,33 +34,37 @@ public class SajuPromptFactory {
 	/**
 	 * 유료 사주 상품 프롬프트.
 	 *
-	 * @throws IllegalArgumentException 지원하지 않거나 null 인 subcategoryId 인 경우
+	 * @throws IllegalArgumentException subcategoryId 가 null 이거나 유료 사주 상품이 아닌 경우
 	 */
 	public String create(Long subcategoryId, PromptContext context) {
-		int categoryId = PromptSections.requireRoutableSubcategoryId(subcategoryId);
+		InterpretationProduct product = InterpretationProduct.require(subcategoryId);
 		PromptContext sanitized = context.sanitized();
 		String name = sanitized.name();
 		String sourceTitle = sanitized.sourceTitle();
 		ManseryeokCalculationResponse response = sanitized.response();
 		LocalDate today = todayInSeoul();
 
-		String analysisPrompt = categoryId == 9
-			? CharacterPrompts.createCharacterSajuPrompt(name, response, sourceTitle, today)
-			: switch (categoryId) {
-				case 1 -> LifeAndPersonalityPrompts.createLifeOverallPrompt(name, response, today);
-				case 2 -> LifeAndPersonalityPrompts.createPersonalityAnalysisPrompt(name, response, today);
-				case 3 -> CareerPrompts.createCareerAptitudePrompt(name, response, today);
-				case 5 -> CharacterPrompts.createIdolAnalysisPrompt(name, response, today);
-				case 13 -> CharacterPrompts.createActorAnalysisPrompt(name, response, today);
-				case 17 -> FortunePrompts.createLoveLuckPrompt(name, response, today); // 연애운
-				case 18 -> FortunePrompts.createNewYear2026Prompt(name, response); // 신년 운세. 2026년을 두고 푸는 상품이라 기준연도 2026 고정
-				case 20 -> FortunePrompts.createMoneyLuckPrompt(name, response, today);
-				case 21 -> BusinessAndAcademicPrompts.createBusinessLuckPrompt(name, response, today);
-				case 22 -> BusinessAndAcademicPrompts.createAcademicLuckPrompt(name, response, today); // 학업운
-				case 23 -> LifeAndPersonalityPrompts.createLifeAdvicePrompt(name, response, today); // 인생조언
-				default ->
-					throw new IllegalArgumentException("지원하지 않는 카테고리입니다: " + subcategoryId);
-			};
+		String analysisPrompt = switch (product) {
+			case LIFE_OVERALL -> LifeAndPersonalityPrompts.createLifeOverallPrompt(name, response, today);
+			case PERSONALITY_ANALYSIS -> LifeAndPersonalityPrompts.createPersonalityAnalysisPrompt(name, response, today);
+			case CAREER_APTITUDE -> CareerPrompts.createCareerAptitudePrompt(name, response, today);
+			case IDOL_ANALYSIS -> CharacterPrompts.createIdolAnalysisPrompt(name, response, today);
+			case CHARACTER_SAJU -> CharacterPrompts.createCharacterSajuPrompt(name, response, sourceTitle, today);
+			case ACTOR_ANALYSIS -> CharacterPrompts.createActorAnalysisPrompt(name, response, today);
+			case LOVE_LUCK -> FortunePrompts.createLoveLuckPrompt(name, response, today);
+			// 2026년을 두고 푸는 상품이라 기준연도 2026 고정
+			case NEW_YEAR_2026 -> FortunePrompts.createNewYear2026Prompt(name, response);
+			case MONEY_LUCK -> FortunePrompts.createMoneyLuckPrompt(name, response, today);
+			case BUSINESS_LUCK -> BusinessAndAcademicPrompts.createBusinessLuckPrompt(name, response, today);
+			case ACADEMIC_LUCK -> BusinessAndAcademicPrompts.createAcademicLuckPrompt(name, response, today);
+			case LIFE_ADVICE -> LifeAndPersonalityPrompts.createLifeAdvicePrompt(name, response, today);
+			// 궁합 상품은 CompatibilityPromptFactory, 무료 운세 상품은 createFree 가 맡는다.
+			case LOVE_STORY_4, LOVE_STORY_6, IDOL_COMPATIBILITY, TRIANGLE_RELATIONSHIP,
+				CHARACTER_COMPATIBILITY, CHARACTER_TO_CHARACTER_COMPATIBILITY, LOVE_STORY_14,
+				ACTOR_COMPATIBILITY, REUNION,
+				CHANGES_2026, KEYWORD_2026, FLIRTING, CHEMISTRY_MATCH, TODAY_FORTUNE,
+				MARCH_MONTHLY_FORTUNE -> throw InterpretationProduct.unsupported(product.id());
+		};
 
 		SequencedMap<String, String> userValues = new LinkedHashMap<>();
 		userValues.put("이름", name);
@@ -67,24 +75,30 @@ public class SajuPromptFactory {
 	/**
 	 * 무료 운세 상품 프롬프트. 작품명을 쓰지 않으므로 사용자 입력 구획에 이름만 선언한다.
 	 *
-	 * @throws IllegalArgumentException 지원하지 않거나 null 인 subcategoryId 인 경우
+	 * @throws IllegalArgumentException subcategoryId 가 null 이거나 무료 운세 상품이 아닌 경우
 	 */
 	public String createFree(Long subcategoryId, PromptContext context) {
-		int categoryId = PromptSections.requireRoutableSubcategoryId(subcategoryId);
+		InterpretationProduct product = InterpretationProduct.require(subcategoryId);
 		PromptContext sanitized = context.sanitized();
 		String name = sanitized.name();
 		ManseryeokCalculationResponse response = sanitized.response();
 		LocalDate today = todayInSeoul();
 
-		// 101, 102, 106 은 2026년을 두고 푸는 상품이라 기준연도가 2026 으로 고정이고, 오늘 날짜를 받지 않는다.
-		String analysisPrompt = switch (categoryId) {
-			case 101 -> FreeFortunePrompts.create2026ChangesPrompt(name, response);
-			case 102 -> FreeFortunePrompts.create2026KeywordPrompt(name, response);
-			case 103 -> FreeFortunePrompts.createFlirtingPrompt(name, response, today);
-			case 104 -> FreeFortunePrompts.createChemistryMatchPrompt(name, response, today);
-			case 105 -> FreeFortunePrompts.createTodayFortunePrompt(name, response, today);
-			case 106 -> FreeFortunePrompts.createMarchMonthlyFortunePrompt(name, response);
-			default -> throw new IllegalArgumentException("지원하지 않는 카테고리입니다.");
+		// 2026 변화·2026 키워드·3월 월운은 2026년을 두고 푸는 상품이라 기준연도가 2026 으로 고정이고, 오늘 날짜를 받지 않는다.
+		String analysisPrompt = switch (product) {
+			case CHANGES_2026 -> FreeFortunePrompts.create2026ChangesPrompt(name, response);
+			case KEYWORD_2026 -> FreeFortunePrompts.create2026KeywordPrompt(name, response);
+			case FLIRTING -> FreeFortunePrompts.createFlirtingPrompt(name, response, today);
+			case CHEMISTRY_MATCH -> FreeFortunePrompts.createChemistryMatchPrompt(name, response, today);
+			case TODAY_FORTUNE -> FreeFortunePrompts.createTodayFortunePrompt(name, response, today);
+			case MARCH_MONTHLY_FORTUNE -> FreeFortunePrompts.createMarchMonthlyFortunePrompt(name, response);
+			// 유료 사주 상품은 create, 궁합 상품은 CompatibilityPromptFactory 가 맡는다.
+			case LIFE_OVERALL, PERSONALITY_ANALYSIS, CAREER_APTITUDE, IDOL_ANALYSIS, CHARACTER_SAJU,
+				ACTOR_ANALYSIS, LOVE_LUCK, NEW_YEAR_2026, MONEY_LUCK, BUSINESS_LUCK, ACADEMIC_LUCK,
+				LIFE_ADVICE,
+				LOVE_STORY_4, LOVE_STORY_6, IDOL_COMPATIBILITY, TRIANGLE_RELATIONSHIP,
+				CHARACTER_COMPATIBILITY, CHARACTER_TO_CHARACTER_COMPATIBILITY, LOVE_STORY_14,
+				ACTOR_COMPATIBILITY, REUNION -> throw InterpretationProduct.unsupported(product.id());
 		};
 
 		SequencedMap<String, String> userValues = new LinkedHashMap<>();
