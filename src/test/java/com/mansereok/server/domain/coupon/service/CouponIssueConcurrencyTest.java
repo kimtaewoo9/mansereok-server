@@ -1,6 +1,5 @@
 package com.mansereok.server.domain.coupon.service;
 
-import static java.util.stream.Collectors.joining;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.mansereok.server.domain.coupon.repository.CouponTemplateRepository;
@@ -66,7 +65,7 @@ class CouponIssueConcurrencyTest extends PaymentMySqlTest {
 		});
 
 		// then: 요청마다 결과를 확인한다
-		String resultsPerRequest = describe(results);
+		String resultsPerRequest = ConcurrentCalls.describe(results);
 		assertThat(results).filteredOn(CallResult::succeeded)
 			.as("쿠폰을 받은 요청. %s", resultsPerRequest)
 			.hasSize(3);
@@ -85,7 +84,9 @@ class CouponIssueConcurrencyTest extends PaymentMySqlTest {
 	@RepeatedTest(value = 5, name = "{displayName} ({currentRepetition}/{totalRepetitions})")
 	@DisplayName("한 사용자가 같은 이벤트 쿠폰을 동시에 10번 받으면 1번만 받고 9번은 '이미 발급받은 쿠폰입니다.' 로 거절되며, 쿠폰 1행과 발급 수 1 이 남는다")
 	void sameUserRequestsTenTimesAtOnce() {
-		// given: 선착순 상한이 없는 이벤트라 1인 1장 규칙만 요청을 거른다
+		// given: 선착순 상한이 없는 이벤트라 1인 1장 규칙만 요청을 거른다.
+		// 템플릿 잠금이 없어도 uk_coupons_user_template 가 두 번째 쿠폰을 막고 CouponService.saveIssuedCoupon 이 같은 메시지로
+		// 바꾸므로, 이 테스트는 잠금과 그 UNIQUE 위반 변환이 함께 없어질 때 실패한다. 둘 중 하나만 지우면 통과한다.
 		Long templateId = saveTemplateWithIssueLimit(null);
 
 		// when
@@ -95,7 +96,7 @@ class CouponIssueConcurrencyTest extends PaymentMySqlTest {
 		});
 
 		// then
-		String resultsPerRequest = describe(results);
+		String resultsPerRequest = ConcurrentCalls.describe(results);
 		assertThat(results).filteredOn(CallResult::succeeded)
 			.as("쿠폰을 받은 요청. %s", resultsPerRequest)
 			.hasSize(1);
@@ -128,13 +129,5 @@ class CouponIssueConcurrencyTest extends PaymentMySqlTest {
 	private Integer issueCount(Long templateId) {
 		return jdbcTemplate.queryForObject("SELECT current_issue_count FROM coupon_templates WHERE id = ?",
 			Integer.class, templateId);
-	}
-
-	/** 실패 메시지에 넣을 요청별 결과. 예: "요청별 결과 [성공, CouponSoldOutException(선착순 마감되었습니다.), ...]" */
-	private static String describe(List<? extends CallResult<?>> results) {
-		return results.stream()
-			.map(result -> result.succeeded() ? "성공"
-				: result.error().getClass().getSimpleName() + "(" + result.error().getMessage() + ")")
-			.collect(joining(", ", "요청별 결과 [", "]"));
 	}
 }

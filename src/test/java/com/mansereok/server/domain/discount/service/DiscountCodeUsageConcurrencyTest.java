@@ -1,6 +1,5 @@
 package com.mansereok.server.domain.discount.service;
 
-import static java.util.stream.Collectors.joining;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.mansereok.server.domain.discount.repository.DiscountCodeRepository;
@@ -40,8 +39,11 @@ import org.springframework.beans.factory.annotation.Autowired;
  */
 class DiscountCodeUsageConcurrencyTest extends PaymentMySqlTest {
 
-	// HikariCP 기본 최대 커넥션 수(10)를 넘기지 않는다. 넘기면 잠금이 아니라 커넥션을 기다리는 시간을 재게 된다.
-	private static final int BUYER_COUNT = 10;
+	// 동시 요청 수는 HikariCP 기본 최대 커넥션 수(10)를 넘기지 않는다. 넘기면 잠금이 아니라 커넥션을 기다리는 시간을 재게 된다.
+	// 3번 쓸 수 있는 할인 코드에 몰리는 사용자 수
+	private static final int THREE_USE_CODE_BUYER_COUNT = 10;
+	// 1번 쓸 수 있는 100% 할인 코드로 무료 받기에 몰리는 사용자 수
+	private static final int FREE_CODE_BUYER_COUNT = 5;
 	private static final int PRICE = 10000;
 
 	@Autowired
@@ -58,18 +60,12 @@ class DiscountCodeUsageConcurrencyTest extends PaymentMySqlTest {
 	private final String discountCode = "RACE-" + runId;
 	private final String freeCode = "RACE-FREE-" + runId;
 
-	private final List<String> usernames = new ArrayList<>();
+	// 테스트마다 필요한 수만큼 만든 사용자. 뒤 정리가 이 id 로만 지운다.
 	private final List<Long> userIds = new ArrayList<>();
 	private Long subCategoryId;
 
 	@BeforeEach
-	void createBuyersAndProduct() {
-		for (int index = 0; index < BUYER_COUNT; index++) {
-			String username = "code_race_" + runId + "_" + index;
-			usernames.add(username);
-			userIds.add(userRepository.save(User.create(username, "코드동시사용", "password",
-				username + "@example.com", LocalDate.of(1990, 1, 1), Gender.MALE, true, true, false)).getId());
-		}
+	void createProduct() {
 		subCategoryId = subCategoryRepository.save(SubCategoryFixture.paidProduct().withoutId()
 			.title("할인 코드 동시 사용 테스트 상품 " + runId).price(PRICE).build()).getId();
 	}
@@ -93,15 +89,16 @@ class DiscountCodeUsageConcurrencyTest extends PaymentMySqlTest {
 	@DisplayName("선착순 3번 쓸 수 있는 할인 코드로 서로 다른 사용자 10명이 동시에 주문을 만들면 3명만 9,000원 주문을 만들고 7명은 '선착순 마감된 코드입니다.' 로 거절되며, 사용 횟수는 3 이다")
 	void tenBuyersRaceForThreeUses() {
 		// given
+		List<String> buyers = createBuyers(THREE_USE_CODE_BUYER_COUNT);
 		discountCodeRepository.save(DiscountCodeFixture.fixedAmount(1000).withoutId()
 			.code(discountCode).maxUses(3).build());
 
 		// when
-		List<CallResult<OrderCreateResponse>> results = ConcurrentCalls.runAtTheSameTime(BUYER_COUNT,
-			index -> () -> paymentOrderService.createOrder(usernames.get(index), orderRequestWith(discountCode)));
+		List<CallResult<OrderCreateResponse>> results = ConcurrentCalls.runAtTheSameTime(THREE_USE_CODE_BUYER_COUNT,
+			index -> () -> paymentOrderService.createOrder(buyers.get(index), orderRequestWith(discountCode)));
 
 		// then: 요청마다 결과를 확인한다
-		String resultsPerRequest = describe(results);
+		String resultsPerRequest = ConcurrentCalls.describe(results);
 		assertThat(results).filteredOn(CallResult::succeeded)
 			.as("주문을 만든 요청. %s", resultsPerRequest)
 			.hasSize(3)
@@ -122,18 +119,19 @@ class DiscountCodeUsageConcurrencyTest extends PaymentMySqlTest {
 	}
 
 	@RepeatedTest(value = 5, name = "{displayName} ({currentRepetition}/{totalRepetitions})")
-	@DisplayName("1번만 쓸 수 있는 100% 할인 코드로 서로 다른 사용자 5명이 동시에 무료 받기를 하면 1명만 0원 주문을 받고 4명은 '선착순 마감된 코드입니다.' 로 거절되며, 0원 결제는 free_ 로 시작하는 1건이다")
+	@DisplayName("1번만 쓸 수 있는 100% 할인 코드로 서로 다른 사용자 5명이 동시에 무료 받기를 하면 1명만 0원 주문을 받고 4명은 '선착순 마감된 코드입니다.' 로 거절되며, 0원 결제는 imp_uid 가 free_ 에 주문 번호를 붙인 1건이다")
 	void fiveBuyersRaceForOneFreeCode() {
 		// given
+		List<String> buyers = createBuyers(FREE_CODE_BUYER_COUNT);
 		discountCodeRepository.save(DiscountCodeFixture.percentage(100).withoutId()
 			.code(freeCode).maxUses(1).build());
 
 		// when
-		List<CallResult<OrderCreateResponse>> results = ConcurrentCalls.runAtTheSameTime(5,
-			index -> () -> paymentOrderService.redeemFreeProduct(usernames.get(index), orderRequestWith(freeCode)));
+		List<CallResult<OrderCreateResponse>> results = ConcurrentCalls.runAtTheSameTime(FREE_CODE_BUYER_COUNT,
+			index -> () -> paymentOrderService.redeemFreeProduct(buyers.get(index), orderRequestWith(freeCode)));
 
 		// then
-		String resultsPerRequest = describe(results);
+		String resultsPerRequest = ConcurrentCalls.describe(results);
 		assertThat(results).filteredOn(CallResult::succeeded)
 			.as("무료로 받은 요청. %s", resultsPerRequest)
 			.singleElement()
@@ -145,17 +143,29 @@ class DiscountCodeUsageConcurrencyTest extends PaymentMySqlTest {
 				.isExactlyInstanceOf(PaymentException.class)
 				.hasMessage("선착순 마감된 코드입니다."));
 
-		// then
+		// then: 0원 결제의 imp_uid 는 포트원 결제 번호 대신 "free_" 에 주문 번호(merchant_uid)를 붙인 값이다
 		assertThat(currentUses(freeCode)).as("사용 횟수. %s", resultsPerRequest).isEqualTo(1);
-		assertThat(jdbcTemplate.queryForList("SELECT p.imp_uid, p.amount, o.status FROM payments p "
+		assertThat(jdbcTemplate.queryForList("SELECT p.imp_uid, p.merchant_uid, p.amount, o.status FROM payments p "
 			+ "JOIN orders o ON o.merchant_uid = p.merchant_uid WHERE o.applied_discount_code = ?", freeCode))
 			.as("이 코드로 받은 결제와 그 주문. %s", resultsPerRequest)
 			.singleElement()
 			.satisfies(row -> {
-				assertThat((String) row.get("imp_uid")).startsWith("free_");
+				assertThat(row.get("imp_uid")).isEqualTo("free_" + row.get("merchant_uid"));
 				assertThat(((Number) row.get("amount")).longValue()).isZero();
 				assertThat(row.get("status")).isEqualTo("PAID");
 			});
+	}
+
+	/** 서로 다른 사용자를 count 명 저장하고 로그인 아이디를 돌려준다. */
+	private List<String> createBuyers(int count) {
+		List<String> usernames = new ArrayList<>();
+		for (int index = 0; index < count; index++) {
+			String username = "code_race_" + runId + "_" + index;
+			usernames.add(username);
+			userIds.add(userRepository.save(User.create(username, "코드동시사용", "password",
+				username + "@example.com", LocalDate.of(1990, 1, 1), Gender.MALE, true, true, false)).getId());
+		}
+		return usernames;
 	}
 
 	private OrderCreateRequest orderRequestWith(String code) {
@@ -168,13 +178,5 @@ class DiscountCodeUsageConcurrencyTest extends PaymentMySqlTest {
 	private Integer currentUses(String code) {
 		return jdbcTemplate.queryForObject("SELECT current_uses FROM discount_codes WHERE code = ?", Integer.class,
 			code);
-	}
-
-	/** 실패 메시지에 넣을 요청별 결과. 예: "요청별 결과 [성공, PaymentException(선착순 마감된 코드입니다.), ...]" */
-	private static String describe(List<? extends CallResult<?>> results) {
-		return results.stream()
-			.map(result -> result.succeeded() ? "성공"
-				: result.error().getClass().getSimpleName() + "(" + result.error().getMessage() + ")")
-			.collect(joining(", ", "요청별 결과 [", "]"));
 	}
 }

@@ -17,8 +17,9 @@ import lombok.NoArgsConstructor;
 import org.springframework.data.annotation.CreatedDate;
 
 
-// 인덱스 이름을 고정해 엔티티, schema.sql, 운영 DB 가 같은 이름을 쓰게 한다. 운영은 ddl-auto: validate 라 인덱스를 검사하지도
-// 만들지도 않는다. 여기 선언한 세 인덱스는 엔티티로 만드는 로컬·테스트 DB 에도 운영과 같은 이름으로 생기고, 바꿀 때는 운영 DDL 과
+// 인덱스 이름을 고정해 엔티티로 만드는 로컬·테스트 DB 와 schema.sql 이 같은 이름을 쓰게 한다. 운영은 ddl-auto: validate 라 인덱스를
+// 검사하지도 만들지도 않는다. 여기 선언한 세 인덱스는 로컬·테스트 DB 에도 운영과 같은 컬럼으로 생긴다. 운영은 배포 전 DDL 로 이 이름대로
+// 만들되, 같은 컬럼·같은 순서의 인덱스가 다른 이름으로 이미 있으면 새로 만들지 않고 그 이름을 그대로 쓴다. 바꿀 때는 운영 DDL 과
 // schema.sql 을 함께 고친다. schema.sql 의 idx_order_id 는 쓰는 조회가 없어 여기 두지 않았고, imp_uid UNIQUE 는 impUid 의
 // @Column(unique = true) 로 선언해 로컬·테스트 DB 에서는 Hibernate 가 지은 이름으로 생긴다.
 @Entity
