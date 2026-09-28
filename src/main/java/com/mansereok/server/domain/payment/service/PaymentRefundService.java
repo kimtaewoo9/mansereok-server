@@ -27,7 +27,8 @@ import org.springframework.transaction.support.TransactionTemplate;
  * <ol>
  *   <li>트랜잭션 A: 검증 후 Payment 를 CANCEL_REQUESTED 로 기록하고 커밋한다. 이 흔적이 동시 환불을 막고,
  *       포트원 호출 도중 프로세스가 죽어도 수동 확인 대상이 남는다.</li>
- *   <li>트랜잭션 밖: 포트원 취소 API. 실패하면 트랜잭션 C 로 PAID 로 되돌리고 예외를 다시 던진다.</li>
+ *   <li>트랜잭션 밖: 포트원 취소 API. 실패하면 트랜잭션 C 로 PAID 로 되돌리고 예외를 다시 던진다. 이 단계가 DB 커넥션을
+ *       쥐지 않는 것은 spring.jpa.open-in-view 가 꺼져 있을 때다(아래 참고).</li>
  *   <li>트랜잭션 B: Payment·Order 를 CANCELLED 로 확정하고 초기 Result 를 지우고 할인을 복구한다.
  *       여기서 실패하면 CANCEL_REQUESTED 로 남겨 수동 확인 대상으로 둔다(포트원 환불은 되돌릴 수 없다).</li>
  * </ol>
@@ -35,6 +36,10 @@ import org.springframework.transaction.support.TransactionTemplate;
  * <p>클래스 수준 {@code @Transactional} 을 쓰지 않고 {@link TransactionTemplate} 으로 경계를 명시한다. 같은 빈 안의
  * 메서드 호출은 프록시를 타지 않아 {@code @Transactional} 로는 단계를 나눌 수 없기 때문이다. 전파 속성은
  * {@code REQUIRES_NEW} 로 고정해, 바깥 트랜잭션 안에서 호출되더라도 세 단계가 한 트랜잭션으로 합쳐지지 않게 한다.
+ *
+ * <p>트랜잭션을 나눠도 커넥션까지 놓으려면 spring.jpa.open-in-view 가 꺼져 있어야 한다. 켜져 있으면 웹 요청은 A 에서 잡은
+ * 커넥션을 요청이 끝날 때까지 놓지 않는다. 그러면 행 잠금은 풀렸어도 포트원 취소를 기다리는 동안(연결 3초·읽기 10초까지)
+ * 커넥션 풀의 한 자리를 차지해, 포트원이 느릴 때 환불 요청이 몰리면 풀이 바닥난다.
  *
  * <p>잠금 순서는 A·B 모두 결제 행 → 주문 행 → 결과 행이다. 순서가 다르면 포트원 취소 직후 도착한 두 번째 환불 요청과
  * 데드락이 날 수 있고, B 가 희생되면 포트원 환불은 끝났는데 DB 는 CANCEL_REQUESTED 로 남는다. 해석 시작

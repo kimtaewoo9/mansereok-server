@@ -41,6 +41,10 @@ import org.springframework.transaction.support.TransactionTemplate;
  *
  * <p>포트원 응답은 트랜잭션 밖에서 받은 스냅샷이다. 그 사이 웹훅이 같은 주문을 먼저 확정했으면 잠금 조회 뒤의
  * PAID 주문 검사·결제 중복 검사가 걸러낸다.
+ *
+ * <p>트랜잭션 밖 구간이 DB 커넥션을 쥐지 않는 것은 spring.jpa.open-in-view 가 꺼져 있을 때다. 켜져 있으면 웹 요청은 처음 잡은
+ * 커넥션을 요청이 끝날 때까지 놓지 않아, 확정 트랜잭션 뒤의 중복 결제 취소(3단계)가 커넥션을 쥔 채 포트원을 부른다. 1단계 포트원
+ * 조회는 그 요청의 첫 DB 접근보다 앞서 있어 설정과 상관없이 커넥션을 쥐지 않는다.
  */
 @Service
 @Slf4j
@@ -99,7 +103,7 @@ public class PaymentConfirmService {
 			status -> confirm(username, request, paymentResponse));
 
 		// 3. 트랜잭션 밖: 중복 결제 취소. 잠금과 트랜잭션을 놓은 뒤 포트원을 부른다.
-		//    open-in-view 가 켜져 있어 DB 커넥션은 요청이 끝날 때까지 잡혀 있다(포트원 읽기 시간 제한 안에서).
+		//    open-in-view 가 켜져 있으면 DB 커넥션은 요청이 끝날 때까지 잡혀 있다(포트원 읽기 시간 제한 안에서, 클래스 주석 참고).
 		return switch (outcome) {
 			case Finished finished -> finished.order();
 			case DuplicatePayment duplicate -> {
