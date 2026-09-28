@@ -337,7 +337,7 @@ class ManseInterpretationServiceFlowTest {
 		}
 
 		/**
-		 * 사용자 조회는 알림과 이메일에서만 쓰는 곁가지다. 예전에는 저장 앞 바깥 try 안에서 불러서
+		 * 사용자 조회는 결과 준비 이메일 단계에서만 쓰는 곁가지다. 예전에는 저장 앞 바깥 try 안에서 불러서
 		 * 조회가 실패하면 이미 값을 치른 GPT 결과를 버리고 INPUT_REQUIRED 로 되돌렸다.
 		 * 이제는 결과를 저장하고 이메일만 건너뛴다. 이 차이를 여기서 고정한다.
 		 */
@@ -768,6 +768,9 @@ class ManseInterpretationServiceFlowTest {
 	/**
 	 * 해석 요청 알림은 외부 채널(Discord)로 나가고, 해석 로그는 운영 로그 수집 시스템에 쌓인다. 두 곳 모두 결제 ID 와 상품만 남기고
 	 * 요청자와 궁합 상대의 이름, 계정 이메일, 생년월일은 남기지 않는다. 누구의 요청인지는 결제 ID 로 DB 에서 찾는다.
+	 *
+	 * <p>여기서 보는 로그는 해석 서비스와 파이프라인이 남기는 것이다. EmailService 는 mock 이라 유료 경로의 결과 준비 이메일 전송
+	 * 로그는 이 테스트가 보지 않는다.
 	 */
 	@Nested
 	@DisplayName("알림과 로그에 남기는 값")
@@ -807,7 +810,7 @@ class ManseInterpretationServiceFlowTest {
 		}
 
 		@Test
-		@DisplayName("무료 단일 해석 요청 알림에는 결제 ID·상품·무료 구분만 넘기고 사용자를 조회하지 않는다")
+		@DisplayName("무료 단일 해석 요청 알림에는 결제 ID·상품·무료 구분만 넘긴다")
 		void freeSingleNoticeCarriesOnlyPaymentAndProduct() {
 			// given
 			givenSajuResponse();
@@ -818,7 +821,6 @@ class ManseInterpretationServiceFlowTest {
 			// then
 			verify(discordNotificationService).sendInterpretationRequestNotification(PAYMENT_ID, "CHANGES_2026(101)",
 				true);
-			verify(userService, never()).findByUsername(any());
 		}
 
 		@Test
@@ -848,7 +850,7 @@ class ManseInterpretationServiceFlowTest {
 		}
 
 		@Test
-		@DisplayName("유료 단일 해석은 시작 로그에 결제 ID 와 상품을 남기고 어떤 로그에도 이름·이메일을 남기지 않는다")
+		@DisplayName("유료 단일 해석은 시작 로그에 결제 ID 와 상품을 남기고 해석 서비스·파이프라인 로그에 이름·이메일을 남기지 않는다")
 		void paidSingleLogsNoPersonalData() {
 			// given
 			givenSajuResponse();
@@ -857,12 +859,12 @@ class ManseInterpretationServiceFlowTest {
 			callInterpret();
 
 			// then
-			assertThat(logMessages()).as("시작 로그").contains("✅ 사주 해석 요청 시작 - paymentId: 100, product: LIFE_OVERALL");
+			assertThat(logMessages()).as("시작 로그").contains("✅ 사주 해석 요청 시작 - paymentId: 100, product: LIFE_OVERALL(1)");
 			assertThat(String.join("\n", logMessages())).doesNotContain("홍길동", EMAIL);
 		}
 
 		@Test
-		@DisplayName("무료 단일 해석은 시작 로그에 결제 ID 와 상품을 남기고 어떤 로그에도 이름을 남기지 않는다")
+		@DisplayName("무료 단일 해석은 시작 로그에 결제 ID 와 상품을 남기고 해석 서비스·파이프라인 로그에 이름을 남기지 않는다")
 		void freeSingleLogsNoPersonalData() {
 			// given
 			givenSajuResponse();
@@ -871,12 +873,12 @@ class ManseInterpretationServiceFlowTest {
 			callInterpretFree();
 
 			// then
-			assertThat(logMessages()).as("시작 로그").contains("🆓 무료 사주 해석 시작 - paymentId: 100, product: CHANGES_2026");
+			assertThat(logMessages()).as("시작 로그").contains("🆓 무료 사주 해석 시작 - paymentId: 100, product: CHANGES_2026(101)");
 			assertThat(String.join("\n", logMessages())).doesNotContain("홍길동", EMAIL);
 		}
 
 		@Test
-		@DisplayName("유료 궁합은 시작 로그에 결제 ID 와 상품을 남기고 어떤 로그에도 두 사람의 이름을 남기지 않는다")
+		@DisplayName("유료 궁합은 시작 로그에 결제 ID 와 상품을 남기고 해석 서비스·파이프라인 로그에 두 사람의 이름을 남기지 않는다")
 		void paidCompatibilityLogsNoPersonalData() {
 			// given
 			givenCompatibilityResponse();
@@ -885,12 +887,12 @@ class ManseInterpretationServiceFlowTest {
 			callCompatibility();
 
 			// then
-			assertThat(logMessages()).as("시작 로그").contains("✅ 궁합 분석 요청 시작 - paymentId: 100, product: LOVE_STORY_4");
+			assertThat(logMessages()).as("시작 로그").contains("✅ 궁합 분석 요청 시작 - paymentId: 100, product: LOVE_STORY_4(4)");
 			assertThat(String.join("\n", logMessages())).doesNotContain("홍길동", "김영희", EMAIL);
 		}
 
 		@Test
-		@DisplayName("무료 궁합은 시작 로그에 결제 ID 와 상품을 남기고 어떤 로그에도 두 사람의 이름을 남기지 않는다")
+		@DisplayName("무료 궁합은 시작 로그에 결제 ID 와 상품을 남기고 해석 서비스·파이프라인 로그에 두 사람의 이름을 남기지 않는다")
 		void freeCompatibilityLogsNoPersonalData() {
 			// given
 			givenCompatibilityResponse();
@@ -900,7 +902,7 @@ class ManseInterpretationServiceFlowTest {
 
 			// then
 			assertThat(logMessages()).as("시작 로그")
-				.contains("🆓 무료 궁합/재회운 서비스 시작 - paymentId: 100, product: LOVE_STORY_4");
+				.contains("🆓 무료 궁합/재회운 서비스 시작 - paymentId: 100, product: LOVE_STORY_4(4)");
 			assertThat(String.join("\n", logMessages())).doesNotContain("홍길동", "김영희", EMAIL);
 		}
 
