@@ -4,7 +4,7 @@ import com.mansereok.server.domain.interpret.dto.response.ManseryeokCalculationR
 import com.mansereok.server.domain.interpret.dto.response.ManseryeokCalculationResponse.JijangganInfo;
 import com.mansereok.server.domain.interpret.dto.response.ManseryeokCalculationResponse.PillarElement;
 import com.mansereok.server.domain.interpret.dto.response.ManseryeokCalculationResponse.SajuInfo;
-import java.util.HashMap;
+import java.util.EnumMap;
 import java.util.Map;
 import java.util.Set;
 import org.springframework.stereotype.Component;
@@ -20,72 +20,31 @@ public class YongsinCalculator {
 	private static final String RULESET_CODE = "EOKBU_JOHU_V1";
 	private static final String RULESET_NAME = "억부 중심 + 조후 보정";
 
-	/**
-	 * 생(生) 관계: 일간을 생해주는 오행(인성)
-	 */
-	private static final Map<String, String> RESOURCE_MAP = Map.of(
-		"목", "수",
-		"화", "목",
-		"토", "화",
-		"금", "토",
-		"수", "금"
-	);
-	/**
-	 * 설(洩) 관계: 일간이 생하는 오행(식상)
-	 */
-	private static final Map<String, String> DRAIN_MAP = Map.of(
-		"목", "화",
-		"화", "토",
-		"토", "금",
-		"금", "수",
-		"수", "목"
-	);
-	/**
-	 * 극(剋) 관계: 일간을 제어하는 오행(관살)
-	 */
-	private static final Map<String, String> CONTROL_MAP = Map.of(
-		"목", "금",
-		"화", "수",
-		"토", "목",
-		"금", "화",
-		"수", "토"
-	);
-	/**
-	 * 재성: 일간이 극하는 오행
-	 */
-	private static final Map<String, String> WEALTH_MAP = Map.of(
-		"목", "토",
-		"화", "금",
-		"토", "수",
-		"금", "목",
-		"수", "화"
-	);
-
 	// 월령(득령) 강세 구간
-	private static final Map<String, Set<String>> STRONG_MONTH_MAP = Map.of(
-		"목", Set.of("寅", "卯", "辰"),
-		"화", Set.of("巳", "午", "未"),
-		"토", Set.of("辰", "戌", "丑", "未"),
-		"금", Set.of("申", "酉", "戌"),
-		"수", Set.of("亥", "子", "丑")
+	private static final Map<FiveElement, Set<String>> STRONG_MONTH_MAP = Map.of(
+		FiveElement.WOOD, Set.of("寅", "卯", "辰"),
+		FiveElement.FIRE, Set.of("巳", "午", "未"),
+		FiveElement.EARTH, Set.of("辰", "戌", "丑", "未"),
+		FiveElement.METAL, Set.of("申", "酉", "戌"),
+		FiveElement.WATER, Set.of("亥", "子", "丑")
 	);
 
 	// 월령 보조(상생 계절)
-	private static final Map<String, Set<String>> SUPPORT_MONTH_MAP = Map.of(
-		"목", Set.of("亥", "子"),
-		"화", Set.of("寅", "卯"),
-		"토", Set.of("巳", "午"),
-		"금", Set.of("辰", "丑", "未"),
-		"수", Set.of("申", "酉")
+	private static final Map<FiveElement, Set<String>> SUPPORT_MONTH_MAP = Map.of(
+		FiveElement.WOOD, Set.of("亥", "子"),
+		FiveElement.FIRE, Set.of("寅", "卯"),
+		FiveElement.EARTH, Set.of("巳", "午"),
+		FiveElement.METAL, Set.of("辰", "丑", "未"),
+		FiveElement.WATER, Set.of("申", "酉")
 	);
 
 	// 월령 약세(극받는 계절)
-	private static final Map<String, Set<String>> WEAK_MONTH_MAP = Map.of(
-		"목", Set.of("申", "酉", "戌"),
-		"화", Set.of("亥", "子", "丑"),
-		"토", Set.of("寅", "卯"),
-		"금", Set.of("巳", "午", "未"),
-		"수", Set.of("辰", "戌", "丑", "未")
+	private static final Map<FiveElement, Set<String>> WEAK_MONTH_MAP = Map.of(
+		FiveElement.WOOD, Set.of("申", "酉", "戌"),
+		FiveElement.FIRE, Set.of("亥", "子", "丑"),
+		FiveElement.EARTH, Set.of("寅", "卯"),
+		FiveElement.METAL, Set.of("巳", "午", "未"),
+		FiveElement.WATER, Set.of("辰", "戌", "丑", "未")
 	);
 
 	public YongsinResult analyzeYongsin(SajuInfo saju) {
@@ -93,37 +52,36 @@ public class YongsinCalculator {
 			return null;
 		}
 
-		String ilganOhaeng = saju.getDaySky().getFiveCircle();
-		if (ilganOhaeng == null || ilganOhaeng.isBlank()) {
+		String dayStemElement = saju.getDaySky().getFiveCircle();
+		if (dayStemElement == null || dayStemElement.isBlank()) {
 			return null;
 		}
 
+		FiveElement ilgan = FiveElement.of(dayStemElement);
 		String monthBranch = normalizeBranch(saju.getMonthGround());
-		Map<String, Double> elementScores = calculateElementScores(saju);
-		StrengthMetrics metrics = calculateStrengthMetrics(saju, ilganOhaeng, monthBranch,
-			elementScores);
-		YongsinDecision decision = decideYongsin(ilganOhaeng, monthBranch, elementScores, metrics);
+		Map<FiveElement, Double> elementScores = calculateElementScores(saju);
+		StrengthMetrics metrics = calculateStrengthMetrics(saju, ilgan, monthBranch, elementScores);
+		YongsinDecision decision = decideYongsin(ilgan, monthBranch, elementScores, metrics);
 
-		String luckyColor = getLuckyColor(decision.yongsin);
-		String luckyDirection = getLuckyDirection(decision.yongsin);
 		String desc = String.format("%s / 희신:%s / 행운색:%s, 방향:%s",
-			decision.yongsinType, decision.heesin, luckyColor, luckyDirection);
+			decision.yongsinType(), decision.heesin().korean(), decision.yongsin().luckyColor(),
+			decision.yongsin().luckyDirection());
 
 		return new YongsinResult(
 			metrics.strengthLabel,
 			roundOne(metrics.myScore),
 			roundOne(metrics.totalScore),
-			decision.yongsin,
+			decision.yongsin().korean(),
 			desc,
 			RULESET_CODE,
 			RULESET_NAME
 		);
 	}
 
-	private Map<String, Double> calculateElementScores(SajuInfo saju) {
-		Map<String, Double> scores = new HashMap<>();
-		for (String o : new String[]{"목", "화", "토", "금", "수"}) {
-			scores.put(o, 0.0);
+	private Map<FiveElement, Double> calculateElementScores(SajuInfo saju) {
+		Map<FiveElement, Double> scores = new EnumMap<>(FiveElement.class);
+		for (FiveElement element : FiveElement.values()) {
+			scores.put(element, 0.0);
 		}
 
 		addStemScore(scores, saju.getYearSky(), 1.0);
@@ -140,21 +98,16 @@ public class YongsinCalculator {
 		return scores;
 	}
 
-	private StrengthMetrics calculateStrengthMetrics(SajuInfo saju, String ilganOhaeng,
-		String monthBranch, Map<String, Double> elementScores) {
-		String resource = RESOURCE_MAP.get(ilganOhaeng);
-		String control = CONTROL_MAP.get(ilganOhaeng);
-		String drain = DRAIN_MAP.get(ilganOhaeng);
-		String wealth = WEALTH_MAP.get(ilganOhaeng);
-
-		double myScore = elementScores.getOrDefault(ilganOhaeng, 0.0)
-			+ elementScores.getOrDefault(resource, 0.0);
-		double nonMyScore = elementScores.getOrDefault(control, 0.0)
-			+ elementScores.getOrDefault(drain, 0.0)
-			+ elementScores.getOrDefault(wealth, 0.0);
+	private StrengthMetrics calculateStrengthMetrics(SajuInfo saju, FiveElement ilgan,
+		String monthBranch, Map<FiveElement, Double> elementScores) {
+		// 나의 세력은 비겁(일간과 같은 오행)과 인성, 남의 세력은 관살·식상·재성이다
+		double myScore = elementScores.get(ilgan) + elementScores.get(ilgan.generatedBy());
+		double nonMyScore = elementScores.get(ilgan.controlledBy())
+			+ elementScores.get(ilgan.generates())
+			+ elementScores.get(ilgan.controls());
 
 		// 득령 반영
-		double seasonAdjustment = evaluateSeasonAdjustment(ilganOhaeng, monthBranch);
+		double seasonAdjustment = evaluateSeasonAdjustment(ilgan, monthBranch);
 		if (seasonAdjustment >= 0) {
 			myScore += seasonAdjustment;
 		} else {
@@ -162,7 +115,7 @@ public class YongsinCalculator {
 		}
 
 		// 통근 반영 (지지 및 지장간에서 일간 뿌리 확인)
-		myScore += calculateTonggeunBonus(saju, ilganOhaeng);
+		myScore += calculateTonggeunBonus(saju, ilgan);
 
 		double totalScore = myScore + nonMyScore;
 		if (totalScore <= 0) {
@@ -175,15 +128,15 @@ public class YongsinCalculator {
 		return new StrengthMetrics(strength, myScore, totalScore, ratio);
 	}
 
-	private YongsinDecision decideYongsin(String ilganOhaeng, String monthBranch,
-		Map<String, Double> elementScores, StrengthMetrics metrics) {
-		String climateYongsin = determineClimateYongsin(monthBranch);
+	private YongsinDecision decideYongsin(FiveElement ilgan, String monthBranch,
+		Map<FiveElement, Double> elementScores, StrengthMetrics metrics) {
+		FiveElement climateYongsin = determineClimateYongsin(monthBranch);
 
 		if (metrics.ratio >= 0.58) { // 신강: 제어/설기
-			String control = CONTROL_MAP.get(ilganOhaeng);
-			String drain = DRAIN_MAP.get(ilganOhaeng);
-			String balancingYongsin = chooseLowerScoreElement(elementScores, control, drain);
-			String balancingHeesin = balancingYongsin.equals(control) ? drain : control;
+			FiveElement control = ilgan.controlledBy();
+			FiveElement drain = ilgan.generates();
+			FiveElement balancingYongsin = chooseLowerScoreElement(elementScores, control, drain);
+			FiveElement balancingHeesin = balancingYongsin == control ? drain : control;
 
 			if (climateYongsin != null) {
 				return new YongsinDecision(climateYongsin, balancingYongsin,
@@ -193,10 +146,10 @@ public class YongsinCalculator {
 		}
 
 		if (metrics.ratio <= 0.42) { // 신약: 생조/비겁
-			String resource = RESOURCE_MAP.get(ilganOhaeng);
-			String self = ilganOhaeng;
-			String balancingYongsin = chooseLowerScoreElement(elementScores, resource, self);
-			String balancingHeesin = balancingYongsin.equals(resource) ? self : resource;
+			FiveElement resource = ilgan.generatedBy();
+			FiveElement self = ilgan;
+			FiveElement balancingYongsin = chooseLowerScoreElement(elementScores, resource, self);
+			FiveElement balancingHeesin = balancingYongsin == resource ? self : resource;
 
 			if (climateYongsin != null) {
 				return new YongsinDecision(climateYongsin, balancingYongsin,
@@ -206,45 +159,44 @@ public class YongsinCalculator {
 		}
 
 		// 중화: 결핍된 오행으로 균형
-		String balanceYongsin = findMostDeficientElement(elementScores);
+		FiveElement balanceYongsin = findMostDeficientElement(elementScores);
 		if (climateYongsin != null) {
 			return new YongsinDecision(climateYongsin, balanceYongsin, "조후용신(한난 조절 우선)");
 		}
-		return new YongsinDecision(balanceYongsin, RESOURCE_MAP.get(ilganOhaeng), "중화용신(오행 균형)");
+		return new YongsinDecision(balanceYongsin, ilgan.generatedBy(), "중화용신(오행 균형)");
 	}
 
-	private double evaluateSeasonAdjustment(String ilganOhaeng, String monthBranch) {
+	private double evaluateSeasonAdjustment(FiveElement ilgan, String monthBranch) {
 		if (monthBranch == null) {
 			return 0.0;
 		}
 
-		if (STRONG_MONTH_MAP.getOrDefault(ilganOhaeng, Set.of()).contains(monthBranch)) {
+		if (STRONG_MONTH_MAP.get(ilgan).contains(monthBranch)) {
 			return 1.6;
 		}
-		if (SUPPORT_MONTH_MAP.getOrDefault(ilganOhaeng, Set.of()).contains(monthBranch)) {
+		if (SUPPORT_MONTH_MAP.get(ilgan).contains(monthBranch)) {
 			return 0.8;
 		}
-		if (WEAK_MONTH_MAP.getOrDefault(ilganOhaeng, Set.of()).contains(monthBranch)) {
+		if (WEAK_MONTH_MAP.get(ilgan).contains(monthBranch)) {
 			return -1.2;
 		}
 
-		String drain = DRAIN_MAP.get(ilganOhaeng);
-		if (STRONG_MONTH_MAP.getOrDefault(drain, Set.of()).contains(monthBranch)) {
+		if (STRONG_MONTH_MAP.get(ilgan.generates()).contains(monthBranch)) {
 			return -0.6;
 		}
 		return 0.0;
 	}
 
-	private double calculateTonggeunBonus(SajuInfo saju, String ilganOhaeng) {
+	private double calculateTonggeunBonus(SajuInfo saju, FiveElement ilgan) {
 		double bonus = 0.0;
-		bonus += calculateGroundRootBonus(saju.getYearGround(), ilganOhaeng, 0.4);
-		bonus += calculateGroundRootBonus(saju.getMonthGround(), ilganOhaeng, 0.9);
-		bonus += calculateGroundRootBonus(saju.getDayGround(), ilganOhaeng, 0.7);
-		bonus += calculateGroundRootBonus(saju.getTimeGround(), ilganOhaeng, 0.4);
+		bonus += calculateGroundRootBonus(saju.getYearGround(), ilgan, 0.4);
+		bonus += calculateGroundRootBonus(saju.getMonthGround(), ilgan, 0.9);
+		bonus += calculateGroundRootBonus(saju.getDayGround(), ilgan, 0.7);
+		bonus += calculateGroundRootBonus(saju.getTimeGround(), ilgan, 0.4);
 		return bonus;
 	}
 
-	private double calculateGroundRootBonus(PillarElement ground, String ilganOhaeng, double weight) {
+	private double calculateGroundRootBonus(PillarElement ground, FiveElement ilgan, double weight) {
 		if (ground == null) {
 			return 0.0;
 		}
@@ -254,37 +206,40 @@ public class YongsinCalculator {
 			double totalRate = sumPositiveRate(jijanggan.getFirst()) + sumPositiveRate(
 				jijanggan.getSecond()) + sumPositiveRate(jijanggan.getThird());
 			if (totalRate > 0) {
-				double myRate = sumMatchingRate(jijanggan.getFirst(), ilganOhaeng)
-					+ sumMatchingRate(jijanggan.getSecond(), ilganOhaeng)
-					+ sumMatchingRate(jijanggan.getThird(), ilganOhaeng);
+				double myRate = sumMatchingRate(jijanggan.getFirst(), ilgan)
+					+ sumMatchingRate(jijanggan.getSecond(), ilgan)
+					+ sumMatchingRate(jijanggan.getThird(), ilgan);
 				return weight * (myRate / totalRate);
 			}
 		}
 
-		if (ilganOhaeng.equals(ground.getFiveCircle())) {
+		if (isElement(ground.getFiveCircle(), ilgan)) {
 			return weight * 0.6;
 		}
 		return 0.0;
 	}
 
-	private String determineClimateYongsin(String monthBranch) {
+	private FiveElement determineClimateYongsin(String monthBranch) {
 		if (monthBranch == null) {
 			return null;
 		}
 		if (Set.of("巳", "午", "未").contains(monthBranch)) {
-			return "수"; // 여름 조후
+			return FiveElement.WATER; // 여름 조후
 		}
 		if (Set.of("亥", "子", "丑").contains(monthBranch)) {
-			return "화"; // 겨울 조후
+			return FiveElement.FIRE; // 겨울 조후
 		}
 		return null;
 	}
 
-	private String findMostDeficientElement(Map<String, Double> elementScores) {
-		String result = "목";
+	/**
+	 * 점수가 가장 낮은 오행. 같은 점수면 목·화·토·금·수 순서에서 앞선 오행을 고른다.
+	 */
+	private FiveElement findMostDeficientElement(Map<FiveElement, Double> elementScores) {
+		FiveElement result = FiveElement.WOOD;
 		double min = Double.MAX_VALUE;
-		for (String element : new String[]{"목", "화", "토", "금", "수"}) {
-			double score = elementScores.getOrDefault(element, 0.0);
+		for (FiveElement element : FiveElement.values()) {
+			double score = elementScores.get(element);
 			if (score < min) {
 				min = score;
 				result = element;
@@ -293,20 +248,18 @@ public class YongsinCalculator {
 		return result;
 	}
 
-	private String chooseLowerScoreElement(Map<String, Double> elementScores, String a, String b) {
-		double aScore = elementScores.getOrDefault(a, 0.0);
-		double bScore = elementScores.getOrDefault(b, 0.0);
-		return aScore <= bScore ? a : b;
+	private FiveElement chooseLowerScoreElement(Map<FiveElement, Double> elementScores, FiveElement a,
+		FiveElement b) {
+		return elementScores.get(a) <= elementScores.get(b) ? a : b;
 	}
 
-	private void addStemScore(Map<String, Double> scores, PillarElement element, double weight) {
+	private void addStemScore(Map<FiveElement, Double> scores, PillarElement element, double weight) {
 		if (element != null && element.getFiveCircle() != null) {
-			String ohaeng = element.getFiveCircle();
-			scores.put(ohaeng, scores.getOrDefault(ohaeng, 0.0) + weight);
+			scores.merge(FiveElement.of(element.getFiveCircle()), weight, Double::sum);
 		}
 	}
 
-	private void addGroundScore(Map<String, Double> scores, PillarElement ground, double weight) {
+	private void addGroundScore(Map<FiveElement, Double> scores, PillarElement ground, double weight) {
 		if (ground == null) {
 			return;
 		}
@@ -324,20 +277,18 @@ public class YongsinCalculator {
 		}
 
 		if (ground.getFiveCircle() != null) {
-			String ohaeng = ground.getFiveCircle();
-			scores.put(ohaeng, scores.getOrDefault(ohaeng, 0.0) + weight);
+			scores.merge(FiveElement.of(ground.getFiveCircle()), weight, Double::sum);
 		}
 	}
 
-	private void addHiddenScore(Map<String, Double> scores, JijangganElement hidden, double weight,
+	private void addHiddenScore(Map<FiveElement, Double> scores, JijangganElement hidden, double weight,
 		double totalRate) {
 		if (hidden == null || hidden.getFiveCircle() == null || hidden.getRate() == null
 			|| hidden.getRate() <= 0 || totalRate <= 0) {
 			return;
 		}
-		String ohaeng = hidden.getFiveCircle();
 		double ratio = hidden.getRate() / totalRate;
-		scores.put(ohaeng, scores.getOrDefault(ohaeng, 0.0) + (weight * ratio));
+		scores.merge(FiveElement.of(hidden.getFiveCircle()), weight * ratio, Double::sum);
 	}
 
 	private double sumPositiveRate(JijangganElement hidden) {
@@ -347,14 +298,21 @@ public class YongsinCalculator {
 		return hidden.getRate();
 	}
 
-	private double sumMatchingRate(JijangganElement hidden, String targetOhaeng) {
+	private double sumMatchingRate(JijangganElement hidden, FiveElement target) {
 		if (hidden == null || hidden.getRate() == null || hidden.getRate() <= 0) {
 			return 0.0;
 		}
-		if (!targetOhaeng.equals(hidden.getFiveCircle())) {
+		if (!isElement(hidden.getFiveCircle(), target)) {
 			return 0.0;
 		}
 		return hidden.getRate();
+	}
+
+	/**
+	 * 오행 칸(한글 이름)이 비어 있지 않고 element 와 같은지. 모르는 이름이면 FiveElement.of 가 예외를 던진다.
+	 */
+	private static boolean isElement(String korean, FiveElement element) {
+		return korean != null && FiveElement.of(korean) == element;
 	}
 
 	private String normalizeBranch(PillarElement monthGround) {
@@ -391,34 +349,6 @@ public class YongsinCalculator {
 		return Math.round(value * 10.0) / 10.0;
 	}
 
-	private String getLuckyColor(String ohaeng) {
-		if (ohaeng == null) {
-			return "-";
-		}
-		return switch (ohaeng) {
-			case "목" -> "청색, 녹색";
-			case "화" -> "적색, 분홍";
-			case "토" -> "황색, 베이지";
-			case "금" -> "백색, 은색";
-			case "수" -> "검정, 남색";
-			default -> "-";
-		};
-	}
-
-	private String getLuckyDirection(String ohaeng) {
-		if (ohaeng == null) {
-			return "-";
-		}
-		return switch (ohaeng) {
-			case "목" -> "동쪽";
-			case "화" -> "남쪽";
-			case "토" -> "중앙, 거주지 근처";
-			case "금" -> "서쪽";
-			case "수" -> "북쪽";
-			default -> "-";
-		};
-	}
-
 	@lombok.Data
 	@lombok.AllArgsConstructor
 	public static class YongsinResult {
@@ -447,16 +377,7 @@ public class YongsinCalculator {
 		}
 	}
 
-	private static class YongsinDecision {
+	private record YongsinDecision(FiveElement yongsin, FiveElement heesin, String yongsinType) {
 
-		final String yongsin;
-		final String heesin;
-		final String yongsinType;
-
-		YongsinDecision(String yongsin, String heesin, String yongsinType) {
-			this.yongsin = yongsin;
-			this.heesin = heesin == null ? "-" : heesin;
-			this.yongsinType = yongsinType;
-		}
 	}
 }

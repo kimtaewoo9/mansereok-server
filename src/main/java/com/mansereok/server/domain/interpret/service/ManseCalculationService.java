@@ -1,5 +1,6 @@
 package com.mansereok.server.domain.interpret.service;
 
+import com.mansereok.server.domain.interpret.calculator.FiveElement;
 import com.mansereok.server.domain.interpret.calculator.RelationCalculator;
 import com.mansereok.server.domain.interpret.calculator.SinsalCalculator;
 import com.mansereok.server.domain.interpret.calculator.UnseongCalculator;
@@ -304,7 +305,7 @@ public class ManseCalculationService {
 				.chinese(chinese)
 				.korean(sajuDataService.koreanOf(chinese))
 				.fiveCircle(tenStarParts[1])
-				.fiveCircleColor(getColor(tenStarParts[1]))
+				.fiveCircleColor(FiveElement.of(tenStarParts[1]).color())
 				.tenStar(tenStarParts[0])
 				.minusPlus(sajuDataService.yinYangOf(chinese));
 
@@ -592,17 +593,6 @@ public class ManseCalculationService {
 		return minutesSinceJasiStart / MINUTES_PER_TIME_PILLAR;
 	}
 
-	private String getColor(String value) {
-		return switch (value) {
-			case "목" -> "#4CAF50";
-			case "화" -> "#F44336";
-			case "토" -> "#FFD600";
-			case "금" -> "#E0E0E0";
-			case "수" -> "#039BE5";
-			default -> "";
-		};
-	}
-
 	private ManseryeokCalculationResponse.JijangganInfo getJijangganInfo(String jiji,
 		String ilganChinese) {
 		HiddenStems hiddenStems = sajuDataService.hiddenStemsOf(jiji);
@@ -633,7 +623,7 @@ public class ManseCalculationService {
 			.chinese(hiddenStem.chinese())
 			.korean(hiddenStem.korean())
 			.fiveCircle(hiddenStem.fiveCircle())
-			.fiveCircleColor(getColor(hiddenStem.fiveCircle()))
+			.fiveCircleColor(FiveElement.of(hiddenStem.fiveCircle()).color())
 			.minusPlus(hiddenStem.minusPlus())
 			.rate(hiddenStem.rate())
 			.tenStar(tenStar)
