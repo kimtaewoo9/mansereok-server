@@ -184,11 +184,12 @@ class ManseryeokControllerTest {
 		void freeSingleCreatesNoOrderWhenCalculationFails() {
 			// given
 			given(manseCalculationService.calculate(any()))
-				.willThrow(new RuntimeException("해당 양력 날짜의 만세력 데이터를 찾을 수 없습니다."));
+				.willThrow(new IllegalArgumentException("지원 범위(양력 1900-01-01~2100-12-31) 밖이거나 존재하지 않는 날짜입니다."));
 
 			// when & then
 			assertThatThrownBy(() -> controller.interpretFree(FREE_FORTUNE_SUBCATEGORY_ID, singleRequest(), USERNAME))
-				.hasMessage("해당 양력 날짜의 만세력 데이터를 찾을 수 없습니다.");
+				.isInstanceOf(IllegalArgumentException.class)
+				.hasMessage("지원 범위(양력 1900-01-01~2100-12-31) 밖이거나 존재하지 않는 날짜입니다.");
 			verifyNoInteractions(paymentService, resultService, manseInterpretationService);
 		}
 
