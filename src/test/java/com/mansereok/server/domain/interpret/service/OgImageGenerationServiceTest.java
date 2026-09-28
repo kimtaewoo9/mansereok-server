@@ -54,10 +54,12 @@ class OgImageGenerationServiceTest {
 	private static final Long RESULT_ID = 7L;
 	private static final String PUBLIC_URL = "https://named-og-image.s3.ap-northeast-2.amazonaws.com/og-images/x.png";
 	private static final String SUMMARY = "올해는 기회가 많은 해입니다.\n차분하게 준비하면 좋은 결과가 따라옵니다.";
-	// 한 줄 폭(1200px - 좌우 여백 60px × 2 = 1080px)보다 넓어 띄어쓰기에서 두 줄로 나뉘는 요약. 줄 폭을 여백 없이 1200px 로
-	// 잡으면 첫 줄이 1080px 보다 넓어져 좌우 여백을 침범한다.
+	// 한 줄 폭(1200px - 좌우 여백 60px × 2 = 1080px)보다 넓어 띄어쓰기에서 두 줄로 나뉘는 요약. 운영 글꼴로 재면 첫 줄은
+	// '찾아옵니다.' 까지 932px 이고, 다음 단어 '조급해하지' 까지 넣으면 1105px 이다. 그래서 줄 폭을 한쪽 여백만 빼 1140px 로 잡거나
+	// 여백 없이 1200px 로 잡으면 첫 줄이 1105px 이상이 되어 좌우 여백 60px 을 침범한다. 줄 폭을 1081~1104px 로 잡는 실수는 나뉘는
+	// 자리가 1080px 일 때와 같아 이 요약으로는 드러나지 않는다.
 	private static final String SUMMARY_WIDER_THAN_ONE_LINE =
-		"타고난 성실함 덕분에 올해는 새로운 기회가 여러 번 찾아옵니다. 서두르지 말고 차분하게 준비하면 좋은 결과가 따라옵니다.";
+		"타고난 성실함 덕분에 올해는 새로운 기회가 여러 번 찾아옵니다. 조급해하지 말고 차분하게 준비하면 좋은 결과가 따라옵니다.";
 
 	@Mock
 	private S3UploadService s3UploadService;
@@ -207,8 +209,9 @@ class OgImageGenerationServiceTest {
 
 		/**
 		 * 올린 이미지를 템플릿 파일과 픽셀 단위로 비교해, 템플릿과 달라진 픽셀을 요약을 그린 자리로 본다. 요약을 그리지 않으면 달라진
-		 * 픽셀이 없다. 줄을 1080px 보다 넓게 나누거나 가로 가운데 정렬이 어긋나면 좌우 여백 60px 안에 달라진 픽셀이 생긴다. 세로는
-		 * 글자 모양에 따라 몇 px 어긋날 수 있어 가운데(315px)에서 10px 까지 허용한다.
+		 * 픽셀이 없다. 줄 폭을 1105px 이상으로 잡거나(한쪽 여백만 빼거나 여백 없이 잡는 실수) 가로 가운데 정렬이 어긋나면 좌우 여백
+		 * 60px 안에 달라진 픽셀이 생긴다. 줄 폭 1081~1104px 는 이 요약에서 1080px 와 같은 자리에서 나뉘어 잡지 못한다. 세로는 글자
+		 * 모양에 따라 몇 px 어긋날 수 있어 가운데(315px)에서 10px 까지 허용한다.
 		 */
 		@Test
 		@DisplayName("요약을 템플릿 가운데에 그리고 그린 자리는 좌우 여백 60px 안으로 들어오지 않는다")
