@@ -15,6 +15,7 @@ import static org.springframework.test.web.client.response.MockRestResponseCreat
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withServerError;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mansereok.server.domain.payment.dto.response.PortOnePaymentResponse;
@@ -32,12 +33,15 @@ import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
 import org.springframework.http.converter.json.Jackson2ObjectMapperBuilder;
 import org.springframework.test.web.client.ExpectedCount;
 import org.springframework.test.web.client.MockRestServiceServer;
+import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestClient;
 
 class PortOneRestClientTest {
@@ -122,7 +126,7 @@ class PortOneRestClientTest {
 	}
 
 	@Test
-	@DisplayName("응답이 깨진 JSON 이면 'JSON 파싱 실패' 메시지의 PaymentException 을 던진다")
+	@DisplayName("응답이 깨진 JSON 이면 'JSON 파싱 실패' 메시지의 PaymentException 을 던지고 JSON 예외를 원인으로 잇는다")
 	void getPayment_malformedJson_throwsParseFailureMessage() {
 		server.expect(requestTo(PAYMENT_URL))
 			.andExpect(method(HttpMethod.GET))
@@ -130,7 +134,8 @@ class PortOneRestClientTest {
 
 		assertThatThrownBy(() -> client.getPayment(PAYMENT_ID))
 			.isInstanceOf(PaymentException.class)
-			.hasMessage("결제 정보 응답 처리 중 오류 발생 (JSON 파싱 실패)");
+			.hasMessage("결제 정보 응답 처리 중 오류 발생 (JSON 파싱 실패)")
+			.hasCauseInstanceOf(JsonProcessingException.class);
 		server.verify();
 	}
 
@@ -161,7 +166,7 @@ class PortOneRestClientTest {
 	}
 
 	@Test
-	@DisplayName("응답이 4xx 이면 기존처럼 '조회 중 오류' 메시지의 PaymentException 을 던진다")
+	@DisplayName("응답이 4xx 이면 '조회 중 오류' 메시지의 PaymentException 을 던지고 HTTP 예외를 원인으로 잇는다")
 	void getPayment_clientError_throwsPaymentException() {
 		server.expect(requestTo(PAYMENT_URL))
 			.andExpect(method(HttpMethod.GET))
@@ -170,7 +175,31 @@ class PortOneRestClientTest {
 		assertThatThrownBy(() -> client.getPayment(PAYMENT_ID))
 			.isInstanceOf(PaymentException.class)
 			.isNotInstanceOf(PortOneUnavailableException.class)
-			.hasMessage("결제 정보를 조회하는 중 오류가 발생했습니다.");
+			.hasMessage("결제 정보를 조회하는 중 오류가 발생했습니다.")
+			.hasCauseInstanceOf(HttpClientErrorException.BadRequest.class);
+		server.verify();
+	}
+
+	@ParameterizedTest(name = "[{index}] 결제 ID {0} → {1}")
+	@DisplayName("결제 ID 에 '#'·'?'·'/' 가 섞여도 잘리지 않고 인코딩된 채 한 경로 조각으로 조회한다")
+	@CsvSource(delimiter = '|', textBlock = """
+		# 결제 ID    | 실제로 나가는 주소
+		pay_A#1      | https://api.portone.io/payments/pay_A%231
+		pay_A?x=1    | https://api.portone.io/payments/pay_A%3Fx%3D1
+		a/../b       | https://api.portone.io/payments/a%2F..%2Fb
+		""")
+	void getPayment_encodesReservedCharactersInPaymentId(String paymentId, String expectedUrl) {
+		// given: 인코딩된 주소로 나갈 때만 응답한다. 잘린 주소(/payments/pay_A)로 나가면 기대와 달라 실패한다.
+		server.expect(requestTo(expectedUrl))
+			.andExpect(method(HttpMethod.GET))
+			.andRespond(withSuccess("""
+				{"id": "pay_A", "status": "PAID", "amount": {"total": 10000}}
+				""", MediaType.APPLICATION_JSON));
+
+		// when
+		client.getPayment(paymentId);
+
+		// then
 		server.verify();
 	}
 
@@ -217,15 +246,37 @@ class PortOneRestClientTest {
 	}
 
 	@Test
-	@DisplayName("취소 응답이 4xx 이면 기존 메시지 형식의 PaymentException 을 던진다")
-	void cancelPayment_clientError_throwsPaymentException() {
+	@DisplayName("취소 응답이 4xx 면 포트원 응답 본문을 뺀 고정 문구의 PaymentException 을 던지고, 본문이 담긴 HTTP 예외는 원인으로 잇는다")
+	void cancelPayment_clientError_hidesPortOneBodyFromMessage() {
+		// given
 		server.expect(requestTo(CANCEL_URL))
 			.andExpect(method(HttpMethod.POST))
-			.andRespond(withBadRequest());
+			.andRespond(withBadRequest()
+				.contentType(MediaType.APPLICATION_JSON)
+				.body("{\"type\":\"INVALID_REQUEST\",\"message\":\"PG-internal\"}"));
 
+		// when & then
 		assertThatThrownBy(() -> client.cancelPayment(PAYMENT_ID, "단순 변심"))
 			.isInstanceOf(PaymentException.class)
-			.hasMessageStartingWith("결제 취소 연동 중 오류가 발생했습니다: ");
+			.hasMessage("결제 취소 연동 중 오류가 발생했습니다.")
+			.hasCauseInstanceOf(HttpClientErrorException.BadRequest.class)
+			.cause()
+			.hasMessageContaining("PG-internal");
+		server.verify();
+	}
+
+	@Test
+	@DisplayName("취소도 결제 ID 를 인코딩해 보낸다. 'pay_A#1' 을 취소하려다 pay_A 를 취소하지 않는다")
+	void cancelPayment_encodesReservedCharactersInPaymentId() {
+		// given
+		server.expect(requestTo("https://api.portone.io/payments/pay_A%231/cancel"))
+			.andExpect(method(HttpMethod.POST))
+			.andRespond(withSuccess());
+
+		// when
+		client.cancelPayment("pay_A#1", "단순 변심");
+
+		// then
 		server.verify();
 	}
 
@@ -273,7 +324,7 @@ class PortOneRestClientTest {
 	}
 
 	@Test
-	@DisplayName("findPayment 는 404 가 아닌 4xx 면 PaymentException 을 던진다")
+	@DisplayName("findPayment 는 404 가 아닌 4xx 면 '조회 중 오류' 메시지의 PaymentException 을 던지고 HTTP 예외를 원인으로 잇는다")
 	void findPayment_clientError_throwsPaymentException() {
 		server.expect(requestTo(PAYMENT_URL))
 			.andExpect(method(HttpMethod.GET))
@@ -281,7 +332,9 @@ class PortOneRestClientTest {
 
 		assertThatThrownBy(() -> client.findPayment(PAYMENT_ID))
 			.isInstanceOf(PaymentException.class)
-			.isNotInstanceOf(PortOneUnavailableException.class);
+			.isNotInstanceOf(PortOneUnavailableException.class)
+			.hasMessage("결제 정보를 조회하는 중 오류가 발생했습니다.")
+			.hasCauseInstanceOf(HttpClientErrorException.BadRequest.class);
 		server.verify();
 	}
 
@@ -332,6 +385,35 @@ class PortOneRestClientTest {
 		assertThatThrownBy(() -> client.listPaymentsChangedBetween(WINDOW_FROM, WINDOW_UNTIL))
 			.isInstanceOf(PortOneUnavailableException.class)
 			.hasMessage("결제 목록을 조회하는 중 일시적인 오류가 발생했습니다.");
+		server.verify();
+	}
+
+	@Test
+	@DisplayName("결제 목록 조회가 4xx 면 '목록 조회 중 오류' 메시지의 PaymentException 을 던지고 HTTP 예외를 원인으로 잇는다")
+	void listPaymentsChangedBetween_clientError_throwsPaymentExceptionWithCause() {
+		server.expect(requestTo(startsWith(LIST_URL_PREFIX)))
+			.andExpect(method(HttpMethod.GET))
+			.andRespond(withBadRequest());
+
+		assertThatThrownBy(() -> client.listPaymentsChangedBetween(WINDOW_FROM, WINDOW_UNTIL))
+			.isInstanceOf(PaymentException.class)
+			.isNotInstanceOf(PortOneUnavailableException.class)
+			.hasMessage("결제 목록을 조회하는 중 오류가 발생했습니다.")
+			.hasCauseInstanceOf(HttpClientErrorException.BadRequest.class);
+		server.verify();
+	}
+
+	@Test
+	@DisplayName("결제 목록 응답이 깨진 JSON 이면 'JSON 파싱 실패' 메시지의 PaymentException 을 던지고 JSON 예외를 원인으로 잇는다")
+	void listPaymentsChangedBetween_malformedJson_throwsPaymentExceptionWithCause() {
+		server.expect(requestTo(startsWith(LIST_URL_PREFIX)))
+			.andExpect(method(HttpMethod.GET))
+			.andRespond(withSuccess("not-json", MediaType.APPLICATION_JSON));
+
+		assertThatThrownBy(() -> client.listPaymentsChangedBetween(WINDOW_FROM, WINDOW_UNTIL))
+			.isInstanceOf(PaymentException.class)
+			.hasMessage("결제 목록 응답 처리 중 오류 발생 (JSON 파싱 실패)")
+			.hasCauseInstanceOf(JsonProcessingException.class);
 		server.verify();
 	}
 
