@@ -1,10 +1,13 @@
 package com.mansereok.server.domain.interpret.prompt;
 
+import com.mansereok.server.domain.interpret.calculator.FiveElement;
 import com.mansereok.server.domain.interpret.dto.response.ManseryeokCalculationResponse;
 import com.mansereok.server.domain.interpret.dto.response.ManseryeokCalculationResponse.JijangganElement;
 import com.mansereok.server.domain.interpret.dto.response.ManseryeokCalculationResponse.JijangganInfo;
 import com.mansereok.server.domain.interpret.dto.response.ManseryeokCalculationResponse.PillarElement;
 import java.util.ArrayList;
+import java.util.EnumMap;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -85,16 +88,16 @@ final class SajuElementSections {
 		prompt.append(String.join(", ", jijangganElements) + "\n");
 	}
 
-	static void calculateDistributionWithJijanggan(
-		ManseryeokCalculationResponse.SajuInfo saju,
-		Map<String, Double> ohaengCounts,
-		Map<String, Integer> sipseongCounts
-	) {
-		ohaengCounts.put("목", 0.0);
-		ohaengCounts.put("화", 0.0);
-		ohaengCounts.put("토", 0.0);
-		ohaengCounts.put("금", 0.0);
-		ohaengCounts.put("수", 0.0);
+	/**
+	 * 천간·지지는 1점씩, 지장간은 비율(rate / 100)만큼 오행 점수를 센다. 십성도 함께 센다.
+	 */
+	static ElementDistribution calculateDistributionWithJijanggan(
+		ManseryeokCalculationResponse.SajuInfo saju) {
+		EnumMap<FiveElement, Double> ohaengCounts = new EnumMap<>(FiveElement.class);
+		for (FiveElement element : FiveElement.values()) {
+			ohaengCounts.put(element, 0.0);
+		}
+		Map<String, Integer> sipseongCounts = new HashMap<>();
 
 		addElementCount(ohaengCounts, sipseongCounts, saju.getYearSky(), 1.0);
 		addElementCount(ohaengCounts, sipseongCounts, saju.getMonthSky(), 1.0);
@@ -109,9 +112,10 @@ final class SajuElementSections {
 		if (saju.getTimeGround() != null) {
 			addGroundWithJijanggan(ohaengCounts, sipseongCounts, saju.getTimeGround());
 		}
+		return new ElementDistribution(ohaengCounts, sipseongCounts);
 	}
 
-	private static void addElementCount(Map<String, Double> ohaengCounts,
+	private static void addElementCount(Map<FiveElement, Double> ohaengCounts,
 		Map<String, Integer> sipseongCounts,
 		PillarElement element, double weight) {
 		if (element == null) {
@@ -119,7 +123,7 @@ final class SajuElementSections {
 		}
 		String ohaeng = element.getFiveCircle();
 		if (ohaeng != null) {
-			ohaengCounts.compute(ohaeng, (k, v) -> (v == null ? 0 : v) + weight);
+			ohaengCounts.merge(FiveElement.of(ohaeng), weight, Double::sum);
 		}
 		String sipseong = element.getTenStar();
 		if (sipseong != null) {
@@ -127,7 +131,7 @@ final class SajuElementSections {
 		}
 	}
 
-	private static void addGroundWithJijanggan(Map<String, Double> ohaengCounts,
+	private static void addGroundWithJijanggan(Map<FiveElement, Double> ohaengCounts,
 		Map<String, Integer> sipseongCounts, PillarElement ground) {
 
 		if (ground == null) {
@@ -153,14 +157,14 @@ final class SajuElementSections {
 		}
 	}
 
-	private static void addJijangganElement(Map<String, Double> ohaengCounts,
+	private static void addJijangganElement(Map<FiveElement, Double> ohaengCounts,
 		Map<String, Integer> sipseongCounts, JijangganElement element) {
 
 		// 오행 카운팅 (기존)
 		String ohaeng = element.getFiveCircle();
 		if (ohaeng != null && element.getRate() != null) {
 			double weight = element.getRate() / 100.0;
-			ohaengCounts.compute(ohaeng, (k, v) -> (v == null ? 0 : v) + weight);
+			ohaengCounts.merge(FiveElement.of(ohaeng), weight, Double::sum);
 		}
 
 		// ⭐ 십성 카운팅 (추가)

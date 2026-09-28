@@ -5,15 +5,17 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.mansereok.server.domain.interpret.calculator.Strength;
 import com.mansereok.server.domain.interpret.calculator.YongsinCalculator.YongsinResult;
 import com.mansereok.server.domain.interpret.dto.response.ManseryeokCalculationResponse;
+import com.mansereok.server.domain.interpret.dto.response.ManseryeokCalculationResponse.PillarElement;
 import com.mansereok.server.domain.interpret.dto.response.ManseryeokCalculationResponse.SajuInfo;
 import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 
 /**
- * 해석 키워드 블록이 계산기의 판정을 그대로 따르는지 확인한다.
+ * 해석 키워드 블록이 계산기의 판정을 그대로 따르고, 여러 줄을 늘 같은 순서로 적는지 확인한다.
  */
 @DisplayName("해석 키워드 블록")
 class SajuKeywordSectionsTest {
@@ -63,6 +65,34 @@ class SajuKeywordSectionsTest {
 			assertThat(prompt.lines()).contains(strengthLine);
 			assertThat(guidanceLines(prompt)).isEmpty();
 		}
+	}
+
+	/**
+	 * 예전에는 [결핍] 줄을 Map.of 를 돌며 적어서, JVM 을 띄울 때마다 여러 줄의 순서가 바뀔 수 있었다.
+	 */
+	@Test
+	@DisplayName("부족한 오행이 여럿이면 [결핍] 줄을 목·화·토·금·수 순서로 적는다")
+	void writesLackLinesInElementOrder() {
+		// given: 천간·지지가 토·금 뿐이라 목·화·수 가 0점이다
+		SajuInfo saju = SajuInfo.builder()
+			.yearSky(element("토")).yearGround(element("금"))
+			.monthSky(element("토")).monthGround(element("금"))
+			.daySky(element("토")).dayGround(element("금"))
+			.build();
+		ManseryeokCalculationResponse response = ManseryeokCalculationResponse.builder().saju(saju).build();
+
+		// when
+		String prompt = appendKeywords(response);
+
+		// then
+		assertThat(prompt.lines().filter(line -> line.startsWith("- [결핍]")).toList()).containsExactly(
+			"- [결핍] 목 부족: 성장/확장 동력이 약해 새 일을 벌이는 결단이 늦음. 보완 방향을 조언에 반영하세요.",
+			"- [결핍] 화 부족: 표현과 열정의 발산이 약해 존재감이 묻히기 쉬움. 보완 방향을 조언에 반영하세요.",
+			"- [결핍] 수 부족: 유연한 사고와 휴식이 부족해 번아웃에 취약함. 보완 방향을 조언에 반영하세요.");
+	}
+
+	private static PillarElement element(String fiveCircle) {
+		return PillarElement.builder().fiveCircle(fiveCircle).build();
 	}
 
 	private static String appendKeywords(ManseryeokCalculationResponse response) {
