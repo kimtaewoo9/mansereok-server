@@ -99,7 +99,7 @@ public class ManseryeokCalculationResponse {
 		private List<String> gongmang;
 
 		@JsonProperty("ground_relations")
-		@Schema(description = "지지 관계 분석 (합, 충, 원진)", example = "[\"년지-월지: 충\", \"일지-월지: 원진\"]")
+		@Schema(description = "지지 관계 분석 (충, 원진, 형, 파, 해, 반합)", example = "[\"년지-월지: 충\", \"월지-일지: 원진\"]")
 		private List<String> groundRelations;
 
 		@JsonProperty("sky_relations")

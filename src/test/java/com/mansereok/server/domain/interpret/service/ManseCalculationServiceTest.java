@@ -279,9 +279,10 @@ class ManseCalculationServiceTest {
 		}
 
 		/**
-		 * 지지 寅·巳·申·亥 는 여섯 짝 모두 관계가 있다(寅巳 형·해, 寅申 충·형, 巳申 형·파, 寅亥 파, 巳亥 충, 申亥 해). 천간 합·충은
-		 * 이어진 글자끼리만 생겨 한 사주로 여섯 짝을 다 채울 수 없으므로, 관계가 생기는 짝이 서로 다른 두 사주로 나눠 본다. 어느 짝이
-		 * 다른 기둥 글자를 읽으면 관계가 없던 짝에 관계가 생기거나 있던 관계가 빠진다.
+		 * 지지 寅·巳·申·亥 는 여섯 짝 모두 관계가 있다(寅巳 형·해, 寅申 충·형, 巳申 형·파, 寅亥 파, 巳亥 충, 申亥 해). 천간은 한
+		 * 글자에 합 짝이 하나, 충 짝이 많아야 하나(戊·己 는 충 짝이 없다)뿐이고 같은 글자끼리는 관계가 없어, 네 글자로 여섯 짝을 모두
+		 * 채울 수 없다. 그래서 관계가 생기는 짝이 서로 다른 두 사주로 나눠 본다. 어느 짝이 다른 기둥 글자를 읽으면 관계가 없던 짝에
+		 * 관계가 생기거나 있던 관계가 빠진다.
 		 *
 		 * <p>시주는 일간과 출생시각으로 정해진다. 22:00 은 해시라 일간 戊 이면 癸亥, 일간 甲 이면 乙亥 다.
 		 */
@@ -340,7 +341,7 @@ class ManseCalculationServiceTest {
 			}
 
 			@Test
-			@DisplayName("시주가 있으면 앞 사주에서 비었던 년간-일간, 월간-시간 짝도 관계가 있을 때 제자리에 적는다")
+			@DisplayName("시주가 있으면 庚辛甲乙 사주의 년간-일간 충, 년간-시간 합, 월간-시간 충을 짝 순서대로 적는다")
 			void listsRemainingSkyPairsWhenTimeIsKnown() {
 				// given: 庚甲 충, 庚乙 합, 辛乙 충이고 나머지 짝(庚辛, 辛甲, 甲乙)은 관계가 없다
 				ManseCalculationService serviceWithRows = serviceWithPillars(ManseRow.on(birthDate)
@@ -434,7 +435,7 @@ class ManseCalculationServiceTest {
 
 		/**
 		 * 1990-01-27 23:29 남자(己巳 丁丑 壬辰 辛亥, 일간 壬)의 기둥 한 칸이 조회표에서 채우는 값을 모두 본다. 십성은 일간 壬(양수)에서 본
-		 * 관계이고, 색은 오행마다 정해진 값(토 #FFD600, 수 #039BE5, 목 #4CAF50)이다.
+		 * 관계이고, 색은 오행마다 정해진 값(토 #FFD600, 화 #F44336, 수 #039BE5, 금 #E0E0E0, 목 #4CAF50)이다.
 		 */
 		@Nested
 		@DisplayName("기둥 한 칸을 채울 때")
@@ -444,18 +445,21 @@ class ManseCalculationServiceTest {
 				solarRequest(LocalDate.of(1990, 1, 27), LocalTime.of(23, 29), "MALE")).getSaju();
 
 			@Test
-			@DisplayName("천간은 한자·한글 이름·오행·색·일간 기준 십성·음양을 채운다")
+			@DisplayName("네 천간 모두 한자·한글 이름·오행·색·일간 기준 십성·음양을 채운다")
 			void fillsStemFromLookupTables() {
 				// when
-				List<PillarElement> stems = List.of(saju.getYearSky(), saju.getDaySky());
+				List<PillarElement> stems = List.of(saju.getYearSky(), saju.getMonthSky(), saju.getDaySky(),
+					saju.getTimeSky());
 
-				// then
+				// then: 십성은 모두 일간 壬 에서 본 값이다. 다른 천간(예: 연간 己)을 기준으로 보면 월간·시간 십성이 달라진다
 				assertThat(stems)
 					.extracting(PillarElement::getChinese, PillarElement::getKorean, PillarElement::getFiveCircle,
 						PillarElement::getFiveCircleColor, PillarElement::getTenStar, PillarElement::getMinusPlus)
 					.containsExactly(
 						tuple("己", "기", "토", "#FFD600", "정관", "음"),
-						tuple("壬", "임", "수", "#039BE5", "비견", "양"));
+						tuple("丁", "정", "화", "#F44336", "정재", "음"),
+						tuple("壬", "임", "수", "#039BE5", "비견", "양"),
+						tuple("辛", "신", "금", "#E0E0E0", "정인", "음"));
 			}
 
 			@Test
@@ -719,9 +723,14 @@ class ManseCalculationServiceTest {
 				assertThat(saju.get("season_start_time").isNull()).as("null 인 절입 시각은 남는다").isTrue();
 				assertThat(saju.get("samhap").isEmpty()).as("빈 삼합 목록은 남는다").isTrue();
 			}
+		}
+
+		@Nested
+		@DisplayName("불확정 안내와 월운에 값이 있으면")
+		class WhenListsHaveValues {
 
 			@Test
-			@DisplayName("두 목록에 값이 있으면 응답 JSON 에 그대로 싣는다")
+			@DisplayName("응답 JSON 의 saju 에 uncertainty_notes·monthly_fortunes 를 그대로 싣는다")
 			void keepsNonEmptyListsInJson() throws Exception {
 				// given: 출생시간을 모르면 불확정 안내가 생기고, 지금(2026-09-26)은 월운 12개월을 모두 센다
 				ObjectMapper objectMapper = Jackson2ObjectMapperBuilder.json().build();
@@ -942,6 +951,23 @@ class ManseCalculationServiceTest {
 					tuple("망종", LocalDateTime.of(2027, 6, 6, 6, 58), LocalDateTime.of(2027, 7, 7, 17, 14, 59), "丙午"),
 					tuple("소서", LocalDateTime.of(2027, 7, 7, 17, 15), LocalDateTime.of(2027, 8, 8, 3, 1, 59), "丁未"),
 					tuple("입추", LocalDateTime.of(2027, 8, 8, 3, 2), LocalDateTime.of(2027, 9, 8, 5, 53, 59), "戊申"));
+		}
+
+		@Test
+		@DisplayName("월운 칸의 십성과 12운성은 그 달 절입일의 일간이 아니라 사주의 일간을 기준으로 채운다")
+		void fillsMonthlyFortuneFromSajuDayStem() {
+			// when: 1998-09-02 12:02 남자(戊寅 庚申 壬子 丙午)의 일간은 壬 이고, 첫 달 백로(2026-09-08) 행의 일간은 乙 이다
+			MonthlyFortune firstMonth = service
+				.calculate(solarRequest(LocalDate.of(1998, 9, 2), LocalTime.of(12, 2), "MALE"))
+				.getSaju().getMonthlyFortunes().get(0);
+
+			// then: 일간 壬 기준 丁 정재, 酉 정인·목욕이다. 乙 기준이면 丁 식신, 酉 절이 된다
+			assertThat(firstMonth.getMonthSky())
+				.extracting(PillarElement::getChinese, PillarElement::getTenStar)
+				.containsExactly("丁", "정재");
+			assertThat(firstMonth.getMonthGround())
+				.extracting(PillarElement::getChinese, PillarElement::getTenStar, PillarElement::getUnseong)
+				.containsExactly("酉", "정인", "목욕");
 		}
 
 		@ParameterizedTest(name = "[{index}] 지금 {0} → {1}개월, 마지막 달 {2} {3} ~ {4}")
