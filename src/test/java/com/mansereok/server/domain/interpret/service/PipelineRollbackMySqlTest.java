@@ -11,6 +11,9 @@ import static org.mockito.Mockito.verify;
 
 import com.mansereok.server.domain.interpret.entity.CompatibilityResult;
 import com.mansereok.server.domain.interpret.entity.Result;
+import com.mansereok.server.domain.interpret.product.InterpretationProduct;
+import com.mansereok.server.domain.interpret.prompt.CompatibilityPromptContext;
+import com.mansereok.server.domain.interpret.prompt.PromptContext;
 import com.mansereok.server.domain.interpret.prompt.PromptFixtures;
 import com.mansereok.server.domain.interpret.repository.CompatibilityResultRepository;
 import com.mansereok.server.domain.interpret.repository.ResultRepository;
@@ -76,8 +79,8 @@ class PipelineRollbackMySqlTest extends InterpretationMySqlTest {
 		assertThat(statusInDatabase("results")).as("준비: DB 에 해석 중으로 저장").isEqualTo("PROCESSING");
 
 		// when
-		manseInterpretationService.interpret("홍길동", PromptFixtures.person1(), "user-" + runId, 1L, paymentId,
-			startedAt, null);
+		manseInterpretationService.interpret(new SajuInterpretationCommand(paymentId, startedAt,
+			InterpretationProduct.LIFE_OVERALL, "user-" + runId, PromptContext.of("홍길동", PromptFixtures.person1())));
 
 		// then
 		await().atMost(ROLLBACK_WAIT).untilAsserted(() ->
@@ -98,8 +101,9 @@ class PipelineRollbackMySqlTest extends InterpretationMySqlTest {
 			.isEqualTo("PROCESSING");
 
 		// when
-		manseInterpretationService.analyzeCompatibilityWithSubcategory("홍길동", PromptFixtures.person1(), "김영희",
-			PromptFixtures.person2(), 4L, paymentId, startedAt, "user-" + runId, null, null);
+		manseInterpretationService.analyzeCompatibilityWithSubcategory(new CompatibilityInterpretationCommand(
+			paymentId, startedAt, InterpretationProduct.LOVE_STORY_4, "user-" + runId,
+			CompatibilityPromptContext.of("홍길동", PromptFixtures.person1(), "김영희", PromptFixtures.person2())));
 
 		// then
 		await().atMost(ROLLBACK_WAIT).untilAsserted(() ->

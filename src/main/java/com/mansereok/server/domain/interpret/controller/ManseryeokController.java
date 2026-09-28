@@ -7,9 +7,13 @@ import com.mansereok.server.domain.interpret.dto.request.ManseryeokCalculationRe
 import com.mansereok.server.domain.interpret.dto.response.ManseryeokCalculationResponse;
 import com.mansereok.server.domain.interpret.product.InterpretationProduct;
 import com.mansereok.server.domain.interpret.product.InterpretationProduct.Kind;
+import com.mansereok.server.domain.interpret.prompt.CompatibilityPromptContext;
+import com.mansereok.server.domain.interpret.prompt.PromptContext;
+import com.mansereok.server.domain.interpret.service.CompatibilityInterpretationCommand;
 import com.mansereok.server.domain.interpret.service.ManseCalculationService;
 import com.mansereok.server.domain.interpret.service.ManseInterpretationService;
 import com.mansereok.server.domain.interpret.service.ResultService;
+import com.mansereok.server.domain.interpret.service.SajuInterpretationCommand;
 import com.mansereok.server.domain.payment.entity.Payment;
 import com.mansereok.server.domain.payment.service.PaymentService;
 import jakarta.validation.Valid;
@@ -65,27 +69,14 @@ public class ManseryeokController {
 		LocalDateTime startedAt = resultService.startProcessing(request.getPaymentId());
 
 		// 4. 비동기 해석 제출. 해석을 시작한 시각을 넘겨, 늦게 끝난 해석이 그사이 되돌려지거나 다시 시작된 결과를 덮어쓰지 않게 한다.
+		SajuInterpretationCommand command = new SajuInterpretationCommand(request.getPaymentId(), startedAt, product,
+			username, PromptContext.of(request.getName(), manse, request.getSourceTitle()));
 		Runnable rollback = () -> resultService.rollbackStatusByPaymentId(request.getPaymentId(), startedAt);
 		submitOrRollback(request.getPaymentId(), rollback, () -> {
 			if (product.usesFreePrompt()) {
-				manseInterpretationService.interpretFree(
-					request.getName(),
-					manse,
-					username,
-					subcategoryId,
-					request.getPaymentId(),
-					startedAt
-				);
+				manseInterpretationService.interpretFree(command);
 			} else {
-				manseInterpretationService.interpret(
-					request.getName(),
-					manse,
-					username,
-					subcategoryId,
-					request.getPaymentId(),
-					startedAt,
-					request.getSourceTitle()
-				);
+				manseInterpretationService.interpret(command);
 			}
 		});
 
@@ -104,7 +95,7 @@ public class ManseryeokController {
 		@AuthenticationPrincipal String username
 	) {
 		// 1. 상품 확인. 궁합 상품만 받는다.
-		requireProduct(subcategoryId, Kind.COMPATIBILITY);
+		InterpretationProduct product = requireProduct(subcategoryId, Kind.COMPATIBILITY);
 
 		ManseCompatibilityAnalysisRequest.PersonInfo person1 = request.getPerson1();
 		ManseCompatibilityAnalysisRequest.PersonInfo person2 = request.getPerson2();
@@ -118,19 +109,14 @@ public class ManseryeokController {
 		// 3. 해석 시작 표시. 이미 해석 중이거나 완료된 결제면 409 로 끝나고 해석을 제출하지 않는다.
 		LocalDateTime startedAt = resultService.startCompatibilityProcessing(request.getPaymentId());
 
-		// 4. 비동기 해석 제출. 해석을 시작한 시각을 함께 넘긴다.
+		// 4. 비동기 해석 제출. 해석을 시작한 시각을 함께 넘긴다. 두 번째 사람의 작품명은 상대방 캐릭터의 작품이다.
+		CompatibilityInterpretationCommand command = new CompatibilityInterpretationCommand(request.getPaymentId(),
+			startedAt, product, username, CompatibilityPromptContext.of(
+				person1.getName(), person1Response, person1.getSourceTitle(),
+				person2.getName(), person2Response, person2.getSourceTitle()));
 		submitOrRollback(request.getPaymentId(),
 			() -> resultService.rollbackCompatibilityStatusByPaymentId(request.getPaymentId(), startedAt),
-			() -> manseInterpretationService.analyzeCompatibilityWithSubcategory(
-				person1.getName(), person1Response,
-				person2.getName(), person2Response,
-				subcategoryId,
-				request.getPaymentId(),
-				startedAt,
-				username,
-				person1.getSourceTitle(),
-				person2.getSourceTitle() // 상대방 캐릭터
-			));
+			() -> manseInterpretationService.analyzeCompatibilityWithSubcategory(command));
 
 		log.info("궁합 분석 요청 접수 완료 (비동기 처리 시작): paymentId={}", request.getPaymentId());
 		return ResponseEntity.accepted()
@@ -147,7 +133,7 @@ public class ManseryeokController {
 		@AuthenticationPrincipal String username
 	) {
 		// 1. 상품 확인. 무료 운세 상품만 받는다.
-		requireProduct(subcategoryId, Kind.FREE_FORTUNE);
+		InterpretationProduct product = requireProduct(subcategoryId, Kind.FREE_FORTUNE);
 
 		// 2. 만세력 계산. 0원 주문은 되돌리지 않으므로, 입력 때문에 실패할 수 있는 계산을 주문보다 먼저 끝낸다.
 		ManseryeokCalculationResponse manse = manseCalculationService.calculate(
@@ -160,16 +146,11 @@ public class ManseryeokController {
 		// 4. 상태 변경 INPUT_REQUIRED -> PROCESSING
 		LocalDateTime startedAt = resultService.startProcessing(payment.getId());
 
-		// 5. [비동기] 무료 전용 해석 메서드 호출 (별도 스레드 풀)
+		// 5. [비동기] 무료 전용 해석 메서드 호출 (별도 스레드 풀). 무료 운세 프롬프트는 작품명을 쓰지 않는다.
+		SajuInterpretationCommand command = new SajuInterpretationCommand(payment.getId(), startedAt, product,
+			username, PromptContext.of(request.getName(), manse));
 		submitOrRollback(payment.getId(), () -> resultService.rollbackStatusByPaymentId(payment.getId(), startedAt),
-			() -> manseInterpretationService.interpretFree(
-				request.getName(),
-				manse,
-				username,
-				subcategoryId,
-				payment.getId(),
-				startedAt
-			));
+			() -> manseInterpretationService.interpretFree(command));
 
 		return ResponseEntity.accepted().body(Map.of(
 			"message", "분석이 시작되었습니다. 잠시 후 결과를 확인해 주세요.",
@@ -184,7 +165,7 @@ public class ManseryeokController {
 		@AuthenticationPrincipal String username
 	) {
 		// 1. 상품 확인. 궁합 상품만 받는다.
-		requireProduct(subcategoryId, Kind.COMPATIBILITY);
+		InterpretationProduct product = requireProduct(subcategoryId, Kind.COMPATIBILITY);
 
 		// 2. 두 사람 입력 변환과 만세력 계산. 0원 주문은 되돌리지 않으므로, 두 사람 모두 계산이 끝난 뒤에 주문을 만든다.
 		ManseryeokCalculationResponse p1Manse = manseCalculationService.calculate(
@@ -202,16 +183,13 @@ public class ManseryeokController {
 		LocalDateTime startedAt = resultService.startCompatibilityProcessing(payment.getId());
 
 		// 5. [비동기] 무료 궁합 해석 서비스 호출
+		CompatibilityInterpretationCommand command = new CompatibilityInterpretationCommand(payment.getId(),
+			startedAt, product, username, CompatibilityPromptContext.of(
+				request.getPerson1().getName(), p1Manse,
+				request.getPerson2().getName(), p2Manse));
 		submitOrRollback(payment.getId(),
 			() -> resultService.rollbackCompatibilityStatusByPaymentId(payment.getId(), startedAt),
-			() -> manseInterpretationService.analyzeCompatibilityFree(
-				request.getPerson1().getName(), p1Manse,
-				request.getPerson2().getName(), p2Manse,
-				subcategoryId,
-				payment.getId(),
-				startedAt,
-				username
-			));
+			() -> manseInterpretationService.analyzeCompatibilityFree(command));
 
 		return ResponseEntity.accepted().body(Map.of(
 			"message", "무료 궁합/재회운 분석이 시작되었습니다.",

@@ -5,8 +5,6 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.tuple;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
-import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.ArgumentMatchers.same;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.willThrow;
 import static org.mockito.Mockito.inOrder;
@@ -22,10 +20,15 @@ import com.mansereok.server.domain.interpret.dto.request.ManseryeokCalculationRe
 import com.mansereok.server.domain.interpret.dto.request.ManseryeokCreateRequest;
 import com.mansereok.server.domain.interpret.dto.response.ManseryeokCalculationResponse;
 import com.mansereok.server.domain.interpret.exception.InterpretationAlreadyStartedException;
+import com.mansereok.server.domain.interpret.product.InterpretationProduct;
+import com.mansereok.server.domain.interpret.prompt.CompatibilityPromptContext;
+import com.mansereok.server.domain.interpret.prompt.PromptContext;
 import com.mansereok.server.domain.interpret.prompt.PromptFixtures;
+import com.mansereok.server.domain.interpret.service.CompatibilityInterpretationCommand;
 import com.mansereok.server.domain.interpret.service.ManseCalculationService;
 import com.mansereok.server.domain.interpret.service.ManseInterpretationService;
 import com.mansereok.server.domain.interpret.service.ResultService;
+import com.mansereok.server.domain.interpret.service.SajuInterpretationCommand;
 import com.mansereok.server.domain.payment.entity.Payment;
 import com.mansereok.server.domain.payment.entity.PaymentStatus;
 import com.mansereok.server.domain.payment.service.PaymentService;
@@ -53,8 +56,8 @@ import org.springframework.test.util.ReflectionTestUtils;
  *   <li>상품 확인: 경로의 상품 번호가 그 엔드포인트가 맡는 종류가 아니면 계산·주문·상태 변경 전에 400 용 예외로 끝난다.</li>
  *   <li>실패 순서: 입력 때문에 실패할 수 있는 입력 변환과 만세력 계산이 되돌릴 수 없는 쓰기(해석 시작 표시, 0원 주문 생성)보다
  *   먼저다. 계산이 실패하면 쓰기는 한 번도 불리지 않는다.</li>
- *   <li>인자 전달: 결제 ID 와 상품 ID(둘 다 Long), 두 사람의 작품명(둘 다 String), 음력·윤달 여부(둘 다 Boolean)가 제자리로
- *   넘어간다. 서로 다른 값을 넣고 eq 로 고정해, 자리가 바뀌면 실패한다.</li>
+ *   <li>인자 전달: 음력·윤달 여부(둘 다 Boolean)가 계산에 제자리로 넘어가고, 결제 ID·상품·두 사람의 이름과 작품명이 해석 명령의
+ *   제자리에 담긴다. 기대하는 명령을 통째로 만들어 비교하므로 한 칸이라도 다르면 실패한다.</li>
  *   <li>제출 거부와 중복 시작: 스레드 풀이 제출을 거부하면 PROCESSING 으로 바꿔 둔 상태를 되돌리고 거부 예외를 그대로 올린다. 이미
  *   해석 중이거나 완료된 결제면 해석을 제출하지도, 남의 상태를 되돌리지도 않는다.</li>
  * </ul>
@@ -236,7 +239,7 @@ class ManseryeokControllerTest {
 			InOrder inOrder = inOrder(manseCalculationService, resultService, manseInterpretationService);
 			inOrder.verify(manseCalculationService).calculate(any());
 			inOrder.verify(resultService).startProcessing(PAYMENT_ID);
-			inOrder.verify(manseInterpretationService).interpret(any(), any(), any(), any(), any(), any(), any());
+			inOrder.verify(manseInterpretationService).interpret(any());
 		}
 
 		@Test
@@ -256,7 +259,7 @@ class ManseryeokControllerTest {
 			inOrder.verify(manseCalculationService).calculate(any());
 			inOrder.verify(paymentService).createFreeOrder(USERNAME, FREE_FORTUNE_SUBCATEGORY_ID);
 			inOrder.verify(resultService).startProcessing(FREE_PAYMENT_ID);
-			inOrder.verify(manseInterpretationService).interpretFree(any(), any(), any(), any(), any(), any());
+			inOrder.verify(manseInterpretationService).interpretFree(any());
 		}
 
 		@Test
@@ -276,17 +279,41 @@ class ManseryeokControllerTest {
 			inOrder.verify(manseCalculationService, times(2)).calculate(any());
 			inOrder.verify(paymentService).createFreeOrder(USERNAME, COMPATIBILITY_SUBCATEGORY_ID);
 			inOrder.verify(resultService).startCompatibilityProcessing(FREE_PAYMENT_ID);
-			inOrder.verify(manseInterpretationService).analyzeCompatibilityFree(any(), any(), any(), any(), any(),
-				any(), any(), any());
+			inOrder.verify(manseInterpretationService).analyzeCompatibilityFree(any());
 		}
 	}
 
 	@Nested
-	@DisplayName("인자 전달: 같은 타입이 나란히 오는 인자가 제자리로 넘어간다")
+	@DisplayName("인자 전달: 같은 타입이 나란히 오는 값이 제자리로 넘어간다")
 	class ArgumentPassing {
 
+		/**
+		 * 결제 ID 101 은 무료 운세 상품 번호(101)와 같은 값이다. 예전에는 결제 ID 와 상품 번호가 Long 두 개로 나란히 넘어가 둘을 바꿔
+		 * 넣어도 컴파일됐다. 두 값이 명령의 제자리에 담기는지 여기서 확인한다.
+		 */
 		@Test
-		@DisplayName("유료 단일은 음력·윤달 여부를 계산에, 결제 ID·상품 ID·작품명을 해석에 제자리로 넘긴다")
+		@DisplayName("결제 ID 101 로 상품 3(직업 적성)을 요청하면 명령의 결제 ID 는 101, 상품은 직업 적성이다")
+		void paymentIdAndProductStayInPlace() {
+			// given
+			given(manseCalculationService.calculate(any())).willReturn(person1Manse);
+			given(resultService.startProcessing(101L)).willReturn(STARTED_AT);
+			ManseInterpretationRequest request = singleRequest();
+			request.setPaymentId(101L);
+
+			// when
+			controller.interpret(3L, request, USERNAME);
+
+			// then
+			ArgumentCaptor<SajuInterpretationCommand> submitted = ArgumentCaptor.forClass(SajuInterpretationCommand.class);
+			verify(manseInterpretationService).interpret(submitted.capture());
+			assertThat(submitted.getValue())
+				.extracting(SajuInterpretationCommand::paymentId, SajuInterpretationCommand::product)
+				.containsExactly(101L, InterpretationProduct.CAREER_APTITUDE);
+			verify(manseInterpretationService, never()).interpretFree(any());
+		}
+
+		@Test
+		@DisplayName("유료 단일은 음력·윤달 여부를 계산에, 결제 ID·상품·이름·작품명을 해석 명령에 제자리로 넘긴다")
 		void paidSinglePassesArgumentsInPlace() {
 			// given
 			given(manseCalculationService.calculate(any())).willReturn(person1Manse);
@@ -306,8 +333,8 @@ class ManseryeokControllerTest {
 				.extracting(ManseryeokCalculationRequest::getName, ManseryeokCalculationRequest::getSolarDate,
 					ManseryeokCalculationRequest::getIsLunar, ManseryeokCalculationRequest::getLeapMonth)
 				.containsExactly("홍길동", LocalDate.of(1990, 1, 1), true, false);
-			verify(manseInterpretationService).interpret(eq("홍길동"), same(person1Manse), eq(USERNAME),
-				eq(SAJU_SUBCATEGORY_ID), eq(PAYMENT_ID), eq(STARTED_AT), eq("슬램덩크"));
+			verify(manseInterpretationService).interpret(new SajuInterpretationCommand(PAYMENT_ID, STARTED_AT,
+				InterpretationProduct.LIFE_OVERALL, USERNAME, PromptContext.of("홍길동", person1Manse, "슬램덩크")));
 		}
 
 		@Test
@@ -321,13 +348,13 @@ class ManseryeokControllerTest {
 			controller.interpret(FREE_FORTUNE_SUBCATEGORY_ID, singleRequest(), USERNAME);
 
 			// then
-			verify(manseInterpretationService).interpretFree(eq("홍길동"), same(person1Manse), eq(USERNAME),
-				eq(FREE_FORTUNE_SUBCATEGORY_ID), eq(PAYMENT_ID), eq(STARTED_AT));
-			verify(manseInterpretationService, never()).interpret(any(), any(), any(), any(), any(), any(), any());
+			verify(manseInterpretationService).interpretFree(new SajuInterpretationCommand(PAYMENT_ID, STARTED_AT,
+				InterpretationProduct.CHANGES_2026, USERNAME, PromptContext.of("홍길동", person1Manse, "슬램덩크")));
+			verify(manseInterpretationService, never()).interpret(any());
 		}
 
 		@Test
-		@DisplayName("유료 궁합은 두 사람의 계산 결과·이름·작품명을 순서대로, 결제 ID 와 상품 ID 를 제자리로 넘긴다")
+		@DisplayName("유료 궁합은 두 사람의 계산 결과·이름·작품명을 순서대로, 결제 ID 와 상품을 해석 명령의 제자리에 넘긴다")
 		void paidCompatibilityPassesArgumentsInPlace() {
 			// given
 			given(manseCalculationService.calculate(any())).willReturn(person1Manse, person2Manse);
@@ -351,10 +378,9 @@ class ManseryeokControllerTest {
 				.containsExactly(
 					tuple("홍길동", true, false),
 					tuple("김영희", false, true));
-			verify(manseInterpretationService).analyzeCompatibilityWithSubcategory(
-				eq("홍길동"), same(person1Manse), eq("김영희"), same(person2Manse),
-				eq(COMPATIBILITY_SUBCATEGORY_ID), eq(PAYMENT_ID), eq(STARTED_AT), eq(USERNAME),
-				eq("슬램덩크"), eq("원피스"));
+			verify(manseInterpretationService).analyzeCompatibilityWithSubcategory(new CompatibilityInterpretationCommand(
+				PAYMENT_ID, STARTED_AT, InterpretationProduct.IDOL_COMPATIBILITY, USERNAME,
+				CompatibilityPromptContext.of("홍길동", person1Manse, "슬램덩크", "김영희", person2Manse, "원피스")));
 		}
 
 		@Test
@@ -369,12 +395,12 @@ class ManseryeokControllerTest {
 			controller.interpretFree(FREE_FORTUNE_SUBCATEGORY_ID, singleRequest(), USERNAME);
 
 			// then
-			verify(manseInterpretationService).interpretFree(eq("홍길동"), same(person1Manse), eq(USERNAME),
-				eq(FREE_FORTUNE_SUBCATEGORY_ID), eq(FREE_PAYMENT_ID), eq(STARTED_AT));
+			verify(manseInterpretationService).interpretFree(new SajuInterpretationCommand(FREE_PAYMENT_ID, STARTED_AT,
+				InterpretationProduct.CHANGES_2026, USERNAME, PromptContext.of("홍길동", person1Manse)));
 		}
 
 		@Test
-		@DisplayName("무료 궁합은 달력 L 과 윤달 여부를 계산에, 두 사람과 0원 결제 ID·상품 ID 를 해석에 제자리로 넘긴다")
+		@DisplayName("무료 궁합은 달력 L 과 윤달 여부를 계산에, 두 사람과 0원 결제 ID·상품을 해석 명령의 제자리에 넘긴다")
 		void freeCompatibilityPassesArgumentsInPlace() {
 			// given
 			given(manseCalculationService.calculate(any())).willReturn(person1Manse, person2Manse);
@@ -397,9 +423,9 @@ class ManseryeokControllerTest {
 				.containsExactly(
 					tuple("홍길동", true, true),
 					tuple("김영희", false, null));
-			verify(manseInterpretationService).analyzeCompatibilityFree(
-				eq("홍길동"), same(person1Manse), eq("김영희"), same(person2Manse),
-				eq(COMPATIBILITY_SUBCATEGORY_ID), eq(FREE_PAYMENT_ID), eq(STARTED_AT), eq(USERNAME));
+			verify(manseInterpretationService).analyzeCompatibilityFree(new CompatibilityInterpretationCommand(
+				FREE_PAYMENT_ID, STARTED_AT, InterpretationProduct.IDOL_COMPATIBILITY, USERNAME,
+				CompatibilityPromptContext.of("홍길동", person1Manse, "김영희", person2Manse)));
 		}
 	}
 
@@ -413,8 +439,8 @@ class ManseryeokControllerTest {
 			// given
 			given(manseCalculationService.calculate(any())).willReturn(person1Manse);
 			given(resultService.startProcessing(PAYMENT_ID)).willReturn(STARTED_AT);
-			willThrow(rejection()).given(manseInterpretationService)
-				.interpret(any(), any(), any(), any(), any(), eq(STARTED_AT), any());
+			willThrow(rejection()).given(manseInterpretationService).interpret(new SajuInterpretationCommand(PAYMENT_ID,
+				STARTED_AT, InterpretationProduct.LIFE_OVERALL, USERNAME, PromptContext.of("홍길동", person1Manse, "슬램덩크")));
 
 			// when & then
 			assertThatThrownBy(() -> controller.interpret(SAJU_SUBCATEGORY_ID, singleRequest(), USERNAME))
@@ -431,8 +457,9 @@ class ManseryeokControllerTest {
 			given(manseCalculationService.calculate(any())).willReturn(person1Manse, person2Manse);
 			given(resultService.startCompatibilityProcessing(PAYMENT_ID)).willReturn(STARTED_AT);
 			willThrow(rejection()).given(manseInterpretationService)
-				.analyzeCompatibilityWithSubcategory(any(), any(), any(), any(), any(), any(), eq(STARTED_AT), any(),
-					any(), any());
+				.analyzeCompatibilityWithSubcategory(new CompatibilityInterpretationCommand(PAYMENT_ID, STARTED_AT,
+					InterpretationProduct.IDOL_COMPATIBILITY, USERNAME,
+					CompatibilityPromptContext.of("홍길동", person1Manse, "슬램덩크", "김영희", person2Manse, "원피스")));
 
 			// when & then
 			assertThatThrownBy(() -> controller.analyzeCompatibility(
@@ -450,8 +477,9 @@ class ManseryeokControllerTest {
 			given(manseCalculationService.calculate(any())).willReturn(person1Manse);
 			givenFreeOrder(FREE_FORTUNE_SUBCATEGORY_ID);
 			given(resultService.startProcessing(FREE_PAYMENT_ID)).willReturn(STARTED_AT);
-			willThrow(rejection()).given(manseInterpretationService)
-				.interpretFree(any(), any(), any(), any(), any(), eq(STARTED_AT));
+			willThrow(rejection()).given(manseInterpretationService).interpretFree(new SajuInterpretationCommand(
+				FREE_PAYMENT_ID, STARTED_AT, InterpretationProduct.CHANGES_2026, USERNAME,
+				PromptContext.of("홍길동", person1Manse)));
 
 			// when & then
 			assertThatThrownBy(() -> controller.interpretFree(
@@ -470,7 +498,9 @@ class ManseryeokControllerTest {
 			givenFreeOrder(COMPATIBILITY_SUBCATEGORY_ID);
 			given(resultService.startCompatibilityProcessing(FREE_PAYMENT_ID)).willReturn(STARTED_AT);
 			willThrow(rejection()).given(manseInterpretationService)
-				.analyzeCompatibilityFree(any(), any(), any(), any(), any(), any(), eq(STARTED_AT), any());
+				.analyzeCompatibilityFree(new CompatibilityInterpretationCommand(FREE_PAYMENT_ID, STARTED_AT,
+					InterpretationProduct.IDOL_COMPATIBILITY, USERNAME,
+					CompatibilityPromptContext.of("홍길동", person1Manse, "김영희", person2Manse)));
 
 			// when & then
 			assertThatThrownBy(() -> controller.analyzeCompatibilityFree(
@@ -492,8 +522,9 @@ class ManseryeokControllerTest {
 			controller.interpret(SAJU_SUBCATEGORY_ID, singleRequest(), USERNAME);
 
 			// then
-			verify(manseInterpretationService).interpret(eq("홍길동"), any(), eq(USERNAME), eq(SAJU_SUBCATEGORY_ID),
-				eq(PAYMENT_ID), eq(STARTED_AT), any());
+			ArgumentCaptor<SajuInterpretationCommand> submitted = ArgumentCaptor.forClass(SajuInterpretationCommand.class);
+			verify(manseInterpretationService).interpret(submitted.capture());
+			assertThat(submitted.getValue().startedAt()).isEqualTo(STARTED_AT);
 			verify(resultService, never()).rollbackStatusByPaymentId(anyLong(), any());
 		}
 

@@ -140,27 +140,18 @@ public class DiscordNotificationService {
 		}
 	}
 
-	// 단일 사주 해석
-	public void sendInterpretationRequestNotification(
-		String userName,
-		String userEmail,
-		String userBirthdate,
-		Long subcategoryId
-	) {
+	/**
+	 * 단일 사주 해석 요청 알림. 결제 ID 와 상품, 유료·무료 구분만 보낸다. 요청자 이름·이메일·생년월일은 외부 채널에 남기지 않는다.
+	 * 누구의 요청인지는 결제 ID 로 DB 에서 찾는다.
+	 *
+	 * @param productLabel 상품 상수 이름과 번호를 붙인 표기(예: LIFE_OVERALL(1)). 해석 시작 로그와 같은 모양이다.
+	 */
+	public void sendInterpretationRequestNotification(Long paymentId, String productLabel, boolean free) {
 		try {
 			Map<String, Object> embed = new HashMap<>();
 			embed.put("title", "🔮 사주 해석 요청");
 			embed.put("color", 10181046); // 보라색
-			embed.put("description", String.format(
-				"**카테고리 ID:** %d\n\n" +
-					"**요청자:** %s\n" +
-					"**이메일:** %s\n" +
-					"**생년월일:** %s",
-				subcategoryId,
-				userName,
-				userEmail,
-				userBirthdate
-			));
+			embed.put("description", interpretationRequestDescription(paymentId, productLabel, free));
 
 			Map<String, Object> footer = new HashMap<>();
 			footer.put("text", "만세력 서비스");
@@ -176,29 +167,23 @@ public class DiscordNotificationService {
 
 			restTemplate.postForEntity(interpretationRequestWebhookUrl, request, String.class);
 
-			log.info("Discord 사주 요청 알림 전송 완료: userName={}", userName);
+			log.info("Discord 사주 요청 알림 전송 완료: paymentId={}", paymentId);
 
 		} catch (Exception e) {
 			log.error("Discord 사주 요청 알림 전송 실패", e);
 		}
 	}
 
-	public void sendCompatibilityRequestNotification(
-		String person1Name,
-		String person1Birthdate,
-		String person2Name,
-		String person2Birthdate
-	) {
+	/**
+	 * 궁합 해석 요청 알림. 결제 ID 와 상품, 유료·무료 구분만 보낸다. 두 사람의 이름과 생년월일은 보내지 않는다. 궁합 상대는 서비스에
+	 * 가입해 동의한 사람이 아니다.
+	 */
+	public void sendCompatibilityRequestNotification(Long paymentId, String productLabel, boolean free) {
 		try {
 			Map<String, Object> embed = new HashMap<>();
 			embed.put("title", "💕 궁합 해석 요청");
 			embed.put("color", 15277667); // 핑크색
-			embed.put("description", String.format(
-				"**대상자1:** %s (%s)\n" +
-					"**대상자2:** %s (%s)",
-				person1Name, person1Birthdate,
-				person2Name, person2Birthdate
-			));
+			embed.put("description", interpretationRequestDescription(paymentId, productLabel, free));
 
 			Map<String, Object> footer = new HashMap<>();
 			footer.put("text", "만세력 서비스");
@@ -214,11 +199,22 @@ public class DiscordNotificationService {
 
 			restTemplate.postForEntity(interpretationRequestWebhookUrl, request, String.class);
 
-			log.info("Discord 궁합 요청 알림 전송 완료: {} & {}", person1Name, person2Name);
+			log.info("Discord 궁합 요청 알림 전송 완료: paymentId={}", paymentId);
 
 		} catch (Exception e) {
 			log.error("Discord 궁합 요청 알림 전송 실패", e);
 		}
+	}
+
+	private static String interpretationRequestDescription(Long paymentId, String productLabel, boolean free) {
+		return String.format(
+			"**결제 ID:** %d\n" +
+				"**상품:** %s\n" +
+				"**구분:** %s",
+			paymentId,
+			productLabel,
+			free ? "무료" : "유료"
+		);
 	}
 
 	public void sendUserWithdrawnNotification(String userName, String email) {

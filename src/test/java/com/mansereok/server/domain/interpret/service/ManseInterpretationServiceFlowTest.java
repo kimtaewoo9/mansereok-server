@@ -2,6 +2,7 @@ package com.mansereok.server.domain.interpret.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
@@ -14,6 +15,10 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mansereok.server.domain.interpret.client.OpenAiProperties;
 import com.mansereok.server.domain.interpret.client.OpenAiResponsesClient;
@@ -25,10 +30,12 @@ import com.mansereok.server.domain.interpret.entity.Result;
 import com.mansereok.server.domain.interpret.entity.ResultStatus;
 import com.mansereok.server.domain.interpret.exception.InterpretationRunOutdatedException;
 import com.mansereok.server.domain.interpret.postprocess.AnalysisNormalizer;
+import com.mansereok.server.domain.interpret.product.InterpretationProduct;
+import com.mansereok.server.domain.interpret.prompt.CompatibilityPromptContext;
 import com.mansereok.server.domain.interpret.prompt.CompatibilityPromptFactory;
+import com.mansereok.server.domain.interpret.prompt.PromptContext;
 import com.mansereok.server.domain.interpret.prompt.PromptFixtures;
 import com.mansereok.server.domain.interpret.prompt.SajuPromptFactory;
-import com.mansereok.server.domain.interpret.repository.CompatibilityResultRepository;
 import com.mansereok.server.domain.notification.service.DiscordNotificationService;
 import com.mansereok.server.domain.user.entity.User;
 import com.mansereok.server.domain.user.service.EmailService;
@@ -37,7 +44,9 @@ import com.mansereok.server.global.exception.OpenAiIncompleteResponseException;
 import jakarta.persistence.EntityNotFoundException;
 import java.lang.reflect.Method;
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Map;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -47,6 +56,7 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.slf4j.LoggerFactory;
 import org.springframework.dao.CannotAcquireLockException;
 import org.springframework.scheduling.annotation.Async;
 
@@ -67,10 +77,11 @@ class ManseInterpretationServiceFlowTest {
 	private static final Long RESULT_ID = 7L;
 	/** 컨트롤러가 해석을 시작한 시각. 결과를 쓰는 두 단계와 결제 ID 로 되돌리는 단계에 그대로 넘어가야 한다. */
 	private static final LocalDateTime STARTED_AT = LocalDateTime.of(2026, 9, 26, 9, 0);
-	private static final Long SUBCATEGORY_ID = 1L;
+	// 경로마다 그 경로가 맡는 종류의 상품을 쓴다.
+	private static final InterpretationProduct SAJU_PRODUCT = InterpretationProduct.LIFE_OVERALL;
+	private static final InterpretationProduct FREE_FORTUNE_PRODUCT = InterpretationProduct.CHANGES_2026;
+	private static final InterpretationProduct COMPATIBILITY_PRODUCT = InterpretationProduct.LOVE_STORY_4;
 	private static final String EMAIL = "tester@example.com";
-
-	private static final Long REUNION_SUBCATEGORY_ID = 19L;
 	private static final String PAID_SINGLE_PROMPT = "유료 단일 프롬프트";
 	private static final String FREE_SINGLE_PROMPT = "무료 단일 프롬프트";
 	private static final String COMPATIBILITY_PROMPT = "궁합 프롬프트";
@@ -102,8 +113,6 @@ class ManseInterpretationServiceFlowTest {
 	private CompatibilityPromptFactory compatibilityPromptFactory;
 	@Mock
 	private AnalysisNormalizer analysisNormalizer;
-	@Mock
-	private CompatibilityResultRepository compatibilityResultRepository;
 
 	private final OpenAiProperties openAiProperties = TestOpenAiProperties.defaults();
 	private final ManseryeokCalculationResponse person1 = PromptFixtures.person1();
@@ -149,7 +158,6 @@ class ManseInterpretationServiceFlowTest {
 			openAiResponsesClient,
 			openAiProperties,
 			userService,
-			compatibilityResultRepository,
 			ogImageGenerationService,
 			discordNotificationService,
 			emailService,
@@ -170,34 +178,52 @@ class ManseInterpretationServiceFlowTest {
 		given(openAiResponsesClient.createResponse(any())).willReturn(COMPATIBILITY_JSON);
 	}
 
+	/**
+	 * 프롬프트 팩터리 스텁은 상품 번호와 사람 묶음을 정확한 값으로 건다. 명령의 상품이나 사람이 팩터리에 제대로 넘어가지 않으면 strict
+	 * stubs 가 실패시킨다.
+	 */
 	private void callInterpret() {
-		given(sajuPromptFactory.create(anyLong(), any())).willReturn(PAID_SINGLE_PROMPT);
-		service.interpret("홍길동", person1, USERNAME, SUBCATEGORY_ID, PAYMENT_ID, STARTED_AT, null);
+		given(sajuPromptFactory.create(SAJU_PRODUCT.id(), person())).willReturn(PAID_SINGLE_PROMPT);
+		service.interpret(sajuCommand(SAJU_PRODUCT));
 	}
 
 	private void callInterpretFree() {
-		given(sajuPromptFactory.createFree(anyLong(), any())).willReturn(FREE_SINGLE_PROMPT);
-		service.interpretFree("홍길동", person1, USERNAME, SUBCATEGORY_ID, PAYMENT_ID, STARTED_AT);
+		given(sajuPromptFactory.createFree(FREE_FORTUNE_PRODUCT.id(), person())).willReturn(FREE_SINGLE_PROMPT);
+		service.interpretFree(sajuCommand(FREE_FORTUNE_PRODUCT));
 	}
 
 	private void callCompatibility() {
-		callCompatibility(SUBCATEGORY_ID);
+		callCompatibility(COMPATIBILITY_PRODUCT);
 	}
 
-	private void callCompatibility(Long subcategoryId) {
-		given(compatibilityPromptFactory.create(anyLong(), any())).willReturn(COMPATIBILITY_PROMPT);
-		service.analyzeCompatibilityWithSubcategory("홍길동", person1, "김영희", person2,
-			subcategoryId, PAYMENT_ID, STARTED_AT, USERNAME, null, null);
+	private void callCompatibility(InterpretationProduct product) {
+		given(compatibilityPromptFactory.create(product.id(), persons())).willReturn(COMPATIBILITY_PROMPT);
+		service.analyzeCompatibilityWithSubcategory(compatibilityCommand(product));
 	}
 
 	private void callCompatibilityFree() {
-		callCompatibilityFree(SUBCATEGORY_ID);
+		callCompatibilityFree(COMPATIBILITY_PRODUCT);
 	}
 
-	private void callCompatibilityFree(Long subcategoryId) {
-		given(compatibilityPromptFactory.create(anyLong(), any())).willReturn(COMPATIBILITY_PROMPT);
-		service.analyzeCompatibilityFree("홍길동", person1, "김영희", person2,
-			subcategoryId, PAYMENT_ID, STARTED_AT, USERNAME);
+	private void callCompatibilityFree(InterpretationProduct product) {
+		given(compatibilityPromptFactory.create(product.id(), persons())).willReturn(COMPATIBILITY_PROMPT);
+		service.analyzeCompatibilityFree(compatibilityCommand(product));
+	}
+
+	private SajuInterpretationCommand sajuCommand(InterpretationProduct product) {
+		return new SajuInterpretationCommand(PAYMENT_ID, STARTED_AT, product, USERNAME, person());
+	}
+
+	private CompatibilityInterpretationCommand compatibilityCommand(InterpretationProduct product) {
+		return new CompatibilityInterpretationCommand(PAYMENT_ID, STARTED_AT, product, USERNAME, persons());
+	}
+
+	private PromptContext person() {
+		return PromptContext.of("홍길동", person1);
+	}
+
+	private CompatibilityPromptContext persons() {
+		return CompatibilityPromptContext.of("홍길동", person1, "김영희", person2);
 	}
 
 	private Gpt5Request captureRequest() {
@@ -301,7 +327,7 @@ class ManseInterpretationServiceFlowTest {
 		}
 
 		@Test
-		@DisplayName("유료 단일 해석은 알림과 이메일이 같은 사용자를 보므로 조회를 한 번만 한다")
+		@DisplayName("유료 단일 해석은 결과 준비 이메일 단계에서만 사용자를 한 번 조회한다")
 		void paidSingleFlowLooksUpUserOnce() {
 			givenSajuResponse();
 
@@ -311,7 +337,7 @@ class ManseInterpretationServiceFlowTest {
 		}
 
 		/**
-		 * 사용자 조회는 알림과 이메일에서만 쓰는 곁가지다. 예전에는 저장 앞 바깥 try 안에서 불러서
+		 * 사용자 조회는 결과 준비 이메일 단계에서만 쓰는 곁가지다. 예전에는 저장 앞 바깥 try 안에서 불러서
 		 * 조회가 실패하면 이미 값을 치른 GPT 결과를 버리고 INPUT_REQUIRED 로 되돌렸다.
 		 * 이제는 결과를 저장하고 이메일만 건너뛴다. 이 차이를 여기서 고정한다.
 		 */
@@ -358,7 +384,7 @@ class ManseInterpretationServiceFlowTest {
 			Gpt5Request request = captureRequest();
 			assertThat(request.getInput()).isEqualTo(FREE_SINGLE_PROMPT);
 			assertThat(request.getInstructions()).contains(BASE_INSTRUCTION_MARK);
-			verify(sajuPromptFactory, never()).create(anyLong(), any());
+			verify(sajuPromptFactory, never()).create(any(), any());
 		}
 
 		@Test
@@ -366,7 +392,7 @@ class ManseInterpretationServiceFlowTest {
 		void paidReunionUsesOwnInstruction() {
 			givenCompatibilityResponse();
 
-			callCompatibility(REUNION_SUBCATEGORY_ID);
+			callCompatibility(InterpretationProduct.REUNION);
 
 			assertThat(captureRequest().getInstructions()).contains(REUNION_INSTRUCTION_MARK);
 		}
@@ -388,7 +414,7 @@ class ManseInterpretationServiceFlowTest {
 		void freeCompatibilityNeverUsesReunionInstruction() {
 			givenCompatibilityResponse();
 
-			callCompatibilityFree(REUNION_SUBCATEGORY_ID);
+			callCompatibilityFree(InterpretationProduct.REUNION);
 
 			Gpt5Request request = captureRequest();
 			assertThat(request.getInput()).isEqualTo(COMPATIBILITY_PROMPT);
@@ -552,7 +578,7 @@ class ManseInterpretationServiceFlowTest {
 				anyString())).willThrow(new CannotAcquireLockException("잠금 대기 초과"));
 
 			// when
-			service.interpret("홍길동", person1, USERNAME, SUBCATEGORY_ID, PAYMENT_ID, STARTED_AT, null);
+			service.interpret(sajuCommand(SAJU_PRODUCT));
 
 			// then
 			verify(resultService, times(1)).rollbackStatusByPaymentId(PAYMENT_ID, STARTED_AT);
@@ -567,8 +593,7 @@ class ManseInterpretationServiceFlowTest {
 				anyString(), eq("김영희"), anyString())).willThrow(new CannotAcquireLockException("잠금 대기 초과"));
 
 			// when
-			service.analyzeCompatibilityWithSubcategory("홍길동", person1, "김영희", person2,
-				SUBCATEGORY_ID, PAYMENT_ID, STARTED_AT, USERNAME, null, null);
+			service.analyzeCompatibilityWithSubcategory(compatibilityCommand(COMPATIBILITY_PRODUCT));
 
 			// then
 			verify(resultService, times(1)).rollbackCompatibilityStatusByPaymentId(PAYMENT_ID, STARTED_AT);
@@ -583,7 +608,7 @@ class ManseInterpretationServiceFlowTest {
 		void rollsBackByPaymentIdWhenNormalizationFails() {
 			// given
 			givenSajuResponse();
-			given(analysisNormalizer.normalizeAnalysis(SUBCATEGORY_ID, "본문입니다"))
+			given(analysisNormalizer.normalizeAnalysis(SAJU_PRODUCT.id(), "본문입니다"))
 				.willThrow(new IllegalArgumentException("정규화 실패"));
 
 			// when
@@ -613,7 +638,7 @@ class ManseInterpretationServiceFlowTest {
 				anyString())).willThrow(outdated());
 
 			// when
-			service.interpret("홍길동", person1, USERNAME, SUBCATEGORY_ID, PAYMENT_ID, STARTED_AT, null);
+			service.interpret(sajuCommand(SAJU_PRODUCT));
 
 			// then
 			verify(openAiResponsesClient, never()).createResponse(any());
@@ -671,7 +696,7 @@ class ManseInterpretationServiceFlowTest {
 			givenSajuResponse();
 			willThrow(new RuntimeException("디스코드 장애"))
 				.given(discordNotificationService)
-				.sendInterpretationRequestNotification(anyString(), any(), anyString(), anyLong());
+				.sendInterpretationRequestNotification(anyLong(), anyString(), anyBoolean());
 
 			callInterpret();
 
@@ -686,7 +711,7 @@ class ManseInterpretationServiceFlowTest {
 			givenSajuResponse();
 			willThrow(new RuntimeException("디스코드 장애"))
 				.given(discordNotificationService)
-				.sendInterpretationRequestNotification(anyString(), any(), anyString(), anyLong());
+				.sendInterpretationRequestNotification(anyLong(), anyString(), anyBoolean());
 
 			callInterpretFree();
 
@@ -737,6 +762,152 @@ class ManseInterpretationServiceFlowTest {
 			verify(sajuResultService).saveFinalResult(RESULT_ID, STARTED_AT, "정규화된 본문", "정규화된 요약");
 			verify(ogImageGenerationService).generateAndUploadOgImage(result);
 			verify(resultService, never()).rollbackStatusByPaymentId(any(), any());
+		}
+	}
+
+	/**
+	 * 해석 요청 알림은 외부 채널(Discord)로 나가고, 해석 로그는 운영 로그 수집 시스템에 쌓인다. 두 곳 모두 결제 ID 와 상품만 남기고
+	 * 요청자와 궁합 상대의 이름, 계정 이메일, 생년월일은 남기지 않는다. 누구의 요청인지는 결제 ID 로 DB 에서 찾는다.
+	 *
+	 * <p>여기서 보는 로그는 해석 서비스와 파이프라인이 남기는 것이다. EmailService 는 mock 이라 유료 경로의 결과 준비 이메일 전송
+	 * 로그는 이 테스트가 보지 않는다.
+	 */
+	@Nested
+	@DisplayName("알림과 로그에 남기는 값")
+	class PersonalDataInNoticeAndLogs {
+
+		private final Logger appLogger = (Logger) LoggerFactory.getLogger("com.mansereok");
+		private final ListAppender<ILoggingEvent> logs = new ListAppender<>();
+		private Level levelBeforeTest;
+
+		@BeforeEach
+		void captureLogsAtInfo() {
+			// 테스트 JVM 의 로그 설정과 상관없이 운영과 같은 INFO 에서 본다.
+			levelBeforeTest = appLogger.getLevel();
+			appLogger.setLevel(Level.INFO);
+			logs.start();
+			appLogger.addAppender(logs);
+		}
+
+		@AfterEach
+		void stopCapturingLogs() {
+			appLogger.detachAppender(logs);
+			logs.stop();
+			appLogger.setLevel(levelBeforeTest);
+		}
+
+		@Test
+		@DisplayName("유료 단일 해석 요청 알림에는 결제 ID·상품·유료 구분만 넘긴다")
+		void paidSingleNoticeCarriesOnlyPaymentAndProduct() {
+			// given
+			givenSajuResponse();
+
+			// when
+			callInterpret();
+
+			// then
+			verify(discordNotificationService).sendInterpretationRequestNotification(PAYMENT_ID, "LIFE_OVERALL(1)", false);
+		}
+
+		@Test
+		@DisplayName("무료 단일 해석 요청 알림에는 결제 ID·상품·무료 구분만 넘긴다")
+		void freeSingleNoticeCarriesOnlyPaymentAndProduct() {
+			// given
+			givenSajuResponse();
+
+			// when
+			callInterpretFree();
+
+			// then
+			verify(discordNotificationService).sendInterpretationRequestNotification(PAYMENT_ID, "CHANGES_2026(101)",
+				true);
+		}
+
+		@Test
+		@DisplayName("유료 궁합 요청 알림에는 결제 ID·상품·유료 구분만 넘긴다")
+		void paidCompatibilityNoticeCarriesOnlyPaymentAndProduct() {
+			// given
+			givenCompatibilityResponse();
+
+			// when
+			callCompatibility();
+
+			// then
+			verify(discordNotificationService).sendCompatibilityRequestNotification(PAYMENT_ID, "LOVE_STORY_4(4)", false);
+		}
+
+		@Test
+		@DisplayName("무료 궁합 요청 알림에는 결제 ID·상품·무료 구분만 넘긴다")
+		void freeCompatibilityNoticeCarriesOnlyPaymentAndProduct() {
+			// given
+			givenCompatibilityResponse();
+
+			// when
+			callCompatibilityFree(InterpretationProduct.REUNION);
+
+			// then
+			verify(discordNotificationService).sendCompatibilityRequestNotification(PAYMENT_ID, "REUNION(19)", true);
+		}
+
+		@Test
+		@DisplayName("유료 단일 해석은 시작 로그에 결제 ID 와 상품을 남기고 해석 서비스·파이프라인 로그에 이름·이메일을 남기지 않는다")
+		void paidSingleLogsNoPersonalData() {
+			// given
+			givenSajuResponse();
+
+			// when
+			callInterpret();
+
+			// then
+			assertThat(logMessages()).as("시작 로그").contains("✅ 사주 해석 요청 시작 - paymentId: 100, product: LIFE_OVERALL(1)");
+			assertThat(String.join("\n", logMessages())).doesNotContain("홍길동", EMAIL);
+		}
+
+		@Test
+		@DisplayName("무료 단일 해석은 시작 로그에 결제 ID 와 상품을 남기고 해석 서비스·파이프라인 로그에 이름을 남기지 않는다")
+		void freeSingleLogsNoPersonalData() {
+			// given
+			givenSajuResponse();
+
+			// when
+			callInterpretFree();
+
+			// then
+			assertThat(logMessages()).as("시작 로그").contains("🆓 무료 사주 해석 시작 - paymentId: 100, product: CHANGES_2026(101)");
+			assertThat(String.join("\n", logMessages())).doesNotContain("홍길동", EMAIL);
+		}
+
+		@Test
+		@DisplayName("유료 궁합은 시작 로그에 결제 ID 와 상품을 남기고 해석 서비스·파이프라인 로그에 두 사람의 이름을 남기지 않는다")
+		void paidCompatibilityLogsNoPersonalData() {
+			// given
+			givenCompatibilityResponse();
+
+			// when
+			callCompatibility();
+
+			// then
+			assertThat(logMessages()).as("시작 로그").contains("✅ 궁합 분석 요청 시작 - paymentId: 100, product: LOVE_STORY_4(4)");
+			assertThat(String.join("\n", logMessages())).doesNotContain("홍길동", "김영희", EMAIL);
+		}
+
+		@Test
+		@DisplayName("무료 궁합은 시작 로그에 결제 ID 와 상품을 남기고 해석 서비스·파이프라인 로그에 두 사람의 이름을 남기지 않는다")
+		void freeCompatibilityLogsNoPersonalData() {
+			// given
+			givenCompatibilityResponse();
+
+			// when
+			callCompatibilityFree();
+
+			// then
+			assertThat(logMessages()).as("시작 로그")
+				.contains("🆓 무료 궁합/재회운 서비스 시작 - paymentId: 100, product: LOVE_STORY_4(4)");
+			assertThat(String.join("\n", logMessages())).doesNotContain("홍길동", "김영희", EMAIL);
+		}
+
+		private List<String> logMessages() {
+			return logs.list.stream().map(ILoggingEvent::getFormattedMessage).toList();
 		}
 	}
 
