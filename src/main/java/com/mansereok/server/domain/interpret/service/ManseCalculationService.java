@@ -1,6 +1,8 @@
 package com.mansereok.server.domain.interpret.service;
 
+import com.mansereok.server.domain.interpret.calculator.DaewoonDirection;
 import com.mansereok.server.domain.interpret.calculator.FiveElement;
+import com.mansereok.server.domain.interpret.calculator.FourPillars;
 import com.mansereok.server.domain.interpret.calculator.RelationCalculator;
 import com.mansereok.server.domain.interpret.calculator.SinsalCalculator;
 import com.mansereok.server.domain.interpret.calculator.UnseongCalculator;
@@ -88,14 +90,13 @@ public class ManseCalculationService {
 				uncertaintyNotes.add("절입일 출생 + 시간 미입력으로 연주/월주 경계가 불확정입니다.");
 			}
 
-			boolean direction = isRightDirection(request.getGender(), samju.getYearSky());
-			BigFortuneRangeResult bigFortune = calculateBigFortuneRange(direction, samju, rawSolarTime,
+			DaewoonDirection daewoonDirection = decideDaewoonDirection(request.getGender(), samju.getYearSky());
+			BigFortuneRangeResult bigFortune = calculateBigFortuneRange(daewoonDirection, samju, rawSolarTime,
 				timeUnknown, uncertaintyNotes);
 			TimePillarResult timePillar = getTimePillar(samju.getDaySky(), rawSolarTime);
 			String ilganChinese = samju.getDaySky();
 
-			Map<String, List<String>> sinsalInfo = sinsalCalculator.analyzeAllSinsal(
-				ilganChinese,
+			Map<String, List<String>> sinsalInfo = sinsalCalculator.analyzeAllSinsal(new FourPillars(
 				samju.getYearSky(),
 				samju.getYearGround(),
 				samju.getMonthSky(),
@@ -104,7 +105,7 @@ public class ManseCalculationService {
 				samju.getDayGround(),
 				timePillar.getTimeSky(),
 				timePillar.getTimeGround()
-			);
+			));
 			boolean hasGoegang = sinsalCalculator.hasGoegang(ilganChinese, samju.getDayGround());
 			boolean hasBaekho = sinsalCalculator.hasBaekho(ilganChinese, samju.getDayGround());
 			List<String> gongmang = sinsalCalculator.calculateGongmang(ilganChinese,
@@ -167,6 +168,7 @@ public class ManseCalculationService {
 				.bigFortuneStartYear(bigFortune.getBigFortuneStart())
 				.bigFortuneStartYearMin(bigFortune.getBigFortuneStartMin())
 				.bigFortuneStartYearMax(bigFortune.getBigFortuneStartMax())
+				.daewoonDirection(daewoonDirection)
 				.seasonStartTime(samju.getSeasonStartTime())
 				.uncertaintyNotes(uncertaintyNotes.isEmpty() ? null : uncertaintyNotes)
 				.yearSky(formatChinese(samju.getYearSky(), samju.getDaySky(), false, ilganChinese))
@@ -414,7 +416,11 @@ public class ManseCalculationService {
 			.build();
 	}
 
-	private boolean isRightDirection(String gender, String yearSky) {
+	/**
+	 * 대운 방향을 정한다. 양간 해의 남자와 음간 해의 여자는 순행, 그 밖은 역행이다. 이 값을 응답에 실어 프롬프트가 다시 계산하지 않게
+	 * 한다.
+	 */
+	private DaewoonDirection decideDaewoonDirection(String gender, String yearSky) {
 		String normalizedGender = normalizeGender(gender);
 		String minusPlus = sajuDataService.yinYangOf(yearSky);
 
@@ -422,18 +428,18 @@ public class ManseCalculationService {
 			throw new IllegalStateException("연간 " + yearSky + "의 음양 정보를 찾을 수 없습니다");
 		}
 
-		boolean result;
+		DaewoonDirection direction;
 		if (("MALE".equals(normalizedGender) && "양".equals(minusPlus)) ||
 			("FEMALE".equals(normalizedGender) && "음".equals(minusPlus))) {
-			result = true;
+			direction = DaewoonDirection.FORWARD;
 		} else {
-			result = false;
+			direction = DaewoonDirection.BACKWARD;
 		}
 
 		log.debug("대운 방향 판단: gender={}, yearSky={}, minusPlus={}, direction={}",
-			normalizedGender, yearSky, minusPlus, result ? "순행" : "역행");
+			normalizedGender, yearSky, minusPlus, direction.label());
 
-		return result;
+		return direction;
 	}
 
 	private String normalizeGender(String gender) {
@@ -450,29 +456,26 @@ public class ManseCalculationService {
 		};
 	}
 
-	private LocalDateTime getSeasonStartTime(boolean direction, LocalDateTime solarDatetime) {
-		Manse manse;
-
-		if (direction) {
-			manse = manseRepository.findFirstBySeasonStartTimeGreaterThanOrderBySeasonStartTimeAsc(
+	private LocalDateTime getSeasonStartTime(DaewoonDirection direction, LocalDateTime solarDatetime) {
+		Manse manse = switch (direction) {
+			case FORWARD -> manseRepository.findFirstBySeasonStartTimeGreaterThanOrderBySeasonStartTimeAsc(
 					solarDatetime)
 				.orElseThrow(() -> new IllegalArgumentException(
 					"만세력 표에 출생 뒤의 절입이 없어 대운을 셀 수 없는 생년월일입니다."));
-		} else {
-			manse = manseRepository.findFirstBySeasonStartTimeLessThanEqualOrderBySeasonStartTimeDesc(
+			case BACKWARD -> manseRepository.findFirstBySeasonStartTimeLessThanEqualOrderBySeasonStartTimeDesc(
 					solarDatetime)
 				.orElseThrow(() -> new IllegalArgumentException(
 					"만세력 표에 출생 전의 절입이 없어 대운을 셀 수 없는 생년월일입니다."));
-		}
+		};
 
 		// 태어난 때와 가장 가까운 절입 시각이라 생년월일을 한 달 안으로 좁혀 준다.
 		log.debug("절입시간 조회 완료: seasonStartTime={}, direction={}",
-			manse.getSeasonStartTime(), direction ? "순행" : "역행");
+			manse.getSeasonStartTime(), direction.label());
 
 		return manse.getSeasonStartTime();
 	}
 
-	private BigFortuneRangeResult calculateBigFortuneRange(boolean direction, SamjuResult samju,
+	private BigFortuneRangeResult calculateBigFortuneRange(DaewoonDirection direction, SamjuResult samju,
 		LocalTime rawSolarTime, boolean timeUnknown, List<String> uncertaintyNotes) {
 		if (!timeUnknown) {
 			LocalDateTime solarDatetime = LocalDateTime.of(samju.getSolarDate(), rawSolarTime);
@@ -523,15 +526,12 @@ public class ManseCalculationService {
 			.build();
 	}
 
-	private BigFortuneResult getBigFortuneNumber(boolean direction, LocalDateTime seasonStartTime,
+	private BigFortuneResult getBigFortuneNumber(DaewoonDirection direction, LocalDateTime seasonStartTime,
 		LocalDateTime solarDatetime) {
-		long diffDays;
-
-		if (direction) {
-			diffDays = ChronoUnit.DAYS.between(solarDatetime, seasonStartTime);
-		} else {
-			diffDays = ChronoUnit.DAYS.between(seasonStartTime, solarDatetime);
-		}
+		long diffDays = switch (direction) {
+			case FORWARD -> ChronoUnit.DAYS.between(solarDatetime, seasonStartTime);
+			case BACKWARD -> ChronoUnit.DAYS.between(seasonStartTime, solarDatetime);
+		};
 
 		if (diffDays < 4) {
 			int bigFortuneNumber = 1;

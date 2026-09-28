@@ -7,7 +7,9 @@ import com.mansereok.server.domain.interpret.calculator.YongsinCalculator.Yongsi
 import com.mansereok.server.domain.interpret.dto.response.ManseryeokCalculationResponse;
 import com.mansereok.server.domain.interpret.dto.response.ManseryeokCalculationResponse.PillarElement;
 import com.mansereok.server.domain.interpret.dto.response.ManseryeokCalculationResponse.SajuInfo;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -89,6 +91,61 @@ class SajuKeywordSectionsTest {
 			"- [결핍] 목 부족: 성장/확장 동력이 약해 새 일을 벌이는 결단이 늦음. 보완 방향을 조언에 반영하세요.",
 			"- [결핍] 화 부족: 표현과 열정의 발산이 약해 존재감이 묻히기 쉬움. 보완 방향을 조언에 반영하세요.",
 			"- [결핍] 수 부족: 유연한 사고와 휴식이 부족해 번아웃에 취약함. 보완 방향을 조언에 반영하세요.");
+	}
+
+	@Nested
+	@DisplayName("기둥별 신살 줄은")
+	class SinsalByPillar {
+
+		@Test
+		@DisplayName("신살 목록에 모르는 기둥 이름이 있어도 예외 없이 그 키만 건너뛰고 나머지를 적는다")
+		void skipsUnknownPillarLabel() {
+			// given: 계산기가 쓰지 않는 "시지" 키가 섞여 있다
+			Map<String, List<String>> sinsalInfo = new LinkedHashMap<>();
+			sinsalInfo.put("시지", List.of("양인살"));
+			sinsalInfo.put("년주", List.of("역마살"));
+			SajuInfo saju = SajuInfo.builder().sinsalInfo(sinsalInfo).build();
+
+			// when
+			String prompt = appendSinsalFull(saju);
+
+			// then
+			assertThat(prompt).isEqualTo("년주: 역마살\n\n");
+		}
+
+		@Test
+		@DisplayName("키를 넣은 순서와 상관없이 년주·월주·일주·시주 순서로 적고, 괴강살·백호대살·공망은 일주 줄 끝에 붙인다")
+		void writesInPillarOrderWithDayExtras() {
+			// given: 시주부터 거꾸로 넣는다
+			Map<String, List<String>> sinsalInfo = new LinkedHashMap<>();
+			sinsalInfo.put("시주", List.of("양인살"));
+			sinsalInfo.put("일주", List.of("천을귀인"));
+			sinsalInfo.put("월주", List.of("도화살", "화개살"));
+			sinsalInfo.put("년주", List.of("역마살"));
+			SajuInfo saju = SajuInfo.builder()
+				.sinsalInfo(sinsalInfo)
+				.hasGoegang(Boolean.TRUE)
+				.hasBaekho(Boolean.TRUE)
+				.gongmang(List.of("寅", "卯"))
+				.build();
+
+			// when
+			String prompt = appendSinsalFull(saju);
+
+			// then
+			assertThat(prompt.lines()).containsExactly(
+				"년주: 역마살",
+				"월주: 도화살, 화개살",
+				"일주: 천을귀인, 괴강살, 백호대살, 공망:寅,卯",
+				"시주: 양인살",
+				"");
+		}
+
+		private String appendSinsalFull(SajuInfo saju) {
+			StringBuilder prompt = new StringBuilder();
+			SajuKeywordSections.appendSinsalFull(prompt, saju);
+			return prompt.toString();
+		}
 	}
 
 	private static PillarElement element(String fiveCircle) {

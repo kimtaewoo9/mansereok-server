@@ -1,5 +1,6 @@
 package com.mansereok.server.domain.interpret.prompt;
 
+import com.mansereok.server.domain.interpret.calculator.DaewoonDirection;
 import com.mansereok.server.domain.interpret.dto.response.ManseryeokCalculationResponse.SajuInfo;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -40,45 +41,34 @@ final class DaewoonSections {
 		}
 	}
 
-	static String getDaewoonDirection(SajuInfo saju, String gender) {
-		if (saju.getYearSky() == null || saju.getYearSky().getMinusPlus() == null) {
-			return "?";
-		}
-
-		String yearSkyMinusPlus = saju.getYearSky().getMinusPlus();
-		return "MALE".equalsIgnoreCase(gender) ?
-			("양".equals(yearSkyMinusPlus) ? "순행" : "역행") :
-			("양".equals(yearSkyMinusPlus) ? "역행" : "순행");
+	/**
+	 * 만세력 계산이 정한 대운 방향의 이름("순행"·"역행"). 방향이 없으면 "?" 를 쓴다.
+	 */
+	static String directionLabel(SajuInfo saju) {
+		DaewoonDirection direction = saju.getDaewoonDirection();
+		return direction != null ? direction.label() : "?";
 	}
 
 	/**
-	 * 대운 계산 (선형 탐색을 통한 100% 정확한 인덱스 매칭)
+	 * 대운 계산 (선형 탐색을 통한 100% 정확한 인덱스 매칭). 방향은 만세력 계산이 정한 값을 그대로 쓴다.
 	 */
-	static void appendDaewoonPeriods(StringBuilder prompt, SajuInfo saju, String gender,
-		int birthYear, int referenceYear) {
+	static void appendDaewoonPeriods(StringBuilder prompt, SajuInfo saju, int birthYear, int referenceYear) {
 		// 1. 필수 데이터 검증
-		if (saju.getYearSky() == null || saju.getMonthSky() == null
-			|| saju.getMonthGround() == null || saju.getBigFortuneNumber() == null) {
+		if (saju.getMonthSky() == null || saju.getMonthGround() == null || saju.getBigFortuneNumber() == null) {
 			prompt.append("""
 				대운 정보 없음 (필수 데이터 누락)
 				""");
 			return;
 		}
 
-		String yearSkyMinusPlus = saju.getYearSky().getMinusPlus();
-		if (yearSkyMinusPlus == null) {
+		// 2. 대운 방향
+		DaewoonDirection direction = saju.getDaewoonDirection();
+		if (direction == null) {
 			prompt.append("""
-				대운 정보 없음 (음양 정보 누락)
+				대운 정보 없음 (방향 정보 누락)
 				""");
 			return;
 		}
-
-		// 2. 대운 방향 결정
-		boolean isForward = "MALE".equalsIgnoreCase(gender)
-			? "양".equals(yearSkyMinusPlus)
-			: "음".equals(yearSkyMinusPlus);
-
-		String flowDirection = isForward ? "순행" : "역행";
 		int startAge = saju.getBigFortuneNumber();
 
 		// 3. 월주 인덱스 추출
@@ -128,7 +118,7 @@ final class DaewoonSections {
 		prompt.append("""
 			대운 시작: %d세 | 흐름: %s
 			"""
-			.formatted(startAge, flowDirection));
+			.formatted(startAge, direction.label()));
 		String currentDaewoonKor = null;
 		String currentDaewoonChi = null;
 		int currentStartAge = -1;
@@ -142,13 +132,11 @@ final class DaewoonSections {
 			}
 
 			// 월주 다음부터 1대운 시작 (i + 1)
-			int nextIndex;
-			if (isForward) {
-				nextIndex = (monthGapjaIndex + (i + 1)) % 60;
-			} else {
+			int nextIndex = switch (direction) {
+				case FORWARD -> (monthGapjaIndex + (i + 1)) % 60;
 				// 자바 음수 나머지 연산 안전 처리
-				nextIndex = ((monthGapjaIndex - (i + 1)) % 60 + 60) % 60;
-			}
+				case BACKWARD -> ((monthGapjaIndex - (i + 1)) % 60 + 60) % 60;
+			};
 
 			String daewoonKor = GAPJA_CYCLE_KOR.get(nextIndex);
 			String daewoonChi = GAPJA_CYCLE.get(nextIndex);

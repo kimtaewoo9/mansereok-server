@@ -2,8 +2,8 @@ package com.mansereok.server.domain.interpret.prompt;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.mansereok.server.domain.interpret.dto.response.ManseryeokCalculationResponse.PillarElement;
-import com.mansereok.server.domain.interpret.dto.response.ManseryeokCalculationResponse.SajuInfo;
+import com.mansereok.server.domain.interpret.calculator.DaewoonDirection;
+import com.mansereok.server.domain.interpret.dto.response.ManseryeokCalculationResponse;
 import java.time.LocalDate;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -133,39 +133,82 @@ class DaewoonSectionsTest {
 		}
 	}
 
+	/**
+	 * 대운 방향은 만세력 계산이 성별과 년간 음양으로 정해 SajuInfo 에 싣고, 프롬프트는 그 값만 읽는다. 양남음녀 규칙 자체는
+	 * ManseCalculationServiceTest 가 네 조합으로 확인한다.
+	 *
+	 * <p>여기서는 person1(남성·년간 甲 양, 원래 순행)에 방향을 일부러 바꿔 넣어도, 대운 칸의 두 줄("방향:", "흐름:")과 현재 대운 간지가
+	 * 성별·년간이 아니라 실린 방향을 따르는지 본다. person1 의 월주는 乙丑(60갑자 1번), 대운 시작은 5세·1995년이고 기준 연도 2026
+	 * 이면 현재 대운은 네 번째(35~44세)다. 순행이면 1 + 4 = 5번 己巳, 역행이면 1 - 4 = -3 → 57번 辛酉 다.
+	 */
 	@Nested
 	@DisplayName("대운 방향")
 	class Direction {
 
+		private static final int REFERENCE_YEAR = 2026;
+
+		@ParameterizedTest(name = "[{index}] {0}")
+		@CsvSource(textBlock = """
+			# 실린 방향, 시작 줄,             흐름 줄,                    현재 대운 줄
+			FORWARD,  시작:5세 | 방향:순행, 대운 시작: 5세 | 흐름: 순행, ▶ 35~44세: 기사(己巳) (현재)
+			BACKWARD, 시작:5세 | 방향:역행, 대운 시작: 5세 | 흐름: 역행, ▶ 35~44세: 신유(辛酉) (현재)
+			""")
+		@DisplayName("대운 칸의 방향 줄과 흐름 줄, 현재 대운 간지가 모두 SajuInfo 에 실린 방향을 따른다")
+		void bothLinesFollowDirectionInSajuInfo(DaewoonDirection direction, String startLine, String flowLine,
+			String currentLine) {
+			// given
+			ManseryeokCalculationResponse response = PromptFixtures.person1();
+			response.getSaju().setDaewoonDirection(direction);
+
+			// when
+			String prompt = personDetailInfo(response);
+
+			// then
+			assertThat(prompt.lines()).contains(startLine, flowLine, currentLine);
+		}
+
 		/**
-		 * 양남음녀는 순행, 음남양녀는 역행이다. 픽스처 세 개가 덮는 조합은
-		 * 남성·양(순행), 여성·음(순행), 남성·음(역행) 뿐이라 여성·양(역행)은 여기서만 고정된다.
+		 * 출생시간을 비우면 대운 시작 나이가 범위로만 있어서 "시작:4~6세 | 방향:… (출생시간 미입력 추정)" 줄을 따로 쓴다.
+		 * 기대 결과 파일(1-time-unknown.txt)은 순행 한 가지뿐이라, 역행인 사람이 출생시간을 비운 경우를 여기서 함께 본다.
 		 */
-		@ParameterizedTest(name = "{0} 이고 년간이 {1} 이면 {2}")
-		@CsvSource({
-			"MALE, 양, 순행",
-			"MALE, 음, 역행",
-			"FEMALE, 음, 순행",
-			"FEMALE, 양, 역행"
-		})
-		void followsYangMaleYinFemaleRule(String gender, String yearSkyMinusPlus, String expected) {
-			assertThat(DaewoonSections.getDaewoonDirection(sajuWithYearSky(yearSkyMinusPlus),
-				gender)).isEqualTo(expected);
+		@ParameterizedTest(name = "[{index}] {0}")
+		@CsvSource(textBlock = """
+			# 실린 방향, 시작 줄
+			FORWARD,  시작:4~6세 | 방향:순행 (출생시간 미입력 추정)
+			BACKWARD, 시작:4~6세 | 방향:역행 (출생시간 미입력 추정)
+			""")
+		@DisplayName("출생시간을 비워 대운 시작 나이가 범위뿐이어도 방향 줄은 SajuInfo 에 실린 방향을 따른다")
+		void rangeLineFollowsDirectionWhenBirthTimeUnknown(DaewoonDirection direction, String startLine) {
+			// given
+			ManseryeokCalculationResponse response = PromptFixtures.personTimeUnknown();
+			response.getSaju().setDaewoonDirection(direction);
+
+			// when
+			String prompt = personDetailInfo(response);
+
+			// then
+			assertThat(prompt.lines()).contains(startLine);
 		}
 
 		@Test
-		@DisplayName("년간 음양을 알 수 없으면 물음표를 돌려준다")
-		void unknownPolarityReturnsQuestionMark() {
-			assertThat(DaewoonSections.getDaewoonDirection(sajuWithYearSky(null), "MALE"))
-				.isEqualTo("?");
-			assertThat(DaewoonSections.getDaewoonDirection(SajuInfo.builder().build(), "MALE"))
-				.isEqualTo("?");
+		@DisplayName("실린 방향이 없으면 방향 줄은 물음표로 쓰고 대운 목록 대신 방향 정보가 없다고 쓴다")
+		void writesUnknownWhenDirectionIsMissing() {
+			// given
+			ManseryeokCalculationResponse response = PromptFixtures.person1();
+			response.getSaju().setDaewoonDirection(null);
+
+			// when
+			String prompt = personDetailInfo(response);
+
+			// then
+			assertThat(prompt.lines()).contains("시작:5세 | 방향:?", "대운 정보 없음 (방향 정보 누락)");
+			assertThat(prompt).doesNotContain("흐름:");
 		}
 
-		private SajuInfo sajuWithYearSky(String minusPlus) {
-			return SajuInfo.builder()
-				.yearSky(PillarElement.builder().minusPlus(minusPlus).build())
-				.build();
+		private String personDetailInfo(ManseryeokCalculationResponse response) {
+			StringBuilder prompt = new StringBuilder();
+			SajuProfileSections.appendPersonDetailInfo(prompt, "테스트", response, REFERENCE_YEAR);
+			return prompt.toString();
 		}
 	}
 }

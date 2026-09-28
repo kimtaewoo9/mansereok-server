@@ -1,6 +1,7 @@
 package com.mansereok.server.domain.interpret.dto.response;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.mansereok.server.domain.interpret.calculator.DaewoonDirection;
 import com.mansereok.server.domain.interpret.calculator.YongsinCalculator.YongsinResult;
 import io.swagger.v3.oas.annotations.media.Schema;
 import java.time.LocalDate;
@@ -60,6 +61,9 @@ public class ManseryeokCalculationResponse {
 			private Integer bigFortuneStartYearMin;
 			@JsonProperty("big_fortune_start_year_max")
 			private Integer bigFortuneStartYearMax;
+			@JsonProperty("daewoon_direction")
+			@Schema(description = "대운 방향. 양남음녀는 순행, 음남양녀는 역행", example = "순행")
+			private DaewoonDirection daewoonDirection;
 			@JsonProperty("season_start_time")
 			private String seasonStartTime;
 			@JsonProperty("uncertainty_notes")

@@ -49,13 +49,12 @@ class SinsalCalculatorTest {
 	@Test
 	void shouldDetectWoldeokAndWoldeokhapByMonthBranch() {
 		// 寅월: 월덕귀인=丙, 월덕합=辛
-		Map<String, List<String>> result = calculator.analyzeAllSinsal(
-			"甲",
+		Map<String, List<String>> result = calculator.analyzeAllSinsal(new FourPillars(
 			"丙", "子",
 			"辛", "寅",
 			"甲", "戌",
 			null, null
-		);
+		));
 
 		assertTrue(result.get("년주").contains("월덕귀인"));
 		assertTrue(result.get("월주").contains("월덕합"));
@@ -64,13 +63,12 @@ class SinsalCalculatorTest {
 	@Test
 	void shouldDetectMunchangByDayStem() {
 		// 壬일간의 문창귀인은 寅
-		Map<String, List<String>> result = calculator.analyzeAllSinsal(
-			"壬",
+		Map<String, List<String>> result = calculator.analyzeAllSinsal(new FourPillars(
 			"甲", "子",
 			"乙", "申",
 			"壬", "辰",
 			"丙", "寅"
-		);
+		));
 
 		assertTrue(result.get("시주").contains("문창귀인"));
 	}
@@ -85,13 +83,12 @@ class SinsalCalculatorTest {
 	@Test
 	void shouldDetectCheondeokAndCheondeokhapByMonthBranch() {
 		// 寅월: 천덕귀인=丁, 천덕합=壬
-		Map<String, List<String>> result = calculator.analyzeAllSinsal(
-			"甲",
+		Map<String, List<String>> result = calculator.analyzeAllSinsal(new FourPillars(
 			"丁", "子",
 			"壬", "寅",
 			"甲", "戌",
 			null, null
-		);
+		));
 
 		assertTrue(result.get("년주").contains("천덕귀인"));
 		assertTrue(result.get("월주").contains("천덕합"));
@@ -100,13 +97,12 @@ class SinsalCalculatorTest {
 	@Test
 	void shouldDetectTaegeukAndGukinGwiin() {
 		// 甲일간: 태극귀인(子/午), 국인귀인(戌)
-		Map<String, List<String>> result = calculator.analyzeAllSinsal(
-			"甲",
+		Map<String, List<String>> result = calculator.analyzeAllSinsal(new FourPillars(
 			"丙", "子",
 			"辛", "寅",
 			"甲", "戌",
 			null, null
-		);
+		));
 
 		assertTrue(result.get("년주").contains("태극귀인"));
 		assertTrue(result.get("일주").contains("국인귀인"));
@@ -117,13 +113,12 @@ class SinsalCalculatorTest {
 		// 사용자 제보 케이스:
 		// 년주 戊寅 / 월주 庚申 / 일주 壬子 / 시주 丙午
 		// 壬일간 기준 문창귀인=寅(년지), 申월 기준 월덕귀인=壬(일간)
-		Map<String, List<String>> result = calculator.analyzeAllSinsal(
-			"壬",
+		Map<String, List<String>> result = calculator.analyzeAllSinsal(new FourPillars(
 			"戊", "寅",
 			"庚", "申",
 			"壬", "子",
 			"丙", "午"
-		);
+		));
 
 		assertTrue(result.get("년주").contains("문창귀인"));
 		assertTrue(result.get("일주").contains("월덕귀인"));
@@ -247,8 +242,8 @@ class SinsalCalculatorTest {
 		@DisplayName("일간이 비어 있으면 원인을 적은 NullPointerException 을 던진다")
 		void rejectsMissingDayStem() {
 			// when & then
-			assertThatThrownBy(() -> calculator.analyzeAllSinsal(
-				null, "甲", "戌", "甲", "寅", "甲", "戌", null, null))
+			assertThatThrownBy(() -> calculator.analyzeAllSinsal(new FourPillars(
+				"甲", "戌", "甲", "寅", null, "戌", null, null)))
 				.isInstanceOf(NullPointerException.class)
 				.hasMessage("일간이 비어 있습니다");
 		}
@@ -428,8 +423,8 @@ class SinsalCalculatorTest {
 			""")
 		void woldeokAttachesToStemOfMonth(String monthBranch, String woldeokStem, String woldeokhapStem) {
 			// when
-			Map<String, List<String>> result = calculator.analyzeAllSinsal(
-				"甲", woldeokStem, "戌", "甲", monthBranch, "甲", "戌", woldeokhapStem, "戌");
+			Map<String, List<String>> result = calculator.analyzeAllSinsal(new FourPillars(
+				woldeokStem, "戌", "甲", monthBranch, "甲", "戌", woldeokhapStem, "戌"));
 
 			// then
 			assertThat(result.get("년주")).contains("월덕귀인");
@@ -451,8 +446,8 @@ class SinsalCalculatorTest {
 			""")
 		void cheondeokAttachesToStemOfMonth(String monthBranch, String cheondeokStem, String cheondeokhapStem) {
 			// when
-			Map<String, List<String>> result = calculator.analyzeAllSinsal(
-				"甲", cheondeokStem, "戌", "甲", monthBranch, "甲", "戌", cheondeokhapStem, "戌");
+			Map<String, List<String>> result = calculator.analyzeAllSinsal(new FourPillars(
+				cheondeokStem, "戌", "甲", monthBranch, "甲", "戌", cheondeokhapStem, "戌"));
 
 			// then
 			assertThat(result.get("년주")).contains("천덕귀인");
@@ -471,20 +466,58 @@ class SinsalCalculatorTest {
 		void cheondeokAttachesToBranchOfMonth(String monthBranch, String cheondeokBranch,
 			String cheondeokhapBranch) {
 			// when
-			Map<String, List<String>> result = calculator.analyzeAllSinsal(
-				"甲", "甲", cheondeokBranch, "甲", monthBranch, "甲", "戌", null, cheondeokhapBranch);
+			Map<String, List<String>> result = calculator.analyzeAllSinsal(new FourPillars(
+				"甲", cheondeokBranch, "甲", monthBranch, "甲", "戌", null, cheondeokhapBranch));
 
 			// then
 			assertThat(result.get("년주")).contains("천덕귀인");
 			assertThat(result.get("시주")).contains("천덕합");
 		}
+
+		/**
+		 * 네 기둥을 한 묶음으로 넘기므로, 월지 자리에 다른 글자를 넣는 실수 없이 월지 하나만 바꿔 볼 수 있다. 寅월의 월덕귀인은 丙·천덕귀인은
+		 * 丁, 卯월의 월덕귀인은 甲·천덕귀인은 申 이다.
+		 */
+		@ParameterizedTest(name = "[{index}] 월지 {0} → 월덕귀인 {1}, 천덕귀인 {2}")
+		@MethodSource("com.mansereok.server.domain.interpret.calculator.SinsalCalculatorTest#monthBranchAndGwiinPillars")
+		@DisplayName("나머지 일곱 글자는 그대로 두고 월지만 바꾸면 월덕귀인·천덕귀인이 붙는 기둥이 월지를 따라 바뀐다")
+		void gwiinPillarsFollowMonthBranchOnly(String monthBranch, List<String> woldeokPillars,
+			List<String> cheondeokPillars) {
+			// given: 년주 丙申, 월간 甲, 일주 甲戌, 시주 없음
+			FourPillars pillars = new FourPillars("丙", "申", "甲", monthBranch, "甲", "戌", null, null);
+
+			// when
+			Map<String, List<String>> result = calculator.analyzeAllSinsal(pillars);
+
+			// then
+			assertThat(pillarsHaving(result, "월덕귀인")).as("월덕귀인이 붙은 기둥").isEqualTo(woldeokPillars);
+			assertThat(pillarsHaving(result, "천덕귀인")).as("천덕귀인이 붙은 기둥").isEqualTo(cheondeokPillars);
+		}
+	}
+
+	static Stream<Arguments> monthBranchAndGwiinPillars() {
+		return Stream.of(
+			// 寅월: 월덕 丙 은 년간, 천덕 丁 은 여덟 글자에 없다
+			Arguments.of("寅", List.of("년주"), List.of()),
+			// 卯월: 월덕 甲 은 월간·일간, 천덕 申 은 년지
+			Arguments.of("卯", List.of("월주", "일주"), List.of("년주")));
+	}
+
+	/**
+	 * 신살 결과에서 그 신살이 붙은 기둥 라벨을 년주·월주·일주·시주 순서로 꺼낸다.
+	 */
+	private static List<String> pillarsHaving(Map<String, List<String>> result, String sinsal) {
+		return Stream.of(Pillar.values())
+			.map(Pillar::label)
+			.filter(label -> result.containsKey(label) && result.get(label).contains(sinsal))
+			.toList();
 	}
 
 	/**
 	 * 시주에 붙은 신살만 꺼낸다. 년간·월간·월지는 결과에 상관없는 값으로 고정하고, 시간은 비워 천간 기준 신살이 끼지 않게 한다.
 	 */
 	private List<String> timePillarSinsal(String stem, String yearBranch, String dayBranch, String timeBranch) {
-		return calculator.analyzeAllSinsal(stem, "甲", yearBranch, "甲", "戌", stem, dayBranch, null, timeBranch)
+		return calculator.analyzeAllSinsal(new FourPillars("甲", yearBranch, "甲", "戌", stem, dayBranch, null, timeBranch))
 			.get("시주");
 	}
 

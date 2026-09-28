@@ -8,7 +8,9 @@ import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
 import static org.mockito.Mockito.never;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.mansereok.server.domain.interpret.calculator.DaewoonDirection;
 import com.mansereok.server.domain.interpret.calculator.RelationCalculator;
 import com.mansereok.server.domain.interpret.calculator.SinsalCalculator;
 import com.mansereok.server.domain.interpret.calculator.UnseongCalculator;
@@ -526,6 +528,52 @@ class ManseCalculationServiceTest {
 				// then
 				then(realTable).should().findFirstBySeasonStartTimeLessThanEqualOrderBySeasonStartTimeDesc(birth);
 				then(realTable).should(never()).findFirstBySeasonStartTimeGreaterThanOrderBySeasonStartTimeAsc(any());
+			}
+		}
+
+		/**
+		 * 대운 방향은 응답에 실려 프롬프트가 그대로 읽는다. 성별 둘과 년간 음양 둘의 네 조합을 모두 본다.
+		 */
+		@Nested
+		@DisplayName("대운 방향은")
+		class WhenDecidingDaewoonDirection {
+
+			@ParameterizedTest(name = "[{index}] {0}")
+			@DisplayName("양간 해 남자와 음간 해 여자는 순행, 음간 해 남자와 양간 해 여자는 역행으로 응답에 싣는다")
+			@CsvSource(delimiter = '|', textBlock = """
+				# 사례            | 날짜       | 시각  | 성별   | 대운 방향
+				戊 양간 해 남자   | 1998-09-02 | 12:02 | MALE   | FORWARD
+				戊 양간 해 여자   | 1998-09-02 | 12:02 | FEMALE | BACKWARD
+				癸 음간 해 여자   | 1993-06-03 | 10:30 | FEMALE | FORWARD
+				癸 음간 해 남자   | 1993-06-03 | 10:30 | MALE   | BACKWARD
+				""")
+			void carriesDirectionByGenderAndYearStem(String description, LocalDate date, LocalTime time,
+				String gender, DaewoonDirection expected) {
+				// when
+				SajuInfo saju = service.calculate(solarRequest(date, time, gender)).getSaju();
+
+				// then
+				assertThat(saju.getDaewoonDirection()).isEqualTo(expected);
+			}
+
+			@ParameterizedTest(name = "[{index}] {0} → \"{1}\"")
+			@DisplayName("응답 JSON 의 saju.daewoon_direction 에는 enum 이름이 아니라 순행·역행이 나간다")
+			@CsvSource(textBlock = """
+				# 성별(1998-09-02 12:02, 戊 양간 해), JSON 값
+				MALE,   순행
+				FEMALE, 역행
+				""")
+			void writesDirectionLabelToJson(String gender, String label) throws Exception {
+				// given
+				ObjectMapper objectMapper = Jackson2ObjectMapperBuilder.json().build();
+				ManseryeokCalculationResponse response = service.calculate(
+					solarRequest(LocalDate.of(1998, 9, 2), LocalTime.of(12, 2), gender));
+
+				// when
+				JsonNode json = objectMapper.readTree(objectMapper.writeValueAsString(response));
+
+				// then
+				assertThat(json.path("saju").path("daewoon_direction").asText()).isEqualTo(label);
 			}
 		}
 

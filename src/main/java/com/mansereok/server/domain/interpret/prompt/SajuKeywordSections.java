@@ -1,58 +1,70 @@
 package com.mansereok.server.domain.interpret.prompt;
 
 import com.mansereok.server.domain.interpret.calculator.FiveElement;
+import com.mansereok.server.domain.interpret.calculator.Pillar;
 import com.mansereok.server.domain.interpret.dto.response.ManseryeokCalculationResponse;
 import com.mansereok.server.domain.interpret.dto.response.ManseryeokCalculationResponse.PillarElement;
 import com.mansereok.server.domain.interpret.dto.response.ManseryeokCalculationResponse.SajuInfo;
 import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.HashMap;
+import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+import lombok.extern.slf4j.Slf4j;
 
 /**
  * 신살과 해석 키워드 블록.
  */
+@Slf4j
 final class SajuKeywordSections {
 
 	private SajuKeywordSections() {
 	}
 
+	/**
+	 * 기둥별 신살을 년주·월주·일주·시주 순서로 적는다. 신살 목록의 키는 {@link Pillar#label()} 이고, 모르는 키는 경고 로그만 남기고
+	 * 건너뛴다. 키 하나 때문에 해석 전체가 실패하지 않게 한다.
+	 */
 	static void appendSinsalFull(StringBuilder prompt, SajuInfo saju) {
-		Map<String, List<String>> sinsalByPillar = new HashMap<>();
-		sinsalByPillar.put("년주", new ArrayList<>());
-		sinsalByPillar.put("월주", new ArrayList<>());
-		sinsalByPillar.put("일주", new ArrayList<>());
-		sinsalByPillar.put("시주", new ArrayList<>());
+		Map<Pillar, List<String>> sinsalByPillar = new EnumMap<>(Pillar.class);
+		for (Pillar pillar : Pillar.values()) {
+			sinsalByPillar.put(pillar, new ArrayList<>());
+		}
 
 		// 각 기둥별 신살 수집
 		if (saju.getSinsalInfo() != null) {
-			saju.getSinsalInfo().forEach((pillar, sinsals) -> {
-				if (sinsals != null && !sinsals.isEmpty()) {
-					sinsalByPillar.get(pillar).addAll(sinsals);
+			saju.getSinsalInfo().forEach((label, sinsals) -> {
+				if (sinsals == null || sinsals.isEmpty()) {
+					return;
 				}
+				Optional<Pillar> pillar = Pillar.fromLabel(label);
+				if (pillar.isEmpty()) {
+					log.warn("신살 목록에 모르는 기둥 이름이 있어 건너뜁니다: {}", label);
+					return;
+				}
+				sinsalByPillar.get(pillar.get()).addAll(sinsals);
 			});
 		}
 
 		// 특수 신살 추가 (일주)
 		if (Boolean.TRUE.equals(saju.getHasGoegang())) {
-			sinsalByPillar.get("일주").add("괴강살");
+			sinsalByPillar.get(Pillar.DAY).add("괴강살");
 		}
 		if (Boolean.TRUE.equals(saju.getHasBaekho())) {
-			sinsalByPillar.get("일주").add("백호대살");
+			sinsalByPillar.get(Pillar.DAY).add("백호대살");
 		}
 
 		// 공망 추가
 		if (saju.getGongmang() != null && !saju.getGongmang().isEmpty()) {
-			sinsalByPillar.get("일주").add("공망:" + String.join(",", saju.getGongmang()));
+			sinsalByPillar.get(Pillar.DAY).add("공망:" + String.join(",", saju.getGongmang()));
 		}
 
 		// 기둥별로 출력 (신살이 있는 기둥만)
 		boolean hasSinsal = false;
-		for (String pillar : Arrays.asList("년주", "월주", "일주", "시주")) {
-			List<String> sinsals = sinsalByPillar.get(pillar);
+		for (Map.Entry<Pillar, List<String>> entry : sinsalByPillar.entrySet()) {
+			List<String> sinsals = entry.getValue();
 			if (!sinsals.isEmpty()) {
-				prompt.append(pillar).append(": ").append(String.join(", ", sinsals)).append("\n");
+				prompt.append(entry.getKey().label()).append(": ").append(String.join(", ", sinsals)).append("\n");
 				hasSinsal = true;
 			}
 		}

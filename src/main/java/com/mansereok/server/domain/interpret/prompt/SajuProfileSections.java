@@ -1,5 +1,6 @@
 package com.mansereok.server.domain.interpret.prompt;
 
+import com.mansereok.server.domain.interpret.calculator.Pillar;
 import com.mansereok.server.domain.interpret.dto.response.ManseryeokCalculationResponse;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -163,11 +164,11 @@ final class SajuProfileSections {
 			prompt.append("""
 				시작:%d세 | 방향:%s
 				"""
-				.formatted(saju.getBigFortuneNumber(), DaewoonSections.getDaewoonDirection(saju, input.getGender())));
+				.formatted(saju.getBigFortuneNumber(), DaewoonSections.directionLabel(saju)));
 
 			// [수정] birthYear 전달!
 			int birthYear = input.getSolarDate().getYear();
-			DaewoonSections.appendDaewoonPeriods(prompt, saju, input.getGender(), birthYear, referenceYear);
+			DaewoonSections.appendDaewoonPeriods(prompt, saju, birthYear, referenceYear);
 
 		} else if (saju.getBigFortuneNumberMin() != null && saju.getBigFortuneNumberMax() != null) {
 			prompt.append("""
@@ -177,7 +178,7 @@ final class SajuProfileSections {
 				.formatted(
 					saju.getBigFortuneNumberMin(),
 					saju.getBigFortuneNumberMax(),
-					DaewoonSections.getDaewoonDirection(saju, input.getGender())));
+					DaewoonSections.directionLabel(saju)));
 		} else {
 			prompt.append("""
 				대운 정보 없음
@@ -302,10 +303,10 @@ final class SajuProfileSections {
 		prompt.append("""
 			- 사주팔자:
 			""");
-		appendPillarLine(prompt, "년주", saju.getYearSky(), saju.getYearGround());
-		appendPillarLine(prompt, "월주", saju.getMonthSky(), saju.getMonthGround());
-		appendPillarLine(prompt, "일주", saju.getDaySky(), saju.getDayGround());
-		appendPillarLine(prompt, "시주", saju.getTimeSky(), saju.getTimeGround());
+		appendPillarLine(prompt, Pillar.YEAR, saju.getYearSky(), saju.getYearGround());
+		appendPillarLine(prompt, Pillar.MONTH, saju.getMonthSky(), saju.getMonthGround());
+		appendPillarLine(prompt, Pillar.DAY, saju.getDaySky(), saju.getDayGround());
+		appendPillarLine(prompt, Pillar.TIME, saju.getTimeSky(), saju.getTimeGround());
 
 		// 관계 정보 (합, 충, 원진 등) - 재회운에서 중요
 		if (saju.getGroundRelations() != null && !saju.getGroundRelations().isEmpty()) {
@@ -327,7 +328,7 @@ final class SajuProfileSections {
 		}
 	}
 
-	private static void appendPillarLine(StringBuilder prompt, String label,
+	private static void appendPillarLine(StringBuilder prompt, Pillar pillar,
 		ManseryeokCalculationResponse.PillarElement sky,
 		ManseryeokCalculationResponse.PillarElement ground) {
 
@@ -335,7 +336,7 @@ final class SajuProfileSections {
 			prompt.append("""
 				  %s: (정보 없음)
 				"""
-				.formatted(label));
+				.formatted(pillar.label()));
 			return;
 		}
 
@@ -343,7 +344,7 @@ final class SajuProfileSections {
 			  %s: %s%s (천간:%s/오행:%s, 지지:%s/오행:%s)
 			"""
 			.formatted(
-				label,
+				pillar.label(),
 				SajuElementSections.orUnknown(sky.getChinese()),
 				SajuElementSections.orUnknown(ground.getChinese()),
 				SajuElementSections.orUnknown(sky.getTenStar()),
