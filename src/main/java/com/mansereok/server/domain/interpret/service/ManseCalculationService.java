@@ -105,7 +105,7 @@ public class ManseCalculationService {
 			List<String> gongmang = sinsalCalculator.calculateGongmang(ilganChinese,
 				samju.getDayGround());
 
-			// [100점짜리 수정] 12. 지지 관계 분석 (모든 조합 6개)
+			// 12. 지지 관계 분석 (모든 조합 6개)
 			List<String> allGroundRelations = new ArrayList<>();
 			addRelations(allGroundRelations, "년지-월지",
 				relationCalculator.analyzeRelation(samju.getYearGround(), samju.getMonthGround()));
@@ -186,7 +186,6 @@ public class ManseCalculationService {
 				.hasGoegang(hasGoegang)
 				.hasBaekho(hasBaekho)
 				.gongmang(gongmang)
-				// [수정] 통합된 리스트 주입
 				.groundRelations(allGroundRelations)
 				.skyRelations(allSkyRelations)
 				.samhap(fullSamhap)
@@ -197,22 +196,21 @@ public class ManseCalculationService {
 			YongsinResult yongsinResult = yongsinCalculator.analyzeYongsin(sajuInfo);
 			sajuInfo.setYongsinInfo(yongsinResult);
 
-					return ManseryeokCalculationResponse.builder()
-						.input(ManseryeokCalculationResponse.InputInfo.builder()
-							.solarDate(request.getSolarDate())
-							.solarTime(rawSolarTime)
-							.timeUnknown(timeUnknown)
-							.gender(normalizeGender(request.getGender()))
-							.isLunar(request.getIsLunar())
-							.build())
-					.saju(sajuInfo)
-					.build();
-
-			} catch (IllegalArgumentException e) {
-				log.warn("만세력 계산 입력값 오류: {}", e.getMessage());
-				throw e;
-			}
+			return ManseryeokCalculationResponse.builder()
+				.input(ManseryeokCalculationResponse.InputInfo.builder()
+					.solarDate(request.getSolarDate())
+					.solarTime(rawSolarTime)
+					.timeUnknown(timeUnknown)
+					.gender(normalizeGender(request.getGender()))
+					.isLunar(request.getIsLunar())
+					.build())
+				.saju(sajuInfo)
+				.build();
+		} catch (IllegalArgumentException e) {
+			log.warn("만세력 계산 입력값 오류: {}", e.getMessage());
+			throw e;
 		}
+	}
 
 	// 헬퍼 메서드: 관계 리스트에 추가
 	private void addRelations(List<String> targetList, String label, List<String> relations) {
@@ -268,8 +266,6 @@ public class ManseCalculationService {
 		return monthlyFortunes.isEmpty() ? null : monthlyFortunes;
 	}
 
-	// ... (나머지 private 메서드들은 기존 코드 그대로 사용) ...
-	// formatChinese, convertBirthToSamju 등등 복사 붙여넣기 하세요.
 	private ManseryeokCalculationResponse.PillarElement formatChineseWithUnseong(
 		String chinese, String ilganChinese, String daySky, boolean isGround,
 		String ilganChineseForJijanggan) {
