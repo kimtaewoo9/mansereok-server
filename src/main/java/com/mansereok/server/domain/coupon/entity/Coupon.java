@@ -10,13 +10,24 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import jakarta.persistence.UniqueConstraint;
 import java.time.LocalDateTime;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
+// 제약 이름을 고정해 엔티티, schema.sql, 운영 DB 가 같은 이름을 쓰게 한다. 운영은 ddl-auto: validate 라 UNIQUE 를 검사하지
+// 않으므로, 바꿀 때는 운영 DDL 과 schema.sql 을 함께 고친다.
 @Entity
-@Table(name = "coupons")
+@Table(
+	name = "coupons",
+	uniqueConstraints = {
+		// 한 사용자는 한 템플릿의 쿠폰을 한 장만 갖는다. 쿠폰 받기는 템플릿 행을 잠근 채 이미 받았는지 먼저 확인하지만, 그 잠금을
+		// 거치지 않고 쿠폰 행이 들어오는 경로가 생겨도 DB 가 마지막으로 막는다. 이미 받았는지 확인하는 조회도 이 인덱스로 한 행만 본다.
+		// user_id 를 앞에 두어 user_id 로만 거르는 내 쿠폰함 조회(findAllAvailableByUserId)도 이 인덱스를 쓴다.
+		@UniqueConstraint(name = "uk_coupons_user_template", columnNames = {"user_id", "template_id"})
+	}
+)
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class Coupon {
