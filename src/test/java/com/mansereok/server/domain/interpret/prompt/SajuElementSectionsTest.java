@@ -13,10 +13,10 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 
 /**
- * 프롬프트에서 값이 비었을 때 쓰던 "?" 와 "-" 표기를 모아 둔 헬퍼. 표기가 달라지면
- * 프롬프트 문자열이 통째로 달라지므로 기본값을 못박아 둔다.
+ * 지장간과 오행 분포를 다루는 조각(SajuElementSections)을 확인한다. 값이 비었을 때 쓰는 "?" 와 "-" 표기, 지장간 줄 형식,
+ * 지장간 비율로 세는 십성 개수를 못박아 둔다. 표기가 달라지면 프롬프트 문자열이 통째로 달라진다.
  */
-@DisplayName("사주 값 표기 헬퍼")
+@DisplayName("지장간·오행 분포 조각")
 class SajuElementSectionsTest {
 
 	@Test

@@ -167,6 +167,29 @@ class DaewoonSectionsTest {
 			assertThat(prompt.lines()).contains(startLine, flowLine, currentLine);
 		}
 
+		/**
+		 * 출생시간을 비우면 대운 시작 나이가 범위로만 있어서 "시작:4~6세 | 방향:… (출생시간 미입력 추정)" 줄을 따로 쓴다.
+		 * 기대 결과 파일(1-time-unknown.txt)은 순행 한 가지뿐이라, 역행인 사람이 출생시간을 비운 경우를 여기서 함께 본다.
+		 */
+		@ParameterizedTest(name = "[{index}] {0}")
+		@CsvSource(textBlock = """
+			# 실린 방향, 시작 줄
+			FORWARD,  시작:4~6세 | 방향:순행 (출생시간 미입력 추정)
+			BACKWARD, 시작:4~6세 | 방향:역행 (출생시간 미입력 추정)
+			""")
+		@DisplayName("출생시간을 비워 대운 시작 나이가 범위뿐이어도 방향 줄은 SajuInfo 에 실린 방향을 따른다")
+		void rangeLineFollowsDirectionWhenBirthTimeUnknown(DaewoonDirection direction, String startLine) {
+			// given
+			ManseryeokCalculationResponse response = PromptFixtures.personTimeUnknown();
+			response.getSaju().setDaewoonDirection(direction);
+
+			// when
+			String prompt = personDetailInfo(response);
+
+			// then
+			assertThat(prompt.lines()).contains(startLine);
+		}
+
 		@Test
 		@DisplayName("실린 방향이 없으면 방향 줄은 물음표로 쓰고 대운 목록 대신 방향 정보가 없다고 쓴다")
 		void writesUnknownWhenDirectionIsMissing() {
