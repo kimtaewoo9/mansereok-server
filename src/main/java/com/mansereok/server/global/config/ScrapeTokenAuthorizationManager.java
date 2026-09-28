@@ -8,7 +8,6 @@ import java.util.function.Supplier;
 import org.springframework.http.HttpHeaders;
 import org.springframework.security.authorization.AuthorizationDecision;
 import org.springframework.security.authorization.AuthorizationManager;
-import org.springframework.security.authorization.AuthorizationResult;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.web.access.intercept.RequestAuthorizationContext;
 
@@ -34,14 +33,9 @@ public final class ScrapeTokenAuthorizationManager implements
 		this.scrapeToken = properties.hasScrapeToken() ? properties.scrapeToken().getBytes(UTF_8) : null;
 	}
 
-	@Override
-	public AuthorizationResult authorize(Supplier<Authentication> authentication,
-		RequestAuthorizationContext context) {
-		return new AuthorizationDecision(carriesScrapeToken(context.getRequest()));
-	}
-
 	/**
-	 * 스프링 시큐리티 6.4 부터 {@link #authorize} 로 바뀌었지만 아직 구현해야 하는 메서드라 같은 판정을 돌려준다.
+	 * 스프링 시큐리티 6.4 부터 폐기 예정 표시가 붙었지만, 6.5 의 요청 판정(RequestMatcherDelegatingAuthorizationManager)은 경로별
+	 * 관리자의 이 메서드를 아직 직접 부른다. 기본 {@link #authorize} 도 이 메서드로 넘기므로 판정은 여기 한 곳에만 둔다.
 	 */
 	@Deprecated
 	@Override

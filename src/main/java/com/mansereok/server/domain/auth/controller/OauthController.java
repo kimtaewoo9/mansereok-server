@@ -17,7 +17,6 @@ import com.mansereok.server.domain.user.service.RefreshTokenService;
 import jakarta.servlet.http.HttpServletResponse;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
-import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -109,7 +108,7 @@ public class OauthController {
 
 		// 이 기기의 토큰만 새로 넣는다. 다른 기기에서 받은 토큰은 그대로 쓸 수 있다.
 		String refreshToken = refreshTokenService.issue(user);
-		response.addHeader(HttpHeaders.SET_COOKIE, refreshTokenCookies.issue(refreshToken).toString());
+		refreshTokenCookies.addIssued(response, refreshToken);
 
 		// 최종 응답 생성 .
 		Map<String, Object> responseBody = Map.of(

@@ -78,7 +78,7 @@ class JwtUtilTest {
 		}
 
 		@Test
-		@DisplayName("시계가 만료 1초 뒤면 ExpiredJwtException 으로 거부한다")
+		@DisplayName("시계가 만료 1초 뒤면 09:30 에 만료된 토큰이라는 ExpiredJwtException 으로 거부한다")
 		void rejectsOneSecondAfterExpiry() {
 			// given
 			String token = jwtUtil.generateAccessToken("member", Map.of("role", "ROLE_USER"));
@@ -86,7 +86,10 @@ class JwtUtilTest {
 
 			// when & then
 			assertThatThrownBy(() -> verifierOneSecondAfterExpiry.parseVerifiedClaims(token))
-				.isInstanceOf(ExpiredJwtException.class);
+				.isInstanceOfSatisfying(ExpiredJwtException.class, e -> {
+					assertThat(e.getClaims().getSubject()).isEqualTo("member");
+					assertThat(e.getClaims().getExpiration()).isEqualTo(Date.from(Instant.parse("2026-01-15T00:30:00Z")));
+				});
 		}
 	}
 

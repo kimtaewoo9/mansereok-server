@@ -33,8 +33,9 @@ import lombok.ToString;
 		// 전체 리뷰 페이지·개수. 위와 같은 방식으로 이 인덱스만 읽는다.
 		@Index(name = "idx_del_created", columnList = "is_deleted, created_at DESC"),
 
-		// 회원 탈퇴 때 그 회원의 리뷰를 지우는 DELETE ... WHERE user_id 가 쓴다. 이 인덱스가 없으면 DELETE 가 표 전체를 훑으며
-		// 훑은 행마다 잠금을 걸어, 탈퇴 트랜잭션이 끝날 때까지 다른 회원의 리뷰 작성까지 막는다.
+		// 회원 탈퇴 때 그 회원의 리뷰를 지우는 DELETE ... WHERE user_id 가 쓴다. 이 인덱스가 없으면 DELETE 가 표 전체를 훑는다.
+		// 탈퇴는 READ COMMITTED 로 돌아 다른 회원의 리뷰 작성을 막지는 않는다. 대신 다른 회원이 아직 커밋하지 않은 리뷰 행을 만나면
+		// 그 트랜잭션이 끝날 때까지 기다린다.
 		@Index(name = "idx_user_del_created", columnList = "user_id, is_deleted, created_at DESC")
 	}
 )
