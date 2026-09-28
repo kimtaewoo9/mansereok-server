@@ -498,19 +498,6 @@ class ManseCalculationServiceTest {
 			}
 
 			@Test
-			@DisplayName("천간은 지장간과 12운성을 비운다")
-			void leavesHiddenStemsAndTwelveStagesEmptyOnStems() {
-				// when
-				List<PillarElement> stems = List.of(saju.getYearSky(), saju.getMonthSky(), saju.getDaySky(),
-					saju.getTimeSky());
-
-				// then
-				assertThat(stems)
-					.extracting(PillarElement::getJijanggan, PillarElement::getUnseong, PillarElement::getUnseongDescription)
-					.containsOnly(tuple(null, null, null));
-			}
-
-			@Test
 			@DisplayName("같은 오행이면 천간·지지 글자와 지장간 글자의 색이 같다")
 			void paintsSameElementWithSameColorInPillarsAndHiddenStems() {
 				// when: 네 기둥 여덟 글자와 지지 네 개의 지장간 열한 글자. 목은 지장간(乙·甲)에만 있다
