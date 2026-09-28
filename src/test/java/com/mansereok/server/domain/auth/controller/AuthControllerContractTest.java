@@ -2,10 +2,14 @@ package com.mansereok.server.domain.auth.controller;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
+import static org.mockito.BDDMockito.willDoNothing;
+import static org.mockito.BDDMockito.willReturn;
 import static org.mockito.BDDMockito.willThrow;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.spy;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -14,6 +18,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.mansereok.server.domain.auth.PasswordResetTokenRepository;
 import com.mansereok.server.domain.auth.service.oauth.GoogleService;
 import com.mansereok.server.domain.auth.service.oauth.KakaoService;
 import com.mansereok.server.domain.auth.service.oauth.NaverService;
@@ -23,12 +28,19 @@ import com.mansereok.server.domain.auth.service.oauth.OauthProfile;
 import com.mansereok.server.domain.auth.service.oauth.XService;
 import com.mansereok.server.domain.auth.util.JwtUtil;
 import com.mansereok.server.domain.auth.util.RefreshTokenCookies;
+import com.mansereok.server.domain.interpret.repository.CompatibilityResultRepository;
+import com.mansereok.server.domain.interpret.repository.ResultRepository;
+import com.mansereok.server.domain.order.repository.OrderRepository;
+import com.mansereok.server.domain.payment.repository.PaymentRepository;
+import com.mansereok.server.domain.review.repository.ReviewRepository;
 import com.mansereok.server.domain.user.controller.ProfileController;
 import com.mansereok.server.domain.user.entity.Gender;
 import com.mansereok.server.domain.user.entity.SocialType;
 import com.mansereok.server.domain.user.entity.User;
+import com.mansereok.server.domain.user.repository.RefreshTokenRepository;
 import com.mansereok.server.domain.user.repository.UserRepository;
 import com.mansereok.server.domain.user.service.CustomUserDetailsService;
+import com.mansereok.server.domain.user.service.EmailService;
 import com.mansereok.server.domain.user.service.RefreshTokenService;
 import com.mansereok.server.domain.user.service.RotatedRefreshToken;
 import com.mansereok.server.domain.user.service.UserService;
@@ -47,7 +59,9 @@ import io.jsonwebtoken.security.Keys;
 import jakarta.servlet.http.Cookie;
 import java.nio.charset.StandardCharsets;
 import java.time.Clock;
+import java.time.Instant;
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -61,7 +75,9 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.mockito.ArgumentCaptor;
 import org.springframework.boot.web.server.Cookie.SameSite;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockHttpServletResponse;
@@ -75,6 +91,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.RequestBuilder;
 import org.springframework.test.web.servlet.ResultActions;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+import org.springframework.transaction.PlatformTransactionManager;
 
 /**
  * 가입·로그인·재발급·로그아웃·비밀번호 재설정·소셜 로그인·탈퇴 API 가 프론트엔드와 맺은 약속(상태 코드, 본문, REFRESH_TOKEN 쿠키)을
@@ -82,10 +99,12 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
  *
  * <p>운영과 같게 세 예외 처리기를 등록한 standalone MockMvc 로 부른다. 이메일 로그인은 운영과 같은 구성(DaoAuthenticationProvider
  * + CustomUserDetailsService + BCrypt)의 진짜 AuthenticationManager 를 쓰고, 회원 조회만 UserRepository 스텁으로 정한다.
- * JwtUtil 과 RefreshTokenCookies 도 진짜다. 리프레시 토큰의 발급·회전·폐기 규칙은 DB 잠금에 기대므로 RefreshTokenServiceTest 와
+ * UserService·JwtUtil·RefreshTokenCookies 도 진짜다. UserService 는 저장소 스텁과 메일·이벤트 발행 목으로 만든다. 컨트롤러가
+ * UserService 로 회원을 따로 찾아 응답을 바꾸면(예전의 소셜 가입 409) 같은 UserRepository 스텁이 그 회원을 돌려주므로 이 테스트가
+ * 잡는다. 리프레시 토큰의 발급·회전·폐기 규칙은 DB 잠금에 기대므로 RefreshTokenServiceTest 와
  * MySQL 테스트가 따로 확인하고, 여기서는 RefreshTokenService 가 돌려주거나 던지는 값을 스텁해 컨트롤러가 그것을 응답으로 옮기는
- * 모양만 본다. 소셜 제공자 호출(네 제공자 서비스)과 계정 찾기·가입(OauthLoginService), 가입·재설정·탈퇴(UserService)도 결과만
- * 스텁한다.
+ * 모양만 본다. 소셜 제공자 호출(네 제공자 서비스)과 계정 찾기·가입(OauthLoginService)도 결과만 스텁한다. UserService 는 spy 로
+ * 감싸, 가입 중복(409)이나 재설정 토큰 확인처럼 결과만 정하고 싶은 테스트는 그 메서드만 스텁하고 나머지는 진짜 코드가 돈다.
  */
 class AuthControllerContractTest {
 
@@ -114,10 +133,12 @@ class AuthControllerContractTest {
 		"path", "/", "max-age", "0", "httponly", "", "secure", "", "samesite", "Lax");
 
 	private static final BCryptPasswordEncoder PASSWORD_ENCODER = new BCryptPasswordEncoder(4);
+	private static final Clock FIXED_CLOCK = Clock.fixed(Instant.parse("2026-09-26T03:00:00Z"), ZoneId.of("Asia/Seoul"));
 
 	private final ObjectMapper objectMapper = new ObjectMapper();
 	private final UserRepository userRepository = mock(UserRepository.class);
-	private final UserService userService = mock(UserService.class);
+	/** 로그인이 비밀번호를 어떤 해시와 비교했는지 보려고 진짜 BCrypt 를 감싼다. */
+	private final BCryptPasswordEncoder passwordEncoder = spy(new BCryptPasswordEncoder(4));
 	private final RefreshTokenService refreshTokenService = mock(RefreshTokenService.class);
 	private final GoogleService googleService = mock(GoogleService.class);
 	private final KakaoService kakaoService = mock(KakaoService.class);
@@ -126,6 +147,8 @@ class AuthControllerContractTest {
 	private final OauthLoginService oauthLoginService = mock(OauthLoginService.class);
 
 	private JwtUtil jwtUtil;
+	/** 진짜 UserService 를 감싼 spy. 스텁하지 않은 메서드는 진짜 코드가 돈다. */
+	private UserService userService;
 	private MockMvc mockMvc;
 
 	@BeforeEach
@@ -133,13 +156,18 @@ class AuthControllerContractTest {
 		JwtProperties jwtProperties = new JwtProperties("auth-controller-contract-test-secret-0123456789",
 			1_800_000L, 604_800_000L, "mansereok");
 		jwtUtil = new JwtUtil(Keys.hmacShaKeyFor(jwtProperties.secret().getBytes(StandardCharsets.UTF_8)),
-			jwtProperties, Clock.systemDefaultZone());
+			jwtProperties, FIXED_CLOCK);
 		RefreshTokenCookies refreshTokenCookies = new RefreshTokenCookies(jwtProperties,
 			new RefreshCookieProperties(SameSite.LAX));
 
 		DaoAuthenticationProvider authenticationProvider = new DaoAuthenticationProvider(
 			new CustomUserDetailsService(userRepository));
-		authenticationProvider.setPasswordEncoder(PASSWORD_ENCODER);
+		authenticationProvider.setPasswordEncoder(passwordEncoder);
+		userService = spy(new UserService(userRepository, mock(ResultRepository.class),
+			mock(CompatibilityResultRepository.class), mock(RefreshTokenRepository.class), mock(OrderRepository.class),
+			mock(PaymentRepository.class), mock(PasswordResetTokenRepository.class), passwordEncoder,
+			mock(EmailService.class), mock(ReviewRepository.class), mock(ApplicationEventPublisher.class),
+			mock(PlatformTransactionManager.class), FIXED_CLOCK));
 
 		AuthController authController = new AuthController(new ProviderManager(authenticationProvider),
 			userService, jwtUtil, refreshTokenService, refreshTokenCookies);
@@ -168,8 +196,8 @@ class AuthControllerContractTest {
 		void returnsRegisteredMember() throws Exception {
 			// given
 			User member = emailMember(1L, "new@example.com", "홍길동");
-			given(userService.createUser("홍길동", "new@example.com", "password1", LocalDate.of(1990, 1, 1),
-				Gender.FEMALE, true, false)).willReturn(member);
+			willReturn(member).given(userService).createUser("홍길동", "new@example.com", "password1",
+				LocalDate.of(1990, 1, 1), Gender.FEMALE, true, false);
 
 			// when
 			MockHttpServletResponse response = mockMvc.perform(
@@ -217,6 +245,51 @@ class AuthControllerContractTest {
 				.andExpect(jsonPath("$.errors." + invalidField).exists());
 			then(userService).shouldHaveNoInteractions();
 		}
+
+		@Test
+		@DisplayName("두 글자 이름으로 개인정보 처리방침에 동의하면 가입하고 200 을 준다")
+		void signsUpWithTwoLetterName() throws Exception {
+			// given
+			// createUser 를 스텁하지 않아 진짜 코드가 돌고, 저장소 스텁이 저장을 받아 준다. IDENTITY 처럼 받은 User 에 id 를 넣어 돌려준다.
+			given(userRepository.saveAndFlush(any(User.class))).willAnswer(invocation -> {
+				User user = invocation.getArgument(0);
+				UserFixture.withId(user, 3L);
+				return user;
+			});
+
+			// when & then
+			mockMvc.perform(register("""
+					{"name": "이훈", "email": "new@example.com", "password": "password1", "privacyPolicyAgreed": true}
+					"""))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.name").value("이훈"))
+				.andExpect(jsonPath("$.role").value("USER"));
+
+			// then
+			ArgumentCaptor<User> savedUser = ArgumentCaptor.forClass(User.class);
+			then(userRepository).should().saveAndFlush(savedUser.capture());
+			assertThat(savedUser.getValue())
+				.extracting(User::getName, User::getEmail, User::getBirthDate, User::getGender,
+					User::isPrivacyPolicyAgreed, User::isMarketingAgreed)
+				.containsExactly("이훈", "new@example.com", null, null, true, false);
+			assertThat(PASSWORD_ENCODER.matches("password1", savedUser.getValue().getPassword())).isTrue();
+		}
+
+		@ParameterizedTest(name = "[{index}] {0} → errors.{2}")
+		@MethodSource("com.mansereok.server.domain.auth.controller.AuthControllerContractTest#rejectedSignUps")
+		@DisplayName("가입 규칙을 어긴 요청이면 가입하지 않고 400 VALIDATION_ERROR 와 어긴 항목 하나의 안내를 준다")
+		void rejectsSignUpBreakingRule(String description, String body, String field, String message)
+			throws Exception {
+			// when
+			MockHttpServletResponse response = mockMvc.perform(register(body)).andReturn().getResponse();
+
+			// then
+			assertThat(response.getStatus()).isEqualTo(400);
+			JsonNode responseBody = objectMapper.readTree(response.getContentAsString(StandardCharsets.UTF_8));
+			assertThat(responseBody.get("errorCode").asText()).isEqualTo("VALIDATION_ERROR");
+			assertThat(responseBody.get("errors")).isEqualTo(objectMapper.createObjectNode().put(field, message));
+			then(userService).shouldHaveNoInteractions();
+		}
 	}
 
 	static Stream<Arguments> invalidRegisterBodies() {
@@ -226,6 +299,23 @@ class AuthControllerContractTest {
 			Arguments.of("비밀번호가 5자", registerBody("홍길동", "new@example.com", "12345", true), "password"),
 			Arguments.of("개인정보 처리방침에 동의하지 않음", registerBody("홍길동", "new@example.com", "password1", false),
 				"privacyPolicyAgreed"));
+	}
+
+	static Stream<Arguments> rejectedSignUps() {
+		return Stream.of(
+			Arguments.of("개인정보 처리방침 미동의", """
+					{"name": "이훈", "email": "new@example.com", "password": "password1", "privacyPolicyAgreed": false}
+					""",
+				"privacyPolicyAgreed", "개인정보 처리방침에 동의해야 가입할 수 있습니다."),
+			Arguments.of("개인정보 처리방침 동의 항목 없음", """
+					{"name": "이훈", "email": "new@example.com", "password": "password1"}
+					""",
+				"privacyPolicyAgreed", "개인정보 처리방침에 동의해야 가입할 수 있습니다."),
+			Arguments.of("이름 21자", """
+					{"name": "가나다라마바사아자차카타파하가나다라마바사", "email": "new@example.com", "password": "password1",
+					 "privacyPolicyAgreed": true}
+					""",
+				"name", "이름은 20자까지 입력할 수 있습니다."));
 	}
 
 	@Nested
@@ -284,16 +374,44 @@ class AuthControllerContractTest {
 		}
 
 		@Test
-		@DisplayName("이메일 가입자가 비밀번호를 틀리면 가입하지 않은 이메일과 같은 401 INVALID_CREDENTIALS 를 준다")
+		@DisplayName("소셜 가입 이메일로 로그인해도 가입하지 않은 이메일처럼 BCrypt 해시와 비교해, 응답 시간으로도 가입 여부가 드러나지 않는다")
+		void socialAccountStillComparesBcryptHash() throws Exception {
+			// given
+			given(userRepository.findByEmail(SOCIAL_MEMBER_EMAIL))
+				.willReturn(Optional.of(googleMember(2L, SOCIAL_MEMBER_EMAIL, "구글회원")));
+
+			// when
+			mockMvc.perform(signIn(SOCIAL_MEMBER_EMAIL, "any-password")).andExpect(status().isUnauthorized());
+
+			// then
+			// 응답 시간은 테스트에서 재기 어려워, 시간을 정하는 BCrypt 비교가 실제로 일어났는지를 대신 본다.
+			ArgumentCaptor<String> comparedHash = ArgumentCaptor.forClass(String.class);
+			then(passwordEncoder).should().matches(eq("any-password"), comparedHash.capture());
+			assertThat(comparedHash.getValue())
+				.as("빈 해시와 비교하면 BCrypt 가 계산 없이 바로 false 를 돌려줘 가입하지 않은 이메일보다 훨씬 빨리 끝난다")
+				.startsWith("$2a$");
+		}
+
+		@Test
+		@DisplayName("이메일 가입자가 비밀번호를 틀리면 가입하지 않은 이메일과 똑같은 401 INVALID_CREDENTIALS 본문을 준다")
 		void wrongPasswordLooksLikeUnknownEmail() throws Exception {
 			// given
 			given(userRepository.findByEmail(EMAIL_MEMBER))
 				.willReturn(Optional.of(emailMember(1L, EMAIL_MEMBER, "홍길동")));
+			given(userRepository.findByEmail(UNKNOWN_EMAIL)).willReturn(Optional.empty());
 
-			// when & then
-			mockMvc.perform(signIn(EMAIL_MEMBER, "wrong-password"))
-				.andExpect(status().isUnauthorized())
-				.andExpect(jsonPath("$.errorCode").value("INVALID_CREDENTIALS"));
+			// when
+			MockHttpServletResponse wrongPasswordResponse = mockMvc.perform(signIn(EMAIL_MEMBER, "wrong-password"))
+				.andReturn().getResponse();
+			MockHttpServletResponse unknownResponse = mockMvc.perform(signIn(UNKNOWN_EMAIL, "wrong-password"))
+				.andReturn().getResponse();
+
+			// then
+			assertThat(wrongPasswordResponse.getStatus()).isEqualTo(401);
+			assertThat(bodyWithoutTimestamp(wrongPasswordResponse))
+				.as("틀린 비밀번호와 가입하지 않은 이메일의 응답 본문(시각 제외)이 같아야 한다")
+				.isEqualTo(bodyWithoutTimestamp(unknownResponse));
+			assertThat(wrongPasswordResponse.getHeaders(HttpHeaders.SET_COOKIE)).isEmpty();
 		}
 	}
 
@@ -406,6 +524,10 @@ class AuthControllerContractTest {
 		@Test
 		@DisplayName("재설정 토큰과 새 비밀번호가 맞으면 200 과 변경 완료 문구를 준다")
 		void changesPassword() throws Exception {
+			// given
+			// 토큰을 쓰는 규칙은 조건부 DELETE 에 기대므로(UserServiceTest·PasswordResetMySqlTest 가 확인한다) 여기서는 결과만 정한다.
+			willDoNothing().given(userService).resetPassword("reset-token", "new-password");
+
 			// when
 			MockHttpServletResponse response = mockMvc.perform(resetConfirm("reset-token", "new-password"))
 				.andReturn().getResponse();
@@ -507,6 +629,9 @@ class AuthControllerContractTest {
 		@DisplayName("로그인한 회원을 지우고 200 과 탈퇴 완료 문구를 주며 리프레시 쿠키와 세션 쿠키를 지운다")
 		void deletesMemberAndExpiresCookies() throws Exception {
 			// given
+			User member = emailMember(1L, EMAIL_MEMBER, "홍길동");
+			given(userRepository.findByUsername(EMAIL_MEMBER)).willReturn(Optional.of(member));
+			given(userRepository.findByIdForUpdate(1L)).willReturn(Optional.of(member));
 			SecurityContextHolder.getContext().setAuthentication(
 				new UsernamePasswordAuthenticationToken(EMAIL_MEMBER, null, List.of()));
 
@@ -519,6 +644,7 @@ class AuthControllerContractTest {
 				{"success": true, "message": "회원 탈퇴가 완료되었습니다."}
 				"""));
 			then(userService).should().deleteUser(EMAIL_MEMBER);
+			then(userRepository).should().delete(member);
 			assertThat(refreshCookie(response).attributesWithoutExpires()).isEqualTo(EXPIRED_COOKIE_ATTRIBUTES);
 			assertThat(SetCookieHeader.findOnly(response.getHeaders(HttpHeaders.SET_COOKIE), "JSESSIONID")
 				.attributes()).containsEntry("max-age", "0");
@@ -545,13 +671,17 @@ class AuthControllerContractTest {
 				.isEqualTo(ISSUED_COOKIE_ATTRIBUTES);
 		}
 
-		@ParameterizedTest(name = "[{index}] {0}")
+		@ParameterizedTest(name = "[{index}] {0} → {2}")
 		@MethodSource("com.mansereok.server.domain.auth.controller.AuthControllerContractTest#expiringRequests")
 		@DisplayName("지우는 쿠키도 새 토큰 쿠키와 같은 속성에 Max-Age=0 으로 한 번만 싣는다")
-		void expireCookieWithSameAttributes(String endpoint, RequestBuilder request) throws Exception {
+		void expireCookieWithSameAttributes(String endpoint, RequestBuilder request, int expectedStatus)
+			throws Exception {
 			// given
 			willThrow(new InvalidRefreshTokenException("만료된 리프레시 토큰입니다. 다시 로그인해주세요."))
 				.given(refreshTokenService).rotate(PRESENTED_TOKEN);
+			User member = emailMember(1L, EMAIL_MEMBER, "홍길동");
+			given(userRepository.findByUsername(EMAIL_MEMBER)).willReturn(Optional.of(member));
+			given(userRepository.findByIdForUpdate(1L)).willReturn(Optional.of(member));
 			SecurityContextHolder.getContext().setAuthentication(
 				new UsernamePasswordAuthenticationToken(EMAIL_MEMBER, null, List.of()));
 
@@ -559,6 +689,7 @@ class AuthControllerContractTest {
 			MockHttpServletResponse response = mockMvc.perform(request).andReturn().getResponse();
 
 			// then
+			assertThat(response.getStatus()).as(endpoint).isEqualTo(expectedStatus);
 			assertThat(refreshCookie(response).attributesWithoutExpires()).as(endpoint)
 				.isEqualTo(EXPIRED_COOKIE_ATTRIBUTES);
 		}
@@ -598,9 +729,9 @@ class AuthControllerContractTest {
 
 	static Stream<Arguments> expiringRequests() {
 		return Stream.of(
-			Arguments.of("재발급 실패", refresh()),
-			Arguments.of("로그아웃", post(SIGN_OUT_URL).cookie(new Cookie("REFRESH_TOKEN", PRESENTED_TOKEN))),
-			Arguments.of("회원 탈퇴", delete(DELETE_ME_URL)));
+			Arguments.of("재발급 실패", refresh(), 401),
+			Arguments.of("로그아웃", post(SIGN_OUT_URL).cookie(new Cookie("REFRESH_TOKEN", PRESENTED_TOKEN)), 204),
+			Arguments.of("회원 탈퇴", delete(DELETE_ME_URL), 200));
 	}
 
 	private static RequestBuilder signIn(String email, String password) {

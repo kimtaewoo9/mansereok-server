@@ -29,7 +29,8 @@ import org.springframework.stereotype.Service;
  * 예외를 그대로 던져 409 로 끝난다.
  *
  * <p>이렇게 먼저 가입한 계정으로 들어간 요청은 이번에 가입한 것이 아니므로 newlyRegistered 가 false 다. 방금 만들어져 프로필이 비어
- * 있는 계정이어도 로그인 응답의 isNewUser 는 false 다. 프로필 조회 응답의 isNewUser 는 프로필 빈칸으로 정하므로 true 다.
+ * 있는 계정이어도 로그인 응답의 isNewUser 는 false 다. 프로필 조회 응답의 newUser(profileIncomplete)는 프로필 빈칸으로 정하므로
+ * true 다.
  *
  * <p>{@link #loginOrRegister} 는 트랜잭션 없이 불려야 한다. 거절된 가입의 롤백과 다시 찾기가 각자의 트랜잭션에서 돌아야 하기
  * 때문이다. 바깥 트랜잭션 안에서 부르면 가입 저장이 그 트랜잭션에 합류해, UNIQUE 위반의 롤백이 바깥 트랜잭션까지 롤백 전용으로

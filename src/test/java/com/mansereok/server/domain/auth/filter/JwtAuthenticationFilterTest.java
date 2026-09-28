@@ -126,6 +126,8 @@ class JwtAuthenticationFilterTest {
 			Arguments.of("다른 키로 서명한 토큰",
 				"Bearer " + signedWithOtherKey(claimsOfThisServer()),
 				JwtErrorCode.SIGNATURE_INVALID, "JWT 토큰의 서명이 유효하지 않습니다."),
+			// 발급자가 다른 토큰은 IncorrectClaimException, 발급자가 없는 토큰은 MissingClaimException 으로 파서를 빠져나온다.
+			// 필터가 둘 중 하나라도 놓치면 그 토큰은 예상하지 못한 오류(INTERNAL_ERROR, 500)로 떨어진다.
 			Arguments.of("같은 키로 서명했지만 발급자가 다른 토큰",
 				"Bearer " + signedByThisServer(claimsOfThisServer().issuer("staging." + ISSUER)),
 				JwtErrorCode.SIGNATURE_INVALID, "JWT 토큰의 발급자가 올바르지 않습니다."),
