@@ -18,6 +18,9 @@ import org.junit.jupiter.params.provider.CsvSource;
  */
 class DiscountCodeTest {
 
+	// 코드 만료를 판정할 지금 시각. 빌더의 기본 만료 시각(실제 지금부터 30일 뒤)보다 앞선 날로 둔다.
+	private static final LocalDateTime NOW = LocalDateTime.of(2026, 1, 1, 12, 0);
+
 	@Nested
 	@DisplayName("할인 금액을 계산할 때")
 	class ApplyDiscount {
@@ -89,7 +92,7 @@ class DiscountCodeTest {
 			DiscountCode discountCode = DiscountCodeFixture.usableCode().maxUses(5).currentUses(4).build();
 
 			// when & then
-			assertThatCode(discountCode::validate).doesNotThrowAnyException();
+			assertThatCode(() -> discountCode.validate(NOW)).doesNotThrowAnyException();
 		}
 
 		@Test
@@ -99,7 +102,7 @@ class DiscountCodeTest {
 			DiscountCode discountCode = DiscountCodeFixture.usableCode().active(false).build();
 
 			// when & then
-			assertThatThrownBy(discountCode::validate)
+			assertThatThrownBy(() -> discountCode.validate(NOW))
 				.isInstanceOf(PaymentException.class)
 				.hasMessage("비활성화된 코드입니다.");
 		}
@@ -109,11 +112,11 @@ class DiscountCodeTest {
 		void rejectsExpiredCode() {
 			// given
 			DiscountCode discountCode = DiscountCodeFixture.usableCode()
-				.expiresAt(LocalDateTime.now().minusDays(1))
+				.expiresAt(NOW.minusDays(1))
 				.build();
 
 			// when & then
-			assertThatThrownBy(discountCode::validate)
+			assertThatThrownBy(() -> discountCode.validate(NOW))
 				.isInstanceOf(PaymentException.class)
 				.hasMessage("기간이 만료된 코드입니다.");
 		}
@@ -125,7 +128,7 @@ class DiscountCodeTest {
 			DiscountCode discountCode = DiscountCodeFixture.usableCode().maxUses(5).currentUses(5).build();
 
 			// when & then
-			assertThatThrownBy(discountCode::validate)
+			assertThatThrownBy(() -> discountCode.validate(NOW))
 				.isInstanceOf(PaymentException.class)
 				.hasMessage("선착순 마감된 코드입니다.");
 		}

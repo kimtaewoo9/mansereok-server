@@ -9,8 +9,10 @@ import static org.mockito.BDDMockito.then;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verifyNoInteractions;
 
+import com.mansereok.server.domain.coupon.dto.CouponEventDto;
 import com.mansereok.server.domain.coupon.entity.Coupon;
 import com.mansereok.server.domain.coupon.entity.CouponTemplate;
+import com.mansereok.server.domain.coupon.repository.CouponEventRow;
 import com.mansereok.server.domain.coupon.repository.CouponRepository;
 import com.mansereok.server.domain.coupon.repository.CouponTemplateRepository;
 import com.mansereok.server.domain.discount.service.DiscountCodeService.DiscountValidationResult;
@@ -18,7 +20,11 @@ import com.mansereok.server.global.exception.CouponSoldOutException;
 import com.mansereok.server.global.exception.PaymentException;
 import com.mansereok.server.support.fixture.CouponFixture;
 import com.mansereok.server.support.fixture.CouponTemplateFixture;
+import java.time.Clock;
+import java.time.Instant;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
+import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -36,7 +42,9 @@ import org.mockito.junit.jupiter.MockitoExtension;
  * 만료 거절, 쿠폰 id 가 없는 주문의 되돌리기, 쿠폰 받기의 발급 기간과 선착순 상한이다.
  *
  * <p>리포지토리 목은 돌려줄 쿠폰·템플릿만 정한다. 쿠폰과 템플릿은 목이 아니라 빌더로 만든 진짜 엔티티라, 사용 여부·발급 수 같은
- * 결과를 엔티티 상태로 확인한다. 서비스가 "지금" 을 직접 읽으므로 기간은 지금 기준 상대 시각으로 둔다.
+ * 결과를 엔티티 상태로 확인한다. 바깥 테스트들은 시스템 시계를 쓰는 서비스로 두고 기간을 지금 기준 상대 시각으로 둔다. 만료 시각
+ * 경계나 유효 기간 문구처럼 "지금" 이 결과를 정하는 테스트는 {@link AtFixedTime} 한 곳에 모으고, 그 안에서만 시각을 고정한
+ * 서비스를 만든다.
  *
  * <p>사용자 id 는 Long 캐시(-128~127) 밖의 값을 쓰고 박싱은 쓰는 곳마다 따로 한다. 쿠폰 소유자 id 와 요청자 id 가 값은 같고 객체는
  * 달라, 소유자 비교를 equals 대신 참조 비교로 바꾸면 본인 쿠폰도 거부되어 테스트가 실패한다.
@@ -223,6 +231,80 @@ class CouponServiceTest {
 				.hasMessage("선착순 마감되었습니다.");
 			assertThat(template.getCurrentIssueCount()).as("템플릿의 발급 수").isEqualTo(100);
 			then(couponRepository).should(never()).saveAndFlush(any(Coupon.class));
+		}
+	}
+
+	@Nested
+	@DisplayName("지금을 2026-09-26 12:00(서울)으로 고정한 시계로")
+	class AtFixedTime {
+
+		// 2026-09-26 12:00 (서울)
+		private static final Clock FIXED_CLOCK = Clock.fixed(Instant.parse("2026-09-26T03:00:00Z"),
+			ZoneId.of("Asia/Seoul"));
+		private static final LocalDateTime NOW = LocalDateTime.of(2026, 9, 26, 12, 0);
+
+		private CouponService couponServiceAtFixedTime;
+
+		@BeforeEach
+		void setUpServiceAtFixedTime() {
+			couponServiceAtFixedTime = new CouponService(couponRepository, couponTemplateRepository, FIXED_CLOCK);
+		}
+
+		@Test
+		@DisplayName("결제에 쓸 쿠폰의 만료 시각이 1초 지났으면, 주문을 저장하기 전인 검증 단계에서 '기간이 만료된 쿠폰입니다.' 로 거절하고 미사용으로 둔다")
+		void rejectsExpiredCouponBeforeOrderIsSaved() {
+			// given
+			Coupon coupon = CouponFixture.usableCoupon().id(COUPON_ID).userId(OWNER_ID)
+				.expiresAt(NOW.minusSeconds(1)).build();
+			given(couponRepository.findByIdWithLock(COUPON_ID)).willReturn(Optional.of(coupon));
+
+			// when & then
+			assertThatThrownBy(() -> couponServiceAtFixedTime.validateAndCalculateCoupon(COUPON_ID, OWNER_ID,
+				ORIGINAL_AMOUNT))
+				.isInstanceOf(PaymentException.class)
+				.hasMessage("기간이 만료된 쿠폰입니다.");
+			assertThat(coupon.isUsed()).isFalse();
+		}
+
+		@Test
+		@DisplayName("결제에 쓸 쿠폰에 만료 시각이 없으면(기간 없는 쿠폰) 할인가를 계산해 돌려준다")
+		void acceptsCouponWithoutExpiry() {
+			// given
+			Coupon coupon = CouponFixture.fixedAmount(2000).id(COUPON_ID).userId(OWNER_ID).expiresAt(null).build();
+			given(couponRepository.findByIdWithLock(COUPON_ID)).willReturn(Optional.of(coupon));
+
+			// when
+			DiscountValidationResult result = couponServiceAtFixedTime.validateAndCalculateCoupon(COUPON_ID,
+				OWNER_ID, ORIGINAL_AMOUNT);
+
+			// then
+			assertThat(result.getFinalAmount()).isEqualTo(8000);
+		}
+
+		@ParameterizedTest(name = "[{index}] 받은 날부터 {0}일, 정한 날짜 {1} → \"{2}\"")
+		@CsvSource(textBlock = """
+			# 받은 날부터 며칠(빈 칸은 없음), 정한 날짜(빈 칸은 없음), 문구
+			30,                    , 2026.10.26 까지
+			  , 2026-12-31T23:59:59, 2026.12.31 까지
+			  ,                    , 기간 제한 없음
+			# 둘 다 있으면 실제 발급과 같이 받은 날부터 며칠이 먼저다
+			30, 2026-12-31T23:59:59, 2026.10.26 까지
+			""")
+		@DisplayName("쿠폰 이벤트 목록은 지금 받으면 쿠폰이 만료될 날짜를 실제 발급과 같은 계산으로 보여 주고, 기간이 없으면 '기간 제한 없음' 이다")
+		void showsExpiryDateOfCouponIssuedNow(Integer validDaysAfterIssue, LocalDateTime validUntil,
+			String expectedText) {
+			// given
+			CouponTemplate template = CouponTemplateFixture.issuableNow().id(TEMPLATE_ID)
+				.validDaysAfterIssue(validDaysAfterIssue).validUntil(validUntil).build();
+			given(couponTemplateRepository.findAllWithIssueStatus(OWNER_ID, NOW))
+				.willReturn(List.of(new CouponEventRow(template, false)));
+
+			// when
+			List<CouponEventDto> events = couponServiceAtFixedTime.getCouponEvents(OWNER_ID);
+
+			// then
+			assertThat(events).singleElement()
+				.satisfies(event -> assertThat(event.getValidPeriod()).isEqualTo(expectedText));
 		}
 	}
 }
