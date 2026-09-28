@@ -7,6 +7,7 @@ import com.mansereok.server.domain.review.dto.response.ReviewEligibilityResponse
 import com.mansereok.server.domain.review.dto.response.ReviewResponse;
 import com.mansereok.server.domain.review.entity.Review;
 import com.mansereok.server.domain.review.repository.ReviewRepository;
+import com.mansereok.server.domain.user.entity.Role;
 import com.mansereok.server.domain.user.entity.User;
 import com.mansereok.server.domain.user.service.UserService;
 import com.mansereok.server.global.exception.PaymentException;
@@ -94,14 +95,31 @@ public class ReviewService {
 		return ReviewResponse.from(savedReview);
 	}
 
+	/**
+	 * 리뷰를 논리적으로 삭제한다(행은 남기고 is_deleted 를 true 로 바꾼다). 관리자(ADMIN, SUPER_ADMIN)만 할 수 있다.
+	 *
+	 * <p>권한은 리뷰를 찾기 전에 확인한다. 그래야 관리자가 아닌 사람이 403 과 404 의 차이로 리뷰 번호가 있는지 알아낼 수 없다.
+	 * 역할은 토큰에 적힌 값이 아니라 DB 의 현재 값을 본다.
+	 *
+	 * @throws AccessDeniedException   요청자가 관리자가 아닐 때(403)
+	 * @throws EntityNotFoundException 요청자나 리뷰가 없을 때(404)
+	 */
 	@Transactional
-	public void deleteReview(Long reviewId, String adminUsername) {
+	public void deleteReview(Long reviewId, String requesterUsername) {
+		User requester = userService.findByUsername(requesterUsername);
+		if (!canDeleteReview(requester.getRole())) {
+			throw new AccessDeniedException("리뷰는 관리자만 삭제할 수 있습니다.");
+		}
+
 		Review review = reviewRepository.findById(reviewId)
 			.orElseThrow(() -> new EntityNotFoundException("해당 리뷰를 찾을 수 없습니다: " + reviewId));
 
-		// 2. 논리적 삭제 처리
+		// 이 트랜잭션에서 조회한 엔티티라 따로 save 하지 않아도 커밋할 때 바뀐 값이 반영된다.
 		review.markAsDeleted();
-		reviewRepository.save(review);
+	}
+
+	private static boolean canDeleteReview(Role role) {
+		return role == Role.ADMIN || role == Role.SUPER_ADMIN;
 	}
 
 	public ReviewEligibilityResponse checkReviewEligibility(String username, Long orderId,

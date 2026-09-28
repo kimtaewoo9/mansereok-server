@@ -59,8 +59,10 @@ public class Review {
 	@Column(name = "user_email") // [추가] 이메일 컬럼 추가
 	private String userEmail;
 
+	// 관리자가 지운 리뷰는 행을 남기고 true 로 표시한다(논리적 삭제). 목록 조회는 false 인 리뷰만 보여 준다.
+	// 권한 검사는 ReviewService.deleteReview 가 한다. 회원 탈퇴 때는 이 표시와 상관없이 그 회원의 리뷰 행을 실제로 지운다.
 	@Column(name = "is_deleted", nullable = false)
-	private boolean isDeleted = false; // 삭제는 관리자만 (논리적 삭제)
+	private boolean isDeleted = false;
 
 	@Column(name = "created_at")
 	private LocalDateTime createdAt;
