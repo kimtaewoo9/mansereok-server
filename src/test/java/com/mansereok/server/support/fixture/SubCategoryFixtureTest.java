@@ -13,16 +13,16 @@ import org.junit.jupiter.api.Test;
 class SubCategoryFixtureTest {
 
 	@Test
-	@DisplayName("기본값으로 만든 유료 상품은 id 1, 제목, 가격 10,000원, 카테고리 1 을 SubCategory 에 그대로 담는다")
-	void paidProductFillsEveryField() {
+	@DisplayName("기본값으로 만든 유료 상품은 id 1, 제목, 가격 10,000원, 카테고리 1 을 SubCategory 에 담고 설명과 아이콘은 비워 둔다")
+	void paidProductDefaults() {
 		// when
 		SubCategory subCategory = SubCategoryFixture.paidProduct().build();
 
 		// then
 		assertThat(subCategory)
-			.extracting(SubCategory::getId, SubCategory::getTitle, SubCategory::getPrice,
-				SubCategory::getCategoryId)
-			.containsExactly(1L, "인생 총운", 10000, 1L);
+			.extracting(SubCategory::getId, SubCategory::getTitle, SubCategory::getDescription,
+				SubCategory::getIcon, SubCategory::getPrice, SubCategory::getCategoryId)
+			.containsExactly(1L, "인생 총운", null, null, 10000, 1L);
 	}
 
 	@Test

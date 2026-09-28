@@ -18,8 +18,8 @@ import org.springframework.http.converter.json.Jackson2ObjectMapperBuilder;
  */
 class SubCategoryDtoTest {
 
-	// 스프링 기본 빌더(Jackson2ObjectMapperBuilder)로 만든 ObjectMapper. 운영 응답은 Spring Boot 가 spring.jackson.* 설정을
-	// 얹은 ObjectMapper 로 쓰지만, 여기서는 그 설정을 반영하지 않는다.
+	// 스프링 기본 빌더(Jackson2ObjectMapperBuilder)로 만든 ObjectMapper. 지금은 application*.yml 에 spring.jackson 설정이 없고
+	// ObjectMapper 를 바꾸는 코드도 없어서, 키 이름과 null 값 포함 여부가 운영 응답과 같다.
 	private final ObjectMapper objectMapper = Jackson2ObjectMapperBuilder.json().build();
 
 	@Test
