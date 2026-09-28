@@ -30,6 +30,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -47,6 +49,8 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
  * <ul>
  *   <li>목록 API 의 네 경로(전체, 상품별, 전체 페이지, 상품별 페이지)가 내보내는 JSON 에 작성자 이메일이 없고 이름이 가려져
  *   있다.</li>
+ *   <li>페이지 목록을 범위 밖의 page·size 로 부르면 {@link GlobalExceptionHandler} 를 거쳐 400, errorCode INVALID_INPUT 과
+ *   한국어 메시지로 끝난다.</li>
  *   <li>관리자가 아닌 회원의 리뷰 삭제 요청은 {@link GlobalExceptionHandler} 를 거쳐 403, errorCode FORBIDDEN 으로 끝난다.</li>
  * </ul>
  *
@@ -90,8 +94,9 @@ class ReviewControllerResponseTest {
 	@Test
 	@DisplayName("전체 리뷰 목록에는 작성자 이메일이 없고 이름은 가려져 있다")
 	void allReviewsHideAuthorEmailAndName() throws Exception {
-		// given
-		given(reviewRepository.findAllLatestReviews()).willReturn(List.of(
+		// given: 로그인 없이 보는 목록은 최신 리뷰를 상한 건수만큼 읽는다. 이 테스트는 이름 가리기를 보므로 상수를 그대로 쓰고,
+		// 상한 값(100) 자체는 ReviewServiceListingTest 가 글자 그대로 적어 지킨다.
+		given(reviewRepository.findAllReviewsWithPagination(0L, ReviewService.PUBLIC_REVIEW_LIMIT)).willReturn(List.of(
 			ReviewFixture.review().userName("홍길동").userEmail("hong@example.com").build()));
 
 		// when
@@ -109,9 +114,10 @@ class ReviewControllerResponseTest {
 	@DisplayName("상품별 리뷰 목록에도 작성자 이메일이 없고 이름은 가려져 있다")
 	void reviewsOfProductHideAuthorEmailAndName() throws Exception {
 		// given
-		given(reviewRepository.findReviewsBySubCategory(3L)).willReturn(List.of(
-			ReviewFixture.review().subCategoryId(3L).userName("남궁민수").userEmail("namgung@example.com")
-				.build()));
+		given(reviewRepository.findReviewsBySubCategoryWithPagination(3L, 0L, ReviewService.PUBLIC_REVIEW_LIMIT))
+			.willReturn(List.of(
+				ReviewFixture.review().subCategoryId(3L).userName("남궁민수").userEmail("namgung@example.com")
+					.build()));
 
 		// when
 		ResultActions result = mockMvc.perform(get("/api/v1/reviews").param("subCategoryId", "3"));
@@ -157,6 +163,25 @@ class ReviewControllerResponseTest {
 		result.andExpect(status().isOk())
 			.andExpect(jsonPath("$.content[0].email").doesNotExist())
 			.andExpect(jsonPath("$.content[0].userName").value("최*우"));
+	}
+
+	@ParameterizedTest(name = "[{index}] page={0}, size={1} → 400 \"{2}\"")
+	@CsvSource(textBlock = """
+		# page, size, 응답 메시지
+		0,  5, 페이지 번호(page)는 1 이상이어야 합니다.
+		1,  0, 페이지 크기(size)는 1 이상 50 이하여야 합니다.
+		1, 51, 페이지 크기(size)는 1 이상 50 이하여야 합니다.
+		""")
+	@DisplayName("페이지 목록을 범위 밖의 page·size 로 부르면 400 과 errorCode INVALID_INPUT, 한국어 메시지로 답한다")
+	void pageOutOfRangeIsAnsweredWithBadRequest(String page, String size, String message) throws Exception {
+		// when
+		ResultActions result = mockMvc.perform(
+			get("/api/v1/reviews/pagination").param("page", page).param("size", size));
+
+		// then
+		result.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.errorCode").value("INVALID_INPUT"))
+			.andExpect(jsonPath("$.message").value(message));
 	}
 
 	@Test

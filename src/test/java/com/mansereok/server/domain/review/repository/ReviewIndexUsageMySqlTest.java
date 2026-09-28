@@ -16,6 +16,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.data.jpa.repository.Query;
 
 /**
@@ -24,9 +25,10 @@ import org.springframework.data.jpa.repository.Query;
  * <p>테스트 DB 는 ddl-auto: update 라 엔티티 @Table 선언대로 인덱스가 생긴다. 운영은 validate 라 같은 이름의 DDL 을 손으로 적용한다.
  * 그래서 여기서 확인한 인덱스 이름과 실행 계획이, 운영에 적용한 뒤 운영에서 EXPLAIN 으로 견줄 기준이 된다.
  *
- * <p>ReviewRepository 의 네이티브 쿼리는 @Query 에 적힌 SQL 을 그대로 꺼내 EXPLAIN 한다. 쿼리를 고쳐 인덱스를 못 타게 되면 이
- * 테스트가 실패한다. 이름 붙은 인자(:subCategoryId 등)는 숫자 값으로 바꿔 넣는다. MySQL 드라이버도 기본 설정에서는 값을 SQL 에
- * 넣어 보내므로 실행 계획이 같다.
+ * <p>ReviewRepository 의 네이티브 쿼리는 @Query 에 적힌 SQL 을 그대로 꺼내 EXPLAIN 한다. 쿼리를 고쳐 인덱스를 못 타게 되거나,
+ * 인덱스를 읽은 뒤 따로 정렬(filesort)하게 되면 이 테스트가 실패한다. 페이지 쿼리의 바깥 SELECT 는 고른 한 페이지(limit 건)를
+ * 일부러 다시 정렬하므로, 정렬이 없어야 하는 곳은 reviews 를 인덱스로 읽는 줄이다. 이름 붙은 인자(:subCategoryId 등)는 숫자
+ * 값으로 바꿔 넣는다. MySQL 드라이버도 기본 설정에서는 값을 SQL 에 넣어 보내므로 실행 계획이 같다.
  *
  * <p>표가 비어 있으면 실행 계획이 실제와 달라질 수 있어, 이번 실행의 번호로 리뷰와 상품을 몇 개 넣고 뒤 정리에서 그 행만 지운다.
  */
@@ -86,7 +88,8 @@ class ReviewIndexUsageMySqlTest extends LocalMySqlTest {
 		// when
 		List<Map<String, Object>> plan = jdbcTemplate.queryForList("EXPLAIN " + sql);
 
-		// then: 페이지 쿼리의 바깥 JOIN 은 별칭 r 로 PRIMARY 를 읽으므로, 인덱스로 찾는 줄은 표 이름이 reviews 인 줄 하나다
+		// then: 페이지 쿼리의 바깥 JOIN 은 별칭 r 로 PRIMARY 를 읽으므로, 인덱스로 찾는 줄은 표 이름이 reviews 인 줄 하나다.
+		// 페이지 쿼리의 바깥 SELECT 에 정렬 단계가 있는지는 따로 확인한다(outerSelectHasSortStep).
 		assertThat(plan).as("실행 계획 %s", plan)
 			.filteredOn(row -> "reviews".equals(row.get("table")))
 			.singleElement()
@@ -94,10 +97,28 @@ class ReviewIndexUsageMySqlTest extends LocalMySqlTest {
 				assertThat(row.get("key")).as("쓰는 인덱스").isEqualTo(expectedIndex);
 				assertThat(String.valueOf(row.get("Extra"))).as("인덱스만 읽고 끝나는지(Using index)")
 					.matches(extra -> extra.contains("Using index") == readsIndexOnly);
+				assertThat(String.valueOf(row.get("Extra"))).as("인덱스 순서대로 읽어 따로 정렬하지 않는지")
+					.doesNotContain("Using filesort");
 			});
+	}
+
+	@ParameterizedTest(name = "[{index}] {0}")
+	@ValueSource(strings = {"findReviewsBySubCategoryWithPagination", "findAllReviewsWithPagination"})
+	@DisplayName("페이지 쿼리의 바깥 SELECT 에 정렬 단계가 있다(바깥 ORDER BY 가 빠지면 실패한다)")
+	void outerSelectHasSortStep(String repositoryMethod) {
+		// given
+		String sql = withValues(nativeQueryOf(repositoryMethod));
+
+		// when
+		List<Map<String, Object>> plan = jdbcTemplate.queryForList("EXPLAIN " + sql);
+
+		// then: 바깥 SELECT(select_type PRIMARY)의 줄에 정렬이 있다. 바깥 ORDER BY 가 빠지면 이 정렬도 사라진다.
+		// 안쪽에서 reviews 를 인덱스로 읽는 줄(DERIVED)에 정렬이 없는 것은 reviewQueryUsesIndexWithoutFilesort 가 본다.
+		// 바깥 ORDER BY 의 보조 키(r.id ASC)는 실행 계획에 드러나지 않으므로, 같은 시각 리뷰 20건의 순서로 ReviewPaginationMySqlTest 가 본다.
 		assertThat(plan).as("실행 계획 %s", plan)
+			.filteredOn(row -> "PRIMARY".equals(row.get("select_type")))
 			.extracting(row -> String.valueOf(row.get("Extra")))
-			.noneMatch(extra -> extra.contains("Using filesort"));
+			.anyMatch(extra -> extra.contains("Using filesort"));
 	}
 
 	@Test

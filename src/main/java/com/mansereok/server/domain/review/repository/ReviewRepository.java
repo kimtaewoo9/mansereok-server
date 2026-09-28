@@ -11,22 +11,21 @@ import org.springframework.stereotype.Repository;
 @Repository
 public interface ReviewRepository extends JpaRepository<Review, Long> {
 
-	// 1. 상품별 리뷰 목록 조회 (최신순 정렬)
-	@Query("SELECT r FROM Review r "
-		+ "WHERE r.subCategoryId = :subCategoryId AND r.isDeleted = false "
-		+ "ORDER BY r.createdAt DESC")
-	List<Review> findReviewsBySubCategory(
-		@Param("subCategoryId") Long subCategoryId
-	);
-
-	@Query("SELECT r FROM Review r "
-		+ "WHERE r.isDeleted = false "
-		+ "ORDER BY r.createdAt DESC")
-	List<Review> findAllLatestReviews();
-
-	// 2. 주문 ID로 리뷰 존재 여부 확인 (하나의 주문당 하나의 리뷰 정책 검증용)
+	// 주문 ID로 리뷰 존재 여부 확인 (하나의 주문당 하나의 리뷰 정책 검증용)
 	boolean existsByOrderId(Long orderId);
 
+	/*
+	 * 아래 두 페이지 쿼리는 같은 모양이다. 안쪽 SELECT 가 인덱스만 읽어 한 페이지의 id 를 고르고, 바깥에서 그 id 로 행 전체를 읽는다.
+	 *
+	 * 정렬은 created_at DESC, id ASC 다. 인덱스의 created_at DESC 뒤에는 기본 키 id 가 오름차순으로 붙어 있어서, 이 순서는 인덱스를
+	 * 읽는 순서 그대로라 따로 정렬하지 않는다(id DESC 로 바꾸면 filesort 가 생긴다). id 까지 넣어야 같은 시각에 쓴 리뷰도 순서가 하나로
+	 * 정해져, 페이지 경계에서 같은 리뷰가 두 페이지에 나오거나 빠지지 않는다.
+	 *
+	 * 바깥 SELECT 에도 같은 ORDER BY 를 둔다. 안쪽의 정렬은 어떤 id 를 고를지만 정하고, JOIN 한 결과의 순서는 SQL 이 보장하지 않는다.
+	 * 옵티마이저가 JOIN 순서를 바꾸면 최신순이 깨진다. 바깥 정렬은 고른 한 페이지(limit 건)만 다시 정렬하므로 비용이 거의 없다.
+	 */
+
+	// 상품별 리뷰 한 페이지. 안쪽은 idx_subcat_del_created 만 읽는다.
 	@Query(
 		value = "SELECT r.id, r.user_id, r.sub_category_id, r.order_id, " +
 			"r.content, r.user_name, r.user_email, r.is_deleted, " +
@@ -35,10 +34,11 @@ public interface ReviewRepository extends JpaRepository<Review, Long> {
 			"   SELECT id " +
 			"   FROM reviews " +
 			"   WHERE sub_category_id = :subCategoryId AND is_deleted = false " +
-			"   ORDER BY created_at DESC " +
+			"   ORDER BY created_at DESC, id ASC " +
 			"   LIMIT :limit OFFSET :offset " +
 			") t " +
-			"JOIN reviews r ON t.id = r.id",
+			"JOIN reviews r ON t.id = r.id " +
+			"ORDER BY r.created_at DESC, r.id ASC",
 		nativeQuery = true
 	)
 	List<Review> findReviewsBySubCategoryWithPagination(
@@ -47,7 +47,7 @@ public interface ReviewRepository extends JpaRepository<Review, Long> {
 		@Param("limit") int limit
 	);
 
-	// [NEW] 2. 전체 리뷰 페이징 (조건절 없이 전체 대상)
+	// 모든 상품의 리뷰 한 페이지. 안쪽은 idx_del_created 만 읽는다.
 	@Query(
 		value = "SELECT r.id, r.user_id, r.sub_category_id, r.order_id, " +
 			"r.content, r.user_name, r.user_email, r.is_deleted, " +
@@ -55,11 +55,12 @@ public interface ReviewRepository extends JpaRepository<Review, Long> {
 			"FROM (" +
 			"   SELECT id " +
 			"   FROM reviews " +
-			"   WHERE is_deleted = false " + // 삭제 안 된 것만
-			"   ORDER BY created_at DESC " + // 인덱스 활용 (idx_del_created)
+			"   WHERE is_deleted = false " +
+			"   ORDER BY created_at DESC, id ASC " +
 			"   LIMIT :limit OFFSET :offset " +
 			") t " +
-			"JOIN reviews r ON t.id = r.id",
+			"JOIN reviews r ON t.id = r.id " +
+			"ORDER BY r.created_at DESC, r.id ASC",
 		nativeQuery = true
 	)
 	List<Review> findAllReviewsWithPagination(
