@@ -13,6 +13,7 @@ import static org.mockito.Mockito.times;
 
 import com.mansereok.server.domain.auth.PasswordResetTokenRepository;
 import com.mansereok.server.domain.user.entity.Gender;
+import com.mansereok.server.domain.user.entity.ProfileChange;
 import com.mansereok.server.domain.user.entity.RefreshToken;
 import com.mansereok.server.domain.user.entity.User;
 import com.mansereok.server.domain.user.repository.RefreshTokenRepository;
@@ -295,7 +296,7 @@ class PasswordResetMySqlTest extends LocalMySqlTest {
 			Future<?> nameUpdate = executor.submit(() -> new TransactionTemplate(transactionManager)
 				.executeWithoutResult(status -> {
 					User member = userRepository.findById(userId).orElseThrow();
-					member.setName("새이름");
+					member.updateProfile(new ProfileChange("새이름", null, null, null, null, null));
 					nameChanged.countDown();
 					waitUpToTenSeconds(releaseNameUpdate);
 				}));

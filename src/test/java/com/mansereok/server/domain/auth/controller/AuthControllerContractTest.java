@@ -1,6 +1,7 @@
 package com.mansereok.server.domain.auth.controller;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
@@ -48,6 +49,7 @@ import com.mansereok.server.global.exception.InvalidRefreshTokenException;
 import com.mansereok.server.global.exception.OauthExceptionHandler;
 import com.mansereok.server.global.exception.RequestErrorExceptionHandler;
 import com.mansereok.server.support.SetCookieHeader;
+import com.mansereok.server.support.fixture.UserFixture;
 import io.jsonwebtoken.security.Keys;
 import jakarta.servlet.http.Cookie;
 import java.nio.charset.StandardCharsets;
@@ -85,7 +87,7 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.transaction.PlatformTransactionManager;
 
 /**
- * 로그인·재발급·로그아웃·소셜 로그인·탈퇴 API 가 프론트엔드와 맺은 약속(상태 코드, 본문, REFRESH_TOKEN 쿠키)을 확인한다.
+ * 가입·로그인·재발급·로그아웃·소셜 로그인·탈퇴 API 가 프론트엔드와 맺은 약속(상태 코드, 본문, REFRESH_TOKEN 쿠키)을 확인한다.
  *
  * <p>운영과 같게 세 예외 처리기를 등록한 standalone MockMvc 로 부른다. 이메일 로그인은 운영과 같은 구성(DaoAuthenticationProvider
  * + CustomUserDetailsService + BCrypt)의 진짜 AuthenticationManager 를 쓰고, 회원 조회만 UserRepository 스텁으로 정한다.
@@ -98,6 +100,7 @@ import org.springframework.transaction.PlatformTransactionManager;
 class AuthControllerContractTest {
 
 	private static final String SIGN_IN_URL = "/api/auth/sign-in";
+	private static final String SIGN_UP_URL = "/api/auth/users";
 	private static final String REFRESH_URL = "/api/auth/refresh";
 	private static final String SIGN_OUT_URL = "/api/auth/sign-out";
 	private static final String GOOGLE_LOGIN_URL = "/member/google/doLogin";
@@ -264,6 +267,60 @@ class AuthControllerContractTest {
 	}
 
 	@Nested
+	@DisplayName("이메일로 가입할 때")
+	class WhenSigningUp {
+
+		@Test
+		@DisplayName("두 글자 이름으로 개인정보 처리방침에 동의하면 가입하고 200 을 준다")
+		void signsUpWithTwoLetterName() throws Exception {
+			// given
+			// UserService 가 진짜라 저장소 스텁이 저장을 받아 준다. IDENTITY 처럼 받은 User 에 id 를 넣어 돌려준다.
+			given(userRepository.saveAndFlush(any(User.class))).willAnswer(invocation -> {
+				User user = invocation.getArgument(0);
+				UserFixture.withId(user, 3L);
+				return user;
+			});
+
+			// when & then
+			mockMvc.perform(signUp("""
+					{"name": "이훈", "email": "new@example.com", "password": "password1", "privacyPolicyAgreed": true}
+					"""))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.name").value("이훈"))
+				.andExpect(jsonPath("$.role").value("USER"));
+
+			// then
+			ArgumentCaptor<User> savedUser = ArgumentCaptor.forClass(User.class);
+			then(userRepository).should().saveAndFlush(savedUser.capture());
+			assertThat(savedUser.getValue())
+				.extracting(User::getName, User::getEmail, User::getBirthDate, User::getGender,
+					User::isPrivacyPolicyAgreed, User::isMarketingAgreed)
+				.containsExactly("이훈", "new@example.com", null, null, true, false);
+			assertThat(PASSWORD_ENCODER.matches("password1", savedUser.getValue().getPassword())).isTrue();
+		}
+
+		@ParameterizedTest(name = "[{index}] {0} → errors.{2}")
+		@MethodSource("com.mansereok.server.domain.auth.controller.AuthControllerContractTest#rejectedSignUps")
+		@DisplayName("가입 규칙을 어긴 요청이면 가입하지 않고 400 VALIDATION_ERROR 와 어긴 항목 하나의 안내를 준다")
+		void rejectsSignUpBreakingRule(String description, String body, String field, String message)
+			throws Exception {
+			// when
+			MockHttpServletResponse response = mockMvc.perform(signUp(body)).andReturn().getResponse();
+
+			// then
+			assertThat(response.getStatus()).isEqualTo(400);
+			JsonNode responseBody = objectMapper.readTree(response.getContentAsString(StandardCharsets.UTF_8));
+			assertThat(responseBody.get("errorCode").asText()).isEqualTo("VALIDATION_ERROR");
+			assertThat(responseBody.get("errors")).isEqualTo(objectMapper.createObjectNode().put(field, message));
+			then(userRepository).shouldHaveNoInteractions();
+		}
+
+		private RequestBuilder signUp(String body) {
+			return post(SIGN_UP_URL).contentType(MediaType.APPLICATION_JSON).content(body);
+		}
+	}
+
+	@Nested
 	@DisplayName("토큰을 재발급할 때")
 	class WhenRefreshing {
 
@@ -409,6 +466,23 @@ class AuthControllerContractTest {
 		}
 	}
 
+	static Stream<Arguments> rejectedSignUps() {
+		return Stream.of(
+			Arguments.of("개인정보 처리방침 미동의", """
+					{"name": "이훈", "email": "new@example.com", "password": "password1", "privacyPolicyAgreed": false}
+					""",
+				"privacyPolicyAgreed", "개인정보 처리방침에 동의해야 가입할 수 있습니다."),
+			Arguments.of("개인정보 처리방침 동의 항목 없음", """
+					{"name": "이훈", "email": "new@example.com", "password": "password1"}
+					""",
+				"privacyPolicyAgreed", "개인정보 처리방침에 동의해야 가입할 수 있습니다."),
+			Arguments.of("이름 21자", """
+					{"name": "가나다라마바사아자차카타파하가나다라마바사", "email": "new@example.com", "password": "password1",
+					 "privacyPolicyAgreed": true}
+					""",
+				"name", "이름은 20자까지 입력할 수 있습니다."));
+	}
+
 	static Stream<Arguments> issuingRequests() {
 		return Stream.of(
 			Arguments.of("이메일 로그인", signIn(EMAIL_MEMBER, PASSWORD)),
@@ -452,7 +526,7 @@ class AuthControllerContractTest {
 	private static User emailMember(Long id, String email, String name) {
 		User user = User.create(email, name, PASSWORD_ENCODER.encode(PASSWORD), email, LocalDate.of(1990, 1, 1),
 			Gender.FEMALE, true, true, false);
-		user.setId(id);
+		UserFixture.withId(user, id);
 		return user;
 	}
 
@@ -461,7 +535,7 @@ class AuthControllerContractTest {
 	 */
 	private static User googleMember(Long id, String email, String name) {
 		User user = User.createByOauth("google-sub-" + id, name, email, "google-sub-" + id, SocialType.GOOGLE);
-		user.setId(id);
+		UserFixture.withId(user, id);
 		return user;
 	}
 }

@@ -16,6 +16,7 @@ import com.mansereok.server.global.config.JwtProperties;
 import com.mansereok.server.global.config.RefreshTokenProperties;
 import com.mansereok.server.global.exception.InvalidRefreshTokenException;
 import com.mansereok.server.support.fixture.RefreshTokenFixture;
+import com.mansereok.server.support.fixture.UserFixture;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -66,7 +67,7 @@ class RefreshTokenServiceTest {
 		refreshTokenService = serviceWith(FIXED_CLOCK);
 		member = User.create("member@example.com", "회원", "encoded-password", "member@example.com",
 			LocalDate.of(1990, 1, 1), Gender.FEMALE, true, true, false);
-		member.setId(MEMBER_ID);
+		UserFixture.withId(member, MEMBER_ID);
 	}
 
 	@Nested

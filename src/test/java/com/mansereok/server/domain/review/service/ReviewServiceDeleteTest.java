@@ -14,6 +14,7 @@ import com.mansereok.server.domain.user.entity.User;
 import com.mansereok.server.domain.user.repository.UserRepository;
 import com.mansereok.server.domain.user.service.UserService;
 import com.mansereok.server.support.fixture.ReviewFixture;
+import com.mansereok.server.support.fixture.UserFixture;
 import jakarta.persistence.EntityNotFoundException;
 import java.time.LocalDate;
 import java.util.Optional;
@@ -132,7 +133,7 @@ class ReviewServiceDeleteTest {
 	private void givenRequester(String username, Role role) {
 		User requester = User.create(username, "요청자", "password", username + "@example.com",
 			LocalDate.of(1990, 1, 1), Gender.MALE, true, true, false);
-		requester.setRole(role);
+		UserFixture.withRole(requester, role);
 		given(userRepository.findByUsername(username)).willReturn(Optional.of(requester));
 	}
 }
