@@ -12,8 +12,6 @@ import com.mansereok.server.domain.interpret.entity.CompatibilityResult;
 import com.mansereok.server.domain.interpret.entity.Result;
 import com.mansereok.server.domain.interpret.repository.CompatibilityResultRepository;
 import com.mansereok.server.domain.interpret.repository.ResultRepository;
-import com.mansereok.server.domain.notification.service.DiscordNotificationService;
-import com.mansereok.server.domain.notification.service.SlackNotificationService;
 import com.mansereok.server.domain.order.repository.OrderRepository;
 import com.mansereok.server.domain.payment.repository.PaymentRepository;
 import com.mansereok.server.domain.review.repository.ReviewRepository;
@@ -21,9 +19,12 @@ import com.mansereok.server.domain.user.dto.request.ProfileUpdateRequestDto;
 import com.mansereok.server.domain.user.entity.Gender;
 import com.mansereok.server.domain.user.entity.SocialType;
 import com.mansereok.server.domain.user.entity.User;
+import com.mansereok.server.domain.user.event.UserRegisteredEvent;
+import com.mansereok.server.domain.user.event.UserWithdrawnEvent;
 import com.mansereok.server.domain.user.repository.RefreshTokenRepository;
 import com.mansereok.server.domain.user.repository.UserRepository;
 import com.mansereok.server.global.exception.DuplicateEmailException;
+import com.mansereok.server.global.exception.UniqueConstraintViolations;
 import jakarta.persistence.EntityNotFoundException;
 import java.time.LocalDate;
 import java.util.Comparator;
@@ -32,18 +33,33 @@ import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.util.StringUtils;
 
+/**
+ * 회원 가입·조회·수정·탈퇴.
+ *
+ * <p>가입·탈퇴 알림(Discord·Slack)은 여기서 직접 보내지 않는다. 가입·탈퇴 트랜잭션 안에서 {@link UserRegisteredEvent},
+ * {@link UserWithdrawnEvent} 를 발행하고, UserNotificationListener 가 커밋된 뒤에 보낸다. 그래서 알림을 기다리는 동안 행 잠금을
+ * 쥐지 않고, 롤백된 가입·탈퇴에는 알림이 가지 않는다. 다만 알림이 끝날 때까지 DB 커넥션은 아직 쥔다(UserNotificationListener 참고).
+ *
+ * <p>가입은 메서드에 {@code @Transactional} 을 붙이지 않고 {@link TransactionTemplate} 으로 저장 구간만 트랜잭션으로 묶는다.
+ * 비밀번호 암호화(BCrypt)를 트랜잭션 전에 끝내고, 트랜잭션이 끝난 뒤 밖에서 UNIQUE 위반을 DuplicateEmailException 으로 바꾸기
+ * 위해서다.
+ */
 @Service
-@RequiredArgsConstructor
 @Slf4j
 public class UserService {
+
+	private static final String EMAIL_SIGNUP_PATH = "일반 회원가입";
 
 	private final UserRepository userRepository;
 	private final ResultRepository resultRepository;
@@ -57,19 +73,49 @@ public class UserService {
 
 	private final PasswordEncoder passwordEncoder;
 
-	private final DiscordNotificationService discordNotificationService;
-	private final SlackNotificationService slackNotificationService;
-
 	private final EmailService emailService;
 	private final ReviewRepository reviewRepository;
 
+	private final ApplicationEventPublisher eventPublisher;
+	private final TransactionTemplate transactionTemplate;
+
+	public UserService(
+		UserRepository userRepository,
+		ResultRepository resultRepository,
+		CompatibilityResultRepository compatibilityResultRepository,
+		RefreshTokenRepository refreshTokenRepository,
+		OrderRepository orderRepository,
+		PaymentRepository paymentRepository,
+		PasswordResetTokenRepository passwordResetTokenRepository,
+		PasswordEncoder passwordEncoder,
+		EmailService emailService,
+		ReviewRepository reviewRepository,
+		ApplicationEventPublisher eventPublisher,
+		PlatformTransactionManager transactionManager
+	) {
+		this.userRepository = userRepository;
+		this.resultRepository = resultRepository;
+		this.compatibilityResultRepository = compatibilityResultRepository;
+		this.refreshTokenRepository = refreshTokenRepository;
+		this.orderRepository = orderRepository;
+		this.paymentRepository = paymentRepository;
+		this.passwordResetTokenRepository = passwordResetTokenRepository;
+		this.passwordEncoder = passwordEncoder;
+		this.emailService = emailService;
+		this.reviewRepository = reviewRepository;
+		this.eventPublisher = eventPublisher;
+		this.transactionTemplate = new TransactionTemplate(transactionManager);
+	}
+
 	/**
-	 * 새로운 사용자를 등록한다.
+	 * 이메일로 새 회원을 등록한다. 이메일 가입은 username 도 이메일이다.
 	 *
 	 * @param name     사용자명
 	 * @param password 평문 비밀번호 (암호화되어 저장됨)
 	 * @param email    이메일
 	 * @return 생성된 사용자 엔티티
+	 * @throws DuplicateEmailException 같은 이메일의 계정이 이미 있을 때. 같은 이메일 가입이 동시에 들어와 먼저 저장된 가입이 있을 때도
+	 *                                 이 예외다(409).
 	 */
 	public User createUser(
 		String name,
@@ -80,24 +126,21 @@ public class UserService {
 		boolean isPrivacyAgreed,
 		boolean isMarketingAgreed
 	) {
-		if (userRepository.existsByEmail(email)) {
-			throw new DuplicateEmailException("이미 존재하는 이메일 입니다: " + email);
-		}
+		// BCrypt 는 한 번에 수십~100ms 걸린다. 트랜잭션을 열기 전에 끝내 그동안 DB 커넥션을 쥐지 않는다.
+		String encodedPassword = passwordEncoder.encode(password);
+		User newUser = User.create(
+			email,
+			name,
+			encodedPassword,
+			email,
+			birthDate,
+			gender,
+			true,
+			isPrivacyAgreed,
+			isMarketingAgreed
+		);
 
-		User savedUser = userRepository.save(
-			User.create(
-				email,
-				name,
-				passwordEncoder.encode(password),
-				email,
-				birthDate,
-				gender,
-				true,
-				isPrivacyAgreed,
-				isMarketingAgreed
-			));
-
-		notifyUserCreated(savedUser, "일반 회원가입");
+		User savedUser = saveNewUser(newUser, EMAIL_SIGNUP_PATH, "이미 존재하는 이메일 입니다: " + email);
 
 //		emailService.sendWelcomeEmail(savedUser.getEmail(), savedUser.getName());
 
@@ -127,24 +170,21 @@ public class UserService {
 	 * 소셜 로그인으로 새 계정을 만든다.
 	 *
 	 * <p>이메일은 제공자가 주인을 확인한 것만 저장하고, 없으면 null 로 둔다. 이메일 중복 검사도 저장할 이메일이 있을 때만 한다.
+	 *
+	 * @throws DuplicateEmailException 저장이 이미 있는 계정의 이메일·username·(socialType, socialId) 와 겹칠 때. 같은 소셜 계정의
+	 *                                 첫 로그인이 동시에 들어온 경우라면 OauthLoginService 가 먼저 가입한 계정을 다시 찾아 로그인시킨다.
 	 */
 	public User registerWithOauth(OauthProfile profile) {
-		String email = profile.trustedEmail().orElse(null);
-		if (email != null && userRepository.existsByEmail(email)) {
-			throw new DuplicateEmailException("이미 존재하는 이메일 입니다: " + email);
-		}
-
-		User savedUser = userRepository.save(
-			User.createByOauth(
-				oauthUsername(profile),
-				profile.name(),
-				email,
-				profile.socialId(),
-				profile.socialType()
-			)
+		User newUser = User.createByOauth(
+			oauthUsername(profile),
+			profile.name(),
+			profile.trustedEmail().orElse(null),
+			profile.socialId(),
+			profile.socialType()
 		);
 
-		notifyUserCreated(savedUser, profile.socialType().name() + " OAuth");
+		User savedUser = saveNewUser(newUser, profile.socialType().name() + " OAuth",
+			"이미 가입된 계정과 겹쳐 가입할 수 없습니다.");
 
 //		emailService.sendWelcomeEmail(savedUser.getEmail(), savedUser.getName());
 
@@ -157,7 +197,7 @@ public class UserService {
 	 * 영향이 없다.
 	 *
 	 * <p>남는 위험: 제공자가 달라도 사용자 번호가 같으면 username 이 겹칠 수 있다. uk_users_username 이 걸린 DB 에서는 뒤에 오는
-	 * 가입의 저장이 DataIntegrityViolationException 으로 거절되어 500 으로 끝난다. 그 사용자는 (socialType, socialId) 로 다시 찾아도
+	 * 가입의 저장이 UNIQUE 위반으로 거절되어 DuplicateEmailException(409)으로 끝난다. 그 사용자는 OauthLoginService 가 다시 찾아도
 	 * 계정이 없으므로 가입할 수 없다. UNIQUE 가 없으면 같은 username 행이 둘 생기고, username 으로 회원을 찾는 요청이 두 사용자
 	 * 모두 실패한다. 새 가입부터 username 을 "제공자_번호" 로 만드는 것은 후속 과제로 남긴다.
 	 */
@@ -169,24 +209,33 @@ public class UserService {
 	}
 
 	/**
-	 * 가입 알림을 디스코드와 슬랙에 같은 가입 경로로 보낸다.
+	 * 새 회원을 트랜잭션 하나로 저장하고, 같은 트랜잭션 안에서 가입 이벤트를 발행한다. 가입 알림은 커밋 뒤에 나간다.
+	 *
+	 * <p>이메일이 있으면 먼저 existsByEmail 로 확인해 흔한 중복(이미 가입한 이메일로 다시 가입)을 빨리 거절한다. 이 확인은 같은 가입이
+	 * 동시에 두 번 들어오면 둘 다 지나칠 수 있어서, 마지막은 users 의 UNIQUE(uk_users_email, uk_users_username,
+	 * uk_users_social_id_type)가 막는다. saveAndFlush 로 INSERT 를 이 트랜잭션 안에서 실행하므로 위반은 여기서 난다.
+	 *
+	 * <p>트랜잭션이 롤백된 뒤 밖에서 UNIQUE 위반일 때만 DuplicateEmailException 으로 바꿔 409 가 되게 한다. NOT NULL·길이 초과처럼
+	 * 다른 제약 위반은 요청이 잘못됐거나 코드가 틀린 것이므로 바꾸지 않고 그대로 던진다.
+	 *
+	 * @param duplicateMessage 이미 있는 계정과 겹칠 때 DuplicateEmailException 에 담을 메시지
 	 */
-	private void notifyUserCreated(User user, String signupPath) {
-		discordNotificationService.sendUserCreatedNotification(
-			user.getName(),
-			user.getEmail(),
-			user.getId(),
-			signupPath,
-			user.getCreatedAt()
-		);
-
-		slackNotificationService.sendUserCreatedNotification(
-			user.getName(),
-			user.getEmail(),
-			user.getId(),
-			signupPath,
-			user.getCreatedAt()
-		);
+	private User saveNewUser(User newUser, String signupPath, String duplicateMessage) {
+		try {
+			return transactionTemplate.execute(status -> {
+				if (newUser.getEmail() != null && userRepository.existsByEmail(newUser.getEmail())) {
+					throw new DuplicateEmailException(duplicateMessage);
+				}
+				User savedUser = userRepository.saveAndFlush(newUser);
+				eventPublisher.publishEvent(UserRegisteredEvent.of(savedUser, signupPath));
+				return savedUser;
+			});
+		} catch (DataIntegrityViolationException e) {
+			if (UniqueConstraintViolations.isUniqueViolation(e)) {
+				throw new DuplicateEmailException(duplicateMessage, e);
+			}
+			throw e;
+		}
 	}
 
 	@Transactional(readOnly = true)
@@ -350,6 +399,12 @@ public class UserService {
 		);
 	}
 
+	/**
+	 * 회원을 탈퇴시킨다. 주문·결제는 남기고 사용자 연결만 끊으며, 개인정보와 서비스 데이터는 지운다.
+	 *
+	 * <p>탈퇴 알림은 여기서 보내지 않고 탈퇴 이벤트만 발행한다. 알림은 커밋 뒤에 UserNotificationListener 가 보낸다. 트랜잭션
+	 * 안에서 보내면 1 에서 잠근 주문·결제 행과 DB 커넥션을 쥔 채 외부 응답을 기다리고, 커밋이 실패해도 탈퇴 알림이 이미 나간다.
+	 */
 	@Transactional
 	public void deleteUser(String username) {
 		User user = findByUsername(username);
@@ -359,12 +414,15 @@ public class UserService {
 		paymentRepository.detachUser(userId);
 		orderRepository.detachUser(userId);
 
-		// 2. 개인정보 및 서비스 데이터는 완전 삭제 (Hard Delete)
+		// 2. 사용자를 가리키는 행을 사용자보다 먼저 지운다 (Hard Delete)
+		//    순서: 재설정 토큰 → 리프레시 토큰 → 사주 결과·궁합 결과·리뷰 → (3) 사용자
+		//    재설정 토큰과 리프레시 토큰은 users 를 외래 키로 가리켜, 남아 있으면 3 의 DELETE 가 막히고 탈퇴 전체가 롤백된다.
+		//    리뷰는 작성자 이름·이메일 사본을 들고 있어 개인정보 파기를 위해 지운다.
+		passwordResetTokenRepository.deleteAllByUserId(userId); // 재설정 토큰 삭제
 		refreshTokenRepository.deleteByUser(user);       // 리프레시 토큰 삭제
 		resultRepository.deleteAllByUserId(userId);      // 사주 결과 삭제
 		compatibilityResultRepository.deleteAllByUserId(userId); // 궁합 결과 삭제
-
-		reviewRepository.deleteAllByUserId(userId);
+		reviewRepository.deleteAllByUserId(userId);      // 리뷰 삭제
 
 		// 3. 유저 삭제 (Hard Delete)
 		userRepository.delete(user);
@@ -372,13 +430,7 @@ public class UserService {
 		// 개인정보를 지운 뒤라 이메일(username)은 남기지 않는다.
 		log.info("회원 탈퇴 처리 완료: userId={}", userId);
 
-		// 알림 전송
-		try {
-			discordNotificationService.sendUserWithdrawnNotification(user.getName(),
-				user.getEmail());
-		} catch (Exception e) {
-			log.warn("탈퇴 알림 전송 실패", e);
-		}
+		eventPublisher.publishEvent(new UserWithdrawnEvent(userId, user.getName(), user.getEmail()));
 	}
 
 	@Transactional

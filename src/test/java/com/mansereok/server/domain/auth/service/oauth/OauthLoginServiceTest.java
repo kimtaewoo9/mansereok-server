@@ -1,6 +1,7 @@
 package com.mansereok.server.domain.auth.service.oauth;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
@@ -8,15 +9,17 @@ import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 
 import com.mansereok.server.domain.auth.dto.response.oauth.XProfileDto;
-import com.mansereok.server.domain.notification.service.DiscordNotificationService;
-import com.mansereok.server.domain.notification.service.SlackNotificationService;
 import com.mansereok.server.domain.user.entity.Gender;
 import com.mansereok.server.domain.user.entity.SocialType;
 import com.mansereok.server.domain.user.entity.User;
 import com.mansereok.server.domain.user.repository.UserRepository;
 import com.mansereok.server.domain.user.service.UserService;
+import com.mansereok.server.global.exception.DuplicateEmailException;
+import java.sql.SQLIntegrityConstraintViolationException;
 import java.time.LocalDate;
 import java.util.Optional;
+import org.hibernate.exception.ConstraintViolationException;
+import org.hibernate.exception.ConstraintViolationException.ConstraintKind;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -29,12 +32,15 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.transaction.PlatformTransactionManager;
 
 /**
  * 소셜 로그인의 "계정 찾기, 없으면 가입" 규칙을 확인한다.
  *
- * <p>가입은 진짜 {@link UserService} 가 한다. 목으로 두는 것은 저장소(돌려줄 값만 정한다)와 바깥으로 나가는 가입 알림뿐이다.
- * 저장소 스텁에는 정확한 인자를 넣어, 다른 제공자나 다른 번호로 조회하면 strict stubs 가 테스트를 실패시킨다.
+ * <p>가입은 진짜 {@link UserService} 가 한다. 목으로 두는 것은 저장소(돌려줄 값만 정한다), 가입 이벤트 발행기, 트랜잭션
+ * 매니저뿐이다. 저장소 스텁에는 정확한 인자를 넣어, 다른 제공자나 다른 번호로 조회하면 strict stubs 가 테스트를 실패시킨다.
  */
 @ExtendWith(MockitoExtension.class)
 class OauthLoginServiceTest {
@@ -44,9 +50,10 @@ class OauthLoginServiceTest {
 	@Mock
 	private UserRepository userRepository;
 	@Mock
-	private DiscordNotificationService discordNotificationService;
+	private ApplicationEventPublisher eventPublisher;
+	// UserService 가 이 목으로 진짜 TransactionTemplate 을 만든다. 커밋·롤백은 아무것도 하지 않는다.
 	@Mock
-	private SlackNotificationService slackNotificationService;
+	private PlatformTransactionManager transactionManager;
 
 	// 생성자 주입. 이 테스트가 목으로 두지 않은 UserService 의 협력 객체는 null 로 들어가며, 가입 흐름에서는 쓰이지 않는다.
 	@InjectMocks
@@ -78,7 +85,7 @@ class OauthLoginServiceTest {
 			// then
 			assertThat(result.user()).isSameAs(kakaoUser);
 			assertThat(result.newlyRegistered()).isFalse();
-			then(userRepository).should(never()).save(any());
+			then(userRepository).should(never()).saveAndFlush(any());
 		}
 	}
 
@@ -168,7 +175,7 @@ class OauthLoginServiceTest {
 			// then
 			assertThat(result.user()).isSameAs(emailUser);
 			assertThat(result.newlyRegistered()).isFalse();
-			then(userRepository).should(never()).save(any());
+			then(userRepository).should(never()).saveAndFlush(any());
 		}
 
 		@Test
@@ -208,7 +215,7 @@ class OauthLoginServiceTest {
 
 			// then
 			ArgumentCaptor<User> savedUser = ArgumentCaptor.forClass(User.class);
-			then(userRepository).should().save(savedUser.capture());
+			then(userRepository).should().saveAndFlush(savedUser.capture());
 			assertThat(savedUser.getValue()).extracting(User::getEmail, User::getName)
 				.containsExactly("minji@x.com", "민지");
 		}
@@ -226,9 +233,70 @@ class OauthLoginServiceTest {
 
 			// then
 			ArgumentCaptor<User> savedUser = ArgumentCaptor.forClass(User.class);
-			then(userRepository).should().save(savedUser.capture());
+			then(userRepository).should().saveAndFlush(savedUser.capture());
 			assertThat(savedUser.getValue()).extracting(User::getEmail, User::getName)
 				.containsExactly(null, "민지");
+		}
+	}
+
+	@Nested
+	@DisplayName("찾을 때 없던 계정이 가입하는 사이에 먼저 저장되면")
+	class WhenAccountIsRegisteredMeanwhile {
+
+		@Test
+		@DisplayName("같은 소셜 계정의 저장이 UNIQUE 에 걸리면 같은 소셜 계정을 다시 찾아 먼저 가입한 계정으로 로그인한다")
+		void logsIntoAccountOfSameSocialIdRegisteredMeanwhile() {
+			// given: 첫 조회에는 없고, 다른 요청이 먼저 저장·커밋한 뒤의 다시 찾기에는 있다
+			User registeredMeanwhile = socialSignupUser(40L, SocialType.KAKAO, "k-1");
+			given(userRepository.findBySocialTypeAndSocialId(SocialType.KAKAO, "k-1"))
+				.willReturn(Optional.empty())
+				.willReturn(Optional.of(registeredMeanwhile));
+			given(userRepository.saveAndFlush(any(User.class))).willThrow(uniqueViolation());
+
+			// when
+			OauthLoginResult result = oauthLoginService.loginOrRegister(
+				new OauthProfile(SocialType.KAKAO, "k-1", null, "카카오", false));
+
+			// then
+			assertThat(result.user()).isSameAs(registeredMeanwhile);
+			assertThat(result.newlyRegistered()).isFalse();
+		}
+
+		@Test
+		@DisplayName("같은 확인된 이메일의 계정이 먼저 생겨 저장이 UNIQUE 에 걸리면 처음과 같은 규칙대로 그 이메일 계정으로 로그인한다")
+		void logsIntoAccountOfSameTrustedEmailRegisteredMeanwhile() {
+			// given: 같은 이메일의 이메일 가입이 동시에 먼저 저장·커밋됐다
+			User emailUser = emailSignupUser(41L, "a@example.com");
+			given(userRepository.findBySocialTypeAndSocialId(SocialType.GOOGLE, "g-1"))
+				.willReturn(Optional.empty());
+			given(userRepository.findByEmail("a@example.com"))
+				.willReturn(Optional.empty())
+				.willReturn(Optional.of(emailUser));
+			given(userRepository.existsByEmail("a@example.com")).willReturn(false);
+			given(userRepository.saveAndFlush(any(User.class))).willThrow(uniqueViolation());
+
+			// when
+			OauthLoginResult result = oauthLoginService.loginOrRegister(
+				new OauthProfile(SocialType.GOOGLE, "g-1", "a@example.com", "구글", true));
+
+			// then
+			assertThat(result.user()).isSameAs(emailUser);
+			assertThat(result.newlyRegistered()).isFalse();
+		}
+
+		@Test
+		@DisplayName("다시 찾아도 계정이 없으면(다른 제공자 가입자와 username 이 겹친 경우 등) DuplicateEmailException 을 그대로 던진다")
+		void rethrowsWhenNoAccountFoundAgain() {
+			// given
+			given(userRepository.findBySocialTypeAndSocialId(SocialType.GOOGLE, "1234"))
+				.willReturn(Optional.empty());
+			given(userRepository.saveAndFlush(any(User.class))).willThrow(uniqueViolation());
+
+			// when & then
+			assertThatThrownBy(() -> oauthLoginService.loginOrRegister(
+				new OauthProfile(SocialType.GOOGLE, "1234", null, "구글", false)))
+				.isInstanceOf(DuplicateEmailException.class)
+				.hasMessage("이미 가입된 계정과 겹쳐 가입할 수 없습니다.");
 		}
 	}
 
@@ -236,7 +304,7 @@ class OauthLoginServiceTest {
 	 * 저장하면 IDENTITY 가 id 를 채우는 것처럼, 받은 User 에 새 id 를 넣어 돌려준다.
 	 */
 	private void givenSaveAssignsNewId() {
-		given(userRepository.save(any(User.class))).willAnswer(invocation -> {
+		given(userRepository.saveAndFlush(any(User.class))).willAnswer(invocation -> {
 			User user = invocation.getArgument(0);
 			user.setId(NEW_USER_ID);
 			return user;
@@ -254,6 +322,16 @@ class OauthLoginServiceTest {
 			LocalDate.of(1990, 1, 1), Gender.FEMALE, true, true, false);
 		user.setId(id);
 		return user;
+	}
+
+	// Hibernate MySQL 방언이 중복 키(1062)에 만드는 모양. 실제로 이 모양이 되는지는 UniqueConstraintViolationsMySqlTest 가 본다.
+	private static DataIntegrityViolationException uniqueViolation() {
+		return new DataIntegrityViolationException("could not execute statement",
+			new ConstraintViolationException("could not execute statement",
+				new SQLIntegrityConstraintViolationException(
+					"Duplicate entry 'k-1-KAKAO' for key 'users.uk_users_social_id_type'", "23000", 1062),
+				"insert into users (social_id, social_type) values (?, ?)", ConstraintKind.UNIQUE,
+				"users.uk_users_social_id_type"));
 	}
 
 	private static XProfileDto xProfile(String id, String displayName, String confirmedEmail) {
