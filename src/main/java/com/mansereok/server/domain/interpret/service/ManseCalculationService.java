@@ -1,6 +1,7 @@
 package com.mansereok.server.domain.interpret.service;
 
 import com.mansereok.server.domain.interpret.calculator.FiveElement;
+import com.mansereok.server.domain.interpret.calculator.FourPillars;
 import com.mansereok.server.domain.interpret.calculator.RelationCalculator;
 import com.mansereok.server.domain.interpret.calculator.SinsalCalculator;
 import com.mansereok.server.domain.interpret.calculator.UnseongCalculator;
@@ -88,8 +89,7 @@ public class ManseCalculationService {
 			TimePillarResult timePillar = getTimePillar(samju.getDaySky(), rawSolarTime);
 			String ilganChinese = samju.getDaySky();
 
-			Map<String, List<String>> sinsalInfo = sinsalCalculator.analyzeAllSinsal(
-				ilganChinese,
+			Map<String, List<String>> sinsalInfo = sinsalCalculator.analyzeAllSinsal(new FourPillars(
 				samju.getYearSky(),
 				samju.getYearGround(),
 				samju.getMonthSky(),
@@ -98,7 +98,7 @@ public class ManseCalculationService {
 				samju.getDayGround(),
 				timePillar.getTimeSky(),
 				timePillar.getTimeGround()
-			);
+			));
 			boolean hasGoegang = sinsalCalculator.hasGoegang(ilganChinese, samju.getDayGround());
 			boolean hasBaekho = sinsalCalculator.hasBaekho(ilganChinese, samju.getDayGround());
 			List<String> gongmang = sinsalCalculator.calculateGongmang(ilganChinese,

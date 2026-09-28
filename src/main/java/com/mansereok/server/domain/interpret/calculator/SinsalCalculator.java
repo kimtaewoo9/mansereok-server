@@ -186,41 +186,28 @@ public class SinsalCalculator {
 	/**
 	 * 전체 신살 분석 (연지/일지, 월지/일간 기준을 함께 계산)
 	 *
-	 * @param ilganChinese     일간 한자 (예: "壬")
-	 * @param yearSkyChinese   년간 한자 (예: "甲")
-	 * @param yearJijiChinese  년지 한자 (예: "午")
-	 * @param monthSkyChinese  월간 한자 (예: "丙")
-	 * @param monthJijiChinese 월지 한자 (예: "巳")
-	 * @param daySkyChinese    일간 한자 (예: "壬")
-	 * @param dayJijiChinese   일지 한자 (예: "子")
-	 * @param timeSkyChinese   시간 한자 (예: "丁", null 가능)
-	 * @param timeJijiChinese  시지 한자 (예: "未", null 가능)
-	 * @return 각 기둥별 신살 목록
+	 * @param pillars 네 기둥 한자. 일간은 {@link FourPillars#dayStem()} 이다. 시지가 없으면 시주 신살은 계산하지 않는다
+	 * @return 기둥 라벨({@link Pillar#label()})별 신살 목록
 	 */
-	public Map<String, List<String>> analyzeAllSinsal(
-		String ilganChinese,
-		String yearSkyChinese,
-		String yearJijiChinese,
-		String monthSkyChinese,
-		String monthJijiChinese,
-		String daySkyChinese,
-		String dayJijiChinese,
-		String timeSkyChinese,
-		String timeJijiChinese
-	) {
+	public Map<String, List<String>> analyzeAllSinsal(FourPillars pillars) {
+		String ilgan = pillars.dayStem();
+		String yearJiji = pillars.yearBranch();
+		String monthJiji = pillars.monthBranch();
+		String dayJiji = pillars.dayBranch();
+
 		Map<String, List<String>> result = new HashMap<>();
 
 		// 연지/일지 + 월지/일간 기준 신살 계산
-		result.put("년주", analyzePillarSinsal(ilganChinese, yearSkyChinese, yearJijiChinese,
-			yearJijiChinese, monthJijiChinese, dayJijiChinese));
-		result.put("월주", analyzePillarSinsal(ilganChinese, monthSkyChinese, monthJijiChinese,
-			yearJijiChinese, monthJijiChinese, dayJijiChinese));
-		result.put("일주", analyzePillarSinsal(ilganChinese, daySkyChinese, dayJijiChinese,
-			yearJijiChinese, monthJijiChinese, dayJijiChinese));
+		result.put(Pillar.YEAR.label(), analyzePillarSinsal(ilgan, pillars.yearStem(), yearJiji,
+			yearJiji, monthJiji, dayJiji));
+		result.put(Pillar.MONTH.label(), analyzePillarSinsal(ilgan, pillars.monthStem(), monthJiji,
+			yearJiji, monthJiji, dayJiji));
+		result.put(Pillar.DAY.label(), analyzePillarSinsal(ilgan, pillars.dayStem(), dayJiji,
+			yearJiji, monthJiji, dayJiji));
 
-		if (timeJijiChinese != null) {
-			result.put("시주", analyzePillarSinsal(ilganChinese, timeSkyChinese, timeJijiChinese,
-				yearJijiChinese, monthJijiChinese, dayJijiChinese));
+		if (pillars.timeBranch() != null) {
+			result.put(Pillar.TIME.label(), analyzePillarSinsal(ilgan, pillars.timeStem(), pillars.timeBranch(),
+				yearJiji, monthJiji, dayJiji));
 		}
 
 		return result;
