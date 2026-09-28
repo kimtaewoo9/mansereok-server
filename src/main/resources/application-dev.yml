@@ -121,6 +121,14 @@ app:
     refresh-token-expiration: 2592000000
     issuer: ${JWT_ISSUER:www.namedsaju.com}
   frontend-url: https://dev-front.namedsaju.com
+  # 브라우저에서 이 API 를 부를 수 있는 프론트엔드 출처. 쿠키를 싣는 요청을 받으므로 와일드카드 없이 정확한 주소만 적는다.
+  # manselab-front.vercel.app 이 아닌 vercel 미리보기 주소(예: manselab-front-git-main.vercel.app)와 운영 프론트엔드 주소
+  # (namedsaju.com, www.namedsaju.com)는 받지 않는다. 미리보기 배포에서 개발 API 를 불러야 하면 그 주소를 그대로 더한다.
+  cors:
+    allowed-origins:
+      - https://dev-front.namedsaju.com
+      - http://localhost:3000
+      - https://manselab-front.vercel.app
 
 # Server 설정
 server:

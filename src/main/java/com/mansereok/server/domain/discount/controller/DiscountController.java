@@ -3,6 +3,7 @@ package com.mansereok.server.domain.discount.controller;
 import com.mansereok.server.domain.discount.dto.request.DiscountCheckRequest;
 import com.mansereok.server.domain.discount.dto.response.DiscountCheckResponse;
 import com.mansereok.server.domain.discount.service.DiscountCodeService;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -17,7 +18,7 @@ public class DiscountController {
 
 	@PostMapping("/api/payment/discount")
 	public ResponseEntity<DiscountCheckResponse> checkDiscount(
-		@RequestBody DiscountCheckRequest request
+		@Valid @RequestBody DiscountCheckRequest request
 	) {
 		DiscountCheckResponse response = discountCodeService.checkDiscount(request);
 		return ResponseEntity.ok(response);
