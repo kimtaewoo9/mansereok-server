@@ -185,7 +185,7 @@ class RefundAndInterpretationStartMySqlTest extends PaymentMySqlTest {
 
 			// when: 환불을 시작하고, 환불이 결제 행 잠금을 기다리기 시작하면 해석 시작을 커밋시킨다
 			Future<Boolean> refund = executor.submit(() -> refund());
-			await().atMost(Duration.ofSeconds(10)).until(() -> refund.isDone() || lockWaitsOnPaymentsTable() > 0);
+			await().atMost(Duration.ofSeconds(10)).until(() -> refund.isDone() || lockWaitsOn("payments") > 0);
 			boolean refundWaitedForPaymentRow = !refund.isDone();
 			releaseInterpretation.countDown();
 
@@ -378,16 +378,6 @@ class RefundAndInterpretationStartMySqlTest extends PaymentMySqlTest {
 			Thread.currentThread().interrupt();
 			throw new IllegalStateException("해석 시작이 풀려나기를 기다리다 중단됐다", e);
 		}
-	}
-
-	/**
-	 * 이 스키마의 payments 표에서 행 잠금을 기다리는 요청 수.
-	 */
-	private int lockWaitsOnPaymentsTable() {
-		Integer waits = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM performance_schema.data_lock_waits w "
-			+ "JOIN performance_schema.data_locks l ON l.ENGINE_LOCK_ID = w.REQUESTING_ENGINE_LOCK_ID "
-			+ "WHERE l.OBJECT_SCHEMA = DATABASE() AND l.OBJECT_NAME = 'payments'", Integer.class);
-		return waits == null ? 0 : waits;
 	}
 
 	private static Throwable errorOf(Future<?> future) throws Exception {

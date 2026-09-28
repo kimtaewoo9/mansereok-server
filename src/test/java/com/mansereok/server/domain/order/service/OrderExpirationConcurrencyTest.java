@@ -149,8 +149,8 @@ class OrderExpirationConcurrencyTest extends PaymentMySqlTest {
 		private final String paymentId = "pay_expire_race_" + runId;
 
 		@RepeatedTest(value = 50, name = "{displayName} ({currentRepetition}/{totalRepetitions})")
-		@DisplayName("동시에 오면 어느 쪽이 먼저 행을 잡든 주문은 PAID 로 끝나고 결제·결과지는 한 건씩이며, 사용 횟수는 결제 완료 주문 수(1)와 같다")
-		void paymentWinsWhicheverComesFirst() {
+		@DisplayName("동시에 오면 둘 다 예외 없이 끝나고 주문은 PAID·결제 한 건·결과지 한 건으로 남으며, 사용 횟수는 결제 완료 주문 수(1)와 같다")
+		void bothFinishAndOrderEndsPaidOnce() {
 			// given
 			OrderCreateResponse order = paymentOrderService.createOrder(username, orderRequestWithCode());
 			given(portOneClient.getPayment(paymentId))
@@ -216,7 +216,7 @@ class OrderExpirationConcurrencyTest extends PaymentMySqlTest {
 
 			// when: 만료가 주문 행 잠금을 기다리기 시작하면 결제 완료를 커밋시킨다
 			Future<Boolean> expiry = executor.submit(() -> orderExpirationService.expireIfStillPending(order.getOrderId()));
-			await().atMost(Duration.ofSeconds(10)).until(() -> expiry.isDone() || lockWaitsInThisSchema() > 0);
+			await().atMost(Duration.ofSeconds(10)).until(() -> expiry.isDone() || lockWaitsOn("orders") > 0);
 			boolean expiryWaitedForOrderRow = !expiry.isDone();
 			releasePayment.countDown();
 
@@ -291,14 +291,6 @@ class OrderExpirationConcurrencyTest extends PaymentMySqlTest {
 	private int countByMerchantUid(String sql, String merchantUid) {
 		Integer count = jdbcTemplate.queryForObject(sql, Integer.class, merchantUid);
 		return count == null ? 0 : count;
-	}
-
-	/** 이 스키마에서 행 잠금을 기다리는 요청 수. */
-	private int lockWaitsInThisSchema() {
-		Integer waits = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM performance_schema.data_lock_waits w "
-			+ "JOIN performance_schema.data_locks l ON l.ENGINE_LOCK_ID = w.REQUESTING_ENGINE_LOCK_ID "
-			+ "WHERE l.OBJECT_SCHEMA = DATABASE()", Integer.class);
-		return waits == null ? 0 : waits;
 	}
 
 	/** 실패 메시지에 넣을 스레드별 결과. 예: "스레드별 결과 [true, false, false, ...]" */

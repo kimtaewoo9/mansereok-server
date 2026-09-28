@@ -126,8 +126,9 @@ class PaymentConfirmConcurrencyTest extends PaymentMySqlTest {
 			.as("결과지 행. %s", resultsPerRequest).isEqualTo(1);
 		assertThat(orderStatus()).isEqualTo("PAID");
 
-		// then: 알림은 커밋 뒤 다른 스레드에서 가므로 sleep 대신 조건이 맞을 때까지 기다린다. 이 실행의 구매자로 간 알림만 센다.
-		await().atMost(Duration.ofSeconds(5)).untilAsserted(() ->
+		// then: 알림은 커밋 뒤 다른 스레드에서 가므로 sleep 대신 조건이 맞을 때까지 기다린다. 첫 알림을 본 뒤에도 1초 동안 한 번으로
+		//       유지되어야 통과해, 조금 늦게 오는 두 번째 알림도 잡는다. 이 실행의 구매자로 간 알림만 센다.
+		await().during(Duration.ofSeconds(1)).atMost(Duration.ofSeconds(6)).untilAsserted(() ->
 			then(discordNotificationService).should(times(1)).sendPaymentCompletedNotification(
 				eq(BUYER_NAME), eq(email), eq((long) PRICE), any(), any(), any(), any()));
 	}

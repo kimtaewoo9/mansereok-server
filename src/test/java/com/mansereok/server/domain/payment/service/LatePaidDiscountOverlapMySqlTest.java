@@ -455,13 +455,6 @@ class LatePaidDiscountOverlapMySqlTest extends PaymentMySqlTest {
 			.until(() -> second.isDone() || lockWaitsInThisSchema() >= 2);
 	}
 
-	private int lockWaitsInThisSchema() {
-		Integer waits = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM performance_schema.data_lock_waits w "
-			+ "JOIN performance_schema.data_locks l ON l.ENGINE_LOCK_ID = w.REQUESTING_ENGINE_LOCK_ID "
-			+ "WHERE l.OBJECT_SCHEMA = DATABASE()", Integer.class);
-		return waits == null ? 0 : waits;
-	}
-
 	private static <T> Outcome<T> outcomeOf(Future<T> future) throws Exception {
 		try {
 			return new Outcome<>(future.get(30, SECONDS), null);
