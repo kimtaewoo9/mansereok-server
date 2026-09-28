@@ -9,6 +9,8 @@ import com.mansereok.server.domain.interpret.calculator.UnseongCalculator;
 import com.mansereok.server.domain.interpret.calculator.YongsinCalculator;
 import com.mansereok.server.domain.interpret.dto.request.ManseryeokCalculationRequest;
 import com.mansereok.server.domain.interpret.dto.response.ManseryeokCalculationResponse;
+import com.mansereok.server.domain.interpret.dto.response.ManseryeokCalculationResponse.MonthlyFortune;
+import com.mansereok.server.domain.interpret.dto.response.ManseryeokCalculationResponse.PillarElement;
 import com.mansereok.server.domain.interpret.dto.response.ManseryeokCalculationResponse.SajuInfo;
 import com.mansereok.server.domain.interpret.entity.Manse;
 import com.mansereok.server.domain.interpret.repository.ManseRepository;
@@ -114,7 +116,7 @@ public class ManseCalculationService {
 	 */
 	private SajuInfo buildSajuInfo(SamjuResult samju, TimePillarResult timePillar,
 		DaewoonDirection daewoonDirection, BigFortuneRangeResult bigFortune, List<String> uncertaintyNotes) {
-		String ilganChinese = samju.getDaySky();
+		String dayStem = samju.getDaySky();
 
 		Map<String, List<String>> sinsalInfo = sinsalCalculator.analyzeAllSinsal(new FourPillars(
 			samju.getYearSky(),
@@ -126,9 +128,9 @@ public class ManseCalculationService {
 			timePillar.getTimeSky(),
 			timePillar.getTimeGround()
 		));
-		boolean hasGoegang = sinsalCalculator.hasGoegang(ilganChinese, samju.getDayGround());
-		boolean hasBaekho = sinsalCalculator.hasBaekho(ilganChinese, samju.getDayGround());
-		List<String> gongmang = sinsalCalculator.calculateGongmang(ilganChinese, samju.getDayGround());
+		boolean hasGoegang = sinsalCalculator.hasGoegang(dayStem, samju.getDayGround());
+		boolean hasBaekho = sinsalCalculator.hasBaekho(dayStem, samju.getDayGround());
+		List<String> gongmang = sinsalCalculator.calculateGongmang(dayStem, samju.getDayGround());
 		List<String> groundRelations = analyzeGroundRelations(samju, timePillar);
 		List<String> skyRelations = analyzeSkyRelations(samju, timePillar);
 		List<String> fullSamhap = relationCalculator.findFullSamhap(
@@ -147,22 +149,14 @@ public class ManseCalculationService {
 			.daewoonDirection(daewoonDirection)
 			.seasonStartTime(samju.getSeasonStartTime())
 			.uncertaintyNotes(uncertaintyNotes.isEmpty() ? null : uncertaintyNotes)
-			.yearSky(formatChinese(samju.getYearSky(), samju.getDaySky(), false, ilganChinese))
-			.yearGround(
-				formatChineseWithUnseong(samju.getYearGround(), ilganChinese, samju.getDaySky(),
-					true, ilganChinese))
-			.monthSky(
-				formatChinese(samju.getMonthSky(), samju.getDaySky(), false, ilganChinese))
-			.monthGround(formatChineseWithUnseong(samju.getMonthGround(), ilganChinese,
-				samju.getDaySky(), true, ilganChinese))
-			.daySky(formatChinese(samju.getDaySky(), samju.getDaySky(), false, ilganChinese))
-			.dayGround(
-				formatChineseWithUnseong(samju.getDayGround(), ilganChinese, samju.getDaySky(),
-					true, ilganChinese))
-			.timeSky(timePillar.getTimeSky() != null ? formatChinese(timePillar.getTimeSky(),
-				samju.getDaySky(), false, ilganChinese) : null)
-			.timeGround(timePillar.getTimeGround() != null ? formatChineseWithUnseong(
-				timePillar.getTimeGround(), ilganChinese, samju.getDaySky(), true, ilganChinese)
+			.yearSky(stemElement(samju.getYearSky(), dayStem))
+			.yearGround(branchElement(samju.getYearGround(), dayStem))
+			.monthSky(stemElement(samju.getMonthSky(), dayStem))
+			.monthGround(branchElement(samju.getMonthGround(), dayStem))
+			.daySky(stemElement(dayStem, dayStem))
+			.dayGround(branchElement(samju.getDayGround(), dayStem))
+			.timeSky(timePillar.getTimeSky() != null ? stemElement(timePillar.getTimeSky(), dayStem) : null)
+			.timeGround(timePillar.getTimeGround() != null ? branchElement(timePillar.getTimeGround(), dayStem)
 				: null)
 			.sinsalInfo(sinsalInfo)
 			.hasGoegang(hasGoegang)
@@ -171,7 +165,7 @@ public class ManseCalculationService {
 			.groundRelations(groundRelations)
 			.skyRelations(skyRelations)
 			.samhap(fullSamhap)
-			.monthlyFortunes(calculateMonthlyFortunes(samju.getDaySky(), ilganChinese))
+			.monthlyFortunes(calculateMonthlyFortunes(dayStem))
 			.build();
 	}
 
@@ -221,9 +215,8 @@ public class ManseCalculationService {
 		return lines;
 	}
 
-	private List<ManseryeokCalculationResponse.MonthlyFortune> calculateMonthlyFortunes(
-		String daySky, String ilganChinese) {
-		List<ManseryeokCalculationResponse.MonthlyFortune> monthlyFortunes = new ArrayList<>();
+	private List<MonthlyFortune> calculateMonthlyFortunes(String dayStem) {
+		List<MonthlyFortune> monthlyFortunes = new ArrayList<>();
 		LocalDateTime nowKst = LocalDateTime.now(clock.withZone(SEOUL));
 
 		Manse currentBoundary = manseRepository
@@ -247,14 +240,10 @@ public class ManseCalculationService {
 				? boundaries.get(i + 1).getSeasonStartTime().minusSeconds(1)
 				: null;
 
-			ManseryeokCalculationResponse.PillarElement monthSky = formatChinese(
-				startBoundary.getMonthSky(), daySky, false, ilganChinese
-			);
-			ManseryeokCalculationResponse.PillarElement monthGround = formatChineseWithUnseong(
-				startBoundary.getMonthGround(), ilganChinese, daySky, true, ilganChinese
-			);
+			PillarElement monthSky = stemElement(startBoundary.getMonthSky(), dayStem);
+			PillarElement monthGround = branchElement(startBoundary.getMonthGround(), dayStem);
 
-			monthlyFortunes.add(ManseryeokCalculationResponse.MonthlyFortune.builder()
+			monthlyFortunes.add(MonthlyFortune.builder()
 				.year(periodStart.getYear())
 				.month(periodStart.getMonthValue())
 				.season(startBoundary.getSeason())
@@ -268,31 +257,37 @@ public class ManseCalculationService {
 		return monthlyFortunes.isEmpty() ? null : monthlyFortunes;
 	}
 
-	private ManseryeokCalculationResponse.PillarElement formatChineseWithUnseong(
-		String chinese, String ilganChinese, String daySky, boolean isGround,
-		String ilganChineseForJijanggan) {
+	/**
+	 * 천간 한 칸을 채운다. 한자, 한글 이름, 오행과 색, 일간 기준 십성, 음양을 넣는다.
+	 */
+	private PillarElement stemElement(String stem, String dayStem) {
+		return pillarElementBuilder(stem, dayStem).build();
+	}
 
-		ManseryeokCalculationResponse.PillarElement.PillarElementBuilder builder =
-			formatChineseToBuilder(chinese, daySky, isGround, ilganChineseForJijanggan);
+	/**
+	 * 지지 한 칸을 채운다. 천간 칸과 같은 값에 지장간과 일간 기준 12운성을 더한다.
+	 */
+	private PillarElement branchElement(String branch, String dayStem) {
+		PillarElement.PillarElementBuilder builder = pillarElementBuilder(branch, dayStem)
+			.jijanggan(getJijangganInfo(branch, dayStem));
 
-		if (isGround) {
-			String unseong = unseongCalculator.calculate(ilganChinese, chinese);
-			if (unseong != null) {
-				builder.unseong(unseong);
-				builder.unseongDescription(unseongCalculator.getUnseongDescription(unseong));
-			} else {
-				log.warn("⚠️ 운성 계산 실패: 일간={}, 지지={}", ilganChinese, chinese);
-			}
+		String unseong = unseongCalculator.calculate(dayStem, branch);
+		if (unseong != null) {
+			builder.unseong(unseong);
+			builder.unseongDescription(unseongCalculator.getUnseongDescription(unseong));
+		} else {
+			log.warn("⚠️ 운성 계산 실패: 일간={}, 지지={}", dayStem, branch);
 		}
 		return builder.build();
 	}
 
-	private ManseryeokCalculationResponse.PillarElement.PillarElementBuilder formatChineseToBuilder(
-		String chinese, String daySky, boolean isGround, String ilganChinese) {
-
-		String tenStarInfo = sajuDataService.tenStarOf(daySky, chinese);
+	/**
+	 * 천간·지지 칸이 함께 쓰는 값(한자, 한글 이름, 오행과 색, 일간 기준 십성, 음양)을 채운 빌더.
+	 */
+	private PillarElement.PillarElementBuilder pillarElementBuilder(String chinese, String dayStem) {
+		String tenStarInfo = sajuDataService.tenStarOf(dayStem, chinese);
 		if (tenStarInfo == null) {
-			throw new IllegalStateException("일간 " + daySky + " 기준 간지 " + chinese + "의 십성 정보를 찾을 수 없습니다");
+			throw new IllegalStateException("일간 " + dayStem + " 기준 간지 " + chinese + "의 십성 정보를 찾을 수 없습니다");
 		}
 
 		String[] tenStarParts = tenStarInfo.split(",");
@@ -300,25 +295,13 @@ public class ManseCalculationService {
 			throw new IllegalStateException("십성 정보 형식이 올바르지 않습니다: " + tenStarInfo);
 		}
 
-		ManseryeokCalculationResponse.PillarElement.PillarElementBuilder builder =
-			ManseryeokCalculationResponse.PillarElement.builder()
-				.chinese(chinese)
-				.korean(sajuDataService.koreanOf(chinese))
-				.fiveCircle(tenStarParts[1])
-				.fiveCircleColor(FiveElement.of(tenStarParts[1]).color())
-				.tenStar(tenStarParts[0])
-				.minusPlus(sajuDataService.yinYangOf(chinese));
-
-		if (isGround) {
-			builder.jijanggan(getJijangganInfo(chinese, ilganChinese));
-		}
-
-		return builder;
-	}
-
-	private ManseryeokCalculationResponse.PillarElement formatChinese(
-		String chinese, String daySky, boolean isGround, String ilganChinese) {
-		return formatChineseToBuilder(chinese, daySky, isGround, ilganChinese).build();
+		return PillarElement.builder()
+			.chinese(chinese)
+			.korean(sajuDataService.koreanOf(chinese))
+			.fiveCircle(tenStarParts[1])
+			.fiveCircleColor(FiveElement.of(tenStarParts[1]).color())
+			.tenStar(tenStarParts[0])
+			.minusPlus(sajuDataService.yinYangOf(chinese));
 	}
 
 	/**
