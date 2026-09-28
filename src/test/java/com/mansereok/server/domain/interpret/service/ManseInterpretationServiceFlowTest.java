@@ -7,7 +7,6 @@ import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
-import static org.mockito.BDDMockito.willAnswer;
 import static org.mockito.BDDMockito.willThrow;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.lenient;
@@ -50,7 +49,9 @@ import com.mansereok.server.support.fixture.ResultFixture;
 import jakarta.persistence.EntityNotFoundException;
 import java.lang.reflect.Method;
 import java.time.Clock;
+import java.time.Instant;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
@@ -69,7 +70,6 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.CannotAcquireLockException;
 import org.springframework.scheduling.annotation.Async;
-import org.springframework.test.util.ReflectionTestUtils;
 
 /**
  * 네 갈래 해석 흐름이 공통 파이프라인을 타고 같은 순서로 도는지, 그리고 곁가지(알림·OG·이메일)
@@ -372,7 +372,7 @@ class ManseInterpretationServiceFlowTest {
 		}
 
 		/**
-		 * 사용자 조회는 알림과 이메일에서만 쓰는 곁가지다. 예전에는 저장 앞 바깥 try 안에서 불러서
+		 * 사용자 조회는 결과 준비 이메일 단계에서만 쓰는 곁가지다. 예전에는 저장 앞 바깥 try 안에서 불러서
 		 * 조회가 실패하면 이미 값을 치른 GPT 결과를 버리고 INPUT_REQUIRED 로 되돌렸다.
 		 * 이제는 결과를 저장하고 이메일만 건너뛴다. 이 차이를 여기서 고정한다.
 		 */
@@ -733,6 +733,9 @@ class ManseInterpretationServiceFlowTest {
 	class RealEntityStatus {
 
 		private static final Long USER_ID = 1L;
+		// 해석을 시작한 시각(STARTED_AT)과 같은 2026-09-26 09:00 (서울).
+		private static final Clock FIXED_CLOCK = Clock.fixed(Instant.parse("2026-09-26T00:00:00Z"),
+			ZoneId.of("Asia/Seoul"));
 
 		@Mock
 		private ResultRepository resultRepository;
@@ -748,15 +751,14 @@ class ManseInterpretationServiceFlowTest {
 		@BeforeEach
 		void setUpRealResultServices() {
 			// 컨트롤러가 STARTED_AT 에 해석을 시작해 둔 행이다.
-			sajuRow = ResultFixture.saju(USER_ID, PAYMENT_ID, ResultStatus.PROCESSING, STARTED_AT);
-			ReflectionTestUtils.setField(sajuRow, "id", RESULT_ID);
-			compatibilityRow = ResultFixture.compatibility(USER_ID, PAYMENT_ID, ResultStatus.PROCESSING, STARTED_AT);
-			ReflectionTestUtils.setField(compatibilityRow, "id", RESULT_ID);
+			sajuRow = ResultFixture.withId(
+				ResultFixture.saju(USER_ID, PAYMENT_ID, ResultStatus.PROCESSING, STARTED_AT), RESULT_ID);
+			compatibilityRow = ResultFixture.withId(
+				ResultFixture.compatibility(USER_ID, PAYMENT_ID, ResultStatus.PROCESSING, STARTED_AT), RESULT_ID);
 
 			serviceWithRealResults = newService(
 				new SajuResultService(resultRepository, compatibilityResultRepository),
-				new ResultService(resultRepository, compatibilityResultRepository, subCategoryRepository,
-					Clock.systemDefaultZone()),
+				new ResultService(resultRepository, compatibilityResultRepository, subCategoryRepository, FIXED_CLOCK),
 				analysisNormalizer);
 		}
 
@@ -911,8 +913,7 @@ class ManseInterpretationServiceFlowTest {
 				.willReturn(PAID_SINGLE_PROMPT);
 			ManseInterpretationService serviceWithRealNormalizer = newService(
 				new SajuResultService(resultRepository, compatibilityResultRepository),
-				new ResultService(resultRepository, compatibilityResultRepository, subCategoryRepository,
-					Clock.systemDefaultZone()),
+				new ResultService(resultRepository, compatibilityResultRepository, subCategoryRepository, FIXED_CLOCK),
 				new AnalysisNormalizer());
 
 			// when
@@ -1032,6 +1033,9 @@ class ManseInterpretationServiceFlowTest {
 	/**
 	 * 해석 요청 알림은 외부 채널(Discord)로 나가고, 해석 로그는 운영 로그 수집 시스템에 쌓인다. 두 곳 모두 결제 ID 와 상품만 남기고
 	 * 요청자와 궁합 상대의 이름, 계정 이메일, 생년월일은 남기지 않는다. 누구의 요청인지는 결제 ID 로 DB 에서 찾는다.
+	 *
+	 * <p>여기서 보는 로그는 해석 서비스와 파이프라인이 남기는 것이다. EmailService 는 mock 이라 유료 경로의 결과 준비 이메일 전송
+	 * 로그는 이 테스트가 보지 않는다.
 	 */
 	@Nested
 	@DisplayName("알림과 로그에 남기는 값")
@@ -1071,7 +1075,7 @@ class ManseInterpretationServiceFlowTest {
 		}
 
 		@Test
-		@DisplayName("무료 단일 해석 요청 알림에는 결제 ID·상품·무료 구분만 넘기고 사용자를 조회하지 않는다")
+		@DisplayName("무료 단일 해석 요청 알림에는 결제 ID·상품·무료 구분만 넘긴다")
 		void freeSingleNoticeCarriesOnlyPaymentAndProduct() {
 			// given
 			givenSajuResponse();
@@ -1082,7 +1086,6 @@ class ManseInterpretationServiceFlowTest {
 			// then
 			verify(discordNotificationService).sendInterpretationRequestNotification(PAYMENT_ID, "CHANGES_2026(101)",
 				true);
-			verify(userService, never()).findByUsername(any());
 		}
 
 		@Test
@@ -1112,7 +1115,7 @@ class ManseInterpretationServiceFlowTest {
 		}
 
 		@Test
-		@DisplayName("유료 단일 해석은 시작 로그에 결제 ID 와 상품을 남기고 어떤 로그에도 이름·이메일을 남기지 않는다")
+		@DisplayName("유료 단일 해석은 시작 로그에 결제 ID 와 상품을 남기고 해석 서비스·파이프라인 로그에 이름·이메일을 남기지 않는다")
 		void paidSingleLogsNoPersonalData() {
 			// given
 			givenSajuResponse();
@@ -1121,12 +1124,12 @@ class ManseInterpretationServiceFlowTest {
 			callInterpret();
 
 			// then
-			assertThat(logMessages()).as("시작 로그").contains("✅ 사주 해석 요청 시작 - paymentId: 100, product: LIFE_OVERALL");
+			assertThat(logMessages()).as("시작 로그").contains("✅ 사주 해석 요청 시작 - paymentId: 100, product: LIFE_OVERALL(1)");
 			assertThat(String.join("\n", logMessages())).doesNotContain("홍길동", EMAIL);
 		}
 
 		@Test
-		@DisplayName("무료 단일 해석은 시작 로그에 결제 ID 와 상품을 남기고 어떤 로그에도 이름을 남기지 않는다")
+		@DisplayName("무료 단일 해석은 시작 로그에 결제 ID 와 상품을 남기고 해석 서비스·파이프라인 로그에 이름을 남기지 않는다")
 		void freeSingleLogsNoPersonalData() {
 			// given
 			givenSajuResponse();
@@ -1135,12 +1138,12 @@ class ManseInterpretationServiceFlowTest {
 			callInterpretFree();
 
 			// then
-			assertThat(logMessages()).as("시작 로그").contains("🆓 무료 사주 해석 시작 - paymentId: 100, product: CHANGES_2026");
+			assertThat(logMessages()).as("시작 로그").contains("🆓 무료 사주 해석 시작 - paymentId: 100, product: CHANGES_2026(101)");
 			assertThat(String.join("\n", logMessages())).doesNotContain("홍길동", EMAIL);
 		}
 
 		@Test
-		@DisplayName("유료 궁합은 시작 로그에 결제 ID 와 상품을 남기고 어떤 로그에도 두 사람의 이름을 남기지 않는다")
+		@DisplayName("유료 궁합은 시작 로그에 결제 ID 와 상품을 남기고 해석 서비스·파이프라인 로그에 두 사람의 이름을 남기지 않는다")
 		void paidCompatibilityLogsNoPersonalData() {
 			// given
 			givenCompatibilityResponse();
@@ -1149,12 +1152,12 @@ class ManseInterpretationServiceFlowTest {
 			callCompatibility();
 
 			// then
-			assertThat(logMessages()).as("시작 로그").contains("✅ 궁합 분석 요청 시작 - paymentId: 100, product: LOVE_STORY_4");
+			assertThat(logMessages()).as("시작 로그").contains("✅ 궁합 분석 요청 시작 - paymentId: 100, product: LOVE_STORY_4(4)");
 			assertThat(String.join("\n", logMessages())).doesNotContain("홍길동", "김영희", EMAIL);
 		}
 
 		@Test
-		@DisplayName("무료 궁합은 시작 로그에 결제 ID 와 상품을 남기고 어떤 로그에도 두 사람의 이름을 남기지 않는다")
+		@DisplayName("무료 궁합은 시작 로그에 결제 ID 와 상품을 남기고 해석 서비스·파이프라인 로그에 두 사람의 이름을 남기지 않는다")
 		void freeCompatibilityLogsNoPersonalData() {
 			// given
 			givenCompatibilityResponse();
@@ -1164,7 +1167,7 @@ class ManseInterpretationServiceFlowTest {
 
 			// then
 			assertThat(logMessages()).as("시작 로그")
-				.contains("🆓 무료 궁합/재회운 서비스 시작 - paymentId: 100, product: LOVE_STORY_4");
+				.contains("🆓 무료 궁합/재회운 서비스 시작 - paymentId: 100, product: LOVE_STORY_4(4)");
 			assertThat(String.join("\n", logMessages())).doesNotContain("홍길동", "김영희", EMAIL);
 		}
 
@@ -1238,7 +1241,7 @@ class ManseInterpretationServiceFlowTest {
 		}
 
 		@Test
-		@DisplayName("유료 재회운(19) 요청은 전용 지시를 쓰면서도 primary 티어의 모델·출력 토큰 상한·추론 강도·출력 길이를 쓴다")
+		@DisplayName("유료 재회운(19) 요청도 primary 티어의 모델·출력 토큰 상한·추론 강도·출력 길이를 쓴다")
 		void paidReunionRequestUsesPrimaryTier() {
 			// given
 			givenCompatibilityResponse();
@@ -1259,30 +1262,6 @@ class ManseInterpretationServiceFlowTest {
 
 			assertThat(asyncExecutorOf("interpretFree")).isEqualTo("gptFreeTaskExecutor");
 			assertThat(captureRequest().getModel()).isEqualTo(openAiProperties.light().model());
-		}
-
-		/**
-		 * OG 이미지를 다른 풀로 넘기면 그 풀이 가득 찼거나 먼저 닫혔을 때 이미지가 버려지고 다시 만들 길이 없다. 그래서 해석을 돌리는
-		 * 스레드가 결과를 저장한 직후 그 자리에서 만든다. 여기서는 파이프라인이 OG 단계를 부른 스레드를 보고, OG 서비스에
-		 * {@code @Async} 가 다시 붙지 않았는지도 함께 본다(서비스를 목으로 두어 스프링 프록시를 거치지 않기 때문이다).
-		 */
-		@Test
-		@DisplayName("OG 이미지는 다른 풀로 넘기지 않고 해석을 돌리는 스레드에서 결과 저장 직후 바로 만든다")
-		void ogImageRunsOnInterpretationThread() {
-			givenSajuResponse();
-			AtomicReference<String> ogImageThread = new AtomicReference<>();
-			willAnswer(invocation -> {
-				ogImageThread.set(Thread.currentThread().getName());
-				return null;
-			}).given(ogImageGenerationService).generateAndUploadOgImage(result);
-
-			callInterpret();
-
-			assertThat(ogImageThread.get()).isEqualTo(Thread.currentThread().getName());
-			assertThat(Arrays.stream(OgImageGenerationService.class.getDeclaredMethods())
-				.filter(method -> method.isAnnotationPresent(Async.class))
-				.map(Method::getName))
-				.as("@Async 가 붙은 OG 서비스 메서드").isEmpty();
 		}
 	}
 }

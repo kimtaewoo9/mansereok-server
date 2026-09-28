@@ -32,14 +32,14 @@ import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 @Slf4j
 public class AsyncConfig {
 
-	static final String PAID_GPT_POOL_LABEL = "유료 GPT 풀";
-	static final String DEFAULT_POOL_LABEL = "기본 비동기 풀(메일)";
-	static final String FREE_GPT_POOL_LABEL = "무료 GPT 풀";
+	private static final String PAID_GPT_POOL_LABEL = "유료 GPT 풀";
+	private static final String DEFAULT_POOL_LABEL = "기본 비동기 풀(메일)";
+	private static final String FREE_GPT_POOL_LABEL = "무료 GPT 풀";
 
 	// 사주 해석 전용 스레드 풀
 	@Bean(name = "gptTaskExecutor")
 	public Executor gptTaskExecutor() {
-		ThreadPoolTaskExecutor executor = boundedPool(PAID_GPT_POOL_LABEL, "GptAsync-", 25, 100);
+		ThreadPoolTaskExecutor executor = boundedPool("GptAsync-", 25, 100, rejectWhenFull(PAID_GPT_POOL_LABEL));
 		executor.setWaitForTasksToCompleteOnShutdown(true);
 		executor.setAwaitTerminationSeconds(120);
 		executor.initialize();
@@ -49,13 +49,14 @@ public class AsyncConfig {
 	/**
 	 * 기본 풀. 실행자 이름 없는 @Async(지금은 메일 발송뿐)가 쓴다.
 	 *
-	 * <p>가득 차면 거부하지 않고 제출한 스레드에서 바로 실행한다. 종료할 때는 대기 중인 메일까지 30초 기다린다.
+	 * <p>가득 차면 거부하지 않고 제출한 스레드에서 바로 실행한다. 그래서 트랜잭션 안에서 제출한 메일(비밀번호 재설정)은 포화 때
+	 * 그 트랜잭션이 DB 커넥션을 쥔 채 SES 응답을 기다린다. 종료할 때는 대기 중인 메일까지 30초 기다린다.
 	 */
 	@Primary
 	@Bean(name = "threadPoolTaskExecutor")
 	public Executor threadPoolTaskExecutor() {
-		ThreadPoolTaskExecutor executor = boundedPool(DEFAULT_POOL_LABEL, "DefaultAsync-", 10, 100);
-		executor.setRejectedExecutionHandler(runOnSubmittingThread(DEFAULT_POOL_LABEL));
+		ThreadPoolTaskExecutor executor = boundedPool("DefaultAsync-", 10, 100,
+			runOnSubmittingThread(DEFAULT_POOL_LABEL));
 		executor.setWaitForTasksToCompleteOnShutdown(true);
 		executor.setAwaitTerminationSeconds(30);
 		executor.initialize();
@@ -75,7 +76,7 @@ public class AsyncConfig {
 	 */
 	@Bean(name = "gptFreeTaskExecutor")
 	public Executor gptFreeTaskExecutor() {
-		ThreadPoolTaskExecutor executor = boundedPool(FREE_GPT_POOL_LABEL, "GptFree-", 50, 200);
+		ThreadPoolTaskExecutor executor = boundedPool("GptFree-", 50, 200, rejectWhenFull(FREE_GPT_POOL_LABEL));
 		executor.setWaitForTasksToCompleteOnShutdown(true);
 		executor.setAwaitTerminationSeconds(120);
 		executor.initialize();
@@ -83,25 +84,35 @@ public class AsyncConfig {
 	}
 
 	/**
-	 * 스레드 수가 size 로 고정되고(core = max) 큐가 queueCapacity 인 풀을 만든다. 가득 차면 label 을 넣은 로그를 남기고
-	 * RejectedExecutionException 을 던진다. 종료 규칙과 initialize 는 부르는 쪽이 정한다.
+	 * 스레드 수가 size 로 고정되고(core = max) 큐가 queueCapacity 인 풀을 만든다. 가득 찼거나 종료 중일 때 들어온 작업은
+	 * rejectionHandler 가 처리한다. 종료 규칙과 initialize 는 부르는 쪽이 정한다.
 	 *
-	 * @param label        로그와 예외 문구에 넣을 풀 이름
-	 * @param threadPrefix 스레드 이름 앞부분
+	 * @param threadPrefix     스레드 이름 앞부분
+	 * @param rejectionHandler 받지 못한 작업의 처리 규칙({@link #rejectWhenFull} 또는 {@link #runOnSubmittingThread})
 	 */
-	private static ThreadPoolTaskExecutor boundedPool(String label, String threadPrefix, int size, int queueCapacity) {
+	private static ThreadPoolTaskExecutor boundedPool(String threadPrefix, int size, int queueCapacity,
+		RejectedExecutionHandler rejectionHandler) {
 		ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
 		executor.setCorePoolSize(size);
 		executor.setMaxPoolSize(size);
 		executor.setQueueCapacity(queueCapacity);
 		executor.setThreadNamePrefix(threadPrefix);
-		executor.setRejectedExecutionHandler((task, pool) -> {
+		executor.setRejectedExecutionHandler(rejectionHandler);
+		return executor;
+	}
+
+	/**
+	 * 받지 못한 작업을 버리지 않고 label 을 넣은 로그를 남긴 뒤 RejectedExecutionException 을 던져 제출한 쪽이 알게 한다.
+	 *
+	 * @param label 로그와 예외 문구에 넣을 풀 이름
+	 */
+	private static RejectedExecutionHandler rejectWhenFull(String label) {
+		return (task, pool) -> {
 			log.error("🚨 [{} 포화] 요청 거부됨. activeCount={}, queueSize={}",
 				label, pool.getActiveCount(), pool.getQueue().size());
 
 			throw new RejectedExecutionException(label + "이 가득 차 요청을 받지 못했습니다. 잠시 후 다시 시도해주세요.");
-		});
-		return executor;
+		};
 	}
 
 	/**

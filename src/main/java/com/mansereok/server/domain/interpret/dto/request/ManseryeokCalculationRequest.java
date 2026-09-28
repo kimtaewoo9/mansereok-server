@@ -73,6 +73,11 @@ public class ManseryeokCalculationRequest {
 	/**
 	 * 무료 궁합 요청의 한 사람을 계산 입력으로 바꾼다. 입력이 잘못되면 IllegalArgumentException 이라 400 으로 나간다.
 	 *
+	 * <p>컨트롤러 입구의 @Valid 검증(ManseryeokCreateRequest 의 @Pattern)을 거친 값을 받는다. 이 변환은 앞뒤 공백과 섞인 구분자
+	 * ("1995/05-05")도 받아 주므로 입구 규칙보다 느슨하다. 입구 검증 없이 부르는 곳을 새로 만들면 입구 규칙을 여기에도 옮겨야 한다.
+	 *
+	 * <p>오류 메시지에는 입력값을 넣지 않는다. GlobalExceptionHandler 가 메시지를 경고 로그와 응답 본문에 그대로 남기기 때문이다.
+	 *
 	 * @throws IllegalArgumentException 생년월일이 없거나 형식이 틀렸을 때, 달력 값이 S·L 이 아닐 때, 출생시간 형식이 틀렸을 때,
 	 *                                  성별이 없거나 알 수 없는 값일 때
 	 */
@@ -88,7 +93,7 @@ public class ManseryeokCalculationRequest {
 	}
 
 	/**
-	 * "YYYY/MM/DD" 나 "YYYY-MM-DD" 를 날짜로 바꾼다. 입력값은 오류 메시지에 넣지 않는다. 메시지가 경고 로그에 그대로 남기 때문이다.
+	 * "YYYY/MM/DD" 나 "YYYY-MM-DD" 를 날짜로 바꾼다.
 	 */
 	private static LocalDate parseBirthday(String birthday) {
 		if (birthday == null || birthday.isBlank()) {
@@ -98,7 +103,7 @@ public class ManseryeokCalculationRequest {
 		try {
 			return LocalDate.parse(birthday.trim().replace("/", "-"));
 		} catch (DateTimeParseException e) {
-			throw new IllegalArgumentException("생년월일은 YYYY/MM/DD 형식의 있는 날짜여야 합니다.", e);
+			throw new IllegalArgumentException("생년월일은 YYYY/MM/DD 형식이어야 하고 실제로 있는 날짜여야 합니다.", e);
 		}
 	}
 
@@ -124,7 +129,7 @@ public class ManseryeokCalculationRequest {
 		try {
 			return LocalTime.parse(birthtime.trim());
 		} catch (DateTimeParseException e) {
-			throw new IllegalArgumentException("지원하지 않는 출생시간 형식입니다: " + birthtime);
+			throw new IllegalArgumentException("지원하지 않는 출생시간 형식입니다.", e);
 		}
 	}
 
@@ -137,7 +142,7 @@ public class ManseryeokCalculationRequest {
 		return switch (normalized) {
 			case "MALE", "M" -> "MALE";
 			case "FEMALE", "F" -> "FEMALE";
-			default -> throw new IllegalArgumentException("지원하지 않는 성별 값입니다: " + gender);
+			default -> throw new IllegalArgumentException("지원하지 않는 성별 값입니다.");
 		};
 	}
 }
