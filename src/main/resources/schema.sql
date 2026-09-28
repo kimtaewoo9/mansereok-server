@@ -110,59 +110,57 @@ CREATE TABLE `refresh_tokens` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- 개인 사주 해석 결과 저장 테이블
-CREATE TABLE results
-(
-    -- 기본 키
-    id           BIGINT AUTO_INCREMENT PRIMARY KEY,
-
-    -- 사용자 정보 (Nullable, users 테이블과 관계를 맺을 수 있음)
-    user_id      BIGINT,
-
-    -- 사주 분석 입력 정보
-    name         VARCHAR(100) NOT NULL,
-    solar_date   DATE         NOT NULL,
-    solar_time   TIME         NOT NULL,
-    gender       VARCHAR(10)  NOT NULL, -- "MALE", "FEMALE" 등
-    is_lunar     BOOLEAN      NOT NULL,
-
-    -- 핵심 결과 정보
-    ilgan        VARCHAR(10)  NOT NULL, -- 예: "임수"
-    interpretation TEXT       NOT NULL, -- GPT가 생성한 긴 해석 내용
-
-    -- 메타데이터
-    created_at   DATETIME(6) NOT NULL,
-    updated_at   DATETIME(6),
-
-    -- 검색 성능 향상을 위한 인덱스
-    INDEX        idx_results_user_id (user_id),
-    INDEX        idx_results_saju (name, solar_date, solar_time) -- 이름과 생년월일시로 조회하는 경우
-);
+-- 아래 두 표(results, compatibility_results)는 운영 SHOW CREATE TABLE 결과가 아니다. 로컬 MySQL 8.0 에서 ddl-auto 로 만든 표를
+-- 엔티티 필드 순서로 옮겨 적고, 이전 파일에 있던 user_id 인덱스(idx_results_user_id, idx_compatibility_results_user_id)를 남긴 것이다.
+-- user_id 인덱스는 [해석 4] 에서 엔티티에도 선언했다.
+-- 운영에서 확인하지 않은 짐작: 컬럼 순서(로컬 SHOW CREATE TABLE 은 알파벳 순서다), 표 collation(utf8mb4_unicode_ci, 컬럼마다 붙는
+-- COLLATE 는 뺐다), 모든 컬럼의 NULL 허용, status 의 enum 타입, user_id 인덱스가 운영에 있는지.
+-- [해석 4] 운영 DDL 을 적용한 뒤 운영의 SHOW CREATE TABLE results / compatibility_results 결과로 두 블록을 통째로 바꾼다.
+CREATE TABLE `results` (
+  `id` bigint NOT NULL AUTO_INCREMENT,
+  `user_id` bigint DEFAULT NULL,
+  `payment_id` bigint DEFAULT NULL,
+  `name` varchar(255) DEFAULT NULL,
+  `solar_date` date DEFAULT NULL,
+  `solar_time` time(6) DEFAULT NULL,
+  `gender` varchar(255) DEFAULT NULL,
+  `is_lunar` bit(1) DEFAULT NULL,
+  `ilgan` varchar(255) DEFAULT NULL,
+  `interpretation` mediumtext,
+  `summary` text,
+  `og_image_url` varchar(512) DEFAULT NULL,
+  `product_name` varchar(255) DEFAULT NULL,
+  `status` enum('COMPLETED','INPUT_REQUIRED','PROCESSING') DEFAULT NULL,
+  `created_at` datetime(6) DEFAULT NULL,
+  `updated_at` datetime(6) DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_results_payment_id` (`payment_id`),
+  KEY `idx_results_user_id` (`user_id`),
+  KEY `idx_results_status_updated_at` (`status`,`updated_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- 궁합 분석 결과 저장 테이블
-CREATE TABLE compatibility_results
-(
-    -- 기본 키
-    id                   BIGINT AUTO_INCREMENT PRIMARY KEY,
-
-    -- 사용자 정보 (Nullable)
-    user_id              BIGINT,
-
-    -- 궁합 분석 대상자 정보
-    person1_name         VARCHAR(100),
-    person1_ilgan        VARCHAR(10),
-    person2_name         VARCHAR(100),
-    person2_ilgan        VARCHAR(10),
-
-    -- 궁합 분석 결과
-    compatibility_score  INT, -- 궁합 점수 (0-100)
-    interpretation       TEXT NOT NULL, -- GPT가 생성한 긴 궁합 분석 내용
-
-    -- 메타데이터
-    created_at           DATETIME(6) NOT NULL,
-
-    -- 인덱스
-    INDEX idx_compatibility_results_user_id (user_id)
-);
+CREATE TABLE `compatibility_results` (
+  `id` bigint NOT NULL AUTO_INCREMENT,
+  `user_id` bigint DEFAULT NULL,
+  `payment_id` bigint DEFAULT NULL,
+  `person1_name` varchar(255) DEFAULT NULL,
+  `person1_ilgan` varchar(255) DEFAULT NULL,
+  `person2_name` varchar(255) DEFAULT NULL,
+  `person2_ilgan` varchar(255) DEFAULT NULL,
+  `compatibility_score` int DEFAULT NULL,
+  `interpretation` mediumtext,
+  `summary` text,
+  `og_image_url` varchar(512) DEFAULT NULL,
+  `product_name` varchar(255) DEFAULT NULL,
+  `status` enum('COMPLETED','INPUT_REQUIRED','PROCESSING') DEFAULT NULL,
+  `created_at` datetime(6) DEFAULT NULL,
+  `updated_at` datetime(6) DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_compatibility_results_payment_id` (`payment_id`),
+  KEY `idx_compatibility_results_user_id` (`user_id`),
+  KEY `idx_compatibility_results_status_updated_at` (`status`,`updated_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- payments 테이블
 CREATE TABLE payments (

@@ -7,9 +7,11 @@ import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.Index;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
+import jakarta.persistence.UniqueConstraint;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
@@ -18,8 +20,22 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.ToString;
 
+// 제약·인덱스 이름을 고정해 엔티티, schema.sql, 운영 DB 가 같은 이름을 쓰게 한다. 운영은 ddl-auto: validate 라 이름과 인덱스를
+// 검사하지 않으므로, 바꿀 때는 운영 DDL 과 schema.sql 을 함께 고친다.
 @Entity
-@Table(name = "results")
+@Table(
+	name = "results",
+	// 결제 하나에 결과 하나. 결제 ID 로 찾을 때 이 인덱스로 한 행만 본다.
+	uniqueConstraints = @UniqueConstraint(name = "uk_results_payment_id", columnNames = "payment_id"),
+	indexes = {
+		// 오래 해석 중(PROCESSING)에 머문 결과를 되돌릴 때 상태와 마지막 변경 시각으로 찾는다.
+		@Index(name = "idx_results_status_updated_at", columnList = "status, updated_at"),
+		// 탈퇴 벌크 DELETE(deleteAllByUserId)가 그 사용자의 행만 잠그게 한다. 없으면 REPEATABLE READ 에서 표 전체를 훑으며
+		// 모든 행과 표 끝을 잠가, 탈퇴 트랜잭션이 끝날 때까지 다른 사용자의 결과 저장이 멈춘다. 결과 목록 조회도 이 인덱스를 쓴다.
+		// user_id 로 시작하는 복합 인덱스(예: (user_id, created_at))가 들어오면 이 인덱스는 지운다.
+		@Index(name = "idx_results_user_id", columnList = "user_id")
+	}
+)
 @Getter
 @ToString
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
@@ -32,7 +48,7 @@ public class Result {
 	@Column(name = "user_id")
 	private Long userId;  // User 엔티티 대신 ID만 저장
 
-	@Column(name = "payment_id", unique = true) // unique 제약 .. 하나의 결제에 하나의 결과만 연결
+	@Column(name = "payment_id") // 하나의 결제에 하나의 결과만 연결(uk_results_payment_id)
 	private Long paymentId;
 
 	private String name;
@@ -47,7 +63,8 @@ public class Result {
 
 	private String ilgan;
 
-	@Column(columnDefinition = "TEXT")
+	// 한글 한 글자가 3바이트라 TEXT(64KB)로는 약 21,800자에서 잘린다. 긴 해석문도 담도록 MEDIUMTEXT(16MB)로 둔다.
+	@Column(columnDefinition = "MEDIUMTEXT")
 	private String interpretation;
 
 	@Column(columnDefinition = "TEXT")

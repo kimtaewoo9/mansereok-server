@@ -2,6 +2,8 @@ package com.mansereok.server.domain.interpret.entity;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import jakarta.persistence.PrePersist;
+import jakarta.persistence.PreUpdate;
 import java.lang.reflect.Method;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -119,6 +121,51 @@ class CompatibilityResultTest {
 
 			// then
 			assertThat(result.getStatus()).isEqualTo(current);
+		}
+	}
+
+	/**
+	 * JPA 가 저장 직전에 부르는 콜백 메서드(onCreate, onUpdate)를 같은 패키지에서 직접 불러 확인하고, 두 메서드에 콜백 애너테이션이
+	 * 붙어 있는지 본다. 실제 저장에서 updated_at 이 채워지고 바뀌는지는 ResultTableConstraintMySqlTest 가 본다.
+	 */
+	@Nested
+	@DisplayName("저장 콜백은")
+	class Timestamps {
+
+		@Test
+		@DisplayName("onCreate 는 만든 시각과 고친 시각을 같은 값으로 채운다")
+		void fillsCreatedAtAndUpdatedAtOnCreate() {
+			// given
+			CompatibilityResult result = inputRequired();
+
+			// when
+			result.onCreate();
+
+			// then
+			assertThat(result.getUpdatedAt()).isNotNull().isEqualTo(result.getCreatedAt());
+		}
+
+		@Test
+		@DisplayName("onUpdate 는 고친 시각만 채우고 만든 시각은 건드리지 않는다")
+		void fillsOnlyUpdatedAtOnUpdate() {
+			// given: 고친 시각이 비어 있는 결과(updated_at 컬럼이 생기기 전에 저장된 행과 같다)
+			CompatibilityResult result = inputRequired();
+
+			// when
+			result.onUpdate();
+
+			// then
+			assertThat(result.getUpdatedAt()).isNotNull();
+			assertThat(result.getCreatedAt()).isNull();
+		}
+
+		@Test
+		@DisplayName("onCreate 에는 @PrePersist, onUpdate 에는 @PreUpdate 가 붙어 있어 JPA 가 저장 직전에 부른다")
+		void callbacksAreRegisteredWithJpa() throws NoSuchMethodException {
+			assertThat(CompatibilityResult.class.getDeclaredMethod("onCreate").isAnnotationPresent(PrePersist.class))
+				.as("onCreate 의 @PrePersist").isTrue();
+			assertThat(CompatibilityResult.class.getDeclaredMethod("onUpdate").isAnnotationPresent(PreUpdate.class))
+				.as("onUpdate 의 @PreUpdate").isTrue();
 		}
 	}
 

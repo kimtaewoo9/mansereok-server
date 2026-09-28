@@ -23,5 +23,12 @@ public interface CompatibilityResultRepository extends JpaRepository<Compatibili
 	@Query("UPDATE CompatibilityResult c SET c.ogImageUrl = :ogImageUrl WHERE c.id = :id")
 	void updateOgImageUrl(@Param("id") Long id, @Param("ogImageUrl") String ogImageUrl);
 
+	// 회원 탈퇴 때 부른다. 엔티티를 읽지 않고 DELETE 한 번으로 지운다. 결과 표에는 삭제 콜백도 연관도 없어 엔티티를 거칠 이유가 없다.
+	// 트랜잭션은 부르는 쪽(UserService.deleteUser)의 것을 쓰고, 그 안에서 앞서 바꾼 내용은 먼저 DB 로 보낸다.
+	// idx_compatibility_results_user_id 를 타서 그 사용자의 행만 잠근다. 운영에 이 인덱스가 생긴 뒤에만 배포한다.
+	// 선언 줄은 결제 스택이 바로 다음 줄을 고쳐 두어 그대로 둔다(@Param 을 붙이면 병합 충돌). 그래서 -parameters 컴파일 옵션이
+	// 필요 없는 ?1 로 묶는다.
+	@Modifying(flushAutomatically = true)
+	@Query("DELETE FROM CompatibilityResult c WHERE c.userId = ?1")
 	void deleteAllByUserId(Long userId);
 }
