@@ -2,6 +2,7 @@ package com.mansereok.server.domain.user.service;
 
 import com.mansereok.server.domain.auth.PasswordResetTokenRepository;
 import com.mansereok.server.domain.auth.entity.PasswordResetToken;
+import com.mansereok.server.domain.auth.service.oauth.OauthProfile;
 import com.mansereok.server.domain.interpret.dto.response.CompatibilityPageResponse;
 import com.mansereok.server.domain.interpret.dto.response.InterpretationPageResponse;
 import com.mansereok.server.domain.interpret.dto.response.InterpretationResultResponse;
@@ -27,6 +28,8 @@ import jakarta.persistence.EntityNotFoundException;
 import java.time.LocalDate;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Optional;
+import java.util.UUID;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import lombok.RequiredArgsConstructor;
@@ -35,6 +38,7 @@ import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
 
 @Service
 @RequiredArgsConstructor
@@ -93,30 +97,21 @@ public class UserService {
 				isMarketingAgreed
 			));
 
-		discordNotificationService.sendUserCreatedNotification(
-			savedUser.getName(),
-			savedUser.getEmail(),
-			savedUser.getId(),
-			"일반 회원가입",
-			savedUser.getCreatedAt()
-		);
-
-		slackNotificationService.sendUserCreatedNotification(
-			savedUser.getName(),
-			savedUser.getEmail(),
-			savedUser.getId(),
-			"일반 회원가입",
-			savedUser.getCreatedAt()
-		);
+		notifyUserCreated(savedUser, "일반 회원가입");
 
 //		emailService.sendWelcomeEmail(savedUser.getEmail(), savedUser.getName());
 
 		return savedUser;
 	}
 
-	public User findByEmail(String email) {
-		return userRepository.findByEmail(email)
-			.orElse(null);
+	/**
+	 * 이메일로 계정을 찾는다. 이메일이 null 이거나 공백이면 조회하지 않고 빈 값을 돌려준다.
+	 */
+	public Optional<User> findByEmail(String email) {
+		if (!StringUtils.hasText(email)) {
+			return Optional.empty();
+		}
+		return userRepository.findByEmail(email);
 	}
 
 	public User findByUsername(String username) {
@@ -125,48 +120,68 @@ public class UserService {
 			.orElseThrow(() -> new EntityNotFoundException("사용자를 찾을 수 없습니다: " + username));
 	}
 
-	public User getUserBySocialId(String socialId) {
-		return userRepository.findBySocialId(socialId)
-			.orElse(null);
-	}
-
-	// Oauth를 통한 회원가입
-	public User registerWithOauth(String username, String email, String name,
-		String sub, SocialType socialType) {
-		if (userRepository.existsByEmail(email)) {
+	/**
+	 * 소셜 로그인으로 새 계정을 만든다.
+	 *
+	 * <p>이메일은 제공자가 주인을 확인한 것만 저장하고, 없으면 null 로 둔다. 이메일 중복 검사도 저장할 이메일이 있을 때만 한다.
+	 */
+	public User registerWithOauth(OauthProfile profile) {
+		String email = profile.trustedEmail().orElse(null);
+		if (email != null && userRepository.existsByEmail(email)) {
 			throw new DuplicateEmailException("이미 존재하는 이메일 입니다: " + email);
 		}
 
 		User savedUser = userRepository.save(
 			User.createByOauth(
-				username, // id 로 social id 를 사용함 .
-				name, // 사용자 이름
+				oauthUsername(profile),
+				profile.name(),
 				email,
-				sub, // socialId
-				socialType
+				profile.socialId(),
+				profile.socialType()
 			)
 		);
 
-		// 디스코드 알림 전송
-		discordNotificationService.sendUserCreatedNotification(
-			savedUser.getName(),
-			savedUser.getEmail(),
-			savedUser.getId(),
-			socialType.name() + " OAuth",
-			savedUser.getCreatedAt()
-		);
-
-		slackNotificationService.sendUserCreatedNotification(
-			savedUser.getName(),
-			savedUser.getEmail(),
-			savedUser.getId(),
-			"일반 회원가입",
-			savedUser.getCreatedAt()
-		);
+		notifyUserCreated(savedUser, profile.socialType().name() + " OAuth");
 
 //		emailService.sendWelcomeEmail(savedUser.getEmail(), savedUser.getName());
 
 		return savedUser;
+	}
+
+	/**
+	 * 소셜 가입 계정의 username. 네이버는 무작위 10자리 대문자, 나머지 제공자는 제공자의 사용자 번호를 그대로 쓴다. 예전 컨트롤러의
+	 * 규칙을 그대로 옮겼다. username 은 가입할 때 한 번 저장되고 다시 계산하지 않으므로, 규칙을 바꿔도 이미 가입한 사용자에게는
+	 * 영향이 없다.
+	 *
+	 * <p>남는 위험: 제공자가 달라도 사용자 번호가 같으면 username 이 겹칠 수 있다. 운영 DB 에 username UNIQUE 가 있으면 뒤에
+	 * 오는 가입이 실패한다. 없으면 같은 username 행이 둘 생기고, username 으로 회원을 찾는 요청이 두 사용자 모두 실패한다.
+	 */
+	private static String oauthUsername(OauthProfile profile) {
+		if (profile.socialType() == SocialType.NAVER) {
+			return UUID.randomUUID().toString().substring(0, 10).toUpperCase();
+		}
+		return profile.socialId();
+	}
+
+	/**
+	 * 가입 알림을 디스코드와 슬랙에 같은 가입 경로로 보낸다.
+	 */
+	private void notifyUserCreated(User user, String signupPath) {
+		discordNotificationService.sendUserCreatedNotification(
+			user.getName(),
+			user.getEmail(),
+			user.getId(),
+			signupPath,
+			user.getCreatedAt()
+		);
+
+		slackNotificationService.sendUserCreatedNotification(
+			user.getName(),
+			user.getEmail(),
+			user.getId(),
+			signupPath,
+			user.getCreatedAt()
+		);
 	}
 
 	@Transactional(readOnly = true)

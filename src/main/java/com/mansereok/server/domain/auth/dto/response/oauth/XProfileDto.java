@@ -2,6 +2,8 @@ package com.mansereok.server.domain.auth.dto.response.oauth;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.mansereok.server.domain.auth.service.oauth.OauthProfile;
+import com.mansereok.server.domain.user.entity.SocialType;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
@@ -26,4 +28,12 @@ public class XProfileDto {
 
 	@JsonProperty("confirmed_email")
 	private String email;
+
+	/**
+	 * X 의 confirmed_email 은 X 가 확인한 주소만 내려오므로 신뢰한다. name 은 사용자가 아무 값으로나 바꿀 수 있는 표시
+	 * 이름이다.
+	 */
+	public OauthProfile toOauthProfile() {
+		return new OauthProfile(SocialType.X, id, email, name, true);
+	}
 }

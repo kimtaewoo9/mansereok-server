@@ -54,8 +54,10 @@ public class AuthController {
 		HttpServletResponse response) {
 
 		// 0. 소셜 로그인 계정인지 확인
-		User socialCheckUser = userService.findByEmail(loginRequest.getEmail());
-		if (socialCheckUser != null && socialCheckUser.getSocialType() != null) {
+		boolean socialAccount = userService.findByEmail(loginRequest.getEmail())
+			.filter(socialCheckUser -> socialCheckUser.getSocialType() != null)
+			.isPresent();
+		if (socialAccount) {
 			return ResponseEntity.status(409).body(Map.of(
 				"error", "소셜 로그인으로 가입된 이메일입니다. 소셜 로그인을 이용해주세요."
 			));
