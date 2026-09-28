@@ -67,6 +67,13 @@ class PromptMatchesExpectedFileTest {
 	private static final List<Long> REVERSE_SAJU_IDS = List.of(18L);
 	private static final List<Long> REVERSE_FREE_IDS = List.of(101L, 106L);
 
+	/**
+	 * 출생시간을 모르는 사람(solarTime null)의 기대 결과 파일을 만든 상품. 출생시각을 쓰는 곳은 모든 상품이
+	 * 같은 도우미(SajuProfileSections)를 거치므로, 그 도우미를 쓰면서 예전에 NullPointerException 이 나던
+	 * 인생총운(1) 하나로 "시간 모름" 문구의 모양을 못박는다.
+	 */
+	private static final List<Long> TIME_UNKNOWN_SAJU_IDS = List.of(1L);
+
 	static Stream<org.junit.jupiter.params.provider.Arguments> cases() {
 		Stream.Builder<org.junit.jupiter.params.provider.Arguments> builder = Stream.builder();
 		for (Long id : SAJU_IDS) {
@@ -90,6 +97,9 @@ class PromptMatchesExpectedFileTest {
 		for (Long id : REVERSE_FREE_IDS) {
 			builder.add(org.junit.jupiter.params.provider.Arguments.of("free", id, "-reverse"));
 		}
+		for (Long id : TIME_UNKNOWN_SAJU_IDS) {
+			builder.add(org.junit.jupiter.params.provider.Arguments.of("saju", id, "-time-unknown"));
+		}
 		return builder.build();
 	}
 
@@ -102,6 +112,8 @@ class PromptMatchesExpectedFileTest {
 				case "-edge" -> saju(subcategoryId, "박하늘", PromptFixtures.personEdge(), "");
 				case "-reverse" ->
 					saju(subcategoryId, "강민호", PromptFixtures.personReverseDaewoon(), "원피스");
+				case "-time-unknown" ->
+					saju(subcategoryId, "김태우", PromptFixtures.personTimeUnknown(), "원피스");
 				default -> throw new IllegalArgumentException("알 수 없는 변이: " + variant);
 			};
 			case "compatibility" -> switch (variant) {

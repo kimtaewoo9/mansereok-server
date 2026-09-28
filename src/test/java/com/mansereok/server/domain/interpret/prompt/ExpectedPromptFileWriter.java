@@ -39,6 +39,9 @@ class ExpectedPromptFileWriter {
 			writeExpectedFile(id + "-edge2.txt", SajuPrompts.compatibility(id, "박하늘",
 				PromptFixtures.personEdge(), "최서준", PromptFixtures.personEdge(), "", ""), true);
 		}
+		// 출생시간을 모르는 사람. 인생총운(1)은 기준연도를 오늘에서 가져오므로 연도를 되돌린다.
+		writeExpectedFile("1-time-unknown.txt", SajuPrompts.saju(1L, "김태우",
+			PromptFixtures.personTimeUnknown(), "원피스"), true);
 	}
 
 	private void writeExpectedFile(String fileName, String prompt, boolean maskYear) throws Exception {

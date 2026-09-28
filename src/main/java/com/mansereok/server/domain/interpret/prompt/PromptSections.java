@@ -211,6 +211,22 @@ final class PromptSections {
 	}
 
 	/**
+	 * 캐릭터 이름 앞뒤에 붙는 작품명 문구를 만든다. 작품명이 있으면 {@code phraseFormat} 의 {@code %s} 자리에 넣어
+	 * 돌려주고, 없으면(null) 빈 문자열을 돌려준다.
+	 *
+	 * <p>작품명은 요청에서 선택값이고 정화 뒤에 남는 글자가 없어도 null 이 된다. 빈 값을 그대로 String.format 에
+	 * 넘기면 프롬프트에 "작품 'null'" 이 찍히고 모델이 그 문구로 결과를 시작하므로, 빈 값 처리를 여기 한 곳에 모은다.
+	 * 예를 들어 {@code sourceTitlePhrase("원피스", "작품 '%s'의 ")} 는 "작품 '원피스'의 " 이고,
+	 * 작품명이 없으면 "" 이라 문장이 캐릭터 이름부터 시작한다.
+	 *
+	 * @param sourceTitle  정화된 작품명. 없으면 null
+	 * @param phraseFormat 작품명 자리를 {@code %s} 하나로 둔 문구
+	 */
+	static String sourceTitlePhrase(String sourceTitle, String phraseFormat) {
+		return sourceTitle == null ? "" : phraseFormat.formatted(sourceTitle);
+	}
+
+	/**
 	 * 장문 유료 상품(사업운 21, 학업운 22, 인생조언 23)이 공유하는 용어 정책과 사실 근거 규칙.
 	 * 세 상품 모두 "### 절대 규칙 (최우선) ###" 의 앞머리로 같은 문구를 쓰고 있어 여기로 모았다.
 	 * 상품마다 다른 6번 이후 규칙은 호출부가 이어서 붙인다.

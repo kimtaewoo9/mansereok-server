@@ -12,18 +12,6 @@ final class LifeAndPersonalityPrompts {
 
 	static String createLifeOverallPrompt(String name, ManseryeokCalculationResponse response) {
 		StringBuilder prompt = new StringBuilder();
-		ManseryeokCalculationResponse.SajuInfo saju = response.getSaju();
-		ManseryeokCalculationResponse.InputInfo input = response.getInput();
-
-		String solarDate = input.getSolarDate().toString(); // 예: 2001-06-12
-		String solarTime = input.getSolarTime().toString(); // 예: 11:12
-
-		String formattedDate = solarDate.substring(0, 4) + "년 "
-			+ solarDate.substring(5, 7) + "월 "
-			+ solarDate.substring(8, 10) + "일";
-
-		String formattedTime = solarTime.substring(0, 2) + "시 "
-			+ solarTime.substring(3, 5) + "분";
 
 		PromptSections.appendHyeanPersonaHeader(prompt);
 
@@ -131,13 +119,12 @@ final class LifeAndPersonalityPrompts {
 
 		prompt.append("""
 			--- [분석 시작] ---
-			"%s님은 %s %s에 태어나신, [일간(%s) 자연물 비유]와 같은 기운을 지니셨네요." 로 시작해주세요.
+			"%s님은 %s에 태어나신, [일간(%s) 자연물 비유]와 같은 기운을 지니셨네요." 로 시작해주세요.
 
 			"""
 			.formatted(
 				name,
-				input.getSolarDate(),
-				input.getSolarTime(),
+				SajuProfileSections.birthDateTimeDigitPhrase(input.getSolarDate(), input.getSolarTime()),
 				saju.getDaySky().getKorean() + saju.getDaySky().getFiveCircle()));
 
 		prompt.append("""

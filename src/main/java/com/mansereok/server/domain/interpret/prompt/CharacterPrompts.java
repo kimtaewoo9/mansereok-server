@@ -16,16 +16,6 @@ final class CharacterPrompts {
 		ManseryeokCalculationResponse.SajuInfo saju = response.getSaju();
 		ManseryeokCalculationResponse.InputInfo input = response.getInput();
 
-		String solarDate = input.getSolarDate().toString();
-		String solarTime = input.getSolarTime().toString();
-
-		String formattedDate = solarDate.substring(0, 4) + "년 "
-			+ solarDate.substring(5, 7) + "월 "
-			+ solarDate.substring(8, 10) + "일";
-
-		String formattedTime = solarTime.substring(0, 2) + "시 "
-			+ solarTime.substring(3, 5) + "분";
-
 		// 1. '혜안' 공통 페르소나 주입 (유지)
 		PromptSections.appendHyeanPersonaHeader(prompt);
 
@@ -63,10 +53,12 @@ final class CharacterPrompts {
 
 		prompt.append("""
 			--- [분석 시작] ---
-			"%s님은 %s %s에 태어나신, [일간(%s) 자연물 비유]와 같은 기운을 지니셨습니다."와 같이 자연스럽게 분석을 시작해주세요.
+			"%s님은 %s에 태어나신, [일간(%s) 자연물 비유]와 같은 기운을 지니셨습니다."와 같이 자연스럽게 분석을 시작해주세요.
 
 			"""
-			.formatted(name, formattedDate, formattedTime, saju.getDaySky().getKorean() + saju.getDaySky().getFiveCircle()));
+			.formatted(name,
+				SajuProfileSections.birthDateTimePhrase(input.getSolarDate(), input.getSolarTime()),
+				saju.getDaySky().getKorean() + saju.getDaySky().getFiveCircle()));
 
 		prompt.append("""
 			## 아이돌의 타고난 기질, 성격, 인성, 그룹 내 역할
@@ -110,16 +102,6 @@ final class CharacterPrompts {
 		ManseryeokCalculationResponse.SajuInfo saju = response.getSaju();
 		ManseryeokCalculationResponse.InputInfo input = response.getInput();
 
-		String solarDate = input.getSolarDate().toString();
-		String solarTime = input.getSolarTime().toString();
-
-		String formattedDate = solarDate.substring(0, 4) + "년 "
-			+ solarDate.substring(5, 7) + "월 "
-			+ solarDate.substring(8, 10) + "일";
-
-		String formattedTime = solarTime.substring(0, 2) + "시 "
-			+ solarTime.substring(3, 5) + "분";
-
 		// 1. '혜안' 공통 페르소나 주입 (유지)
 		PromptSections.appendHyeanPersonaHeader(prompt);
 
@@ -157,10 +139,12 @@ final class CharacterPrompts {
 
 		prompt.append("""
 			--- [분석 시작] ---
-			"%s님은 %s %s에 태어나신, [일간(%s) 자연물 비유]와 같은 기운을 지니셨습니다."와 같이 자연스럽게 분석을 시작해주세요.
+			"%s님은 %s에 태어나신, [일간(%s) 자연물 비유]와 같은 기운을 지니셨습니다."와 같이 자연스럽게 분석을 시작해주세요.
 
 			"""
-			.formatted(name, formattedDate, formattedTime, saju.getDaySky().getKorean() + saju.getDaySky().getFiveCircle()));
+			.formatted(name,
+				SajuProfileSections.birthDateTimePhrase(input.getSolarDate(), input.getSolarTime()),
+				saju.getDaySky().getKorean() + saju.getDaySky().getFiveCircle()));
 
 		prompt.append("""
 			## 배우의 타고난 기질, 성격, 인성, 작품 선택 능력
@@ -210,11 +194,11 @@ final class CharacterPrompts {
 		// 2. 캐릭터 설정 주입
 		prompt.append("""
 			### ⚠️ 캐릭터 분석 모드 ###
-			이 사주는 작품 **'%s'**에 등장하는 캐릭터 **'%s'**의 사주입니다.
+			이 사주는 %s캐릭터 **'%s'**의 사주입니다.
 			캐릭터의 원작 설정(성격, 작중 행적)과 사주 풀이를 연결하여, '이 캐릭터가 왜 이런 운명을 가졌는지' 설명해주세요.
 
 			"""
-			.formatted(sourceTitle != null ? sourceTitle : "알 수 없는 작품", name));
+			.formatted(PromptSections.sourceTitlePhrase(sourceTitle, "작품 **'%s'**에 등장하는 "), name));
 
 		// 3. 사주 정보
 		prompt.append("""
@@ -236,8 +220,8 @@ final class CharacterPrompts {
 			--- [분석 시작] ---
 			""");
 		prompt.append(
-			String.format("\"작품 '%s'의 '%s'님은 [%s 자연물 비유]와 같은 기운을 타고나셨군요.\"로 시작\n\n", sourceTitle,
-				name, dayIlgan));
+			String.format("\"%s'%s'님은 [%s 자연물 비유]와 같은 기운을 타고나셨군요.\"로 시작\n\n",
+				PromptSections.sourceTitlePhrase(sourceTitle, "작품 '%s'의 "), name, dayIlgan));
 
 		prompt.append("""
 			## 사주로 본 캐릭터에 대한 분석

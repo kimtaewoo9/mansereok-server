@@ -9,6 +9,8 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 
 @DisplayName("프롬프트 공통 조각")
 class PromptSectionsTest {
@@ -24,6 +26,21 @@ class PromptSectionsTest {
 		assertThatThrownBy(() -> PromptSections.requireRoutableSubcategoryId(null))
 			.isInstanceOf(IllegalArgumentException.class)
 			.hasMessageContaining("지원하지 않는 카테고리입니다");
+	}
+
+	@ParameterizedTest(name = "[{index}] 작품명 \"{0}\" + 문구 \"{1}\" → \"{2}\"")
+	@CsvSource(delimiter = '|', textBlock = """
+		# 작품명        | 문구                  | 결과
+		원피스          | '작품 **''%s''**의 '  | '작품 **''원피스''**의 '
+		원피스          | ' (%s)'               | ' (원피스)'
+		# 작품명은 문구에 값으로만 들어가고 서식 지정자로 읽히지 않는다
+		100%d 사랑      | ' (%s)'               | ' (100%d 사랑)'
+		# 작품명이 없으면(null) 빈 문자열이라 문장이 캐릭터 이름부터 시작한다
+		                | '작품 **''%s''**의 '  | ''
+		""")
+	@DisplayName("작품명 문구는 작품명이 있으면 문구 자리에 넣고 없으면 빈 문자열이다")
+	void sourceTitlePhraseIsEmptyWithoutTitle(String sourceTitle, String phraseFormat, String expected) {
+		assertThat(PromptSections.sourceTitlePhrase(sourceTitle, phraseFormat)).isEqualTo(expected);
 	}
 
 	@Test
