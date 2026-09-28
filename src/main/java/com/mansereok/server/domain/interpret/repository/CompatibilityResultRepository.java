@@ -49,17 +49,27 @@ public interface CompatibilityResultRepository extends JpaRepository<Compatibili
 	Optional<CompatibilityResult> findByPaymentIdForUpdate(@Param("paymentId") Long paymentId);
 
 	/**
-	 * 해석을 staleBefore 보다 전에 시작해 아직 해석 중(PROCESSING)인 궁합 결과를 정보 입력 대기(INPUT_REQUIRED)로 되돌리고, 되돌린
-	 * 행 수를 돌려준다. ResultRepository.revertProcessingUpdatedBefore 와 같은 규칙이다. updated_at 이 NULL 인 행(컬럼을 더하기
-	 * 전의 행을 채우지 않은 경우)은 비교가 참이 되지 않아 되돌리지 않는다.
+	 * 해석을 staleBefore 보다 전에 시작해 아직 해석 중(PROCESSING)인 궁합 결과의 ID 를 잠그지 않고 읽는다.
+	 * ResultRepository.findIdsProcessingUpdatedBefore 와 같은 규칙이고 같은 까닭으로 되돌리기와 나눈다. updated_at 이 NULL 인
+	 * 행(컬럼을 더하기 전의 행을 채우지 않은 경우)은 비교가 참이 되지 않아 읽지 않는다.
+	 */
+	@Query("SELECT c.id FROM CompatibilityResult c"
+		+ " WHERE c.status = com.mansereok.server.domain.interpret.entity.ResultStatus.PROCESSING"
+		+ " AND c.updatedAt < :staleBefore")
+	List<Long> findIdsProcessingUpdatedBefore(@Param("staleBefore") LocalDateTime staleBefore);
+
+	/**
+	 * 궁합 결과 id 가 아직 해석 중이고 해석을 staleBefore 보다 전에 시작했으면 정보 입력 대기(INPUT_REQUIRED)로 되돌리고, 되돌린 행
+	 * 수(0 또는 1)를 돌려준다. ResultRepository.revertIfProcessingUpdatedBefore 와 같은 규칙이다.
 	 */
 	@Transactional
 	@Modifying(flushAutomatically = true, clearAutomatically = true)
 	@Query("UPDATE CompatibilityResult c"
 		+ " SET c.status = com.mansereok.server.domain.interpret.entity.ResultStatus.INPUT_REQUIRED, c.updatedAt = :now"
-		+ " WHERE c.status = com.mansereok.server.domain.interpret.entity.ResultStatus.PROCESSING"
+		+ " WHERE c.id = :id"
+		+ " AND c.status = com.mansereok.server.domain.interpret.entity.ResultStatus.PROCESSING"
 		+ " AND c.updatedAt < :staleBefore")
-	int revertProcessingUpdatedBefore(@Param("staleBefore") LocalDateTime staleBefore,
+	int revertIfProcessingUpdatedBefore(@Param("id") Long id, @Param("staleBefore") LocalDateTime staleBefore,
 		@Param("now") LocalDateTime now);
 
 	@Transactional

@@ -3,6 +3,7 @@ package com.mansereok.server.domain.interpret.service;
 import static java.util.concurrent.TimeUnit.MILLISECONDS;
 import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.catchThrowable;
 import static org.assertj.core.api.Assumptions.assumeThat;
@@ -72,6 +73,10 @@ class ResultStartOnceMySqlTest extends InterpretationMySqlTest {
 		ZoneId.of("Asia/Seoul"));
 	private static final LocalDateTime NOW = LocalDateTime.of(2100, 1, 1, 9, 0);
 	private static final LocalDateTime SEVENTY_MINUTES_AGO = LocalDateTime.of(2100, 1, 1, 7, 50);
+	// 되돌리기 기준(60분)을 넘기지 않아 아직 도는 해석이 시작한 시각.
+	private static final LocalDateTime FIFTY_MINUTES_AGO = LocalDateTime.of(2100, 1, 1, 8, 10);
+	// 기본 설정(60분)의 되돌리기 기준 시각. 이보다 전에 시작한 해석 중 결과를 되돌린다.
+	private static final LocalDateTime STALE_BEFORE = LocalDateTime.of(2100, 1, 1, 8, 0);
 	// 되돌린 뒤 다시 시작하는 순서에서, 먼저 시작한 해석(A)이 해석을 시작한 시각. 되돌리기 기준(60분)을 넘긴다.
 	private static final LocalDateTime FIRST_STARTED_AT = SEVENTY_MINUTES_AGO;
 
@@ -303,6 +308,93 @@ class ResultStartOnceMySqlTest extends InterpretationMySqlTest {
 			}
 		}
 
+		/**
+		 * 되돌리기를 범위 UPDATE 한 문장으로 하던 때는, InnoDB 가 범위 바로 뒤의 행(아직 도는 해석 중 가장 먼저 시작한 것)의 인덱스
+		 * 칸을 잠그고 그 행 잠금을 기다렸다. 그 행의 결과 저장은 행을 잠근 채 상태를 바꾸며 그 인덱스 칸을 기다려 둘이 교착했다. 지금은
+		 * 대상 ID 를 잠그지 않고 읽고 기본 키로 한 행씩 되돌리므로, 되돌리기 대상이 아닌 행은 잠그지도 기다리지도 않는다.
+		 *
+		 * <p>오래 멈춘 결과가 없으면 되돌리기는 UPDATE 를 보내지 않아 무엇도 기다리지 않는다. 그래서 오래 멈춘 결과를 하나 함께 두어
+		 * 되돌리는 UPDATE 가 실제로 나가게 한다. 한 행 UPDATE 에서 기본 키 조건이 빠지면 다시 범위 UPDATE 가 되어 도는 해석의 행을
+		 * 기다린다.
+		 */
+		@Test
+		@DisplayName("아직 도는 해석의 결과 저장이 사주 결과 행을 잠그고 있을 때 되돌리기는 그 행을 기다리지 않고 오래 멈춘 다른 결과만 되돌리며, 저장은 교착 없이 COMPLETED 로 끝난다")
+		void sajuRevertDoesNotWaitForSaveOfRunningInterpretation() throws Exception {
+			// given: 되돌리기 기준을 넘기지 않은 해석 중 결과(저장이 잠근다)와 기준을 넘긴 해석 중 결과(되돌릴 대상).
+			// 저장은 행을 잠가 읽고 엔티티만 바꾼 채 멈춘다(UPDATE 는 커밋 때 나간다).
+			Long runningPayment = runKey + 1;
+			Long stalePayment = runKey + 2;
+			Long runningId = saveSajuUpdatedAt(runningPayment, ResultStatus.PROCESSING, FIFTY_MINUTES_AGO);
+			saveSajuUpdatedAt(stalePayment, ResultStatus.PROCESSING, SEVENTY_MINUTES_AGO);
+			assumeNoProcessingRowsOfOtherRuns();
+			CountDownLatch rowLockedBeforeUpdate = new CountDownLatch(1);
+			CountDownLatch releaseSave = new CountDownLatch(1);
+			ExecutorService executor = Executors.newFixedThreadPool(2);
+			try {
+				Future<?> save = executor.submit(() -> transactionTemplate.executeWithoutResult(status -> {
+					sajuResultService.saveFinalResult(runningId, FIFTY_MINUTES_AGO, "제때 끝난 본문", "제때 끝난 요약");
+					rowLockedBeforeUpdate.countDown();
+					awaitLatch(releaseSave);
+				}));
+				assertThat(rowLockedBeforeUpdate.await(10, SECONDS)).as("저장이 행을 잠갔다").isTrue();
+
+				// when
+				Future<?> revert = executor.submit(() -> staleProcessingScheduler().revertStaleProcessingResults());
+
+				// then
+				assertThatCode(() -> revert.get(5, SECONDS)).as("되돌리기가 저장 트랜잭션을 기다리지 않고 끝난다")
+					.doesNotThrowAnyException();
+				assertThat(statusOf("results", stalePayment)).as("오래 멈춘 결과").isEqualTo("INPUT_REQUIRED");
+				releaseSave.countDown();
+				assertThatCode(() -> save.get(10, SECONDS)).as("저장이 교착 없이 끝난다").doesNotThrowAnyException();
+				assertThat(statusOf("results", runningPayment)).as("아직 돌던 해석의 결과").isEqualTo("COMPLETED");
+			} finally {
+				releaseSave.countDown();
+				executor.shutdown();
+				assertThat(executor.awaitTermination(60, SECONDS)).as("저장과 되돌리기가 끝났다").isTrue();
+			}
+		}
+
+		@Test
+		@DisplayName("아직 도는 해석의 결과 저장이 궁합 결과 행을 잠그고 있을 때 되돌리기는 그 행을 기다리지 않고 오래 멈춘 다른 결과만 되돌리며, 저장은 교착 없이 COMPLETED 로 끝난다")
+		void compatibilityRevertDoesNotWaitForSaveOfRunningInterpretation() throws Exception {
+			// given: 사주 결과와 같은 순서를 궁합 결과 표로 만든다
+			Long runningPayment = runKey + 1;
+			Long stalePayment = runKey + 2;
+			Long runningId = saveCompatibilityUpdatedAt(runningPayment, ResultStatus.PROCESSING, FIFTY_MINUTES_AGO);
+			saveCompatibilityUpdatedAt(stalePayment, ResultStatus.PROCESSING, SEVENTY_MINUTES_AGO);
+			assumeNoProcessingRowsOfOtherRuns();
+			CountDownLatch rowLockedBeforeUpdate = new CountDownLatch(1);
+			CountDownLatch releaseSave = new CountDownLatch(1);
+			ExecutorService executor = Executors.newFixedThreadPool(2);
+			try {
+				Future<?> save = executor.submit(() -> transactionTemplate.executeWithoutResult(status -> {
+					sajuResultService.saveCompatibilityFinalResult(runningId, FIFTY_MINUTES_AGO, "제때 끝난 본문", 90,
+						"제때 끝난 요약");
+					rowLockedBeforeUpdate.countDown();
+					awaitLatch(releaseSave);
+				}));
+				assertThat(rowLockedBeforeUpdate.await(10, SECONDS)).as("저장이 행을 잠갔다").isTrue();
+
+				// when
+				Future<?> revert = executor.submit(() -> staleProcessingScheduler().revertStaleProcessingResults());
+
+				// then
+				assertThatCode(() -> revert.get(5, SECONDS)).as("되돌리기가 저장 트랜잭션을 기다리지 않고 끝난다")
+					.doesNotThrowAnyException();
+				assertThat(statusOf("compatibility_results", stalePayment)).as("오래 멈춘 결과")
+					.isEqualTo("INPUT_REQUIRED");
+				releaseSave.countDown();
+				assertThatCode(() -> save.get(10, SECONDS)).as("저장이 교착 없이 끝난다").doesNotThrowAnyException();
+				assertThat(statusOf("compatibility_results", runningPayment)).as("아직 돌던 해석의 결과")
+					.isEqualTo("COMPLETED");
+			} finally {
+				releaseSave.countDown();
+				executor.shutdown();
+				assertThat(executor.awaitTermination(60, SECONDS)).as("저장과 되돌리기가 끝났다").isTrue();
+			}
+		}
+
 		@Test
 		@DisplayName("되돌린 뒤에 늦게 끝난 해석을 저장하면 InterpretationRunOutdatedException 으로 거부되고 행은 정보 입력 대기 그대로다")
 		void rejectsLateSaveAfterRevert() {
@@ -321,6 +413,66 @@ class ResultStartOnceMySqlTest extends InterpretationMySqlTest {
 				"SELECT status, interpretation FROM results WHERE payment_id = ?", paymentId);
 			assertThat(row.get("status")).isEqualTo("INPUT_REQUIRED");
 			assertThat(row.get("interpretation")).isNull();
+		}
+	}
+
+	/**
+	 * 되돌리기는 대상 ID 를 잠그지 않고 읽은 뒤 한 행씩 UPDATE 를 보낸다. 그 사이에 해석이 끝나 완료가 되거나, 멈춘 해석이 실패로
+	 * 되돌려진 뒤 사용자가 다시 시작해 updated_at 이 새로 찍힐 수 있다. 한 행 UPDATE 가 상태와 시각을 다시 확인하지 않으면 다시 시작한
+	 * 해석을 정보 입력 대기로 되돌리고, 그 해석은 시작 시각이 달라져 저장이 거부되어 GPT 비용만 날린다. 여기서는 읽은 뒤 행이 바뀐
+	 * 상태를 만들어 두고 한 행 UPDATE 를 직접 부른다. 기본 키로 그 행만 고치므로 다른 실행의 행은 건드리지 않는다.
+	 */
+	@Nested
+	@DisplayName("되돌리기 대상 ID 를 읽은 뒤 그 결과가 바뀌었을 때 한 행씩 되돌리는 UPDATE 는")
+	class RevertOneRowRechecks {
+
+		@ParameterizedTest(name = "[{index}] {1}, updated_at {0} → 되돌린 행 {2}, {3}, updated_at {4}")
+		@CsvSource(textBlock = """
+			# 지금 updated_at,      지금 상태,  되돌린 행 수, 되돌리기 뒤 상태, 되돌리기 뒤 updated_at
+			# 읽은 그대로 오래 멈춰 있으면 되돌린다
+			2100-01-01T07:50:00,   PROCESSING, 1,          INPUT_REQUIRED,  2100-01-01T09:00:00
+			# 그사이 다시 시작했으면 그대로 둔다. 기준 시각과 같은 때 시작했어도 그대로 둔다
+			2100-01-01T08:59:00,   PROCESSING, 0,          PROCESSING,      2100-01-01T08:59:00
+			2100-01-01T08:00:00,   PROCESSING, 0,          PROCESSING,      2100-01-01T08:00:00
+			# 그사이 해석이 끝났으면 그대로 둔다
+			2100-01-01T07:50:00,   COMPLETED,  0,          COMPLETED,       2100-01-01T07:50:00
+			""")
+		@DisplayName("사주 결과는 아직 해석 중이고 기준 시각 전에 시작한 행만 되돌리고, 그사이 다시 시작했거나 완료된 행은 0 을 돌려주며 그대로 둔다")
+		void sajuRevertRechecksStatusAndStartTime(LocalDateTime updatedAt, ResultStatus current, int expectedReverted,
+			String expectedStatus, LocalDateTime expectedUpdatedAt) {
+			// given
+			Long resultId = saveSajuUpdatedAt(runKey + 1, current, updatedAt);
+
+			// when
+			int reverted = resultRepository.revertIfProcessingUpdatedBefore(resultId, STALE_BEFORE, NOW);
+
+			// then
+			assertThat(reverted).as("되돌린 행 수").isEqualTo(expectedReverted);
+			assertThat(statusRowsOf("results"))
+				.containsExactly(new StatusRow(runKey + 1, expectedStatus, expectedUpdatedAt));
+		}
+
+		@ParameterizedTest(name = "[{index}] {1}, updated_at {0} → 되돌린 행 {2}, {3}, updated_at {4}")
+		@CsvSource(textBlock = """
+			# 지금 updated_at,      지금 상태,  되돌린 행 수, 되돌리기 뒤 상태, 되돌리기 뒤 updated_at
+			2100-01-01T07:50:00,   PROCESSING, 1,          INPUT_REQUIRED,  2100-01-01T09:00:00
+			2100-01-01T08:59:00,   PROCESSING, 0,          PROCESSING,      2100-01-01T08:59:00
+			2100-01-01T08:00:00,   PROCESSING, 0,          PROCESSING,      2100-01-01T08:00:00
+			2100-01-01T07:50:00,   COMPLETED,  0,          COMPLETED,       2100-01-01T07:50:00
+			""")
+		@DisplayName("궁합 결과는 아직 해석 중이고 기준 시각 전에 시작한 행만 되돌리고, 그사이 다시 시작했거나 완료된 행은 0 을 돌려주며 그대로 둔다")
+		void compatibilityRevertRechecksStatusAndStartTime(LocalDateTime updatedAt, ResultStatus current,
+			int expectedReverted, String expectedStatus, LocalDateTime expectedUpdatedAt) {
+			// given
+			Long resultId = saveCompatibilityUpdatedAt(runKey + 1, current, updatedAt);
+
+			// when
+			int reverted = compatibilityResultRepository.revertIfProcessingUpdatedBefore(resultId, STALE_BEFORE, NOW);
+
+			// then
+			assertThat(reverted).as("되돌린 행 수").isEqualTo(expectedReverted);
+			assertThat(statusRowsOf("compatibility_results"))
+				.containsExactly(new StatusRow(runKey + 1, expectedStatus, expectedUpdatedAt));
 		}
 	}
 
