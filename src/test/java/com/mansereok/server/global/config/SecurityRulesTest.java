@@ -173,6 +173,43 @@ class SecurityRulesTest {
 		}
 	}
 
+	@Nested
+	@DisplayName("로그인한 회원의 요청을 403 으로 막으면")
+	class ForbiddenBody {
+
+		@Test
+		@DisplayName("CSRF 검사가 JWT 필터보다 먼저 돌아서, 유효한 토큰을 실어 와도 CSRF 실패 본문의 요청자는 익명·ROLE_NONE 이다")
+		void csrfFailureShowsAnonymous() throws Exception {
+			// when
+			ResultActions result = mockMvc.perform(post("/api/v1/reviews").with(as(Caller.USER)));
+
+			// then
+			result.andExpect(status().isForbidden())
+				.andExpect(jsonPath("$.error").value("CSRF_FORBIDDEN"))
+				.andExpect(jsonPath("$.reason").value("MissingCsrfTokenException"))
+				.andExpect(jsonPath("$.currentUser").value("익명"))
+				.andExpect(jsonPath("$.currentRole").value("ROLE_NONE"));
+		}
+
+		@Test
+		@DisplayName("권한이 부족하면 본문에 토큰의 회원 이름·역할과 거부 이유 AuthorizationDeniedException 을 담는다")
+		void authorityDenialShowsMember() throws Exception {
+			// given
+			RequestPostProcessor csrfToken = csrfToken(true);
+
+			// when
+			ResultActions result = mockMvc.perform(
+				request(HttpMethod.DELETE, "/api/v1/reviews/7").with(as(Caller.USER)).with(csrfToken));
+
+			// then
+			result.andExpect(status().isForbidden())
+				.andExpect(jsonPath("$.error").value("FORBIDDEN"))
+				.andExpect(jsonPath("$.reason").value("AuthorizationDeniedException"))
+				.andExpect(jsonPath("$.currentUser").value("member"))
+				.andExpect(jsonPath("$.currentRole").value("ROLE_USER"));
+		}
+	}
+
 	@Test
 	@DisplayName("응답에 X-Frame-Options: DENY 를 붙여 다른 사이트가 화면을 iframe 에 넣지 못하게 한다")
 	void deniesFraming() throws Exception {

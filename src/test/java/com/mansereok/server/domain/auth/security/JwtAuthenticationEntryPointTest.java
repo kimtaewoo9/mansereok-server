@@ -1,5 +1,10 @@
 package com.mansereok.server.domain.auth.security;
 
+import static com.mansereok.server.support.fixture.AccessTokenFixture.ISSUER;
+import static com.mansereok.server.support.fixture.AccessTokenFixture.NOW;
+import static com.mansereok.server.support.fixture.AccessTokenFixture.claimsOfThisServer;
+import static com.mansereok.server.support.fixture.AccessTokenFixture.signedByThisServer;
+import static com.mansereok.server.support.fixture.AccessTokenFixture.signedWithOtherKey;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.fasterxml.jackson.databind.JsonNode;
@@ -7,17 +12,28 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mansereok.server.domain.auth.filter.JwtAuthenticationFilter;
 import com.mansereok.server.global.exception.JwtAuthenticationException;
 import com.mansereok.server.global.exception.JwtErrorCode;
+import com.mansereok.server.support.fixture.AccessTokenFixture;
 import java.nio.charset.StandardCharsets;
+import java.util.Date;
+import java.util.stream.Stream;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.MethodSource;
+import org.springframework.http.HttpHeaders;
+import org.springframework.mock.web.MockFilterChain;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.security.authentication.InsufficientAuthenticationException;
+import org.springframework.security.core.context.SecurityContextHolder;
 
 /**
- * 로그인이 필요한 경로에서 인증이 없을 때, 필터가 요청 속성에 남긴 오류 종류대로 응답하는지 검증한다.
+ * 로그인이 필요한 경로에서 인증이 없을 때, 필터가 요청 속성에 남긴 오류 종류대로 응답하는지 검증한다. 진짜 필터를 거친 요청으로
+ * Authorization 헤더 모양마다 프론트엔드가 받는 응답 상태와 error 값도 표로 확인한다.
  */
 class JwtAuthenticationEntryPointTest {
 
@@ -55,6 +71,55 @@ class JwtAuthenticationEntryPointTest {
 		assertThat(body.get("hint").asText()).isEqualTo(expectedHint);
 	}
 
+	@Nested
+	@DisplayName("JwtAuthenticationFilter 를 거친 요청이 로그인이 필요한 경로에 오면")
+	class AfterFilter {
+
+		private final JwtAuthenticationFilter filter = new JwtAuthenticationFilter(AccessTokenFixture.jwtUtil());
+
+		@AfterEach
+		void clearSecurityContext() {
+			SecurityContextHolder.clearContext();
+		}
+
+		@ParameterizedTest(name = "[{index}] {0} → {1} {2}")
+		@MethodSource("com.mansereok.server.domain.auth.security.JwtAuthenticationEntryPointTest#headersWithoutAuthentication")
+		@DisplayName("Authorization 헤더 모양마다 정해진 응답 상태와 error 값으로 답한다")
+		void respondsByHeader(String description, int expectedStatus, String expectedError,
+			String authorizationHeader) throws Exception {
+			// given
+			MockHttpServletRequest request = new MockHttpServletRequest("GET", "/api/v1/users/me/profiles");
+			request.addHeader(HttpHeaders.AUTHORIZATION, authorizationHeader);
+			filter.doFilter(request, new MockHttpServletResponse(), new MockFilterChain());
+			MockHttpServletResponse response = new MockHttpServletResponse();
+
+			// when
+			entryPoint.commence(request, response, new InsufficientAuthenticationException("로그인 필요"));
+
+			// then
+			assertThat(response.getStatus()).isEqualTo(expectedStatus);
+			assertThat(readBody(response).get("error").asText()).isEqualTo(expectedError);
+		}
+	}
+
+	static Stream<Arguments> headersWithoutAuthentication() {
+		return Stream.of(
+			Arguments.of("만료 1초 지난 토큰", 401, "JWT_TOKEN_EXPIRED",
+				"Bearer " + signedByThisServer(claimsOfThisServer().expiration(Date.from(NOW.minusSeconds(1))))),
+			Arguments.of("다른 키로 서명한 토큰", 401, "JWT_SIGNATURE_INVALID",
+				"Bearer " + signedWithOtherKey(claimsOfThisServer())),
+			Arguments.of("발급자가 다른 토큰", 401, "JWT_SIGNATURE_INVALID",
+				"Bearer " + signedByThisServer(claimsOfThisServer().issuer("staging." + ISSUER))),
+			Arguments.of("서명하지 않은 토큰(alg=none)", 400, "JWT_TOKEN_UNSUPPORTED",
+				"Bearer " + claimsOfThisServer().compact()),
+			Arguments.of("JWT 모양이 아닌 토큰", 400, "JWT_TOKEN_MALFORMED", "Bearer abc"),
+			Arguments.of("Bearer 뒤가 빈 헤더", 401, "JWT_TOKEN_MISSING", "Bearer "),
+			Arguments.of("Basic 인증 헤더", 400, "JWT_TOKEN_MALFORMED", "Basic bWVtYmVyOnBhc3N3b3Jk"),
+			// 필터가 오류를 남기지 않아 기본 응답이 나간다
+			Arguments.of("subject 가 없는 토큰", 401, "UNAUTHORIZED",
+				"Bearer " + signedByThisServer(claimsOfThisServer().subject(null))));
+	}
+
 	@Test
 	@DisplayName("필터가 남긴 오류가 없으면 401 UNAUTHORIZED 로 로그인을 안내한다")
 	void respondsUnauthorizedWithoutJwtException() throws Exception {
@@ -68,7 +133,9 @@ class JwtAuthenticationEntryPointTest {
 		// then
 		JsonNode body = readBody(response);
 		assertThat(response.getStatus()).isEqualTo(401);
+		assertThat(body.get("status").asInt()).isEqualTo(401);
 		assertThat(body.get("error").asText()).isEqualTo("UNAUTHORIZED");
+		assertThat(body.get("message").asText()).isEqualTo("인증이 필요합니다.");
 		assertThat(body.get("hint").asText()).isEqualTo("로그인 후 JWT 토큰을 Authorization 헤더에 포함해주세요.");
 	}
 
