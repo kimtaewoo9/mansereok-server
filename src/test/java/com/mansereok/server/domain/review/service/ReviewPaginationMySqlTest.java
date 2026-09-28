@@ -7,9 +7,11 @@ import com.mansereok.server.support.LocalMySqlTest;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
+import java.util.stream.IntStream;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
@@ -26,9 +28,14 @@ import org.springframework.data.domain.Page;
  *   <li>넣는 순서(곧 id 순서)를 created_at 순서와 다르게 해서, created_at 이 아니라 id 로 정렬하면 통과하지 못한다.</li>
  * </ul>
  *
+ * <p>같은 시각 두 건만으로는 바깥 SELECT 의 보조 키(r.id ASC)가 빠져도 알아채지 못한다. MySQL 8.0.46 에서 바깥 보조 키를 뺀
+ * 쿼리로 같은 시각 리뷰를 읽어 보니 16건까지는 넣은 순서대로 나와 우연히 맞았고, 17건부터 순서가 섞였다. 그래서
+ * {@link WhenManyReviewsShareCreatedAt} 는 다른 상품 번호로 같은 시각 리뷰 20건을 넣어 한 번에 읽는다.
+ *
  * <p>전체 리뷰 목록은 DB 에 있는 다른 리뷰도 함께 읽는다. 그래서 이번 실행의 리뷰는 먼 미래(2099년) 시각으로 넣어 맨 앞에 오게 하고,
- * 전체 건수는 확인하지 않는다. 뒤 정리에서 이번 실행의 주문 번호로 넣은 행만 지운다. reviews 의 user_id·sub_category_id·order_id
- * 에는 외래 키가 없다.
+ * 전체 건수는 확인하지 않는다. 이전 실행이 뒤 정리 전에 멈춰 2099년 행을 남겼으면 그 행이 이번 실행의 리뷰 사이에 끼므로, 넣기 전에
+ * 2099년 행이 없는지 먼저 확인한다. 뒤 정리에서 이번 실행의 주문 번호로 넣은 행만 지운다. reviews 의
+ * user_id·sub_category_id·order_id 에는 외래 키가 없다.
  *
  * <p>인덱스 순서대로 읽어 따로 정렬하지 않는지(filesort 없음)는 같은 쿼리를 EXPLAIN 하는 ReviewIndexUsageMySqlTest 가 본다.
  */
@@ -36,6 +43,8 @@ class ReviewPaginationMySqlTest extends LocalMySqlTest {
 
 	private static final int PAGE_SIZE = 5;
 	private static final String CONTENT = "풀이가 자세하고 이해하기 쉬워서 많은 도움이 되었습니다.";
+	// 바깥 SELECT 의 보조 키가 빠지면 순서가 섞이는 건수(17건 이상)를 넘게 둔다.
+	private static final int SAME_TIME_REVIEW_COUNT = 20;
 
 	@Autowired
 	private ReviewService reviewService;
@@ -44,7 +53,9 @@ class ReviewPaginationMySqlTest extends LocalMySqlTest {
 	private final long runNumber = Long.parseLong(runId, 16);
 	// 실제 데이터와 겹치지 않게 큰 수에서 시작하고, 컬럼마다 다른 수에서 시작해 쿼리가 컬럼을 바꿔 써도 알아챌 수 있게 한다.
 	private final long subCategoryId = 7_200_000_000L + runNumber;
+	private final long sameTimeSubCategoryId = 7_300_000_000L + runNumber;
 	private final long userId = 6_200_000_000L + runNumber;
+	// 이번 실행은 firstOrderId 부터 100개(주문 번호 0~99)를 쓴다. runNumber 에 100 을 곱해 다른 실행의 범위와 겹치지 않는다.
 	private final long firstOrderId = 5_200_000_000L + runNumber * 100;
 
 	// 이름의 날짜가 created_at(2099년 9월 그날 10시)이다.
@@ -65,6 +76,13 @@ class ReviewPaginationMySqlTest extends LocalMySqlTest {
 
 	@BeforeEach
 	void saveReviewsInShuffledOrder() {
+		assertThat(jdbcTemplate.queryForObject(
+			"SELECT COUNT(*) FROM reviews WHERE created_at >= '2099-01-01'", Long.class))
+			.as("넣기 전인데 reviews 에 created_at 이 2099년인 행이 있다. 이전 실행이 뒤 정리 전에 멈춰 남긴 행으로 보이며, 그대로 두면"
+				+ " 전체 목록에서 이번 실행의 리뷰 사이에 끼어 순서 확인이 실패한다. 테스트 DB 에서"
+				+ " DELETE FROM reviews WHERE created_at >= '2099-01-01' 로 지우고 다시 돌린다.")
+			.isZero();
+
 		sep02 = saveReview(0, september(2), false);
 		sep10SmallerId = saveReview(1, september(10), false);
 		sep14 = saveReview(2, september(14), false);
@@ -84,7 +102,7 @@ class ReviewPaginationMySqlTest extends LocalMySqlTest {
 
 	@AfterEach
 	void deleteRowsOfThisRun() {
-		jdbcTemplate.update("DELETE FROM reviews WHERE order_id BETWEEN ? AND ?", firstOrderId, firstOrderId + 14);
+		jdbcTemplate.update("DELETE FROM reviews WHERE order_id BETWEEN ? AND ?", firstOrderId, firstOrderId + 99);
 	}
 
 	@Test
@@ -150,17 +168,61 @@ class ReviewPaginationMySqlTest extends LocalMySqlTest {
 				sep05, sep04, sep03, sep02);
 	}
 
+	@Nested
+	@DisplayName("다른 상품에 같은 시각(2099-12-01 10:00, 이번 실행에서 가장 최근)에 쓴 리뷰가 20건 있으면")
+	class WhenManyReviewsShareCreatedAt {
+
+		private static final LocalDateTime SAME_TIME = LocalDateTime.of(2099, 12, 1, 10, 0);
+
+		// 넣은 순서대로의 id. 먼저 넣은 리뷰의 id 가 더 작으므로 id 오름차순이다.
+		private List<Long> sameTimeIdsInSavedOrder;
+
+		@BeforeEach
+		void saveReviewsWrittenAtSameTime() {
+			sameTimeIdsInSavedOrder = IntStream.range(20, 20 + SAME_TIME_REVIEW_COUNT)
+				.mapToObj(orderNumber -> saveReview(sameTimeSubCategoryId, orderNumber, SAME_TIME, false))
+				.toList();
+		}
+
+		@Test
+		@DisplayName("로그인 없이 보는 그 상품의 목록은 20건을 한 번에 읽어 id 오름차순으로 돌려준다")
+		void publicListOfProductOrdersSameTimeReviewsById() {
+			// when
+			List<ReviewResponse> reviews = reviewService.getReviewsBySubCategory(sameTimeSubCategoryId);
+
+			// then
+			assertThat(reviews).extracting(ReviewResponse::reviewId)
+				.containsExactlyElementsOf(sameTimeIdsInSavedOrder);
+		}
+
+		@Test
+		@DisplayName("로그인 없이 보는 전체 목록은 가장 최근인 이 20건을 맨 앞에 id 오름차순으로 돌려준다")
+		void publicListOfAllReviewsOrdersSameTimeReviewsById() {
+			// when
+			List<ReviewResponse> reviews = reviewService.getAllReviewsSortedByLatest();
+
+			// then
+			assertThat(reviews).extracting(ReviewResponse::reviewId)
+				.startsWith(sameTimeIdsInSavedOrder.toArray(Long[]::new));
+		}
+	}
+
 	private static LocalDateTime september(int day) {
 		return LocalDateTime.of(2099, 9, day, 10, 0);
 	}
 
-	/** 리뷰 한 건을 SQL 로 넣고 DB 가 매긴 id 를 돌려준다. 먼저 넣은 리뷰의 id 가 더 작다. */
+	/** 이번 실행의 상품에 리뷰 한 건을 넣고 DB 가 매긴 id 를 돌려준다. */
 	private long saveReview(int orderNumber, LocalDateTime createdAt, boolean deleted) {
+		return saveReview(subCategoryId, orderNumber, createdAt, deleted);
+	}
+
+	/** 리뷰 한 건을 SQL 로 넣고 DB 가 매긴 id 를 돌려준다. 먼저 넣은 리뷰의 id 가 더 작다. */
+	private long saveReview(long reviewedSubCategoryId, int orderNumber, LocalDateTime createdAt, boolean deleted) {
 		long orderId = firstOrderId + orderNumber;
 		jdbcTemplate.update(
 			"INSERT INTO reviews (user_id, sub_category_id, order_id, content, is_deleted, created_at, updated_at)"
 				+ " VALUES (?, ?, ?, ?, ?, ?, ?)",
-			userId, subCategoryId, orderId, CONTENT, deleted, createdAt, createdAt);
+			userId, reviewedSubCategoryId, orderId, CONTENT, deleted, createdAt, createdAt);
 		return jdbcTemplate.queryForObject("SELECT id FROM reviews WHERE order_id = ?", Long.class, orderId);
 	}
 }

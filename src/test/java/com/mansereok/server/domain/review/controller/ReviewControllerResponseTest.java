@@ -94,7 +94,8 @@ class ReviewControllerResponseTest {
 	@Test
 	@DisplayName("전체 리뷰 목록에는 작성자 이메일이 없고 이름은 가려져 있다")
 	void allReviewsHideAuthorEmailAndName() throws Exception {
-		// given: 로그인 없이 보는 목록은 최신 리뷰를 상한 건수만큼 읽는다
+		// given: 로그인 없이 보는 목록은 최신 리뷰를 상한 건수만큼 읽는다. 이 테스트는 이름 가리기를 보므로 상수를 그대로 쓰고,
+		// 상한 값(100) 자체는 ReviewServiceListingTest 가 글자 그대로 적어 지킨다.
 		given(reviewRepository.findAllReviewsWithPagination(0L, ReviewService.PUBLIC_REVIEW_LIMIT)).willReturn(List.of(
 			ReviewFixture.review().userName("홍길동").userEmail("hong@example.com").build()));
 
