@@ -16,7 +16,10 @@ import com.mansereok.server.domain.user.service.UserService;
 import com.mansereok.server.support.fixture.ReviewFixture;
 import com.mansereok.server.support.fixture.UserFixture;
 import jakarta.persistence.EntityNotFoundException;
+import java.time.Clock;
+import java.time.Instant;
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -57,7 +60,9 @@ class ReviewServiceDeleteTest {
 
 	@BeforeEach
 	void setUp() {
-		reviewService = new ReviewService(reviewRepository, orderRepository, userService);
+		// 삭제는 시각을 쓰지 않는다. 시스템 시계에 기대지 않도록 고정 시계를 넣는다.
+		reviewService = new ReviewService(reviewRepository, orderRepository, userService,
+			Clock.fixed(Instant.parse("2026-09-25T00:00:00Z"), ZoneId.of("Asia/Seoul")));
 	}
 
 	@Nested

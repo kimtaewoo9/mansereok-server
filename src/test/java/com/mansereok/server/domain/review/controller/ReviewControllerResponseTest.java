@@ -19,7 +19,10 @@ import com.mansereok.server.global.exception.GlobalExceptionHandler;
 import com.mansereok.server.support.fixture.ReviewFixture;
 import com.mansereok.server.support.fixture.UserFixture;
 import java.nio.charset.StandardCharsets;
+import java.time.Clock;
+import java.time.Instant;
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.AfterEach;
@@ -70,7 +73,9 @@ class ReviewControllerResponseTest {
 
 	@BeforeEach
 	void setUp() {
-		ReviewService reviewService = new ReviewService(reviewRepository, orderRepository, userService);
+		// 이 테스트의 API(목록, 삭제)는 시각을 쓰지 않는다. 시스템 시계에 기대지 않도록 고정 시계를 넣는다.
+		ReviewService reviewService = new ReviewService(reviewRepository, orderRepository, userService,
+			Clock.fixed(Instant.parse("2026-09-25T00:00:00Z"), ZoneId.of("Asia/Seoul")));
 		mockMvc = MockMvcBuilders.standaloneSetup(new ReviewController(reviewService))
 			.setControllerAdvice(new GlobalExceptionHandler())
 			.setCustomArgumentResolvers(new AuthenticationPrincipalArgumentResolver())
