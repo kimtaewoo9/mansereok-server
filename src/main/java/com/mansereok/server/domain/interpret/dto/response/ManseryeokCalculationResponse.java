@@ -1,5 +1,6 @@
 package com.mansereok.server.domain.interpret.dto.response;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.mansereok.server.domain.interpret.calculator.DaewoonDirection;
 import com.mansereok.server.domain.interpret.calculator.YongsinCalculator.YongsinResult;
@@ -66,7 +67,9 @@ public class ManseryeokCalculationResponse {
 		private DaewoonDirection daewoonDirection;
 		@JsonProperty("season_start_time")
 		private String seasonStartTime;
+		// 불확정 안내가 없으면 빈 목록이다. 응답 JSON 에는 빈 목록을 [] 로 싣지 않고 필드를 뺀다.
 		@JsonProperty("uncertainty_notes")
+		@JsonInclude(JsonInclude.Include.NON_EMPTY)
 		private List<String> uncertaintyNotes;
 
 		@JsonProperty("year_sky")
@@ -109,7 +112,9 @@ public class ManseryeokCalculationResponse {
 		@JsonProperty("yongsin_info")
 		private YongsinResult yongsinInfo;
 
+		// 지금이 든 절입을 만세력 표에서 찾지 못하면 빈 목록이다. 응답 JSON 에는 빈 목록을 [] 로 싣지 않고 필드를 뺀다.
 		@JsonProperty("monthly_fortunes")
+		@JsonInclude(JsonInclude.Include.NON_EMPTY)
 		private List<MonthlyFortune> monthlyFortunes;
 	}
 

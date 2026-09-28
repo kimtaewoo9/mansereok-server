@@ -148,7 +148,7 @@ public class ManseCalculationService {
 			.bigFortuneStartYearMax(bigFortune.getBigFortuneStartMax())
 			.daewoonDirection(daewoonDirection)
 			.seasonStartTime(samju.getSeasonStartTime())
-			.uncertaintyNotes(uncertaintyNotes.isEmpty() ? null : uncertaintyNotes)
+			.uncertaintyNotes(List.copyOf(uncertaintyNotes))
 			.yearSky(stemElement(samju.getYearSky(), dayStem))
 			.yearGround(branchElement(samju.getYearGround(), dayStem))
 			.monthSky(stemElement(samju.getMonthSky(), dayStem))
@@ -224,7 +224,7 @@ public class ManseCalculationService {
 			.orElse(null);
 		if (currentBoundary == null || currentBoundary.getSeasonStartTime() == null) {
 			log.warn("월운 계산 실패: 현재 절입 기준점 조회 불가");
-			return null;
+			return List.of();
 		}
 
 		// 지금이 든 절입(첫 행)부터 절입 시각 순서로 달 수 + 1 개까지 한 번에 읽는다. 이웃한 두 절입이 한 달의 시작과 끝이다.
@@ -254,7 +254,7 @@ public class ManseCalculationService {
 				.build());
 		}
 
-		return monthlyFortunes.isEmpty() ? null : monthlyFortunes;
+		return List.copyOf(monthlyFortunes);
 	}
 
 	/**

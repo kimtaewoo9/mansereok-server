@@ -429,7 +429,7 @@ class ManseCalculationServiceTest {
 					SajuInfo::getBigFortuneStartYearMax)
 				.as("대운 시작 연도와 그 최소·최대")
 				.containsOnly(bigFortuneStartYear);
-			assertThat(saju.getUncertaintyNotes()).as("출생시간을 알면 불확정 안내가 없다").isNull();
+			assertThat(saju.getUncertaintyNotes()).as("출생시간을 알면 불확정 안내가 null 이 아닌 빈 목록이다").isEmpty();
 		}
 
 		/**
@@ -667,6 +667,76 @@ class ManseCalculationServiceTest {
 
 				// then
 				assertThat(json.path("saju").path("daewoon_direction").asText()).isEqualTo(label);
+			}
+		}
+
+		/**
+		 * 불확정 안내는 출생시간을 알면 비고, 월운은 지금이 표의 첫 절입(1900-01-06 소한)보다 앞서면 빈다. 두 목록은 비어도 null 이
+		 * 아니어서 쓰는 쪽이 null 을 검사하지 않아도 된다. 응답 JSON 에서는 예전에 null 로 나가던 두 필드를 빼고, 값이 null 이거나
+		 * 빈 다른 필드는 그대로 싣는다.
+		 */
+		@Nested
+		@DisplayName("불확정 안내와 월운이 비면")
+		class WhenListsAreEmpty {
+
+			// 1900-01-02 00:00 (서울). 표의 첫 절입보다 앞이라 월운을 셀 기준 절입이 없다.
+			private final ManseCalculationService serviceBeforeFirstSeason = serviceWith(realTable,
+				Clock.fixed(LocalDateTime.of(1900, 1, 2, 0, 0).atZone(SEOUL).toInstant(), SEOUL));
+
+			// 1998-09-02 12:02 남자(戊寅 庚申 壬子 丙午). 절입일이 아니라 절입 시각이 없고 삼합도 없다.
+			private final ManseryeokCalculationRequest request =
+				solarRequest(LocalDate.of(1998, 9, 2), LocalTime.of(12, 2), "MALE");
+
+			@Test
+			@DisplayName("월운을 셀 기준 절입이 없으면 월운은 null 이 아닌 빈 목록이다")
+			void monthlyFortunesAreEmptyListWhenCurrentSeasonIsMissing() {
+				// when
+				SajuInfo saju = serviceBeforeFirstSeason.calculate(request).getSaju();
+
+				// then
+				assertThat(saju.getMonthlyFortunes()).isNotNull().isEmpty();
+			}
+
+			@Test
+			@DisplayName("응답 JSON 의 saju 에서 uncertainty_notes·monthly_fortunes 만 빠지고 null 이거나 빈 다른 필드는 남는다")
+			void omitsOnlyTheTwoEmptyListsFromJson() throws Exception {
+				// given
+				ObjectMapper objectMapper = Jackson2ObjectMapperBuilder.json().build();
+				ManseryeokCalculationResponse response = serviceBeforeFirstSeason.calculate(request);
+
+				// when
+				JsonNode saju = objectMapper.readTree(objectMapper.writeValueAsString(response)).path("saju");
+
+				// then
+				assertThat(saju.fieldNames()).toIterable().containsExactlyInAnyOrder(
+					"big_fortune_number", "big_fortune_number_min", "big_fortune_number_max",
+					"big_fortune_start_year", "big_fortune_start_year_min", "big_fortune_start_year_max",
+					"daewoon_direction", "season_start_time",
+					"year_sky", "year_ground", "month_sky", "month_ground",
+					"day_sky", "day_ground", "time_sky", "time_ground",
+					"sinsal_info", "has_goegang", "has_baekho", "gongmang",
+					"ground_relations", "sky_relations", "samhap", "yongsin_info");
+				assertThat(saju.get("season_start_time").isNull()).as("null 인 절입 시각은 남는다").isTrue();
+				assertThat(saju.get("samhap").isEmpty()).as("빈 삼합 목록은 남는다").isTrue();
+			}
+
+			@Test
+			@DisplayName("두 목록에 값이 있으면 응답 JSON 에 그대로 싣는다")
+			void keepsNonEmptyListsInJson() throws Exception {
+				// given: 출생시간을 모르면 불확정 안내가 생기고, 지금(2026-09-26)은 월운 12개월을 모두 센다
+				ObjectMapper objectMapper = Jackson2ObjectMapperBuilder.json().build();
+				ManseryeokCalculationResponse response = service.calculate(
+					solarRequest(LocalDate.of(1990, 1, 1), null, "MALE"));
+
+				// when
+				JsonNode saju = objectMapper.readTree(objectMapper.writeValueAsString(response)).path("saju");
+
+				// then
+				assertThat(saju.path("uncertainty_notes")).extracting(JsonNode::asText).containsExactly(
+					"출생시간 미입력: 시주는 계산하지 않았습니다.",
+					"출생시간 미입력: 야자시(23:30 이후) 보정은 적용하지 않았습니다.",
+					"대운 시작 나이는 8세로 추정됩니다.");
+				assertThat(saju.path("monthly_fortunes")).hasSize(12);
 			}
 		}
 
