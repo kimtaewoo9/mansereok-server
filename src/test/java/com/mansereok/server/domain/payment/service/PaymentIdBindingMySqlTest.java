@@ -16,6 +16,7 @@ import com.mansereok.server.domain.user.repository.UserRepository;
 import com.mansereok.server.global.exception.PaymentException;
 import com.mansereok.server.support.PaymentMySqlTest;
 import com.mansereok.server.support.fixture.SubCategoryFixture;
+import com.mansereok.server.support.fixture.TestOrders;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
@@ -67,8 +68,8 @@ class PaymentIdBindingMySqlTest extends PaymentMySqlTest {
 		subCategoryId = subCategoryRepository.save(SubCategoryFixture.paidProduct().withoutId()
 			.title("결제 ID 대조 테스트 상품 " + runId).price(PRICE).build()).getId();
 		for (String merchantUid : List.of(orderA, orderB)) {
-			orderRepository.save(Order.create(merchantUid, userId, subCategoryId, PRICE, PRICE, null,
-				null, OrderStatus.PENDING, "결제대조", username + "@example.com"));
+			orderRepository.save(TestOrders.order().merchantUid(merchantUid).userId(userId).subCategoryId(subCategoryId)
+				.price(PRICE).buyer("결제대조", username + "@example.com").pending());
 		}
 	}
 

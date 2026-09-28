@@ -7,10 +7,8 @@ import com.mansereok.server.domain.interpret.entity.Result;
 import com.mansereok.server.domain.interpret.repository.ResultRepository;
 import com.mansereok.server.domain.interpret.service.ResultService;
 import com.mansereok.server.domain.order.entity.Order;
-import com.mansereok.server.domain.order.entity.OrderStatus;
 import com.mansereok.server.domain.order.repository.OrderRepository;
 import com.mansereok.server.domain.payment.entity.Payment;
-import com.mansereok.server.domain.payment.entity.PaymentStatus;
 import com.mansereok.server.domain.payment.repository.PaymentRepository;
 import com.mansereok.server.domain.user.entity.Gender;
 import com.mansereok.server.domain.user.entity.User;
@@ -18,6 +16,7 @@ import com.mansereok.server.domain.user.repository.UserRepository;
 import com.mansereok.server.support.ConcurrentCalls;
 import com.mansereok.server.support.ConcurrentCalls.CallResult;
 import com.mansereok.server.support.PaymentMySqlTest;
+import com.mansereok.server.support.fixture.TestOrders;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
@@ -85,10 +84,10 @@ class RefundAndInterpretationStartConcurrencyTest extends PaymentMySqlTest {
 	void createPaidPaymentWithInitialResult() {
 		userId = userRepository.save(User.create(username, "환불해석경합", "password", username + "@example.com",
 			LocalDate.of(1990, 1, 1), Gender.MALE, true, true, false)).getId();
-		Long orderId = orderRepository.save(Order.create(merchantUid, userId, PRODUCT_ID, PRICE, PRICE, null, null,
-			OrderStatus.PAID, "환불해석경합", username + "@example.com")).getId();
-		paymentPkId = paymentRepository.save(Payment.create(impUid, merchantUid, (long) PRICE, PaymentStatus.PAID,
-			orderId, userId, PRODUCT_ID)).getId();
+		Order order = orderRepository.save(TestOrders.order().merchantUid(merchantUid).userId(userId)
+			.subCategoryId(PRODUCT_ID).price(PRICE).buyer("환불해석경합", username + "@example.com").paymentId(impUid)
+			.paid());
+		paymentPkId = paymentRepository.save(Payment.paid(order, impUid, PRICE)).getId();
 		resultRepository.save(Result.createInitial(userId, paymentPkId, "일반 사주 상품"));
 		// 이 결제를 이 사유로 취소한 횟수만 센다. 인자가 다르면 세지 않아 끝 상태가 허용한 두 가지와 어긋난다.
 		willAnswer(invocation -> {

@@ -30,6 +30,16 @@ class MerchantUidGeneratorTest {
 	}
 
 	@Test
+	@DisplayName("freePaymentIdFor 는 무료 주문 번호 앞에 free_ 를 한 번 더 붙여 이미 저장된 무료 결제와 같은 free_free_ 형식을 만든다")
+	void freePaymentIdFor_prefixesFreeMerchantUidAgain() {
+		// when
+		String paymentId = MerchantUidGenerator.freePaymentIdFor("free_1727000000000_ab12cd34");
+
+		// then
+		assertThat(paymentId).isEqualTo("free_free_1727000000000_ab12cd34");
+	}
+
+	@Test
 	@DisplayName("연속 생성해도 값이 겹치지 않는다")
 	void generatedValues_areUnique() {
 		Set<String> uids = new HashSet<>();

@@ -2,7 +2,6 @@ package com.mansereok.server.domain.payment.dto.response;
 
 import com.mansereok.server.domain.interpret.entity.ResultStatus;
 import com.mansereok.server.domain.payment.entity.Payment;
-import com.mansereok.server.domain.payment.entity.PaymentStatus;
 import java.time.LocalDateTime;
 import lombok.Getter;
 
@@ -29,11 +28,8 @@ public class PaymentResponseDto {
 		responseDto.createdAt = payment.getCreatedAt();
 		responseDto.resultStatus = resultStatus;
 
-		boolean isPaid = payment.getStatus() == PaymentStatus.PAID;
-		boolean isBeforeInput = resultStatus == ResultStatus.INPUT_REQUIRED;
-		boolean isNotFree = payment.getAmount() > 0;
-
-		responseDto.isRefundable = isPaid && isBeforeInput && isNotFree;
+		// 환불 API(PaymentRefundService)와 같은 판정을 써서 버튼이 보이는데 환불이 거절되는 일이 없게 한다.
+		responseDto.isRefundable = payment.isRefundable(resultStatus);
 
 		return responseDto;
 	}

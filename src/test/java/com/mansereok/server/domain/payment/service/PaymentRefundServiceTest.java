@@ -17,6 +17,7 @@ import static org.mockito.Mockito.verifyNoInteractions;
 
 import com.mansereok.server.domain.interpret.entity.ResultStatus;
 import com.mansereok.server.domain.interpret.service.ResultService;
+import com.mansereok.server.domain.order.entity.AppliedDiscount;
 import com.mansereok.server.domain.order.entity.Order;
 import com.mansereok.server.domain.order.entity.OrderStatus;
 import com.mansereok.server.domain.order.repository.OrderRepository;
@@ -30,6 +31,8 @@ import com.mansereok.server.domain.user.entity.User;
 import com.mansereok.server.domain.user.repository.UserRepository;
 import com.mansereok.server.global.exception.PaymentException;
 import com.mansereok.server.global.exception.PortOneUnavailableException;
+import com.mansereok.server.support.fixture.TestOrders;
+import com.mansereok.server.support.fixture.TestPayments;
 import java.time.LocalDate;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
@@ -89,7 +92,7 @@ class PaymentRefundServiceTest {
 		// TransactionTemplate 은 실제 인스턴스. 트랜잭션마다 새 TransactionStatus 를 돌려준다.
 		given(transactionManager.getTransaction(any(TransactionDefinition.class)))
 			.willAnswer(invocation -> new SimpleTransactionStatus(true));
-		paymentRefundService = new PaymentRefundService(userRepository, paymentRepository,
+		paymentRefundService = new PaymentRefundService(new PaymentUserLookup(userRepository), paymentRepository,
 			orderRepository, resultService, orderDiscountRestorer, portOneClient,
 			transactionManager);
 	}
@@ -104,10 +107,8 @@ class PaymentRefundServiceTest {
 	}
 
 	private Payment payment(PaymentStatus status, long amount, String impUid) {
-		Payment payment = Payment.create(impUid, MERCHANT_UID, amount, status, ORDER_ID, USER_ID,
-			SUB_CATEGORY_ID);
-		ReflectionTestUtils.setField(payment, "id", PAYMENT_PK_ID);
-		return payment;
+		return TestPayments.payment().id(PAYMENT_PK_ID).paymentId(impUid).merchantUid(MERCHANT_UID).orderId(ORDER_ID)
+			.userId(USER_ID).subCategoryId(SUB_CATEGORY_ID).amount(amount).inStatus(status);
 	}
 
 	private Payment paidPayment() {
@@ -115,10 +116,8 @@ class PaymentRefundServiceTest {
 	}
 
 	private Order order(OrderStatus status, Long couponId) {
-		Order order = Order.create(MERCHANT_UID, USER_ID, SUB_CATEGORY_ID, (int) PRICE, (int) PRICE,
-			null, couponId, status, "김태우", "taewoo@example.com");
-		ReflectionTestUtils.setField(order, "id", ORDER_ID);
-		return order;
+		return TestOrders.order().id(ORDER_ID).merchantUid(MERCHANT_UID).userId(USER_ID).subCategoryId(SUB_CATEGORY_ID)
+			.price((int) PRICE).discount(new AppliedDiscount(null, couponId)).paymentId(PAYMENT_ID).inStatus(status);
 	}
 
 	private void givenRequester() {
@@ -458,7 +457,7 @@ class PaymentRefundServiceTest {
 	@DisplayName("free_ 접두사 결제는 금액과 무관하게 환불 대상이 아니라서 거부한다")
 	void cancel_freePrefixedImpUid_rejects() {
 		// given
-		String freeImpUid = MerchantUidGenerator.FREE_PREFIX + "free_order_001";
+		String freeImpUid = "free_free_order_001";
 		givenRequester();
 		Payment payment = payment(PaymentStatus.PAID, PRICE, freeImpUid);
 		given(paymentRepository.findByImpUidWithLock(freeImpUid)).willReturn(Optional.of(payment));

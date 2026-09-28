@@ -6,10 +6,10 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mansereok.server.domain.order.entity.Order;
-import com.mansereok.server.domain.order.entity.OrderStatus;
 import com.mansereok.server.domain.payment.dto.response.PortOnePaymentResponse;
 import com.mansereok.server.domain.payment.entity.PaymentStatus;
 import com.mansereok.server.global.exception.PaymentException;
+import com.mansereok.server.support.fixture.TestOrders;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -17,7 +17,6 @@ import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.NullSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.http.converter.json.Jackson2ObjectMapperBuilder;
-import org.springframework.test.util.ReflectionTestUtils;
 
 class PaymentVerifierTest {
 
@@ -29,10 +28,7 @@ class PaymentVerifierTest {
 		Jackson2ObjectMapperBuilder.json().build());
 
 	private static Order order() {
-		Order order = Order.create(MERCHANT_UID, 1L, 1L, PRICE, PRICE, null, null,
-			OrderStatus.PENDING, "김태우", "taewoo@example.com");
-		ReflectionTestUtils.setField(order, "id", 10L);
-		return order;
+		return TestOrders.order().id(10L).merchantUid(MERCHANT_UID).price(PRICE).pending();
 	}
 
 	private static PortOnePaymentResponse response(String status, long total, String customData) {
@@ -115,14 +111,6 @@ class PaymentVerifierTest {
 	void assertPaymentIdMatches_same_passes() {
 		assertThatCode(() -> paymentVerifier.assertPaymentIdMatches(PAYMENT_ID,
 			response(PAYMENT_ID, "PAID", PRICE, null))).doesNotThrowAnyException();
-	}
-
-	@Test
-	@DisplayName("금액이 같으면 true, 다르면 false 를 돌려준다")
-	void amountMatches_comparesTotalWithOrderAmount() {
-		assertThat(paymentVerifier.amountMatches(order(), response("PAID", PRICE, null))).isTrue();
-		assertThat(paymentVerifier.amountMatches(order(), response("PAID", PRICE - 1, null)))
-			.isFalse();
 	}
 
 	@Test

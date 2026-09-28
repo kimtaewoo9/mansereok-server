@@ -35,9 +35,10 @@ import com.mansereok.server.domain.user.repository.UserRepository;
 import com.mansereok.server.global.exception.OrderStateException;
 import com.mansereok.server.global.exception.PaymentException;
 import com.mansereok.server.global.exception.PortOneUnavailableException;
+import com.mansereok.server.support.fixture.TestOrders;
+import com.mansereok.server.support.fixture.TestPayments;
 import java.sql.SQLIntegrityConstraintViolationException;
 import java.time.LocalDate;
-import java.time.LocalDateTime;
 import java.util.Optional;
 import org.hibernate.exception.ConstraintViolationException;
 import org.hibernate.exception.ConstraintViolationException.ConstraintKind;
@@ -120,7 +121,7 @@ class PaymentConfirmServiceTest {
 			paymentRepository, resultService, orderDiscountRestorer, eventPublisher);
 		PaymentVerifier paymentVerifier = new PaymentVerifier(objectMapper);
 		paymentConfirmService = new PaymentConfirmService(
-			userRepository,
+			new PaymentUserLookup(userRepository),
 			orderRepository,
 			paymentRepository,
 			portOneClient,
@@ -141,17 +142,18 @@ class PaymentConfirmServiceTest {
 	}
 
 	private Order createOrder(OrderStatus status) {
-		Order order = Order.create(MERCHANT_UID, USER_ID, SUB_CATEGORY_ID, PRICE, PRICE,
-			null, null, status, BUYER_NAME, BUYER_EMAIL);
-		ReflectionTestUtils.setField(order, "id", ORDER_ID);
-		return order;
+		return orderOfThisTest().inStatus(status);
+	}
+
+	/** 이 테스트의 주문. PAID·CANCELLED 로 만들면 결제 ID 로 PAYMENT_ID 가 기록된다. */
+	private static TestOrders orderOfThisTest() {
+		return TestOrders.order().id(ORDER_ID).merchantUid(MERCHANT_UID).userId(USER_ID).subCategoryId(SUB_CATEGORY_ID)
+			.price(PRICE).buyer(BUYER_NAME, BUYER_EMAIL).paymentId(PAYMENT_ID);
 	}
 
 	/** 결제 recordedPaymentId 로 이미 확정된 주문. */
 	private Order paidOrder(String recordedPaymentId) {
-		Order order = createOrder(OrderStatus.PENDING);
-		order.markPaid(recordedPaymentId, LocalDateTime.of(2026, 9, 26, 12, 0));
-		return order;
+		return orderOfThisTest().paymentId(recordedPaymentId).paid();
 	}
 
 	/** 이 주문(MERCHANT_UID)을 customData 에 담은 결제 PAYMENT_ID 의 포트원 응답. */
@@ -330,7 +332,7 @@ class PaymentConfirmServiceTest {
 
 		// then
 		verify(eventPublisher).publishEvent(
-			new PaymentCompletedEvent(ORDER_ID, PAYMENT_PK_ID, (long) PRICE));
+			new PaymentCompletedEvent(ORDER_ID, PAYMENT_PK_ID, false));
 	}
 
 	// ===== 검증 실패 =====
@@ -448,8 +450,8 @@ class PaymentConfirmServiceTest {
 		givenRequester();
 		givenLockedOrder(order);
 		given(paymentRepository.findByImpUid(PAYMENT_ID)).willReturn(
-			Optional.of(Payment.create(PAYMENT_ID, "order_other", (long) PRICE,
-				PaymentStatus.PAID, 99L, USER_ID, SUB_CATEGORY_ID)));
+			Optional.of(TestPayments.payment().paymentId(PAYMENT_ID).merchantUid("order_other").orderId(99L)
+				.userId(USER_ID).subCategoryId(SUB_CATEGORY_ID).amount(PRICE).paid()));
 		givenPortOneReturns(portOneResponse("PAID", PRICE));
 
 		// when & then
@@ -466,7 +468,8 @@ class PaymentConfirmServiceTest {
 	@DisplayName("CANCELLED 주문에 결제 완료 요청이 오면 OrderStateException 이 나고 Payment 는 저장되지 않는다")
 	void complete_cancelledOrder_throwsOrderStateException() {
 		// given: 멱등 검사(PAID 조기 반환)는 통과하고 markPaid 가드에서 걸린다
-		Order order = createOrder(OrderStatus.CANCELLED);
+		// 환불로 취소된 주문이라 첫 결제의 ID(pay_refunded)가 기록돼 있다
+		Order order = orderOfThisTest().paymentId("pay_refunded").inStatus(OrderStatus.CANCELLED);
 		givenRequester();
 		givenLockedOrder(order);
 		givenNoDuplicatePayment();
@@ -478,7 +481,7 @@ class PaymentConfirmServiceTest {
 			.hasMessageContaining("CANCELLED 에서 PAID 로");
 
 		assertThat(order.getStatus()).isEqualTo(OrderStatus.CANCELLED);
-		assertThat(order.getPaymentId()).isNull();
+		assertThat(order.getPaymentId()).isEqualTo("pay_refunded");
 		verify(paymentRepository, never()).save(any(Payment.class));
 		verifyNoInteractions(resultService, eventPublisher);
 		verify(transactionManager).rollback(any(TransactionStatus.class));
@@ -489,8 +492,7 @@ class PaymentConfirmServiceTest {
 	void complete_otherUsersOrder_throwsAccessDenied() {
 		// given: 요청자는 USER_ID(1L), 주문 소유자는 2L
 		givenRequester();
-		Order order = createOrder(OrderStatus.PENDING);
-		ReflectionTestUtils.setField(order, "userId", OTHER_USER_ID);
+		Order order = orderOfThisTest().userId(OTHER_USER_ID).pending();
 		givenLockedOrder(order);
 		givenPortOneReturns(portOneResponse("PAID", PRICE));
 
@@ -510,8 +512,7 @@ class PaymentConfirmServiceTest {
 	void complete_otherUsersPaidOrder_throwsAccessDeniedInsteadOfReturningOrder() {
 		// given
 		givenRequester();
-		Order order = createOrder(OrderStatus.PAID);
-		ReflectionTestUtils.setField(order, "userId", OTHER_USER_ID);
+		Order order = orderOfThisTest().userId(OTHER_USER_ID).paid();
 		givenLockedOrder(order);
 		givenPortOneReturns(portOneResponse("PAID", PRICE));
 
@@ -528,8 +529,7 @@ class PaymentConfirmServiceTest {
 	void complete_orderWithoutOwner_throwsAccessDenied() {
 		// given
 		givenRequester();
-		Order order = createOrder(OrderStatus.PENDING);
-		ReflectionTestUtils.setField(order, "userId", null);
+		Order order = orderOfThisTest().userId(null).pending();
 		givenLockedOrder(order);
 		givenPortOneReturns(portOneResponse("PAID", PRICE));
 
@@ -886,8 +886,8 @@ class PaymentConfirmServiceTest {
 			given(portOneClient.getPayment(SECOND_PAYMENT_ID)).willReturn(
 				portOneResponse(SECOND_PAYMENT_ID, "PAID", PRICE));
 			given(paymentRepository.findByImpUid(SECOND_PAYMENT_ID)).willReturn(Optional.of(
-				Payment.create(SECOND_PAYMENT_ID, "order_other_999", (long) PRICE, PaymentStatus.PAID, 99L,
-					OTHER_USER_ID, SUB_CATEGORY_ID)));
+				TestPayments.payment().paymentId(SECOND_PAYMENT_ID).merchantUid("order_other_999").orderId(99L)
+					.userId(OTHER_USER_ID).subCategoryId(SUB_CATEGORY_ID).amount(PRICE).paid()));
 
 			// when
 			Order result = paymentConfirmService.complete(USERNAME, completeRequest(SECOND_PAYMENT_ID));
@@ -912,7 +912,7 @@ class PaymentConfirmServiceTest {
 	@DisplayName("결제 ID 가 기록되지 않은 예전 PAID 주문에 승인된 결제로 요청이 오면 같은 결제인지 가릴 수 없어 취소하지 않고 알림만 한 번 보낸 뒤 주문을 돌려준다")
 	void complete_paidOrderWithoutRecordedPaymentId_alertsWithoutCancel() {
 		// given
-		Order order = createOrder(OrderStatus.PAID);
+		Order order = orderOfThisTest().paymentId(null).paid();
 		givenRequester();
 		givenLockedOrder(order);
 		givenPortOneReturns(portOneResponse("PAID", PRICE));

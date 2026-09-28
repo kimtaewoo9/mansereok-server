@@ -23,6 +23,7 @@ import com.mansereok.server.support.ConcurrentCalls;
 import com.mansereok.server.support.ConcurrentCalls.CallResult;
 import com.mansereok.server.support.PaymentMySqlTest;
 import com.mansereok.server.support.fixture.SubCategoryFixture;
+import com.mansereok.server.support.fixture.TestOrders;
 import java.time.Duration;
 import java.time.LocalDate;
 import java.util.List;
@@ -88,8 +89,8 @@ class DuplicatePaymentMySqlTest extends PaymentMySqlTest {
 			.getId();
 		subCategoryId = subCategoryRepository.save(SubCategoryFixture.paidProduct().withoutId()
 			.title("중복 결제 테스트 상품 " + runId).price(PRICE).build()).getId();
-		orderRepository.save(Order.create(merchantUid, userId, subCategoryId, PRICE, PRICE, null, null,
-			OrderStatus.PENDING, "중복결제", username + "@example.com"));
+		orderRepository.save(TestOrders.order().merchantUid(merchantUid).userId(userId).subCategoryId(subCategoryId)
+			.price(PRICE).buyer("중복결제", username + "@example.com").pending());
 
 		given(portOneClient.getPayment(firstPaymentId)).willReturn(paidResponseForThisOrder(firstPaymentId));
 		given(portOneClient.getPayment(secondPaymentId)).willReturn(paidResponseForThisOrder(secondPaymentId));
