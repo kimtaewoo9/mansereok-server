@@ -9,7 +9,7 @@ import java.util.Map;
 import lombok.Getter;
 
 /**
- * OpenAI Responses API 요청 본문. 만드는 길은 {@link #of} 하나뿐이다.
+ * OpenAI Responses API 요청 본문. 새로 만드는 길은 {@link #of} 하나뿐이고, 티어만 바꾼 사본은 {@link #withTier} 로 만든다.
  *
  * <p>시스템 지시와 사용자 프롬프트를 String 이 아닌 각자의 타입({@link SystemInstruction}, {@link UserPrompt})으로 받는다.
  * 둘 다 String 이면 순서를 뒤바꿔 넘겨도 컴파일이 통과하고, 그러면 사용자 프롬프트가 신뢰 채널인 instructions 로 올라가
@@ -43,6 +43,16 @@ public class Gpt5Request {
 		this.text = new Text(tier.verbosity(), outputFormat);
 	}
 
+	/** source 의 시스템 지시·사용자 프롬프트·출력 형식을 그대로 옮기고 티어 값만 바꾼다. */
+	private Gpt5Request(Gpt5Request source, ModelTier tier) {
+		this.model = tier.model();
+		this.instructions = source.instructions;
+		this.input = source.input;
+		this.maxOutputTokens = tier.maxOutputTokens();
+		this.reasoning = new Reasoning(tier.reasoningEffort());
+		this.text = new Text(tier.verbosity(), source.text.format);
+	}
+
 	/**
 	 * 티어 설정으로 요청을 만든다. instructions 에는 서버가 만든 시스템 지시만, input 에는 사용자 프롬프트만 들어간다.
 	 * outputFormat 에 json_schema 포맷을 넘기면 모델 출력이 스키마에 맞춰진다(Structured Outputs). 없으면 null 을 넘긴다.
@@ -53,6 +63,17 @@ public class Gpt5Request {
 			throw new IllegalArgumentException("티어, 시스템 지시, 사용자 프롬프트는 모두 있어야 합니다.");
 		}
 		return new Gpt5Request(tier, instructions, input, outputFormat);
+	}
+
+	/**
+	 * 모델·토큰 상한·추론 강도·출력 길이만 tier 로 바꾼 사본을 만든다. fallback 호출이 쓴다.
+	 * 시스템 지시와 사용자 프롬프트는 String 으로 꺼내 다시 감싸지 않고 같은 이름의 필드로 그대로 옮긴다.
+	 */
+	public Gpt5Request withTier(ModelTier tier) {
+		if (tier == null) {
+			throw new IllegalArgumentException("티어는 있어야 합니다.");
+		}
+		return new Gpt5Request(this, tier);
 	}
 
 	/** 서버가 정한 시스템 지시. 요청 본문의 instructions 로만 간다. */
@@ -95,7 +116,8 @@ public class Gpt5Request {
 
 		private Text(Verbosity verbosity, Map<String, Object> format) {
 			this.verbosity = verbosity;
-			this.format = format;
+			// 넘겨받은 Map 을 호출부가 나중에 바꿔도 이미 만든 요청 본문이 바뀌지 않게 바깥 Map 을 복사해 둔다.
+			this.format = format == null ? null : Map.copyOf(format);
 		}
 	}
 }

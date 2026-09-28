@@ -13,11 +13,15 @@ import com.mansereok.server.domain.interpret.dto.request.Gpt5Request.UserPrompt;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Modifier;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.Map;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.NullAndEmptySource;
 import org.junit.jupiter.params.provider.ValueSource;
 
@@ -77,6 +81,60 @@ class Gpt5RequestTest {
 			assertThat(withFormat.at("/text/format/type").asText()).isEqualTo("json_schema");
 			assertThat(withoutFormat.get("text").has("format")).isFalse();
 		}
+
+		@Test
+		@DisplayName("요청을 만든 뒤 넘겨준 outputFormat Map 을 바꿔도 요청 본문의 format 은 그대로다")
+		void keepsOwnCopyOfOutputFormat() throws Exception {
+			// given
+			Map<String, Object> outputFormat = new HashMap<>(Map.of("type", "json_schema"));
+			Gpt5Request request = Gpt5Request.of(TIER, new SystemInstruction("지시"),
+				new UserPrompt("프롬프트"), outputFormat);
+
+			// when
+			outputFormat.put("type", "text");
+
+			// then
+			assertThat(serialize(request).at("/text/format/type").asText()).isEqualTo("json_schema");
+		}
+	}
+
+	@Nested
+	@DisplayName("티어만 바꾼 사본(withTier)")
+	class WithTier {
+
+		@Test
+		@DisplayName("시스템 지시·사용자 프롬프트·출력 형식은 그대로 두고 모델·토큰 상한·추론 강도·출력 길이만 바꾼다")
+		void changesOnlyTierValues() throws Exception {
+			// given
+			Gpt5Request original = Gpt5Request.of(TIER, new SystemInstruction("지시"),
+				new UserPrompt("프롬프트"), Map.of("type", "json_schema"));
+			ModelTier fallback = new ModelTier("gpt-5.2", 32_768, ReasoningEffort.MEDIUM, Verbosity.LOW);
+
+			// when
+			JsonNode json = serialize(original.withTier(fallback));
+
+			// then
+			assertThat(json.get("model").asText()).isEqualTo("gpt-5.2");
+			assertThat(json.get("max_output_tokens").asInt()).isEqualTo(32_768);
+			assertThat(json.at("/reasoning/effort").asText()).isEqualTo("medium");
+			assertThat(json.at("/text/verbosity").asText()).isEqualTo("low");
+			assertThat(json.get("instructions").asText()).isEqualTo("지시");
+			assertThat(json.get("input").asText()).isEqualTo("프롬프트");
+			assertThat(json.at("/text/format/type").asText()).isEqualTo("json_schema");
+		}
+
+		@Test
+		@DisplayName("티어 없이 부르면 만들지 못한다")
+		void rejectsMissingTier() {
+			// given
+			Gpt5Request original = Gpt5Request.of(TIER, new SystemInstruction("지시"),
+				new UserPrompt("프롬프트"), null);
+
+			// when & then
+			assertThatThrownBy(() -> original.withTier(null))
+				.isInstanceOf(IllegalArgumentException.class)
+				.hasMessage("티어는 있어야 합니다.");
+		}
 	}
 
 	@Nested
@@ -115,12 +173,21 @@ class Gpt5RequestTest {
 				.hasMessage("사용자 프롬프트는 비어 있을 수 없습니다.");
 		}
 
-		@Test
-		@DisplayName("시스템 지시를 빠뜨리고 of 를 부르면 만들지 못한다")
-		void rejectsMissingSystemInstruction() {
-			assertThatThrownBy(() -> Gpt5Request.of(TIER, null, new UserPrompt("프롬프트"), null))
+		@ParameterizedTest(name = "[{index}] {0} 없음")
+		@MethodSource("requestsMissingOnePart")
+		@DisplayName("티어·시스템 지시·사용자 프롬프트 중 하나라도 빠뜨리고 of 를 부르면 만들지 못한다")
+		void rejectsMissingPart(String missingPart, ModelTier tier, SystemInstruction instructions,
+			UserPrompt input) {
+			assertThatThrownBy(() -> Gpt5Request.of(tier, instructions, input, null))
 				.isInstanceOf(IllegalArgumentException.class)
 				.hasMessage("티어, 시스템 지시, 사용자 프롬프트는 모두 있어야 합니다.");
+		}
+
+		static Stream<Arguments> requestsMissingOnePart() {
+			return Stream.of(
+				Arguments.of("티어", null, new SystemInstruction("지시"), new UserPrompt("프롬프트")),
+				Arguments.of("시스템 지시", TIER, null, new UserPrompt("프롬프트")),
+				Arguments.of("사용자 프롬프트", TIER, new SystemInstruction("지시"), null));
 		}
 	}
 }

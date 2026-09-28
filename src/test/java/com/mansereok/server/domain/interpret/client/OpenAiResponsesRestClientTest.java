@@ -221,7 +221,7 @@ class OpenAiResponsesRestClientTest {
 	}
 
 	@Test
-	@DisplayName("instructions 가 있는 요청은 첫 호출부터 시스템 지시를 input 이 아닌 instructions 로 보낸다")
+	@DisplayName("첫 호출부터 시스템 지시를 input 이 아닌 instructions 로 보낸다")
 	void sendsInstructionsSeparatelyOnFirstCall() {
 		OpenAiResponsesRestClient client = clientWith(TestOpenAiProperties.defaults());
 		server.expect(ExpectedCount.once(), requestTo(URL))

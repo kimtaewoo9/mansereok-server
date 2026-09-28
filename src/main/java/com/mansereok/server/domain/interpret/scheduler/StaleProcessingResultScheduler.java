@@ -5,7 +5,7 @@ import com.mansereok.server.domain.interpret.repository.ResultRepository;
 import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.List;
-import java.util.function.IntSupplier;
+import java.util.function.Supplier;
 import java.util.function.ToIntFunction;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -24,6 +24,9 @@ import org.springframework.stereotype.Component;
  * ResultRepository.findIdsProcessingUpdatedBefore). 읽은 뒤 같은 순간에 해석이 끝나 완료(COMPLETED)가 된 결과는 상태 조건에 걸려 그대로
  * 남는다. 되돌리기는 updated_at 을 지금으로 바꾸므로, 되돌린 뒤에 늦게 끝난 해석은 자기가 해석을 시작한 시각이 결과에 남은 값과
  * 달라 결과를 쓰지 않는다(SajuResultService). 그사이 사용자가 같은 결제로 해석을 다시 시작했어도 그 결과를 덮어쓰거나 되돌리지 않는다.
+ *
+ * <p>한 행씩 자기 트랜잭션으로 되돌리므로, 한 행이 실패해도 앞서 되돌린 행은 이미 커밋돼 있다. 그래서 실패한 행은 결과 ID 를 ERROR 로
+ * 남기고 다음 행으로 넘어가며, 실제로 되돌린 건수는 표마다 끝에 WARN 으로 남긴다. 실패한 행은 다음 실행에서 다시 시도한다.
  */
 @Component
 @RequiredArgsConstructor
@@ -41,7 +44,7 @@ public class StaleProcessingResultScheduler {
 
 	/**
 	 * 해석을 시작한 지 staleAfter 보다 오래된 PROCESSING 결과를 되돌린다. 앞 실행이 끝난 뒤 check-interval 만큼 쉬고 다시
-	 * 돈다. 한 표에서 실패해도 다른 표는 되돌리고, 실패는 다음 실행에서 다시 시도한다.
+	 * 돈다. 한 표나 한 행에서 실패해도 나머지는 되돌리고, 실패는 다음 실행에서 다시 시도한다.
 	 */
 	@Scheduled(
 		fixedDelayString = CHECK_INTERVAL,
@@ -50,33 +53,40 @@ public class StaleProcessingResultScheduler {
 		LocalDateTime now = LocalDateTime.now(clock);
 		LocalDateTime staleBefore = now.minus(properties.staleAfter());
 
-		revertAndLog("사주 결과", staleBefore, () -> revertEach(
-			resultRepository.findIdsProcessingUpdatedBefore(staleBefore),
-			id -> resultRepository.revertIfProcessingUpdatedBefore(id, staleBefore, now)));
-		revertAndLog("궁합 결과", staleBefore, () -> revertEach(
-			compatibilityResultRepository.findIdsProcessingUpdatedBefore(staleBefore),
-			id -> compatibilityResultRepository.revertIfProcessingUpdatedBefore(id, staleBefore, now)));
+		revertAndLog("사주 결과", staleBefore,
+			() -> resultRepository.findIdsProcessingUpdatedBefore(staleBefore),
+			id -> resultRepository.revertIfProcessingUpdatedBefore(id, staleBefore, now));
+		revertAndLog("궁합 결과", staleBefore,
+			() -> compatibilityResultRepository.findIdsProcessingUpdatedBefore(staleBefore),
+			id -> compatibilityResultRepository.revertIfProcessingUpdatedBefore(id, staleBefore, now));
 	}
 
-	/** 결과마다 따로 되돌리고, 실제로 되돌린 행 수를 더해 돌려준다. 한 행씩 자기 트랜잭션으로 되돌린다. */
-	private static int revertEach(List<Long> ids, ToIntFunction<Long> revertOne) {
-		int reverted = 0;
-		for (Long id : ids) {
-			reverted += revertOne.applyAsInt(id);
-		}
-		return reverted;
-	}
-
-	private void revertAndLog(String kind, LocalDateTime staleBefore, IntSupplier revert) {
+	/**
+	 * 오래 멈춘 결과의 ID 를 읽어 한 행씩 되돌리고, 실제로 되돌린 건수를 남긴다. ID 를 읽지 못하면 이 표는 이번 실행에서 건너뛴다. 한
+	 * 행이 실패하면 그 결과 ID 를 남기고 다음 행을 되돌린다.
+	 */
+	private void revertAndLog(String kind, LocalDateTime staleBefore, Supplier<List<Long>> findStaleIds,
+		ToIntFunction<Long> revertOne) {
+		List<Long> staleIds;
 		try {
-			int reverted = revert.getAsInt();
-			if (reverted > 0) {
-				// 정상이라면 0 이다. 0 이 아니면 배포로 잘렸거나 해석이 멈춘 것이라 알아차릴 수 있게 WARN 으로 남긴다.
-				log.warn("해석 중에 멈춘 {} {}건을 정보 입력 대기로 되돌렸다. 마지막 변경이 {} 보다 전이다.", kind, reverted,
-					staleBefore);
-			}
+			staleIds = findStaleIds.get();
 		} catch (RuntimeException e) {
-			log.error("해석 중에 멈춘 {} 되돌리기 실패. 다음 실행에서 다시 시도한다.", kind, e);
+			log.error("해석 중에 멈춘 {} 조회 실패. 다음 실행에서 다시 시도한다.", kind, e);
+			return;
+		}
+
+		int reverted = 0;
+		for (Long id : staleIds) {
+			try {
+				reverted += revertOne.applyAsInt(id);
+			} catch (RuntimeException e) {
+				log.error("해석 중에 멈춘 {} id={} 되돌리기 실패. 다음 실행에서 다시 시도한다.", kind, id, e);
+			}
+		}
+		if (reverted > 0) {
+			// 정상이라면 0 이다. 0 이 아니면 배포로 잘렸거나 해석이 멈춘 것이라 알아차릴 수 있게 WARN 으로 남긴다.
+			log.warn("해석 중에 멈춘 {} {}건을 정보 입력 대기로 되돌렸다. 마지막 변경이 {} 보다 전이다.", kind, reverted,
+				staleBefore);
 		}
 	}
 }
