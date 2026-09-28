@@ -3,7 +3,6 @@ package com.mansereok.server.domain.interpret.service;
 import com.mansereok.server.domain.interpret.dto.response.ManseryeokCalculationResponse;
 import com.mansereok.server.domain.interpret.entity.CompatibilityResult;
 import com.mansereok.server.domain.interpret.entity.Result;
-import com.mansereok.server.domain.interpret.entity.ResultStatus;
 import com.mansereok.server.domain.interpret.repository.CompatibilityResultRepository;
 import com.mansereok.server.domain.interpret.repository.ResultRepository;
 import jakarta.persistence.EntityNotFoundException;
@@ -54,11 +53,7 @@ public class SajuResultService {
 		if (resultId == null) {
 			return;
 		}
-		Result result = resultRepository.findById(resultId).orElse(null);
-		if (result != null && result.getStatus() == ResultStatus.PROCESSING) {
-			result.setStatus(ResultStatus.INPUT_REQUIRED);
-			resultRepository.save(result);
-		}
+		resultRepository.findById(resultId).ifPresent(Result::revertToInputRequired);
 	}
 
 	// ==========================================
@@ -91,10 +86,7 @@ public class SajuResultService {
 		if (resultId == null) {
 			return;
 		}
-		CompatibilityResult result = compatibilityResultRepository.findById(resultId).orElse(null);
-		if (result != null && result.getStatus() == ResultStatus.PROCESSING) {
-			result.setStatus(ResultStatus.INPUT_REQUIRED);
-			compatibilityResultRepository.save(result);
-		}
+		compatibilityResultRepository.findById(resultId)
+			.ifPresent(CompatibilityResult::revertToInputRequired);
 	}
 }

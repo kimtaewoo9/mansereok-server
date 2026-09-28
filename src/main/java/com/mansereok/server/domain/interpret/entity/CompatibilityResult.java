@@ -13,13 +13,11 @@ import java.time.LocalDateTime;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
-import lombok.Setter;
 import lombok.ToString;
 
 @Entity
 @Table(name = "compatibility_results")
 @Getter
-@Setter
 @ToString
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class CompatibilityResult {
@@ -88,10 +86,35 @@ public class CompatibilityResult {
 		this.status = ResultStatus.COMPLETED;
 	}
 
-	public void setStatus(ResultStatus status) {
+	/**
+	 * 정보 입력 대기(INPUT_REQUIRED)인 결과만 해석 중(PROCESSING)으로 바꾼다.
+	 *
+	 * @return 바꿨으면 true. 이미 해석 중이거나 완료된 결과는 그대로 두고 false.
+	 */
+	public boolean markProcessing() {
+		if (status != ResultStatus.INPUT_REQUIRED) {
+			return false;
+		}
 		this.status = ResultStatus.PROCESSING;
+		return true;
 	}
 
+	/**
+	 * 해석 중(PROCESSING)인 결과만 정보 입력 대기(INPUT_REQUIRED)로 되돌린다. 해석이 실패했거나 시작하지 못했을 때 부른다.
+	 * 환불 검사는 입력 대기인 결과만 통과시킨다. 다만 지금 환불(PaymentService.cancelPayment)은 사주 결과 표만 찾으므로,
+	 * 궁합 결제는 환불이 궁합 결과 표도 찾게 된 뒤부터 이 검사를 받는다.
+	 *
+	 * @return 되돌렸으면 true. 입력 대기이거나 이미 완료된 결과는 그대로 두고 false.
+	 */
+	public boolean revertToInputRequired() {
+		if (status != ResultStatus.PROCESSING) {
+			return false;
+		}
+		this.status = ResultStatus.INPUT_REQUIRED;
+		return true;
+	}
+
+	// 두 사람의 이름과 일간만 채우고 상태는 바꾸지 않는다.
 	public void updatePersonsInformation(
 		String person1Name,
 		String person1Ilgan,
@@ -102,6 +125,5 @@ public class CompatibilityResult {
 		this.person1Ilgan = person1Ilgan;
 		this.person2Name = person2Name;
 		this.person2Ilgan = person2Ilgan;
-		this.status = ResultStatus.PROCESSING;
 	}
 }

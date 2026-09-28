@@ -2,7 +2,6 @@ package com.mansereok.server.domain.interpret.service;
 
 import com.mansereok.server.domain.interpret.entity.CompatibilityResult;
 import com.mansereok.server.domain.interpret.entity.Result;
-import com.mansereok.server.domain.interpret.entity.ResultStatus;
 import com.mansereok.server.domain.interpret.repository.CompatibilityResultRepository;
 import com.mansereok.server.domain.interpret.repository.ResultRepository;
 import com.mansereok.server.domain.order.entity.Order;
@@ -78,10 +77,8 @@ public class ResultService {
 		Result result = resultRepository.findByPaymentId(paymentId)
 			.orElseThrow(() -> new EntityNotFoundException("Result not found"));
 
-		if (result.getStatus() == ResultStatus.INPUT_REQUIRED) {
-			result.setStatus(ResultStatus.PROCESSING);
-			resultRepository.save(result);
-		}
+		// 입력 대기일 때만 바뀐다. 트랜잭션 안에서 읽은 엔티티라 save 없이 커밋 때 반영된다.
+		result.markProcessing();
 	}
 
 	@Transactional
@@ -89,10 +86,8 @@ public class ResultService {
 		CompatibilityResult result = compatibilityResultRepository.findByPaymentId(paymentId)
 			.orElseThrow(() -> new EntityNotFoundException("CompatibilityResult not found"));
 
-		if (result.getStatus() == ResultStatus.INPUT_REQUIRED) {
-			result.setStatus(ResultStatus.PROCESSING);
-			compatibilityResultRepository.save(result);
-		}
+		// 입력 대기일 때만 바뀐다. 트랜잭션 안에서 읽은 엔티티라 save 없이 커밋 때 반영된다.
+		result.markProcessing();
 	}
 
 	/**
@@ -105,22 +100,13 @@ public class ResultService {
 	 */
 	@Transactional
 	public void rollbackStatusByPaymentId(Long paymentId) {
-		resultRepository.findByPaymentId(paymentId).ifPresent(result -> {
-			if (result.getStatus() == ResultStatus.PROCESSING) {
-				result.setStatus(ResultStatus.INPUT_REQUIRED);
-				resultRepository.save(result);
-			}
-		});
+		resultRepository.findByPaymentId(paymentId).ifPresent(Result::revertToInputRequired);
 	}
 
 	/** 궁합 결과의 PROCESSING 상태를 결제 ID 로 찾아 INPUT_REQUIRED 로 되돌린다. */
 	@Transactional
 	public void rollbackCompatibilityStatusByPaymentId(Long paymentId) {
-		compatibilityResultRepository.findByPaymentId(paymentId).ifPresent(result -> {
-			if (result.getStatus() == ResultStatus.PROCESSING) {
-				result.setStatus(ResultStatus.INPUT_REQUIRED);
-				compatibilityResultRepository.save(result);
-			}
-		});
+		compatibilityResultRepository.findByPaymentId(paymentId)
+			.ifPresent(CompatibilityResult::revertToInputRequired);
 	}
 }
