@@ -22,7 +22,8 @@ import org.springframework.http.converter.json.Jackson2ObjectMapperBuilder;
  * 가입 요청의 이름 규칙, 개인정보 처리방침 동의, role 을 받지 않는 것을 확인한다.
  *
  * <p>AuthController.register 는 {@code @Valid} 로 이 검사를 부르고, 어긋나면 GlobalExceptionHandler 가 400 VALIDATION_ERROR 로
- * 답한다. 이름은 프로필 수정과 같은 규칙(비어 있지 않고 20자 이하)이라 "이훈" 같은 두 글자 이름으로도 가입할 수 있다.
+ * 답한다(AuthControllerContractTest). 이름은 비어 있지 않고 20자 이하면 되므로 "이훈" 같은 두 글자 이름으로도 가입할 수 있다. 20자
+ * 한도는 프로필 수정과 같은 값(NameRule)이다.
  */
 class RegisterRequestNameAndConsentTest {
 

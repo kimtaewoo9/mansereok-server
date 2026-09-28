@@ -2,6 +2,7 @@ package com.mansereok.server.domain.auth.dto.request;
 
 
 import com.mansereok.server.domain.user.entity.Gender;
+import com.mansereok.server.domain.user.entity.NameRule;
 import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;

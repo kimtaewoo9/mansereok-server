@@ -17,6 +17,7 @@ import com.mansereok.server.domain.order.repository.OrderRepository;
 import com.mansereok.server.domain.payment.repository.PaymentRepository;
 import com.mansereok.server.domain.review.repository.ReviewRepository;
 import com.mansereok.server.domain.user.entity.Gender;
+import com.mansereok.server.domain.user.entity.SocialType;
 import com.mansereok.server.domain.user.entity.User;
 import com.mansereok.server.domain.user.repository.RefreshTokenRepository;
 import com.mansereok.server.domain.user.repository.UserRepository;
@@ -47,14 +48,16 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.transaction.PlatformTransactionManager;
 
 /**
- * 프로필 수정과 결과 조회 API 가 잘못된 요청에 돌려주는 상태 코드와 본문을 확인한다.
+ * 프로필 수정과 결과 조회 API 가 요청에 돌려주는 상태 코드와 본문을 확인한다.
  *
  * <p>운영과 같게 두 예외 처리기를 등록한 standalone MockMvc 로 부른다. 프로필 규칙은 User 가 지키므로 UserService 는 진짜를 쓰고,
- * 회원·결과 조회만 저장소 스텁으로 정한다. 트랜잭션 프록시가 없으므로 변경 감지로 저장되는지는 보지 않는다.
+ * 회원·결과 조회만 저장소 스텁으로 정한다. 트랜잭션 프록시가 없으므로 변경 감지로 저장되는지는 보지 않는다
+ * (ProfileUpdateMySqlTest 가 본다).
  */
 class ProfileControllerRequestTest {
 
 	private static final String USERNAME = "member@example.com";
+	private static final String GOOGLE_USERNAME = "google-sub-2";
 	private static final String PROFILE_URL = "/api/v1/users/me/profiles";
 
 	private final UserRepository userRepository = mock(UserRepository.class);
@@ -116,13 +119,52 @@ class ProfileControllerRequestTest {
 		}
 
 		@Test
-		@DisplayName("이름이 가입과 같은 한도인 20자를 넘으면 400 VALIDATION_ERROR 이다")
-		void rejectsNameLongerThanSignupLimit() throws Exception {
+		@DisplayName("이름을 가입과 같은 한도인 20자를 넘는 다른 이름으로 바꾸려 하면 400 INVALID_INPUT 이다")
+		void rejectsNewNameLongerThanSignupLimit() throws Exception {
 			updateProfile("{\"name\": \"" + "가".repeat(21) + "\"}")
 				.andExpect(status().isBadRequest())
-				.andExpect(jsonPath("$.errorCode").value("VALIDATION_ERROR"))
-				.andExpect(jsonPath("$.errors.name").value("이름은 20자까지 입력할 수 있습니다."));
+				.andExpect(jsonPath("$.errorCode").value("INVALID_INPUT"))
+				.andExpect(jsonPath("$.message").value("이름은 20자까지 입력할 수 있습니다."));
 			assertThat(member.getName()).isEqualTo("기존이름");
+		}
+
+		@Test
+		@DisplayName("소셜 가입 때 받은 20자 넘는 이름을 그대로 담아 생년월일·성별과 함께 보내면 200 이고 생년월일·성별을 저장한다")
+		void acceptsCurrentProviderNameLongerThanSignupLimit() throws Exception {
+			// given: 구글이 준 27자 이름으로 가입하고 생년월일·성별은 아직 없는 회원
+			User googleMember = logInAsGoogleMemberNamed("Christopher Alexander Smith");
+
+			// when & then
+			updateProfile("""
+				{"name": "Christopher Alexander Smith", "birthDate": "1990-01-01", "gender": "MALE"}
+				""")
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.name").value("Christopher Alexander Smith"))
+				.andExpect(jsonPath("$.newUser").value(false));
+			assertThat(googleMember.getBirthDate()).isEqualTo(LocalDate.of(1990, 1, 1));
+			assertThat(googleMember.getGender()).isEqualTo(Gender.MALE);
+		}
+
+		@Test
+		@DisplayName("gender 가 빈 문자열이면 성별을 보내지 않은 것으로 보고 200 이며 같이 보낸 이름은 바꾼다")
+		void treatsEmptyGenderAsNotSent() throws Exception {
+			updateProfile("{\"name\": \"새이름\", \"gender\": \"\"}")
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.name").value("새이름"))
+				.andExpect(jsonPath("$.gender").value("MALE"));
+		}
+
+		@Test
+		@DisplayName("성별이 없는 회원이 gender 를 빈 문자열로 보내면 성별을 고르라는 400 INVALID_INPUT 이다")
+		void asksForGenderWhenEmptyGenderLeavesItMissing() throws Exception {
+			// given: 소셜 가입 직후라 성별이 없는 회원
+			logInAsGoogleMemberNamed("구글회원");
+
+			// when & then
+			updateProfile("{\"birthDate\": \"1990-01-01\", \"gender\": \"\"}")
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.errorCode").value("INVALID_INPUT"))
+				.andExpect(jsonPath("$.message").value("성별을 선택해주세요."));
 		}
 
 		@Test
@@ -138,6 +180,18 @@ class ProfileControllerRequestTest {
 
 		private ResultActions updateProfile(String body) throws Exception {
 			return mockMvc.perform(patch(PROFILE_URL).contentType(MediaType.APPLICATION_JSON).content(body));
+		}
+
+		/**
+		 * 받은 이름으로 가입한 구글 회원(생년월일·성별 없음)으로 로그인한 상태를 만들고 그 회원을 돌려준다.
+		 */
+		private User logInAsGoogleMemberNamed(String name) {
+			User googleMember = UserFixture.withId(
+				User.createByOauth(GOOGLE_USERNAME, name, null, GOOGLE_USERNAME, SocialType.GOOGLE), 2L);
+			given(userRepository.findByUsername(GOOGLE_USERNAME)).willReturn(Optional.of(googleMember));
+			SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(
+				GOOGLE_USERNAME, null, List.of(new SimpleGrantedAuthority("ROLE_USER"))));
+			return googleMember;
 		}
 	}
 

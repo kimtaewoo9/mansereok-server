@@ -12,11 +12,24 @@ import org.springframework.beans.factory.config.YamlPropertiesFactoryBean;
 import org.springframework.core.io.ClassPathResource;
 
 /**
- * 환경별 설정 파일(application.yml 은 로컬, -dev, -prod)에 적힌 actuator 공개 범위, 지표 환경 태그, JPA 방언 설정을 고정한다.
+ * 환경별 설정 파일(application.yml 은 로컬, -dev, -prod)에 적힌 open-in-view, actuator 공개 범위, 지표 환경 태그, JPA 방언 설정을
+ * 고정한다.
  *
- * <p>스프링을 띄우지 않고 yml 파일만 읽는다. 운영·개발 설정은 테스트에서 띄울 수 없어, 파일에 적힌 값을 직접 확인한다.
+ * <p>스프링을 띄우지 않고 yml 파일만 읽는다. 운영·개발 설정은 테스트에서 띄울 수 없어, 파일에 적힌 값을 직접 확인한다. 누가 값을
+ * 되돌리거나 지우면 DB 없이 도는 기본 {@code ./gradlew test} 에서 바로 실패한다.
  */
 class ProfileConfigFileTest {
+
+	@ParameterizedTest(name = "{0}")
+	@ValueSource(strings = {"application.yml", "application-dev.yml", "application-prod.yml"})
+	@DisplayName("모든 환경의 설정 파일이 open-in-view 를 false 로 적어 둔다")
+	void turnsOffOpenInView(String fileName) {
+		// when
+		Properties properties = load(fileName);
+
+		// then
+		assertThat(properties.get("spring.jpa.open-in-view")).as(fileName).isEqualTo(false);
+	}
 
 	@ParameterizedTest(name = "{0}")
 	@ValueSource(strings = {"application.yml", "application-dev.yml", "application-prod.yml"})
@@ -58,15 +71,19 @@ class ProfileConfigFileTest {
 			.as(fileName).isEqualTo(expectedEnvironment);
 	}
 
+	// spring.jpa.database 만 남아 있어도 스프링의 HibernateJpaVendorAdapter 가 그 DB 의 방언(MySQLDialect)을 hibernate.dialect 에
+	// 직접 넣고, Hibernate 는 기동 때마다 "방언을 적을 필요가 없다"(HHH90000025) 경고를 남긴다. 그래서 두 키가 모두 없어야 한다.
 	@ParameterizedTest(name = "{0}")
-	@ValueSource(strings = {"application-dev.yml", "application-prod.yml"})
-	@DisplayName("개발·운영 설정이 JPA 방언을 적지 않아 Hibernate 가 DB 에 맞는 방언을 스스로 고른다")
+	@ValueSource(strings = {"application.yml", "application-dev.yml", "application-prod.yml"})
+	@DisplayName("모든 환경이 JPA 방언과 DB 종류를 적지 않아 Hibernate 가 접속한 DB 에 맞는 방언을 스스로 고른다")
 	void leavesDialectToHibernate(String fileName) {
 		// when
 		Properties properties = load(fileName);
 
 		// then
-		assertThat(properties).as(fileName).doesNotContainKey("spring.jpa.database-platform");
+		assertThat(properties).as(fileName)
+			.doesNotContainKey("spring.jpa.database-platform")
+			.doesNotContainKey("spring.jpa.database");
 	}
 
 	@Test

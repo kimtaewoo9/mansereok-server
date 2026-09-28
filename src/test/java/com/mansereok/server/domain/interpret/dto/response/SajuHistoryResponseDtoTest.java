@@ -7,11 +7,11 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.mansereok.server.domain.interpret.entity.CompatibilityResult;
 import com.mansereok.server.domain.interpret.entity.Result;
+import com.mansereok.server.support.fixture.ResultFixture;
 import java.time.LocalDateTime;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.converter.json.Jackson2ObjectMapperBuilder;
-import org.springframework.test.util.ReflectionTestUtils;
 
 /**
  * 해석 이력 한 줄의 JSON 모양을 프론트와 맞춘 대로 고정한다. 프론트는 resultType 문자열("SAJU", "COMPATIBILITY")로 목록을 거르므로,
@@ -30,10 +30,9 @@ class SajuHistoryResponseDtoTest {
 	@DisplayName("사주 결과로 만든 이력은 resultType SAJU 와 결과의 id·상품명·만든 시각·상태·결제 id 를 담는다")
 	void sajuResultBecomesSajuLine() throws Exception {
 		// given
-		Result result = Result.createInitial(1L, 30L, "인생 총운");
+		Result result = ResultFixture.withIdAndCreatedAt(Result.createInitial(1L, 30L, "인생 총운"), 11L,
+			LocalDateTime.of(2026, 9, 3, 9, 0));
 		result.completeInterpretation("해석", "요약");
-		ReflectionTestUtils.setField(result, "id", 11L);
-		ReflectionTestUtils.setField(result, "createdAt", LocalDateTime.of(2026, 9, 3, 9, 0));
 
 		// when
 		JsonNode json = writeAsJson(SajuHistoryResponseDto.fromSaju(result));
@@ -52,9 +51,8 @@ class SajuHistoryResponseDtoTest {
 	@DisplayName("궁합 결과로 만든 이력은 resultType COMPATIBILITY 와 결과의 id·상품명·만든 시각·상태·결제 id 를 담는다")
 	void compatibilityResultBecomesCompatibilityLine() throws Exception {
 		// given
-		CompatibilityResult result = CompatibilityResult.createInitial(1L, 40L, "궁합");
-		ReflectionTestUtils.setField(result, "id", 21L);
-		ReflectionTestUtils.setField(result, "createdAt", LocalDateTime.of(2026, 9, 4, 9, 0));
+		CompatibilityResult result = ResultFixture.withIdAndCreatedAt(CompatibilityResult.createInitial(1L, 40L, "궁합"),
+			21L, LocalDateTime.of(2026, 9, 4, 9, 0));
 
 		// when
 		JsonNode json = writeAsJson(SajuHistoryResponseDto.fromCompatibility(result));

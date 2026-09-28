@@ -35,7 +35,7 @@ public class SesConfig {
 			builder.credentialsProvider(
 				StaticCredentialsProvider.create(AwsBasicCredentials.create(accessKey, secretKey)));
 		} else {
-			log.info("SES 는 IAM 역할 자격 증명으로 접속한다(배포)");
+			log.info("SES 는 AWS SDK 기본 자격 증명 순서로 접속한다(배포 서버는 IAM 역할)");
 		}
 		return builder.build();
 	}
