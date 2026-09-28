@@ -268,6 +268,11 @@ public class SinsalCalculator {
 		"甲寅", "乙卯", "丙辰", "丁巳", "戊午", "己未", "庚申", "辛酉", "壬戌", "癸亥"  // 갑인순
 	);
 
+	// 공망 계산용 12지지 순서
+	private static final List<String> EARTHLY_BRANCHES = List.of(
+		"子", "丑", "寅", "卯", "辰", "巳", "午", "未", "申", "酉", "戌", "亥"
+	);
+
 	/**
 	 * 전체 신살 분석 (연지/일지, 월지/일간 기준을 함께 계산)
 	 *
@@ -449,7 +454,7 @@ public class SinsalCalculator {
 	/**
 	 * 공망(空亡) 계산 일주를 기준으로 해당 순(旬)에서 비어있는 두 지지를 찾음
 	 * <p>
-	 * 예: 壬子일주 -> 갑진순(甲辰~癸丑) -> 공망은 戌, 亥
+	 * 예: 壬子일주 -> 갑진순(甲辰~癸丑) -> 공망은 寅, 卯
 	 *
 	 * @param ilganChinese   일간 한자
 	 * @param dayJijiChinese 일지 한자
@@ -467,26 +472,14 @@ public class SinsalCalculator {
 		// 해당 순(旬)의 시작 인덱스 (10개씩 묶음)
 		int sunStart = (index / 10) * 10;
 
-		// 순의 마지막 2개 지지가 공망
-		// 예: 갑진순(40~49) -> 48번(壬戌)의 지지 戌, 49번(癸丑)의 지지 丑이 아닌
-		// 60갑자에서 비어있는 戌(10번째), 亥(11번째)가 공망
+		// 천간은 10개, 지지는 12개이므로 한 순(간지 10개)에서 쓰이지 않는 지지가 2개 남는다.
+		// 그 둘은 순의 첫 간지 지지에서 10칸, 11칸 뒤 지지다.
+		// 예: 갑진순(40~49)은 辰부터 丑까지 쓰므로 辰에서 10칸, 11칸 뒤인 寅, 卯가 공망
+		String firstJiji = SIXTY_GAPJA.get(sunStart).substring(1);
+		int jijiStartIndex = EARTHLY_BRANCHES.indexOf(firstJiji);
 
-		// 천간은 10개, 지지는 12개이므로 각 순마다 2개의 지지가 남음
-		int gapjaStartInSun = sunStart % 60; // 해당 순의 60갑자 시작 위치
-
-		// 공망은 해당 순에서 사용되지 않은 지지 2개
-		// 간단히: 순의 시작 지지부터 +10, +11번째 지지
-		List<String> earthlyBranches = Arrays.asList("子", "丑", "寅", "卯", "辰", "巳", "午", "未",
-			"申", "酉", "戌", "亥");
-
-		// 해당 순의 첫 일주에서 지지 인덱스 찾기
-		String firstIljuInSun = SIXTY_GAPJA.get(sunStart);
-		String firstJiji = firstIljuInSun.substring(1); // 지지 추출
-		int jijiStartIndex = earthlyBranches.indexOf(firstJiji);
-
-		// 공망 지지 계산 (순의 시작 지지 + 10, +11)
-		String gongmang1 = earthlyBranches.get((jijiStartIndex + 10) % 12);
-		String gongmang2 = earthlyBranches.get((jijiStartIndex + 11) % 12);
+		String gongmang1 = EARTHLY_BRANCHES.get((jijiStartIndex + 10) % 12);
+		String gongmang2 = EARTHLY_BRANCHES.get((jijiStartIndex + 11) % 12);
 
 		return Arrays.asList(gongmang1, gongmang2);
 	}
