@@ -71,7 +71,7 @@ import org.springframework.test.web.servlet.RequestBuilder;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 /**
- * 로그인·재발급·로그아웃·소셜 로그인·탈퇴 API 가 프론트엔드와 맺은 약속(상태 코드, 본문, REFRESH_TOKEN 쿠키)을 확인한다.
+ * 가입·로그인·재발급·로그아웃·소셜 로그인·탈퇴 API 가 프론트엔드와 맺은 약속(상태 코드, 본문, REFRESH_TOKEN 쿠키)을 확인한다.
  *
  * <p>운영과 같게 세 예외 처리기를 등록한 standalone MockMvc 로 부른다. 이메일 로그인은 운영과 같은 구성(DaoAuthenticationProvider
  * + CustomUserDetailsService + BCrypt)의 진짜 AuthenticationManager 를 쓰고, 회원 조회만 UserRepository 스텁으로 정한다.
@@ -82,6 +82,7 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 class AuthControllerContractTest {
 
 	private static final String SIGN_IN_URL = "/api/auth/sign-in";
+	private static final String SIGN_UP_URL = "/api/auth/users";
 	private static final String REFRESH_URL = "/api/auth/refresh";
 	private static final String SIGN_OUT_URL = "/api/auth/sign-out";
 	private static final String GOOGLE_LOGIN_URL = "/member/google/doLogin";
@@ -209,6 +210,47 @@ class AuthControllerContractTest {
 			mockMvc.perform(signIn(EMAIL_MEMBER, "wrong-password"))
 				.andExpect(status().isUnauthorized())
 				.andExpect(jsonPath("$.errorCode").value("INVALID_CREDENTIALS"));
+		}
+	}
+
+	@Nested
+	@DisplayName("이메일로 가입할 때")
+	class WhenSigningUp {
+
+		@Test
+		@DisplayName("두 글자 이름으로 개인정보 처리방침에 동의하면 가입하고 200 을 준다")
+		void signsUpWithTwoLetterName() throws Exception {
+			// given
+			given(userService.createUser("이훈", "new@example.com", "password1", null, null, true, false))
+				.willReturn(emailMember(3L, "new@example.com", "이훈"));
+
+			// when & then
+			mockMvc.perform(signUp("""
+					{"name": "이훈", "email": "new@example.com", "password": "password1", "privacyPolicyAgreed": true}
+					"""))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.name").value("이훈"))
+				.andExpect(jsonPath("$.role").value("USER"));
+		}
+
+		@ParameterizedTest(name = "[{index}] {0} → errors.{2}")
+		@MethodSource("com.mansereok.server.domain.auth.controller.AuthControllerContractTest#rejectedSignUps")
+		@DisplayName("가입 규칙을 어긴 요청이면 가입하지 않고 400 VALIDATION_ERROR 와 어긴 항목 하나의 안내를 준다")
+		void rejectsSignUpBreakingRule(String description, String body, String field, String message)
+			throws Exception {
+			// when
+			MockHttpServletResponse response = mockMvc.perform(signUp(body)).andReturn().getResponse();
+
+			// then
+			assertThat(response.getStatus()).isEqualTo(400);
+			JsonNode responseBody = objectMapper.readTree(response.getContentAsString(StandardCharsets.UTF_8));
+			assertThat(responseBody.get("errorCode").asText()).isEqualTo("VALIDATION_ERROR");
+			assertThat(responseBody.get("errors")).isEqualTo(objectMapper.createObjectNode().put(field, message));
+			then(userService).shouldHaveNoInteractions();
+		}
+
+		private RequestBuilder signUp(String body) {
+			return post(SIGN_UP_URL).contentType(MediaType.APPLICATION_JSON).content(body);
 		}
 	}
 
@@ -351,6 +393,23 @@ class AuthControllerContractTest {
 			given(oauthLoginService.loginOrRegister(profile)).willReturn(new OauthLoginResult(googleMember, false));
 			given(refreshTokenService.issue(googleMember)).willReturn(ISSUED_TOKEN);
 		}
+	}
+
+	static Stream<Arguments> rejectedSignUps() {
+		return Stream.of(
+			Arguments.of("개인정보 처리방침 미동의", """
+					{"name": "이훈", "email": "new@example.com", "password": "password1", "privacyPolicyAgreed": false}
+					""",
+				"privacyPolicyAgreed", "개인정보 처리방침에 동의해야 가입할 수 있습니다."),
+			Arguments.of("개인정보 처리방침 동의 항목 없음", """
+					{"name": "이훈", "email": "new@example.com", "password": "password1"}
+					""",
+				"privacyPolicyAgreed", "개인정보 처리방침에 동의해야 가입할 수 있습니다."),
+			Arguments.of("이름 21자", """
+					{"name": "가나다라마바사아자차카타파하가나다라마바사", "email": "new@example.com", "password": "password1",
+					 "privacyPolicyAgreed": true}
+					""",
+				"name", "이름은 20자까지 입력할 수 있습니다."));
 	}
 
 	static Stream<Arguments> issuingRequests() {

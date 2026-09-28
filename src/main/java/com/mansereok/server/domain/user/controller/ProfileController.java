@@ -12,7 +12,6 @@ import com.mansereok.server.domain.user.entity.User;
 import com.mansereok.server.domain.user.service.UserService;
 import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletResponse;
-import jakarta.validation.Valid;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -50,7 +49,7 @@ public class ProfileController {
 	@PatchMapping("/api/v1/users/me/profiles")
 	public ResponseEntity<ProfileResponseDto> updateProfile(
 		@AuthenticationPrincipal String username,
-		@Valid @RequestBody ProfileUpdateRequestDto requestDto
+		@RequestBody ProfileUpdateRequestDto requestDto
 	) {
 		// username을 서비스로 직접 전달
 		User updatedUser = userService.updateUserProfile(username, requestDto);
