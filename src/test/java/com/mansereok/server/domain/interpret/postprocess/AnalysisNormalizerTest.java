@@ -1,5 +1,6 @@
 package com.mansereok.server.domain.interpret.postprocess;
 
+import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.Arrays;
@@ -7,6 +8,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
 /**
@@ -61,6 +63,21 @@ class AnalysisNormalizerTest {
 			assertThat(normalizer.normalizeAnalysis(subcategoryId, "")).isEmpty();
 			assertThat(normalizer.normalizeAnalysis(subcategoryId, "   \n\n  \n")).isEmpty();
 			assertThat(normalizer.normalizeSummary(subcategoryId, "")).isEmpty();
+		}
+
+		/**
+		 * 21·22·23 은 모든 문장이 개운법이면 비울 수 있다. 그 예외는 {@code Business} 의 테스트가 따로 적는다.
+		 */
+		@ParameterizedTest(name = "규칙이 있는 상품 {0} 은 규칙에 걸리지 않는 문장을 비우지 않는다")
+		@ValueSource(longs = {20L, 21L, 22L, 23L, 101L, 102L, 103L, 104L, 105L, 106L})
+		@DisplayName("규칙에 걸리지 않는 문장은 비워지지 않는다")
+		void keepsNonBlankTextNonBlank(long subcategoryId) {
+			// given: 어느 상품의 제목·소제목에도 맞지 않는 평범한 문장
+			String raw = "섹션 제목이 전혀 없는 본문입니다.";
+
+			// when & then
+			assertThat(normalizer.normalizeAnalysis(subcategoryId, raw)).as("본문").isNotBlank();
+			assertThat(normalizer.normalizeSummary(subcategoryId, raw)).as("요약").isNotBlank();
 		}
 
 		@Test
@@ -209,7 +226,7 @@ class AnalysisNormalizerTest {
 		}
 
 		@Test
-		@DisplayName("요청하지 않은 개운법 줄을 지운다")
+		@DisplayName("요청하지 않은 개운법 문장을 지운다")
 		void removesForbiddenAdvice() {
 			String normalized = normalizer.normalizeAnalysis(21L, """
 				핵심 성향은 임수 일간입니다.
@@ -223,8 +240,74 @@ class AnalysisNormalizerTest {
 				.doesNotContain("3과 8");
 		}
 
+		/**
+		 * 21·22·23 의 실제 응답은 한 줄이 곧 한 문단이다. 금지어가 든 문장만 빠지고 앞뒤 문장은 남아야 한다.
+		 *
+		 * <p>어느 쪽에 둘지 판단이 갈리는 문장도 이 표에 적어 둔다. 운영 표본을 보고 기준을 바꾸면 이 표의 줄을 옮긴다.
+		 */
+		@ParameterizedTest(name = "[{index}] {0} → {1}")
+		@DisplayName("한 줄짜리 문단에서 개운법·내부 수치 문장만 빼고, 괄호에 든 세력 수치는 괄호째 지운다")
+		@CsvSource(delimiter = '|', textBlock = """
+			# 넣은 문단(한 줄) | 남는 문단
+			# 남는 문장. 방위·색·숫자가 있어도 권하는 말이 없으면 개운법이 아니다
+			앞 문장입니다. 동쪽 지역 거래처와의 협업이 늘어나는 흐름입니다. 뒤 문장입니다.        | 앞 문장입니다. 동쪽 지역 거래처와의 협업이 늘어나는 흐름입니다. 뒤 문장입니다.
+			앞 문장입니다. 시장 내 세력 판도가 바뀌는 시기입니다. 뒤 문장입니다.                   | 앞 문장입니다. 시장 내 세력 판도가 바뀌는 시기입니다. 뒤 문장입니다.
+			# 남는 문장. 숫자 앞뒤에 숫자가 더 붙으면 숫자 3, 8, 3과 8 이 아니다
+			앞 문장입니다. 매출 숫자 30% 증가를 목표로 잡아도 유리합니다. 뒤 문장입니다.          | 앞 문장입니다. 매출 숫자 30% 증가를 목표로 잡아도 유리합니다. 뒤 문장입니다.
+			앞 문장입니다. 숫자 80을 넘기면 유리합니다. 뒤 문장입니다.                             | 앞 문장입니다. 숫자 80을 넘기면 유리합니다. 뒤 문장입니다.
+			앞 문장입니다. 13과 8개 지점에서 도움이 됩니다. 뒤 문장입니다.                         | 앞 문장입니다. 13과 8개 지점에서 도움이 됩니다. 뒤 문장입니다.
+			앞 문장입니다. 3과 80개 지점에서 도움이 됩니다. 뒤 문장입니다.                         | 앞 문장입니다. 3과 80개 지점에서 도움이 됩니다. 뒤 문장입니다.
+			# 남는 문장. 녹색 성장처럼 친환경을 뜻하는 녹색은 색이 아니다
+			앞 문장입니다. 녹색 성장 분야 투자가 사업에 도움이 됩니다. 뒤 문장입니다.              | 앞 문장입니다. 녹색 성장 분야 투자가 사업에 도움이 됩니다. 뒤 문장입니다.
+			# 빠지는 문장. 개운법 말이 있다
+			앞 문장입니다. 행운의 색은 파란색입니다. 뒤 문장입니다.                               | 앞 문장입니다. 뒤 문장입니다.
+			앞 문장입니다. 개운법으로 아침 산책을 권합니다. 뒤 문장입니다.                         | 앞 문장입니다. 뒤 문장입니다.
+			# 빠지는 문장. 색·방위·숫자를 권한다(옷, 소품, 책상 방향)
+			앞 문장입니다. 청색 계열 옷이 좋습니다. 뒤 문장입니다.                                 | 앞 문장입니다. 뒤 문장입니다.
+			앞 문장입니다. 청색 옷을 입어 보세요. 뒤 문장입니다.                                   | 앞 문장입니다. 뒤 문장입니다.
+			앞 문장입니다. 녹색 소품을 가까이하세요. 뒤 문장입니다.                                 | 앞 문장입니다. 뒤 문장입니다.
+			앞 문장입니다. 청색 지갑을 챙기세요. 뒤 문장입니다.                                     | 앞 문장입니다. 뒤 문장입니다.
+			앞 문장입니다. 녹색 소품을 책상에 두면 집중이 잘 됩니다. 뒤 문장입니다.                 | 앞 문장입니다. 뒤 문장입니다.
+			앞 문장입니다. 동쪽을 향해 책상을 배치하세요. 뒤 문장입니다.                           | 앞 문장입니다. 뒤 문장입니다.
+			앞 문장입니다. 북쪽 방향이 좋은 기운을 줍니다. 뒤 문장입니다.                           | 앞 문장입니다. 뒤 문장입니다.
+			앞 문장입니다. 숫자 3을 추천합니다. 뒤 문장입니다.                                     | 앞 문장입니다. 뒤 문장입니다.
+			앞 문장입니다. 숫자 8을 추천합니다. 뒤 문장입니다.                                     | 앞 문장입니다. 뒤 문장입니다.
+			# 빠지는 문장. 사업 말투여도 방위가 유리하다고 권하면 방위 추천이다
+			앞 문장입니다. 거래처를 넓히려면 서쪽 지역 파트너와의 협업이 유리합니다. 뒤 문장입니다. | 앞 문장입니다. 뒤 문장입니다.
+			앞 문장입니다. 동쪽 지역 거래처를 활용하면 매출이 늡니다. 뒤 문장입니다.               | 앞 문장입니다. 뒤 문장입니다.
+			# 빠지는 문장. 내부 수치를 전한다. 세력 수치는 숫자만 지우면 "내 세력로" 처럼 문장이 깨진다
+			앞 문장입니다. 오행 점수는 목 3.2 화 1.1 입니다. 뒤 문장입니다.                         | 앞 문장입니다. 뒤 문장입니다.
+			앞 문장입니다. 내 세력이 32.5로 남의 세력 67.5보다 약합니다. 뒤 문장입니다.            | 앞 문장입니다. 뒤 문장입니다.
+			앞 문장입니다. 내 세력은 32.5점, 남의 세력은 67.5점입니다. 뒤 문장입니다.              | 앞 문장입니다. 뒤 문장입니다.
+			앞 문장입니다. 내 세력 32.5%로 약한 편입니다. 뒤 문장입니다.                           | 앞 문장입니다. 뒤 문장입니다.
+			# 괄호째 빠지는 세력 수치. 괄호를 빼도 문장이 읽힌다
+			앞 문장입니다. 신약 구조(내 세력 32.5 vs 남의 세력 67.5)라 협업이 중요합니다. 뒤 문장입니다. | 앞 문장입니다. 신약 구조라 협업이 중요합니다. 뒤 문장입니다.
+			앞 문장입니다. 내 세력(32.5)이 약합니다. 뒤 문장입니다.                                | 앞 문장입니다. 내 세력이 약합니다. 뒤 문장입니다.
+			""")
+		void removesOnlyForbiddenSentencesInOneLineParagraph(String paragraph, String expected) {
+			assertThat(normalizer.normalizeAnalysis(21L, paragraph)).isEqualTo(expected);
+		}
+
 		@Test
-		@DisplayName("내부 계산값(오행 점수)이 노출된 줄과 한자 괄호를 지운다")
+		@DisplayName("본문에서 한 문장이 두 줄에 걸쳐 있어도 줄을 먼저 합쳐 한 문장으로 보고 뺀다")
+		void removesSentenceSpanningTwoLines() {
+			String normalized = normalizer.normalizeAnalysis(21L,
+				"앞 문장입니다. 거래처를 넓히려면 서쪽 지역\n파트너와의 협업이 유리합니다. 뒤 문장입니다.");
+
+			assertThat(normalized).isEqualTo("앞 문장입니다. 뒤 문장입니다.");
+		}
+
+		@Test
+		@DisplayName("모든 문장이 개운법이면 원문으로 되돌리지 않고 비운다. 되돌리면 지우려던 개운법이 그대로 나간다")
+		void blanksTextWhenEverySentenceIsLuckAdvice() {
+			assertThat(normalizer.normalizeAnalysis(21L, "행운의 색은 녹색입니다."))
+				.as("본문").isEmpty();
+			assertThat(normalizer.normalizeSummary(22L, "행운의 색은 녹색입니다.\n개운법으로 산책을 권합니다."))
+				.as("요약").isEmpty();
+		}
+
+		@Test
+		@DisplayName("내부 계산값(오행 점수)이 노출된 문장과 한자 괄호를 지운다")
 		void removesInternalScores() {
 			String normalized = normalizer.normalizeAnalysis(21L, """
 				오행 점수는 목 3.2 화 1.1 입니다.
@@ -260,6 +343,22 @@ class AnalysisNormalizerTest {
 			String normalized = normalizer.normalizeSummary(21L, "가".repeat(400));
 
 			assertThat(normalized).hasSize(280);
+		}
+
+		@Test
+		@DisplayName("요약을 280자에서 자를 때 경계에 걸린 이모지는 반으로 쪼개지 않고 통째로 뺀다")
+		void summaryCutKeepsEmojiWhole() {
+			// given: 280번째 글자 자리에 이모지(서로게이트 쌍)의 앞쪽 절반이 온다
+			String summary = "가".repeat(279) + "😀" + "끝";
+
+			// when
+			String normalized = normalizer.normalizeSummary(21L, summary);
+
+			// then
+			assertThat(normalized).hasSizeLessThanOrEqualTo(280).isEqualTo("가".repeat(279));
+			assertThat(new String(normalized.getBytes(UTF_8), UTF_8))
+				.as("UTF-8 로 저장했다 읽어도 깨진 글자가 생기지 않는다")
+				.isEqualTo(normalized);
 		}
 
 		@Test
@@ -386,9 +485,83 @@ class AnalysisNormalizerTest {
 		}
 
 		@Test
-		@DisplayName("3월 월운(106)은 알려진 섹션이 하나도 없으면 빈 문자열이 된다")
-		void marchMonthlyBecomesEmptyWithoutKnownSections() {
-			assertThat(normalizer.normalizeAnalysis(106L, "섹션 제목이 전혀 없는 본문입니다.")).isEmpty();
+		@DisplayName("3월 월운(106)은 문장 끝이 없어 230자에서 자를 때 경계에 걸린 이모지를 쪼개지 않는다")
+		void marchMonthlySectionCutKeepsEmojiWhole() {
+			// given: 마침표가 없어 상한(230자)에서 잘리고, 230번째 글자 자리에 이모지의 앞쪽 절반이 온다
+			String body = "가".repeat(229) + "😀" + "나".repeat(80);
+
+			// when
+			String normalized = normalizer.normalizeAnalysis(106L, "[금전운]\n" + body);
+
+			// then
+			assertThat(normalized).isEqualTo("금전운\n" + "가".repeat(229));
+		}
+
+		@Test
+		@DisplayName("3월 월운(106)은 첫 제목 앞의 도입 문단을 버리지 않고 첫 섹션 본문 앞에 붙인다")
+		void marchMonthlyKeepsIntroParagraph() {
+			String normalized = normalizer.normalizeAnalysis(106L, """
+				3월은 정리의 달입니다.
+
+				[금전운]
+				지출을 나눠 집행하세요.
+
+				[3월운 총평]
+				관리가 성과를 남깁니다.
+				""");
+
+			assertThat(normalized).isEqualTo("""
+				금전운
+				3월은 정리의 달입니다. 지출을 나눠 집행하세요.
+
+				3월운 총평
+				관리가 성과를 남깁니다.""");
+		}
+
+		@Test
+		@DisplayName("3월 월운(106)은 도입 문단이 길어도 첫 섹션의 원래 문장을 밀어내지 않고, 남은 자리에 들어가는 도입 문장만 붙인다")
+		void marchMonthlyLongIntroDoesNotPushOutSectionBody() {
+			// given: 도입 문단이 230자를 넘는다. 첫 문장만 섹션 본문과 함께 상한 안에 들어간다
+			String intro = "3월은 정리의 달입니다. " + "가".repeat(220) + "입니다.";
+
+			// when
+			String normalized = normalizer.normalizeAnalysis(106L,
+				intro + "\n\n[3월 핵심 키워드]\n정리, 신뢰, 꾸준함.");
+
+			// then
+			assertThat(normalized).isEqualTo("3월 핵심 키워드\n3월은 정리의 달입니다. 정리, 신뢰, 꾸준함.");
+		}
+
+		@Test
+		@DisplayName("3월 월운(106)은 첫 표준 제목 앞에서 표에 없는 대괄호 제목부터 나온 문단을 도입 문단으로 붙이지 않는다")
+		void marchMonthlyDoesNotTreatUnknownTitledParagraphsAsIntro() {
+			// given: '[3월의 금전운]' 은 제목 표에 없다. 그 뒤의 제목 없는 문단도 금전운 글이다
+			String raw = """
+				[3월의 금전운]
+				이번 달 금전 흐름은 안정적입니다.
+
+				지출은 나눠 집행하세요.
+
+				[3월운 총평]
+				정리와 관리가 성과를 남기는 달입니다.
+				""";
+
+			// when
+			String normalized = normalizer.normalizeAnalysis(106L, raw);
+
+			// then
+			assertThat(normalized)
+				.doesNotContain("[3월의")
+				.isEqualTo("3월운 총평\n정리와 관리가 성과를 남기는 달입니다.");
+		}
+
+		@Test
+		@DisplayName("3월 월운(106)은 알려진 섹션이 하나도 없으면 빈 줄만 정리한 원문을 돌려준다")
+		void marchMonthlyKeepsTextWithoutKnownSections() {
+			String normalized = normalizer.normalizeAnalysis(106L,
+				"섹션 제목이 전혀 없는 본문입니다.\n\n\n\n둘째 문단입니다.");
+
+			assertThat(normalized).isEqualTo("섹션 제목이 전혀 없는 본문입니다.\n\n둘째 문단입니다.");
 		}
 	}
 }
