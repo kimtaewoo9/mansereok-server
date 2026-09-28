@@ -26,8 +26,10 @@ import org.springframework.stereotype.Service;
  * 해석 결과의 요약을 공유 미리보기(OG) 이미지로 그려 S3 에 올리고, 그 주소를 결과에 저장한다.
  *
  * <p>해석 작업 스레드가 결과를 저장한 직후 이 서비스를 바로 부른다(비동기로 넘기지 않는다). 그래서 다른 풀이 가득 찼거나 먼저 닫혀서
- * 이미지 작업이 버려지는 일이 없다. 대신 해석 스레드가 이미지 생성과 업로드 시간만큼 더 붙잡힌다. 이미지 생성이나 업로드가 실패해도
- * 해석 결과는 그대로 두고 로그만 남긴다.
+ * 이미지 작업이 버려지는 일이 없다. 대신 해석 스레드가 이미지 생성과 업로드 시간만큼 더 붙잡힌다.
+ *
+ * <p>이미지 생성이나 업로드가 Exception 으로 실패하면 해석 결과는 그대로 두고 로그만 남긴다. OutOfMemoryError 같은 Error 는 잡지
+ * 않는다. Error 는 해석 스레드로 올라가므로, 그 해석의 뒤 단계(결과 준비 메일)는 돌지 않는다.
  */
 @Slf4j
 @Service
@@ -108,7 +110,7 @@ public class OgImageGenerationService {
 	/**
 	 * 템플릿 이미지 위에 요약을 가로·세로 가운데 맞춰 그린 PNG 를 돌려준다. 사주와 궁합이 같은 모양을 쓴다.
 	 */
-	byte[] renderSummaryImage(String summary) throws IOException {
+	private byte[] renderSummaryImage(String summary) throws IOException {
 		BufferedImage image = loadTemplate();
 		Graphics2D g2d = image.createGraphics();
 		try {

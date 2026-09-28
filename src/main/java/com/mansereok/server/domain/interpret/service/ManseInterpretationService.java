@@ -186,11 +186,13 @@ public class ManseInterpretationService {
 	 * 유료 단일 사주 해석. command.startedAt 은 컨트롤러가 ResultService.startProcessing 으로 해석을 시작한 시각이다. 결과를 쓸
 	 * 때마다 이 값으로 이 실행이 시작한 해석인지 가려, 오래 멈춰 되돌려진 뒤 다시 시작한 결과를 덮어쓰지 않는다. 궁합·무료도 같다.
 	 *
-	 * <p>로그와 요청 알림에는 결제 ID 와 상품만 남긴다. 이름·이메일·생년월일은 로그 수집 시스템과 외부 채널(Discord)에 남기지 않는다.
+	 * <p>해석 시작 로그와 해석 요청 알림(Discord)에는 결제 ID 와 상품만 남기고 이름·이메일·생년월일은 남기지 않는다.
+	 * 유료 경로의 결과 준비 이메일 전송 로그는 이 클래스가 아니라 EmailService 가 남긴다.
 	 */
 	@Async("gptTaskExecutor")
 	public void interpret(SajuInterpretationCommand command) {
-		log.info("✅ 사주 해석 요청 시작 - paymentId: {}, product: {}", command.paymentId(), command.product());
+		log.info("✅ 사주 해석 요청 시작 - paymentId: {}, product: {}", command.paymentId(),
+			productLabel(command.product()));
 
 		interpretationPipeline.run(
 			"유료 단일 사주 해석",
@@ -209,7 +211,8 @@ public class ManseInterpretationService {
 
 	@Async("gptTaskExecutor")
 	public void analyzeCompatibilityWithSubcategory(CompatibilityInterpretationCommand command) {
-		log.info("✅ 궁합 분석 요청 시작 - paymentId: {}, product: {}", command.paymentId(), command.product());
+		log.info("✅ 궁합 분석 요청 시작 - paymentId: {}, product: {}", command.paymentId(),
+			productLabel(command.product()));
 
 		String systemInstruction = command.product() == InterpretationProduct.REUNION
 			? REUNION_SYSTEM_INSTRUCTION
@@ -235,7 +238,8 @@ public class ManseInterpretationService {
 	 */
 	@Async("gptFreeTaskExecutor")
 	public void interpretFree(SajuInterpretationCommand command) {
-		log.info("🆓 무료 사주 해석 시작 - paymentId: {}, product: {}", command.paymentId(), command.product());
+		log.info("🆓 무료 사주 해석 시작 - paymentId: {}, product: {}", command.paymentId(),
+			productLabel(command.product()));
 
 		interpretationPipeline.run(
 			"무료 단일 사주 해석",
@@ -261,7 +265,8 @@ public class ManseInterpretationService {
 	 */
 	@Async("gptFreeTaskExecutor")
 	public void analyzeCompatibilityFree(CompatibilityInterpretationCommand command) {
-		log.info("🆓 무료 궁합/재회운 서비스 시작 - paymentId: {}, product: {}", command.paymentId(), command.product());
+		log.info("🆓 무료 궁합/재회운 서비스 시작 - paymentId: {}, product: {}", command.paymentId(),
+			productLabel(command.product()));
 
 		interpretationPipeline.run(
 			"무료 궁합 분석",
@@ -279,7 +284,7 @@ public class ManseInterpretationService {
 	}
 
 	/**
-	 * 알림에 적을 상품 표기. 상품 상수 이름 뒤에 상품 번호를 붙인다(예: LIFE_OVERALL(1)).
+	 * 시작 로그와 요청 알림에 같은 모양으로 적을 상품 표기. 상품 상수 이름 뒤에 상품 번호를 붙인다(예: LIFE_OVERALL(1)).
 	 */
 	private static String productLabel(InterpretationProduct product) {
 		return product.name() + "(" + product.id() + ")";

@@ -184,11 +184,12 @@ class ManseryeokControllerTest {
 		void freeSingleCreatesNoOrderWhenCalculationFails() {
 			// given
 			given(manseCalculationService.calculate(any()))
-				.willThrow(new RuntimeException("해당 양력 날짜의 만세력 데이터를 찾을 수 없습니다."));
+				.willThrow(new IllegalArgumentException("지원 범위(양력 1900-01-01~2100-12-31) 밖이거나 존재하지 않는 날짜입니다."));
 
 			// when & then
 			assertThatThrownBy(() -> controller.interpretFree(FREE_FORTUNE_SUBCATEGORY_ID, singleRequest(), USERNAME))
-				.hasMessage("해당 양력 날짜의 만세력 데이터를 찾을 수 없습니다.");
+				.isInstanceOf(IllegalArgumentException.class)
+				.hasMessage("지원 범위(양력 1900-01-01~2100-12-31) 밖이거나 존재하지 않는 날짜입니다.");
 			verifyNoInteractions(paymentService, resultService, manseInterpretationService);
 		}
 
@@ -287,8 +288,8 @@ class ManseryeokControllerTest {
 	class ArgumentPassing {
 
 		/**
-		 * 결제 ID 101 은 무료 운세 상품 번호(101)와 같다. 예전처럼 결제 ID 와 상품 번호가 Long 두 개로 넘어갈 때 둘이 바뀌면, 결제 3번의
-		 * 결과를 해석 중으로 바꾸고 무료 운세 프롬프트로 풀었다.
+		 * 결제 ID 101 은 무료 운세 상품 번호(101)와 같은 값이다. 예전에는 결제 ID 와 상품 번호가 Long 두 개로 나란히 넘어가 둘을 바꿔
+		 * 넣어도 컴파일됐다. 두 값이 명령의 제자리에 담기는지 여기서 확인한다.
 		 */
 		@Test
 		@DisplayName("결제 ID 101 로 상품 3(직업 적성)을 요청하면 명령의 결제 ID 는 101, 상품은 직업 적성이다")
