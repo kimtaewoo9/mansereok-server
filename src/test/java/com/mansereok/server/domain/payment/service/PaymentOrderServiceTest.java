@@ -265,6 +265,31 @@ class PaymentOrderServiceTest {
 	}
 
 	@Test
+	@DisplayName("쿠폰의 최소 결제 금액 1000원 때문에 결제할 금액이 500원짜리 상품 가격보다 커지면 주문을 저장하지 않고 쿠폰도 쓰지 않은 채 IllegalArgumentException 으로 거부한다")
+	void createOrder_couponRaisesAmountAbovePrice_rejectsWithoutSavingOrUsingCoupon() {
+		// given
+		Long couponId = 5L;
+		given(userRepository.findByUsername(USERNAME)).willReturn(Optional.of(createUser()));
+		SubCategory cheapProduct = SubCategoryFixture.paidProduct().id(SUB_CATEGORY_ID).price(500).build();
+		given(subCategoryRepository.findById(SUB_CATEGORY_ID)).willReturn(Optional.of(cheapProduct));
+		// 500원에서 200원을 빼면 300원이지만 쿠폰 계산은 결제 금액을 1000원 밑으로 내리지 않는다
+		Coupon coupon = CouponFixture.fixedAmount(200).id(couponId).userId(USER_ID).build();
+		given(couponRepository.findByIdWithLock(couponId)).willReturn(Optional.of(coupon));
+
+		OrderCreateRequest request = new OrderCreateRequest();
+		request.setSubCategoryId(SUB_CATEGORY_ID);
+		request.setCouponId(couponId);
+
+		// when & then
+		assertThatThrownBy(() -> paymentOrderService.createOrder(USERNAME, request))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessage("결제할 금액은 0원 이상이고 할인 전 금액을 넘을 수 없습니다. 할인 전=500, 결제할 금액=1000");
+
+		verify(orderRepository, never()).save(any(Order.class));
+		assertThat(coupon.isUsed()).as("주문에 쓰려던 쿠폰의 사용 여부").isFalse();
+	}
+
+	@Test
 	@DisplayName("100% 할인으로 최종 금액이 0원이면 주문을 만들지 않고 무료 결제 API 안내 메시지의 PaymentException 이 난다")
 	void createOrder_zeroFinalAmount_throwsAndSavesNothing() {
 		// given

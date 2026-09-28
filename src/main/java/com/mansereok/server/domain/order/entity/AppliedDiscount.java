@@ -3,12 +3,12 @@ package com.mansereok.server.domain.order.entity;
 import java.util.Objects;
 
 /**
- * 주문에 적용한 할인. 주문의 appliedDiscountCode 와 couponId 에 들어갈 값을 한 묶음으로 넘긴다. 정적 팩터리 네 개 가운데 하나로
- * 만든다.
+ * 주문에 적용한 할인. 주문의 appliedDiscountCode 와 couponId 에 들어갈 값을 한 묶음으로 넘긴다. 운영 코드는 정적 팩터리 네 개
+ * 가운데 하나로 만든다. record 라 생성자도 열려 있어, 테스트는 코드와 쿠폰 id 를 마음대로 짝지은 할인을 생성자로 만들기도 한다.
  *
  * <ul>
  *   <li>{@link #none()}: 할인 없음. 둘 다 null</li>
- *   <li>{@link #coupon(Long, String)}: 쿠폰. 쿠폰 id 와 쿠폰 이름</li>
+ *   <li>{@link #coupon(String, Long)}: 쿠폰. 쿠폰 이름과 쿠폰 id</li>
  *   <li>{@link #code(String)}: 사용자가 입력한 할인 코드</li>
  *   <li>{@link #eventFree()}: 무료 이벤트 발급. 할인 코드 자리에 시스템 표기 {@link #EVENT_FREE_CODE} 를 적는다</li>
  * </ul>
@@ -28,7 +28,8 @@ public record AppliedDiscount(String code, Long couponId) {
 		return new AppliedDiscount(null, null);
 	}
 
-	public static AppliedDiscount coupon(Long couponId, String couponName) {
+	/** 인자 순서는 record 구성요소(code, couponId)와 같다. */
+	public static AppliedDiscount coupon(String couponName, Long couponId) {
 		return new AppliedDiscount(couponName, Objects.requireNonNull(couponId, "couponId"));
 	}
 

@@ -314,7 +314,7 @@ class PaymentQueryServiceTest {
 		free_free_1727000000000_ab12cd34,     0
 		pay_01J000000000000000000000,          0
 		""")
-	@DisplayName("getPayments: 무료 결제는 PAID 이고 정보 입력 전이어도 환불 버튼을 보이지 않는다(환불 API 도 거절한다)")
+	@DisplayName("getPayments: 무료 결제는 PAID 이고 정보 입력 전이어도 환불 버튼을 보이지 않는다")
 	void getPayments_freePayment_isNotRefundable(String impUid, long amount) {
 		// given
 		given(userRepository.findByUsername(USERNAME)).willReturn(Optional.of(user()));
@@ -334,7 +334,7 @@ class PaymentQueryServiceTest {
 	}
 
 	@Test
-	@DisplayName("getPayments: 사용자를 찾을 수 없으면 다른 결제 API 와 같은 PaymentException(400)을 던진다")
+	@DisplayName("getPayments: 사용자를 찾을 수 없으면 다른 결제 API 와 같은 문구의 PaymentException 을 던진다")
 	void getPayments_userMissing_throwsPaymentException() {
 		// given
 		given(userRepository.findByUsername(USERNAME)).willReturn(Optional.empty());

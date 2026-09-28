@@ -23,7 +23,7 @@ class OrderResponseTest {
 		LocalDateTime paidAt = LocalDateTime.of(2026, 9, 21, 10, 5);
 		Order order = TestOrders.order().id(12L).merchantUid("order_test_001").userId(7L).subCategoryId(2L)
 			.buyer("김태우", "taewoo@example.com").amounts(19900, 9950)
-			.discount(AppliedDiscount.coupon(3L, "VIP50")).pending();
+			.discount(AppliedDiscount.coupon("VIP50", 3L)).pending();
 		ReflectionTestUtils.setField(order, "createdAt", createdAt);
 		order.linkPayment(9L);
 		order.markPaid("pay_test_001", paidAt);
