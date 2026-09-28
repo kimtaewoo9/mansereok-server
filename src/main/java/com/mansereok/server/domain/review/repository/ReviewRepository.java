@@ -11,7 +11,7 @@ import org.springframework.stereotype.Repository;
 @Repository
 public interface ReviewRepository extends JpaRepository<Review, Long> {
 
-	// 1. 상품별 리뷰 목록 조회 (최신순 정렬). idx_subcat_del_created 로 찾고 그 순서대로 읽는다.
+	// 1. 상품별 리뷰 목록 조회 (최신순 정렬)
 	@Query("SELECT r FROM Review r "
 		+ "WHERE r.subCategoryId = :subCategoryId AND r.isDeleted = false "
 		+ "ORDER BY r.createdAt DESC")
