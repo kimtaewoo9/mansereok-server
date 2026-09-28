@@ -1,7 +1,7 @@
 package com.mansereok.server.domain.coupon.service;
 
-import static org.assertj.core.api.AssertionsForClassTypes.assertThat;
-import static org.assertj.core.api.AssertionsForClassTypes.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.mansereok.server.domain.coupon.entity.Coupon;
 import com.mansereok.server.domain.coupon.entity.CouponTemplate;
@@ -12,7 +12,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
 
-class CouponServiceTest {
+class CouponDiscountCalculationTest {
 
 	@Test
 	@DisplayName("정률 할인(10%) 계산이 정확해야 한다 (10원 단위 절삭 포함)")
