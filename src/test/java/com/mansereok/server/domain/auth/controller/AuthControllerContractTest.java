@@ -136,7 +136,7 @@ class AuthControllerContractTest {
 		JwtProperties jwtProperties = new JwtProperties("auth-controller-contract-test-secret-0123456789",
 			1_800_000L, 604_800_000L, "mansereok");
 		JwtUtil jwtUtil = new JwtUtil(Keys.hmacShaKeyFor(jwtProperties.secret().getBytes(StandardCharsets.UTF_8)),
-			jwtProperties);
+			jwtProperties, FIXED_CLOCK);
 		RefreshTokenCookies refreshTokenCookies = new RefreshTokenCookies(jwtProperties,
 			new RefreshCookieProperties(SameSite.LAX));
 

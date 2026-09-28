@@ -59,6 +59,7 @@ import org.springframework.web.bind.annotation.RestController;
 	JwtAccessDeniedHandler.class,
 	JwtUtil.class,
 	JwtConfig.class,
+	ClockConfig.class,
 	SecurityRulesTest.RouteCheckController.class
 })
 class SecurityRulesTest {
@@ -216,7 +217,7 @@ class SecurityRulesTest {
 	}
 
 	/**
-	 * 같은 키로 서명했지만 2020년에 만료된 토큰. JwtUtil 은 발급 시각을 시스템 시계로 정하므로 직접 만든다.
+	 * 같은 키로 서명했지만 2020년에 만료된 토큰. 이 테스트의 JwtUtil 은 시스템 시계(ClockConfig)로 발급 시각을 정하므로 직접 만든다.
 	 */
 	private String expiredToken(String username, String role) {
 		return Jwts.builder()

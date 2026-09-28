@@ -24,4 +24,13 @@ public record JwtProperties(
 			throw new IllegalArgumentException("JWT issuer cannot be blank");
 		}
 	}
+
+	/**
+	 * 설정값을 로그나 오류 메시지에 찍어도 비밀키가 새지 않도록, 비밀키는 길이만 보여 준다.
+	 */
+	@Override
+	public String toString() {
+		return "JwtProperties[secret=(" + secret.length() + "자), accessTokenExpiration=" + accessTokenExpiration
+			+ ", refreshTokenExpiration=" + refreshTokenExpiration + ", issuer=" + issuer + "]";
+	}
 }
