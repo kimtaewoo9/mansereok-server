@@ -55,8 +55,8 @@ public class PaymentEntitlementService {
 
 		Optional<String> unmetCondition = findUnmetCondition(payment, user.getId(), subCategoryId);
 		if (unmetCondition.isPresent()) {
-			log.warn("유효하지 않은 결제로 해석 요청: username={}, paymentPkId={}, subCategoryId={}, 어긋난 조건={}",
-				username, paymentPkId, subCategoryId, unmetCondition.get());
+			log.warn("유효하지 않은 결제로 해석 요청: userId={}, paymentPkId={}, subCategoryId={}, 어긋난 조건={}",
+				user.getId(), paymentPkId, subCategoryId, unmetCondition.get());
 			throw new PaymentException("유효한 결제 정보가 아닙니다.");
 		}
 

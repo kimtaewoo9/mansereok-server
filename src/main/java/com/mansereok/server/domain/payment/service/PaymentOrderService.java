@@ -101,8 +101,7 @@ public class PaymentOrderService {
 	}
 
 	public OrderCreateResponse redeemFreeProduct(String username, OrderCreateRequest request) {
-		log.info("0원 결제(무료 제공) 요청: username={}, subCategoryId={}", username,
-			request.getSubCategoryId());
+		log.info("0원 결제(무료 제공) 요청: subCategoryId={}", request.getSubCategoryId());
 
 		// 1. 사용자 조회
 		User user = paymentUserLookup.getByUsername(username);
@@ -156,8 +155,7 @@ public class PaymentOrderService {
 
 		// 무료 판정을 통과한 상품만 0원 PAID 로 발급한다 (유료 상품의 무료 발급 차단)
 		if (!freeProductPolicy.isFree(subCategory)) {
-			log.warn("유료 상품 무료 발급 시도 차단: username={}, subCategoryId={}", username,
-				subCategoryId);
+			log.warn("유료 상품 무료 발급 시도 차단: userId={}, subCategoryId={}", user.getId(), subCategoryId);
 			throw new PaymentException("무료로 제공되는 상품이 아닙니다.");
 		}
 
