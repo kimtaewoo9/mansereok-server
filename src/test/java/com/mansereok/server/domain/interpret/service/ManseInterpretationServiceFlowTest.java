@@ -22,6 +22,8 @@ import com.mansereok.server.domain.interpret.dto.request.Gpt5Request;
 import com.mansereok.server.domain.interpret.dto.response.ManseryeokCalculationResponse;
 import com.mansereok.server.domain.interpret.entity.CompatibilityResult;
 import com.mansereok.server.domain.interpret.entity.Result;
+import com.mansereok.server.domain.interpret.entity.ResultStatus;
+import com.mansereok.server.domain.interpret.exception.InterpretationRunOutdatedException;
 import com.mansereok.server.domain.interpret.postprocess.AnalysisNormalizer;
 import com.mansereok.server.domain.interpret.prompt.CompatibilityPromptFactory;
 import com.mansereok.server.domain.interpret.prompt.PromptFixtures;
@@ -34,6 +36,7 @@ import com.mansereok.server.domain.user.service.UserService;
 import com.mansereok.server.global.exception.OpenAiIncompleteResponseException;
 import jakarta.persistence.EntityNotFoundException;
 import java.lang.reflect.Method;
+import java.time.LocalDateTime;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -61,6 +64,8 @@ class ManseInterpretationServiceFlowTest {
 	private static final String USERNAME = "user-1";
 	private static final Long PAYMENT_ID = 100L;
 	private static final Long RESULT_ID = 7L;
+	/** 컨트롤러가 해석을 시작한 시각. 결과를 쓰는 세 단계에 그대로 넘어가야 한다. */
+	private static final LocalDateTime STARTED_AT = LocalDateTime.of(2026, 9, 26, 9, 0);
 	private static final Long SUBCATEGORY_ID = 1L;
 	private static final String EMAIL = "tester@example.com";
 
@@ -121,14 +126,14 @@ class ManseInterpretationServiceFlowTest {
 		lenient().when(userService.findByUsername(USERNAME)).thenReturn(user);
 
 		lenient().when(sajuResultService
-				.updateInitialStatus(anyLong(), anyString(), any(), anyString()))
+				.updateInitialStatus(anyLong(), any(), anyString(), any(), anyString()))
 			.thenReturn(result);
-		lenient().when(sajuResultService.saveFinalResult(anyLong(), any(), any()))
+		lenient().when(sajuResultService.saveFinalResult(anyLong(), any(), any(), any()))
 			.thenReturn(result);
-		lenient().when(sajuResultService.updateCompatibilityInitialStatus(anyLong(), anyString(),
+		lenient().when(sajuResultService.updateCompatibilityInitialStatus(anyLong(), any(), anyString(),
 			anyString(), anyString(), anyString())).thenReturn(compatibilityResult);
 		lenient().when(sajuResultService
-				.saveCompatibilityFinalResult(anyLong(), any(), any(), any()))
+				.saveCompatibilityFinalResult(anyLong(), any(), any(), any(), any()))
 			.thenReturn(compatibilityResult);
 
 		lenient().when(analysisNormalizer.normalizeAnalysis(anyLong(), any()))
@@ -163,12 +168,12 @@ class ManseInterpretationServiceFlowTest {
 
 	private void callInterpret() {
 		given(sajuPromptFactory.create(anyLong(), any())).willReturn(PAID_SINGLE_PROMPT);
-		service.interpret("홍길동", person1, USERNAME, SUBCATEGORY_ID, PAYMENT_ID, null);
+		service.interpret("홍길동", person1, USERNAME, SUBCATEGORY_ID, PAYMENT_ID, STARTED_AT, null);
 	}
 
 	private void callInterpretFree() {
 		given(sajuPromptFactory.createFree(anyLong(), any())).willReturn(FREE_SINGLE_PROMPT);
-		service.interpretFree("홍길동", person1, USERNAME, SUBCATEGORY_ID, PAYMENT_ID);
+		service.interpretFree("홍길동", person1, USERNAME, SUBCATEGORY_ID, PAYMENT_ID, STARTED_AT);
 	}
 
 	private void callCompatibility() {
@@ -178,7 +183,7 @@ class ManseInterpretationServiceFlowTest {
 	private void callCompatibility(Long subcategoryId) {
 		given(compatibilityPromptFactory.create(anyLong(), any())).willReturn(COMPATIBILITY_PROMPT);
 		service.analyzeCompatibilityWithSubcategory("홍길동", person1, "김영희", person2,
-			subcategoryId, PAYMENT_ID, USERNAME, null, null);
+			subcategoryId, PAYMENT_ID, STARTED_AT, USERNAME, null, null);
 	}
 
 	private void callCompatibilityFree() {
@@ -188,7 +193,7 @@ class ManseInterpretationServiceFlowTest {
 	private void callCompatibilityFree(Long subcategoryId) {
 		given(compatibilityPromptFactory.create(anyLong(), any())).willReturn(COMPATIBILITY_PROMPT);
 		service.analyzeCompatibilityFree("홍길동", person1, "김영희", person2,
-			subcategoryId, PAYMENT_ID, USERNAME);
+			subcategoryId, PAYMENT_ID, STARTED_AT, USERNAME);
 	}
 
 	private Gpt5Request captureRequest() {
@@ -221,13 +226,13 @@ class ManseInterpretationServiceFlowTest {
 			InOrder inOrder = inOrder(sajuResultService, openAiResponsesClient,
 				ogImageGenerationService, emailService);
 			inOrder.verify(sajuResultService)
-				.updateInitialStatus(eq(PAYMENT_ID), eq("홍길동"), any(), anyString());
+				.updateInitialStatus(eq(PAYMENT_ID), eq(STARTED_AT), eq("홍길동"), any(), anyString());
 			inOrder.verify(openAiResponsesClient).createResponse(any());
 			inOrder.verify(sajuResultService)
-				.saveFinalResult(RESULT_ID, "정규화된 본문", "정규화된 요약");
+				.saveFinalResult(RESULT_ID, STARTED_AT, "정규화된 본문", "정규화된 요약");
 			inOrder.verify(ogImageGenerationService).generateAndUploadOgImage(result);
 			inOrder.verify(emailService).sendResultReadyEmail(EMAIL, "테스터");
-			verify(sajuResultService, never()).rollbackStatus(any());
+			verify(sajuResultService, never()).rollbackStatus(any(), any());
 			assertThat(captureRequest().getInput()).isEqualTo(PAID_SINGLE_PROMPT);
 		}
 
@@ -241,13 +246,13 @@ class ManseInterpretationServiceFlowTest {
 			InOrder inOrder = inOrder(sajuResultService, openAiResponsesClient,
 				ogImageGenerationService, emailService);
 			inOrder.verify(sajuResultService).updateCompatibilityInitialStatus(eq(PAYMENT_ID),
-				eq("홍길동"), anyString(), eq("김영희"), anyString());
+				eq(STARTED_AT), eq("홍길동"), anyString(), eq("김영희"), anyString());
 			inOrder.verify(openAiResponsesClient).createResponse(any());
 			inOrder.verify(sajuResultService)
-				.saveCompatibilityFinalResult(RESULT_ID, "궁합 본문", 88, "궁합 요약");
+				.saveCompatibilityFinalResult(RESULT_ID, STARTED_AT, "궁합 본문", 88, "궁합 요약");
 			inOrder.verify(ogImageGenerationService).generateAndUploadOgImage(compatibilityResult);
 			inOrder.verify(emailService).sendResultReadyEmail(EMAIL, "테스터");
-			verify(sajuResultService, never()).rollbackCompatibilityStatus(any());
+			verify(sajuResultService, never()).rollbackCompatibilityStatus(any(), any());
 			assertThat(captureRequest().getInput()).isEqualTo(COMPATIBILITY_PROMPT);
 		}
 
@@ -261,13 +266,13 @@ class ManseInterpretationServiceFlowTest {
 			InOrder inOrder = inOrder(sajuResultService, openAiResponsesClient,
 				ogImageGenerationService);
 			inOrder.verify(sajuResultService)
-				.updateInitialStatus(eq(PAYMENT_ID), eq("홍길동"), any(), anyString());
+				.updateInitialStatus(eq(PAYMENT_ID), eq(STARTED_AT), eq("홍길동"), any(), anyString());
 			inOrder.verify(openAiResponsesClient).createResponse(any());
 			inOrder.verify(sajuResultService)
-				.saveFinalResult(RESULT_ID, "정규화된 본문", "정규화된 요약");
+				.saveFinalResult(RESULT_ID, STARTED_AT, "정규화된 본문", "정규화된 요약");
 			inOrder.verify(ogImageGenerationService).generateAndUploadOgImage(result);
 			verify(emailService, never()).sendResultReadyEmail(anyString(), anyString());
-			verify(sajuResultService, never()).rollbackStatus(any());
+			verify(sajuResultService, never()).rollbackStatus(any(), any());
 			assertThat(captureRequest().getInput()).isEqualTo(FREE_SINGLE_PROMPT);
 		}
 
@@ -281,13 +286,13 @@ class ManseInterpretationServiceFlowTest {
 			InOrder inOrder = inOrder(sajuResultService, openAiResponsesClient,
 				ogImageGenerationService);
 			inOrder.verify(sajuResultService).updateCompatibilityInitialStatus(eq(PAYMENT_ID),
-				eq("홍길동"), anyString(), eq("김영희"), anyString());
+				eq(STARTED_AT), eq("홍길동"), anyString(), eq("김영희"), anyString());
 			inOrder.verify(openAiResponsesClient).createResponse(any());
 			inOrder.verify(sajuResultService)
-				.saveCompatibilityFinalResult(RESULT_ID, "궁합 본문", 88, "궁합 요약");
+				.saveCompatibilityFinalResult(RESULT_ID, STARTED_AT, "궁합 본문", 88, "궁합 요약");
 			inOrder.verify(ogImageGenerationService).generateAndUploadOgImage(compatibilityResult);
 			verify(emailService, never()).sendResultReadyEmail(anyString(), anyString());
-			verify(sajuResultService, never()).rollbackCompatibilityStatus(any());
+			verify(sajuResultService, never()).rollbackCompatibilityStatus(any(), any());
 			assertThat(captureRequest().getInput()).isEqualTo(COMPATIBILITY_PROMPT);
 		}
 
@@ -315,10 +320,10 @@ class ManseInterpretationServiceFlowTest {
 
 			callInterpret();
 
-			verify(sajuResultService).saveFinalResult(RESULT_ID, "정규화된 본문", "정규화된 요약");
+			verify(sajuResultService).saveFinalResult(RESULT_ID, STARTED_AT, "정규화된 본문", "정규화된 요약");
 			verify(ogImageGenerationService).generateAndUploadOgImage(result);
 			verify(emailService, never()).sendResultReadyEmail(anyString(), anyString());
-			verify(sajuResultService, never()).rollbackStatus(any());
+			verify(sajuResultService, never()).rollbackStatus(any(), any());
 		}
 	}
 
@@ -482,8 +487,8 @@ class ManseInterpretationServiceFlowTest {
 
 			callInterpret();
 
-			verify(sajuResultService).rollbackStatus(RESULT_ID);
-			verify(sajuResultService, never()).saveFinalResult(anyLong(), any(), any());
+			verify(sajuResultService).rollbackStatus(RESULT_ID, STARTED_AT);
+			verify(sajuResultService, never()).saveFinalResult(anyLong(), any(), any(), any());
 			verify(ogImageGenerationService, never()).generateAndUploadOgImage(any(Result.class));
 			verify(emailService, never()).sendResultReadyEmail(anyString(), anyString());
 		}
@@ -496,9 +501,9 @@ class ManseInterpretationServiceFlowTest {
 
 			callCompatibility();
 
-			verify(sajuResultService).rollbackCompatibilityStatus(RESULT_ID);
+			verify(sajuResultService).rollbackCompatibilityStatus(RESULT_ID, STARTED_AT);
 			verify(sajuResultService, never())
-				.saveCompatibilityFinalResult(anyLong(), any(), any(), any());
+				.saveCompatibilityFinalResult(anyLong(), any(), any(), any(), any());
 		}
 
 		@Test
@@ -509,8 +514,8 @@ class ManseInterpretationServiceFlowTest {
 
 			callInterpretFree();
 
-			verify(sajuResultService).rollbackStatus(RESULT_ID);
-			verify(sajuResultService, never()).saveFinalResult(anyLong(), any(), any());
+			verify(sajuResultService).rollbackStatus(RESULT_ID, STARTED_AT);
+			verify(sajuResultService, never()).saveFinalResult(anyLong(), any(), any(), any());
 		}
 
 		@Test
@@ -521,9 +526,74 @@ class ManseInterpretationServiceFlowTest {
 
 			callCompatibilityFree();
 
-			verify(sajuResultService).rollbackCompatibilityStatus(RESULT_ID);
+			verify(sajuResultService).rollbackCompatibilityStatus(RESULT_ID, STARTED_AT);
 			verify(sajuResultService, never())
-				.saveCompatibilityFinalResult(anyLong(), any(), any(), any());
+				.saveCompatibilityFinalResult(anyLong(), any(), any(), any(), any());
+		}
+	}
+
+	/**
+	 * 오래 멈춘 결과 되돌리기가 먼저 돌아, 결과가 정보 입력 대기로 돌아갔거나 사용자가 같은 결제로 해석을 다시 시작한 경우다.
+	 * 결과를 쓰는 서비스가 InterpretationRunOutdatedException 을 던지면, 결과는 이제 이 실행의 것이 아니므로 되돌리지도 않는다.
+	 * 되돌리기를 부르면 다시 시작한 해석의 해석 중 상태를 지울 수 있다.
+	 */
+	@Nested
+	@DisplayName("해석을 시작한 뒤 결과가 되돌려졌거나 다시 시작돼 결과 쓰기가 거부되면")
+	class RunOutdated {
+
+		@Test
+		@DisplayName("입력 정보 채우기가 거부된 단일 해석은 GPT 를 부르지 않고 결과를 저장하지도 되돌리지도 않는다")
+		void singleStopsBeforeGptWhenFillIsRejected() {
+			// given: 대기열에서 기다리는 사이 되돌려진 결과
+			given(sajuResultService.updateInitialStatus(eq(PAYMENT_ID), eq(STARTED_AT), eq("홍길동"), any(),
+				anyString())).willThrow(outdated());
+
+			// when
+			service.interpret("홍길동", person1, USERNAME, SUBCATEGORY_ID, PAYMENT_ID, STARTED_AT, null);
+
+			// then
+			verify(openAiResponsesClient, never()).createResponse(any());
+			verify(sajuResultService, never()).saveFinalResult(anyLong(), any(), any(), any());
+			verify(sajuResultService, never()).rollbackStatus(any(), any());
+		}
+
+		@Test
+		@DisplayName("결과 저장이 거부된 단일 해석은 결과를 되돌리지 않고 OG 이미지와 이메일도 보내지 않는다")
+		void singleStopsWithoutRollbackWhenSaveIsRejected() {
+			// given: GPT 를 기다리는 사이 되돌려지고 다시 시작된 결과
+			givenSajuResponse();
+			given(sajuResultService.saveFinalResult(RESULT_ID, STARTED_AT, "정규화된 본문", "정규화된 요약"))
+				.willThrow(outdated());
+
+			// when
+			callInterpret();
+
+			// then
+			verify(sajuResultService, never()).rollbackStatus(any(), any());
+			verify(ogImageGenerationService, never()).generateAndUploadOgImage(any(Result.class));
+			verify(emailService, never()).sendResultReadyEmail(anyString(), anyString());
+		}
+
+		@Test
+		@DisplayName("결과 저장이 거부된 궁합 해석은 결과를 되돌리지 않고 OG 이미지와 이메일도 보내지 않는다")
+		void compatibilityStopsWithoutRollbackWhenSaveIsRejected() {
+			// given
+			givenCompatibilityResponse();
+			given(sajuResultService.saveCompatibilityFinalResult(RESULT_ID, STARTED_AT, "궁합 본문", 88, "궁합 요약"))
+				.willThrow(outdated());
+
+			// when
+			callCompatibility();
+
+			// then
+			verify(sajuResultService, never()).rollbackCompatibilityStatus(any(), any());
+			verify(ogImageGenerationService, never()).generateAndUploadOgImage(any(CompatibilityResult.class));
+			verify(emailService, never()).sendResultReadyEmail(anyString(), anyString());
+		}
+
+		private InterpretationRunOutdatedException outdated() {
+			return new InterpretationRunOutdatedException(PAYMENT_ID, STARTED_AT, ResultStatus.PROCESSING,
+				LocalDateTime.of(2026, 9, 26, 10, 0));
 		}
 	}
 
@@ -541,9 +611,9 @@ class ManseInterpretationServiceFlowTest {
 
 			callInterpret();
 
-			verify(sajuResultService).saveFinalResult(RESULT_ID, "정규화된 본문", "정규화된 요약");
+			verify(sajuResultService).saveFinalResult(RESULT_ID, STARTED_AT, "정규화된 본문", "정규화된 요약");
 			verify(ogImageGenerationService).generateAndUploadOgImage(result);
-			verify(sajuResultService, never()).rollbackStatus(any());
+			verify(sajuResultService, never()).rollbackStatus(any(), any());
 		}
 
 		@Test
@@ -556,9 +626,9 @@ class ManseInterpretationServiceFlowTest {
 
 			callInterpretFree();
 
-			verify(sajuResultService).saveFinalResult(RESULT_ID, "정규화된 본문", "정규화된 요약");
+			verify(sajuResultService).saveFinalResult(RESULT_ID, STARTED_AT, "정규화된 본문", "정규화된 요약");
 			verify(ogImageGenerationService).generateAndUploadOgImage(result);
-			verify(sajuResultService, never()).rollbackStatus(any());
+			verify(sajuResultService, never()).rollbackStatus(any(), any());
 		}
 
 		@Test
@@ -570,9 +640,9 @@ class ManseInterpretationServiceFlowTest {
 
 			callInterpret();
 
-			verify(sajuResultService).saveFinalResult(RESULT_ID, "정규화된 본문", "정규화된 요약");
+			verify(sajuResultService).saveFinalResult(RESULT_ID, STARTED_AT, "정규화된 본문", "정규화된 요약");
 			verify(emailService).sendResultReadyEmail(EMAIL, "테스터");
-			verify(sajuResultService, never()).rollbackStatus(any());
+			verify(sajuResultService, never()).rollbackStatus(any(), any());
 		}
 
 		@Test
@@ -586,9 +656,9 @@ class ManseInterpretationServiceFlowTest {
 			callCompatibility();
 
 			verify(sajuResultService)
-				.saveCompatibilityFinalResult(RESULT_ID, "궁합 본문", 88, "궁합 요약");
+				.saveCompatibilityFinalResult(RESULT_ID, STARTED_AT, "궁합 본문", 88, "궁합 요약");
 			verify(emailService).sendResultReadyEmail(EMAIL, "테스터");
-			verify(sajuResultService, never()).rollbackCompatibilityStatus(any());
+			verify(sajuResultService, never()).rollbackCompatibilityStatus(any(), any());
 		}
 
 		@Test
@@ -600,9 +670,9 @@ class ManseInterpretationServiceFlowTest {
 
 			callInterpret();
 
-			verify(sajuResultService).saveFinalResult(RESULT_ID, "정규화된 본문", "정규화된 요약");
+			verify(sajuResultService).saveFinalResult(RESULT_ID, STARTED_AT, "정규화된 본문", "정규화된 요약");
 			verify(ogImageGenerationService).generateAndUploadOgImage(result);
-			verify(sajuResultService, never()).rollbackStatus(any());
+			verify(sajuResultService, never()).rollbackStatus(any(), any());
 		}
 	}
 

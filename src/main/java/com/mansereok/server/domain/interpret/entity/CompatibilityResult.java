@@ -75,7 +75,8 @@ public class CompatibilityResult {
 
 	private LocalDateTime createdAt;
 
-	// 엔티티를 고쳐 저장할 때마다 바뀐다. JPQL 벌크 UPDATE(updateOgImageUrl 등)는 엔티티 콜백을 거치지 않아 바꾸지 않는다.
+	// 엔티티를 고쳐 저장할 때마다 바뀐다. 해석 중으로 저장할 때는 바꾸지 않는다(onUpdate). JPQL 벌크 UPDATE(updateOgImageUrl 등)는
+	// 엔티티 콜백을 거치지 않아 바꾸지 않는다.
 	// 운영에서 컬럼을 더하기 전의 행과, created_at 으로 채운 뒤 이 코드가 배포되기 전까지 옛 코드가 쓴 행은 NULL 일 수 있다.
 	// 그래서 배포 뒤에 같은 채우기 UPDATE(WHERE updated_at IS NULL)를 한 번 더 돌린다.
 	private LocalDateTime updatedAt;
@@ -87,8 +88,15 @@ public class CompatibilityResult {
 		updatedAt = now;
 	}
 
+	/**
+	 * 고친 시각을 지금으로 바꾼다. 다만 해석 중(PROCESSING)으로 저장할 때는 바꾸지 않는다. 해석 중인 결과의 updated_at 은 해석을
+	 * 시작한 시각이고, 해석 실행이 자기가 시작한 해석인지 가리는 표지라서다(Result.onUpdate 와 같은 이유).
+	 */
 	@PreUpdate
 	protected void onUpdate() {
+		if (status == ResultStatus.PROCESSING) {
+			return;
+		}
 		updatedAt = LocalDateTime.now();
 	}
 
@@ -102,24 +110,26 @@ public class CompatibilityResult {
 		return result;
 	}
 
+	/**
+	 * 해석 중이고, 그 해석을 startedAt 에 시작했는지 본다. Result.isProcessingStartedAt 과 같은 규칙이다. 오래 멈춰 되돌려졌거나
+	 * 그 뒤 같은 결제로 해석을 다시 시작했으면 false 다.
+	 */
+	public boolean isProcessingStartedAt(LocalDateTime startedAt) {
+		return status == ResultStatus.PROCESSING && updatedAt != null && updatedAt.equals(startedAt);
+	}
+
+	/**
+	 * 궁합 본문과 점수, 요약을 넣고 완료(COMPLETED)로 바꾼다. 자기가 시작한 해석인지는 부르는 쪽이 {@link #isProcessingStartedAt}
+	 * 으로 먼저 가린다. 그래서 되돌린 뒤 다시 시작한 결과에 먼저 시작한 해석의 본문이 붙지 않는다.
+	 *
+	 * @throws IllegalStateException 해석 중(PROCESSING)이 아닐 때. 이미 완료된 결과를 다시 덮어쓰는 저장을 막는다.
+	 */
 	public void completeInterpretation(String interpretation, Integer score, String summary) {
+		requireProcessing("해석 결과를 저장할");
 		this.interpretation = interpretation;
 		this.compatibilityScore = score;
 		this.summary = summary;
 		this.status = ResultStatus.COMPLETED;
-	}
-
-	/**
-	 * 정보 입력 대기(INPUT_REQUIRED)인 결과만 해석 중(PROCESSING)으로 바꾼다.
-	 *
-	 * @return 바꿨으면 true. 이미 해석 중이거나 완료된 결과는 그대로 두고 false.
-	 */
-	public boolean markProcessing() {
-		if (status != ResultStatus.INPUT_REQUIRED) {
-			return false;
-		}
-		this.status = ResultStatus.PROCESSING;
-		return true;
 	}
 
 	/**
@@ -137,16 +147,32 @@ public class CompatibilityResult {
 		return true;
 	}
 
-	// 두 사람의 이름과 일간만 채우고 상태는 바꾸지 않는다.
+	/**
+	 * 해석을 시작하며 두 사람의 이름과 일간을 채운다. 상태와 해석을 시작한 시각(updated_at)은 바꾸지 않는다.
+	 *
+	 * <p>해석 중(PROCESSING)으로 바꾸는 일은 CompatibilityResultRepository.markProcessingIfInputRequired 의 조건부 UPDATE 가
+	 * 맡고, 이 메서드는 그 관문을 지난 결과에만 쓴다. 자기가 시작한 해석인지는 부르는 쪽이 {@link #isProcessingStartedAt} 으로 먼저
+	 * 가린다.
+	 *
+	 * @throws IllegalStateException 해석 중이 아닐 때. 완료된 결과에 다른 사람의 정보를 덮어써 본문과 인적 정보가 어긋나지 않게 한다.
+	 */
 	public void updatePersonsInformation(
 		String person1Name,
 		String person1Ilgan,
 		String person2Name,
 		String person2Ilgan
 	) {
+		requireProcessing("두 사람의 정보를 채울");
 		this.person1Name = person1Name;
 		this.person1Ilgan = person1Ilgan;
 		this.person2Name = person2Name;
 		this.person2Ilgan = person2Ilgan;
+	}
+
+	private void requireProcessing(String action) {
+		if (status != ResultStatus.PROCESSING) {
+			throw new IllegalStateException(String.format(
+				"해석 중(PROCESSING)인 궁합 결과에만 %s 수 있다. paymentId=%s, 지금 상태=%s", action, paymentId, status));
+		}
 	}
 }

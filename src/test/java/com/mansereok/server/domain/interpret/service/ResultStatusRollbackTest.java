@@ -2,7 +2,6 @@ package com.mansereok.server.domain.interpret.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.lenient;
 
@@ -12,7 +11,11 @@ import com.mansereok.server.domain.interpret.entity.ResultStatus;
 import com.mansereok.server.domain.interpret.repository.CompatibilityResultRepository;
 import com.mansereok.server.domain.interpret.repository.ResultRepository;
 import com.mansereok.server.domain.product.repository.SubCategoryRepository;
-import jakarta.persistence.EntityNotFoundException;
+import com.mansereok.server.support.fixture.ResultFixture;
+import java.time.Clock;
+import java.time.Instant;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -30,10 +33,11 @@ import org.mockito.junit.jupiter.MockitoExtension;
  * 어떤 상태가 되는지 본다. 예전 테스트는 서비스나 엔티티를 목으로 바꿔 "되돌리기를 불렀다"만 확인했고, 그 사이 궁합 쪽 되돌리기는
  * 아무것도 바꾸지 못하고 있었다.
  *
- * <p>네 갈래 모두 해석 중(되돌린다), 완료(그대로 둔다), 행 없음(예외 없이 끝난다)을 같은 순서로 두고, 결과 ID 갈래에는 ID 가
- * null 인 경우를 더한다. 빠진 경우가 있으면 갈래끼리 견줘 바로 보이게 하려는 것이다. 해석 중 결과는 검증 대상인 markProcessing
- * 으로 만들므로, 그 준비가 실제로 해석 중이 됐는지 given 끝에서 먼저 확인한다. 그렇지 않으면 markProcessing 이 상태를 바꾸지
- * 못할 때 결과가 처음부터 정보 입력 대기라 되돌리기 테스트가 아무것도 되돌리지 않고 통과한다.
+ * <p>네 갈래 모두 되돌리는 쪽이 해석을 시작한 시각(STARTED_AT)을 넘긴다. 그 시각에 시작한 해석 중(되돌린다), 되돌린 뒤 다른 요청이
+ * 다시 시작한 해석 중(그대로 둔다), 완료(그대로 둔다), 행 없음(예외 없이 끝난다)을 같은 순서로 두고, 결과 ID 갈래에는 ID 가 null
+ * 인 경우를 더한다. 빠진 경우가 있으면 갈래끼리 견줘 바로 보이게 하려는 것이다. 해석 중 결과는 ResultFixture 로 만들고, 그 준비가
+ * 실제로 해석 중인지 given 끝에서 먼저 확인한다. 그렇지 않으면 결과가 처음부터 정보 입력 대기라 되돌리기 테스트가 아무것도 되돌리지
+ * 않고 통과한다. 해석을 시작하는 쪽(startProcessing)은 ResultStartProcessingTest 가 본다.
  *
  * <p>save 호출 여부는 보지 않는다. 트랜잭션 안에서 읽은 엔티티는 커밋 때 반영되며, 그 사실은 ResultRollbackMySqlTest 가 실제
  * MySQL 로 확인한다.
@@ -43,6 +47,9 @@ class ResultStatusRollbackTest {
 
 	private static final Long PAYMENT_ID = 10L;
 	private static final Long RESULT_ID = 20L;
+	// 되돌리는 쪽이 해석을 시작한 시각과, 오래 멈춰 되돌려진 뒤 다른 요청이 같은 결제로 해석을 다시 시작한 시각.
+	private static final LocalDateTime STARTED_AT = LocalDateTime.of(2026, 9, 26, 9, 0);
+	private static final LocalDateTime RESTARTED_AT = LocalDateTime.of(2026, 9, 26, 10, 0);
 
 	@Mock
 	private ResultRepository resultRepository;
@@ -58,8 +65,9 @@ class ResultStatusRollbackTest {
 
 	@BeforeEach
 	void setUp() {
+		// 되돌리기는 시각을 쓰지 않는다. 시각이 필요한 해석 시작은 ResultStartProcessingTest 가 본다.
 		resultService = new ResultService(resultRepository, compatibilityResultRepository,
-			subCategoryRepository);
+			subCategoryRepository, Clock.fixed(Instant.parse("2026-09-26T00:00:00Z"), ZoneId.of("Asia/Seoul")));
 		sajuResultService = new SajuResultService(resultRepository, compatibilityResultRepository);
 	}
 
@@ -68,18 +76,32 @@ class ResultStatusRollbackTest {
 	class CompatibilityByPaymentId {
 
 		@Test
-		@DisplayName("해석 중이던 궁합 결과는 정보 입력 대기로 돌아간다")
+		@DisplayName("이 요청이 시작한 해석 중 궁합 결과는 정보 입력 대기로 돌아간다")
 		void revertsProcessing() {
 			// given
 			CompatibilityResult result = processingCompatibility();
-			given(compatibilityResultRepository.findByPaymentId(PAYMENT_ID)).willReturn(Optional.of(result));
+			given(compatibilityResultRepository.findByPaymentIdForUpdate(PAYMENT_ID)).willReturn(Optional.of(result));
 			assertThat(result.getStatus()).as("준비: 해석 중").isEqualTo(ResultStatus.PROCESSING);
 
 			// when
-			resultService.rollbackCompatibilityStatusByPaymentId(PAYMENT_ID);
+			resultService.rollbackCompatibilityStatusByPaymentId(PAYMENT_ID, STARTED_AT);
 
 			// then
 			assertThat(result.getStatus()).isEqualTo(ResultStatus.INPUT_REQUIRED);
+		}
+
+		@Test
+		@DisplayName("되돌린 뒤 다른 요청이 다시 시작한 해석 중 궁합 결과는 해석 중 그대로 둔다")
+		void keepsProcessingStartedByAnotherRequest() {
+			// given
+			CompatibilityResult result = compatibilityRestartedByAnotherRequest();
+			given(compatibilityResultRepository.findByPaymentIdForUpdate(PAYMENT_ID)).willReturn(Optional.of(result));
+
+			// when
+			resultService.rollbackCompatibilityStatusByPaymentId(PAYMENT_ID, STARTED_AT);
+
+			// then
+			assertThat(result.getStatus()).isEqualTo(ResultStatus.PROCESSING);
 		}
 
 		@Test
@@ -87,10 +109,10 @@ class ResultStatusRollbackTest {
 		void keepsCompleted() {
 			// given
 			CompatibilityResult result = completedCompatibility();
-			given(compatibilityResultRepository.findByPaymentId(PAYMENT_ID)).willReturn(Optional.of(result));
+			given(compatibilityResultRepository.findByPaymentIdForUpdate(PAYMENT_ID)).willReturn(Optional.of(result));
 
 			// when
-			resultService.rollbackCompatibilityStatusByPaymentId(PAYMENT_ID);
+			resultService.rollbackCompatibilityStatusByPaymentId(PAYMENT_ID, STARTED_AT);
 
 			// then
 			assertThat(result.getStatus()).isEqualTo(ResultStatus.COMPLETED);
@@ -100,10 +122,10 @@ class ResultStatusRollbackTest {
 		@DisplayName("결제 ID 에 해당하는 궁합 결과가 없으면 예외 없이 끝난다")
 		void ignoresMissingResult() {
 			// given
-			given(compatibilityResultRepository.findByPaymentId(PAYMENT_ID)).willReturn(Optional.empty());
+			given(compatibilityResultRepository.findByPaymentIdForUpdate(PAYMENT_ID)).willReturn(Optional.empty());
 
 			// when & then
-			assertThatCode(() -> resultService.rollbackCompatibilityStatusByPaymentId(PAYMENT_ID))
+			assertThatCode(() -> resultService.rollbackCompatibilityStatusByPaymentId(PAYMENT_ID, STARTED_AT))
 				.doesNotThrowAnyException();
 		}
 	}
@@ -113,18 +135,32 @@ class ResultStatusRollbackTest {
 	class CompatibilityByResultId {
 
 		@Test
-		@DisplayName("해석 중이던 궁합 결과는 정보 입력 대기로 돌아간다")
+		@DisplayName("이 요청이 시작한 해석 중 궁합 결과는 정보 입력 대기로 돌아간다")
 		void revertsProcessing() {
 			// given
 			CompatibilityResult result = processingCompatibility();
-			given(compatibilityResultRepository.findById(RESULT_ID)).willReturn(Optional.of(result));
+			given(compatibilityResultRepository.findByIdForUpdate(RESULT_ID)).willReturn(Optional.of(result));
 			assertThat(result.getStatus()).as("준비: 해석 중").isEqualTo(ResultStatus.PROCESSING);
 
 			// when
-			sajuResultService.rollbackCompatibilityStatus(RESULT_ID);
+			sajuResultService.rollbackCompatibilityStatus(RESULT_ID, STARTED_AT);
 
 			// then
 			assertThat(result.getStatus()).isEqualTo(ResultStatus.INPUT_REQUIRED);
+		}
+
+		@Test
+		@DisplayName("되돌린 뒤 다른 요청이 다시 시작한 해석 중 궁합 결과는 해석 중 그대로 둔다")
+		void keepsProcessingStartedByAnotherRequest() {
+			// given
+			CompatibilityResult result = compatibilityRestartedByAnotherRequest();
+			given(compatibilityResultRepository.findByIdForUpdate(RESULT_ID)).willReturn(Optional.of(result));
+
+			// when
+			sajuResultService.rollbackCompatibilityStatus(RESULT_ID, STARTED_AT);
+
+			// then
+			assertThat(result.getStatus()).isEqualTo(ResultStatus.PROCESSING);
 		}
 
 		@Test
@@ -132,10 +168,10 @@ class ResultStatusRollbackTest {
 		void keepsCompleted() {
 			// given
 			CompatibilityResult result = completedCompatibility();
-			given(compatibilityResultRepository.findById(RESULT_ID)).willReturn(Optional.of(result));
+			given(compatibilityResultRepository.findByIdForUpdate(RESULT_ID)).willReturn(Optional.of(result));
 
 			// when
-			sajuResultService.rollbackCompatibilityStatus(RESULT_ID);
+			sajuResultService.rollbackCompatibilityStatus(RESULT_ID, STARTED_AT);
 
 			// then
 			assertThat(result.getStatus()).isEqualTo(ResultStatus.COMPLETED);
@@ -145,10 +181,10 @@ class ResultStatusRollbackTest {
 		@DisplayName("결과 ID 에 해당하는 궁합 결과가 없으면 예외 없이 끝난다")
 		void ignoresMissingResult() {
 			// given
-			given(compatibilityResultRepository.findById(RESULT_ID)).willReturn(Optional.empty());
+			given(compatibilityResultRepository.findByIdForUpdate(RESULT_ID)).willReturn(Optional.empty());
 
 			// when & then
-			assertThatCode(() -> sajuResultService.rollbackCompatibilityStatus(RESULT_ID))
+			assertThatCode(() -> sajuResultService.rollbackCompatibilityStatus(RESULT_ID, STARTED_AT))
 				.doesNotThrowAnyException();
 		}
 
@@ -156,13 +192,13 @@ class ResultStatusRollbackTest {
 		@DisplayName("결과 ID 를 받기 전에 실패해 ID 가 null 이면 예외 없이 끝난다")
 		void ignoresNullResultId() {
 			// given
-			// 실제 저장소(SimpleJpaRepository.findById)는 null ID 를 받으면 이 예외를 던진다. 서비스가 null 을 먼저 거르면
-			// 불리지 않는 스텁이라 lenient 로 둔다. 거르지 않으면 이 예외가 그대로 나와 테스트가 실패한다.
-			lenient().when(compatibilityResultRepository.findById(null))
+			// 서비스가 null 을 먼저 거르는지 보려고, 저장소를 null 로 부르면 예외를 던지게 스텁한다. 거르면 불리지 않는 스텁이라
+			// lenient 로 둔다. 거르지 않으면 이 예외가 그대로 나와 테스트가 실패한다.
+			lenient().when(compatibilityResultRepository.findByIdForUpdate(null))
 				.thenThrow(new IllegalArgumentException("The given id must not be null"));
 
 			// when & then
-			assertThatCode(() -> sajuResultService.rollbackCompatibilityStatus(null))
+			assertThatCode(() -> sajuResultService.rollbackCompatibilityStatus(null, STARTED_AT))
 				.doesNotThrowAnyException();
 		}
 	}
@@ -172,18 +208,32 @@ class ResultStatusRollbackTest {
 	class SajuByPaymentId {
 
 		@Test
-		@DisplayName("해석 중이던 사주 결과는 정보 입력 대기로 돌아간다")
+		@DisplayName("이 요청이 시작한 해석 중 사주 결과는 정보 입력 대기로 돌아간다")
 		void revertsProcessing() {
 			// given
 			Result result = processingSaju();
-			given(resultRepository.findByPaymentId(PAYMENT_ID)).willReturn(Optional.of(result));
+			given(resultRepository.findByPaymentIdForUpdate(PAYMENT_ID)).willReturn(Optional.of(result));
 			assertThat(result.getStatus()).as("준비: 해석 중").isEqualTo(ResultStatus.PROCESSING);
 
 			// when
-			resultService.rollbackStatusByPaymentId(PAYMENT_ID);
+			resultService.rollbackStatusByPaymentId(PAYMENT_ID, STARTED_AT);
 
 			// then
 			assertThat(result.getStatus()).isEqualTo(ResultStatus.INPUT_REQUIRED);
+		}
+
+		@Test
+		@DisplayName("되돌린 뒤 다른 요청이 다시 시작한 해석 중 사주 결과는 해석 중 그대로 둔다")
+		void keepsProcessingStartedByAnotherRequest() {
+			// given
+			Result result = sajuRestartedByAnotherRequest();
+			given(resultRepository.findByPaymentIdForUpdate(PAYMENT_ID)).willReturn(Optional.of(result));
+
+			// when
+			resultService.rollbackStatusByPaymentId(PAYMENT_ID, STARTED_AT);
+
+			// then
+			assertThat(result.getStatus()).isEqualTo(ResultStatus.PROCESSING);
 		}
 
 		@Test
@@ -191,10 +241,10 @@ class ResultStatusRollbackTest {
 		void keepsCompleted() {
 			// given
 			Result result = completedSaju();
-			given(resultRepository.findByPaymentId(PAYMENT_ID)).willReturn(Optional.of(result));
+			given(resultRepository.findByPaymentIdForUpdate(PAYMENT_ID)).willReturn(Optional.of(result));
 
 			// when
-			resultService.rollbackStatusByPaymentId(PAYMENT_ID);
+			resultService.rollbackStatusByPaymentId(PAYMENT_ID, STARTED_AT);
 
 			// then
 			assertThat(result.getStatus()).isEqualTo(ResultStatus.COMPLETED);
@@ -204,10 +254,10 @@ class ResultStatusRollbackTest {
 		@DisplayName("결제 ID 에 해당하는 사주 결과가 없으면 예외 없이 끝난다")
 		void ignoresMissingResult() {
 			// given
-			given(resultRepository.findByPaymentId(PAYMENT_ID)).willReturn(Optional.empty());
+			given(resultRepository.findByPaymentIdForUpdate(PAYMENT_ID)).willReturn(Optional.empty());
 
 			// when & then
-			assertThatCode(() -> resultService.rollbackStatusByPaymentId(PAYMENT_ID))
+			assertThatCode(() -> resultService.rollbackStatusByPaymentId(PAYMENT_ID, STARTED_AT))
 				.doesNotThrowAnyException();
 		}
 	}
@@ -217,18 +267,32 @@ class ResultStatusRollbackTest {
 	class SajuByResultId {
 
 		@Test
-		@DisplayName("해석 중이던 사주 결과는 정보 입력 대기로 돌아간다")
+		@DisplayName("이 요청이 시작한 해석 중 사주 결과는 정보 입력 대기로 돌아간다")
 		void revertsProcessing() {
 			// given
 			Result result = processingSaju();
-			given(resultRepository.findById(RESULT_ID)).willReturn(Optional.of(result));
+			given(resultRepository.findByIdForUpdate(RESULT_ID)).willReturn(Optional.of(result));
 			assertThat(result.getStatus()).as("준비: 해석 중").isEqualTo(ResultStatus.PROCESSING);
 
 			// when
-			sajuResultService.rollbackStatus(RESULT_ID);
+			sajuResultService.rollbackStatus(RESULT_ID, STARTED_AT);
 
 			// then
 			assertThat(result.getStatus()).isEqualTo(ResultStatus.INPUT_REQUIRED);
+		}
+
+		@Test
+		@DisplayName("되돌린 뒤 다른 요청이 다시 시작한 해석 중 사주 결과는 해석 중 그대로 둔다")
+		void keepsProcessingStartedByAnotherRequest() {
+			// given
+			Result result = sajuRestartedByAnotherRequest();
+			given(resultRepository.findByIdForUpdate(RESULT_ID)).willReturn(Optional.of(result));
+
+			// when
+			sajuResultService.rollbackStatus(RESULT_ID, STARTED_AT);
+
+			// then
+			assertThat(result.getStatus()).isEqualTo(ResultStatus.PROCESSING);
 		}
 
 		@Test
@@ -236,10 +300,10 @@ class ResultStatusRollbackTest {
 		void keepsCompleted() {
 			// given
 			Result result = completedSaju();
-			given(resultRepository.findById(RESULT_ID)).willReturn(Optional.of(result));
+			given(resultRepository.findByIdForUpdate(RESULT_ID)).willReturn(Optional.of(result));
 
 			// when
-			sajuResultService.rollbackStatus(RESULT_ID);
+			sajuResultService.rollbackStatus(RESULT_ID, STARTED_AT);
 
 			// then
 			assertThat(result.getStatus()).isEqualTo(ResultStatus.COMPLETED);
@@ -249,10 +313,10 @@ class ResultStatusRollbackTest {
 		@DisplayName("결과 ID 에 해당하는 사주 결과가 없으면 예외 없이 끝난다")
 		void ignoresMissingResult() {
 			// given
-			given(resultRepository.findById(RESULT_ID)).willReturn(Optional.empty());
+			given(resultRepository.findByIdForUpdate(RESULT_ID)).willReturn(Optional.empty());
 
 			// when & then
-			assertThatCode(() -> sajuResultService.rollbackStatus(RESULT_ID))
+			assertThatCode(() -> sajuResultService.rollbackStatus(RESULT_ID, STARTED_AT))
 				.doesNotThrowAnyException();
 		}
 
@@ -260,83 +324,38 @@ class ResultStatusRollbackTest {
 		@DisplayName("결과 ID 를 받기 전에 실패해 ID 가 null 이면 예외 없이 끝난다")
 		void ignoresNullResultId() {
 			// given
-			// 실제 저장소(SimpleJpaRepository.findById)는 null ID 를 받으면 이 예외를 던진다. 서비스가 null 을 먼저 거르면
-			// 불리지 않는 스텁이라 lenient 로 둔다. 거르지 않으면 이 예외가 그대로 나와 테스트가 실패한다.
-			lenient().when(resultRepository.findById(null))
+			// 서비스가 null 을 먼저 거르는지 보려고, 저장소를 null 로 부르면 예외를 던지게 스텁한다. 거르면 불리지 않는 스텁이라
+			// lenient 로 둔다. 거르지 않으면 이 예외가 그대로 나와 테스트가 실패한다.
+			lenient().when(resultRepository.findByIdForUpdate(null))
 				.thenThrow(new IllegalArgumentException("The given id must not be null"));
 
 			// when & then
-			assertThatCode(() -> sajuResultService.rollbackStatus(null))
+			assertThatCode(() -> sajuResultService.rollbackStatus(null, STARTED_AT))
 				.doesNotThrowAnyException();
 		}
 	}
 
-	@Nested
-	@DisplayName("해석을 시작하며 결제 ID 로 상태를 해석 중으로 올리면")
-	class MarkProcessingByPaymentId {
-
-		@Test
-		@DisplayName("정보 입력 대기인 궁합 결과는 해석 중이 된다")
-		void marksCompatibility() {
-			// given
-			CompatibilityResult result = CompatibilityResult.createInitial(1L, PAYMENT_ID, "연인 궁합");
-			given(compatibilityResultRepository.findByPaymentId(PAYMENT_ID)).willReturn(Optional.of(result));
-
-			// when
-			resultService.updateCompatibilityStatusToProcessing(PAYMENT_ID);
-
-			// then
-			assertThat(result.getStatus()).isEqualTo(ResultStatus.PROCESSING);
-		}
-
-		@Test
-		@DisplayName("정보 입력 대기인 사주 결과는 해석 중이 된다")
-		void marksSaju() {
-			// given
-			Result result = Result.createInitial(1L, PAYMENT_ID, "인생 총운");
-			given(resultRepository.findByPaymentId(PAYMENT_ID)).willReturn(Optional.of(result));
-
-			// when
-			resultService.updateStatusToProcessing(PAYMENT_ID);
-
-			// then
-			assertThat(result.getStatus()).isEqualTo(ResultStatus.PROCESSING);
-		}
-
-		@Test
-		@DisplayName("결제 ID 에 해당하는 궁합 결과가 없으면 EntityNotFoundException 을 던진다")
-		void failsWhenCompatibilityMissing() {
-			// given
-			given(compatibilityResultRepository.findByPaymentId(PAYMENT_ID)).willReturn(Optional.empty());
-
-			// when & then
-			assertThatThrownBy(() -> resultService.updateCompatibilityStatusToProcessing(PAYMENT_ID))
-				.isInstanceOf(EntityNotFoundException.class)
-				.hasMessage("CompatibilityResult not found");
-		}
+	private static CompatibilityResult processingCompatibility() {
+		return ResultFixture.compatibility(1L, PAYMENT_ID, ResultStatus.PROCESSING, STARTED_AT);
 	}
 
-	private static CompatibilityResult processingCompatibility() {
-		CompatibilityResult result = CompatibilityResult.createInitial(1L, PAYMENT_ID, "연인 궁합");
-		result.markProcessing();
-		return result;
+	private static CompatibilityResult compatibilityRestartedByAnotherRequest() {
+		return ResultFixture.compatibility(1L, PAYMENT_ID, ResultStatus.PROCESSING, RESTARTED_AT);
 	}
 
 	private static CompatibilityResult completedCompatibility() {
-		CompatibilityResult result = CompatibilityResult.createInitial(1L, PAYMENT_ID, "연인 궁합");
-		result.completeInterpretation("궁합 본문", 80, "궁합 요약");
-		return result;
+		return ResultFixture.compatibility(1L, PAYMENT_ID, ResultStatus.COMPLETED);
 	}
 
 	private static Result processingSaju() {
-		Result result = Result.createInitial(1L, PAYMENT_ID, "인생 총운");
-		result.markProcessing();
-		return result;
+		return ResultFixture.saju(1L, PAYMENT_ID, ResultStatus.PROCESSING, STARTED_AT);
+	}
+
+	private static Result sajuRestartedByAnotherRequest() {
+		return ResultFixture.saju(1L, PAYMENT_ID, ResultStatus.PROCESSING, RESTARTED_AT);
 	}
 
 	private static Result completedSaju() {
-		Result result = Result.createInitial(1L, PAYMENT_ID, "인생 총운");
-		result.completeInterpretation("사주 본문", "사주 요약");
-		return result;
+		return ResultFixture.saju(1L, PAYMENT_ID, ResultStatus.COMPLETED);
 	}
 }
