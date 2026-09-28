@@ -73,6 +73,7 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.web.method.annotation.AuthenticationPrincipalArgumentResolver;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.RequestBuilder;
+import org.springframework.test.web.servlet.ResultActions;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 /**
@@ -182,9 +183,10 @@ class AuthControllerContractTest {
 				"""));
 		}
 
+		// 문구는 서비스가 정한다(UserServiceTest 가 고정한다). 여기서는 컨트롤러가 그 문구를 409 본문으로 옮기는 모양만 본다.
 		@Test
-		@DisplayName("이미 있는 이메일이면 409 와 error 한 필드에 겹친 이메일을 알려 준다")
-		void returnsConflictForDuplicateEmail() throws Exception {
+		@DisplayName("이미 있는 이메일이라 서비스가 예외를 던지면 409 와 서비스가 던진 문구를 error 한 필드에 담아 답한다")
+		void returnsConflictWithServiceMessage() throws Exception {
 			// given
 			willThrow(new DuplicateEmailException("이미 존재하는 이메일 입니다: " + EMAIL_MEMBER))
 				.given(userService).createUser("홍길동", EMAIL_MEMBER, "password1", LocalDate.of(1990, 1, 1),
@@ -207,12 +209,12 @@ class AuthControllerContractTest {
 		@DisplayName("요청이 규칙을 어기면 400 VALIDATION_ERROR 와 어긴 필드를 알려 주고 가입을 시도하지 않는다")
 		void rejectsInvalidRequest(String description, String requestBody, String invalidField) throws Exception {
 			// when
-			mockMvc.perform(register(requestBody))
-				.andExpect(status().isBadRequest())
-				.andExpect(jsonPath("$.errorCode").value("VALIDATION_ERROR"))
-				.andExpect(jsonPath("$.errors." + invalidField).exists());
+			ResultActions result = mockMvc.perform(register(requestBody));
 
 			// then
+			result.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.errorCode").value("VALIDATION_ERROR"))
+				.andExpect(jsonPath("$.errors." + invalidField).exists());
 			then(userService).shouldHaveNoInteractions();
 		}
 	}
@@ -477,11 +479,11 @@ class AuthControllerContractTest {
 
 			// when
 			MockHttpServletResponse response = mockMvc.perform(googleLogin("google-auth-code"))
-				.andExpect(jsonPath("$.errorCode").value(expectedErrorCode))
 				.andReturn().getResponse();
 
 			// then
 			assertThat(response.getStatus()).isEqualTo(expectedStatus);
+			assertThat(body(response).get("errorCode").asText()).isEqualTo(expectedErrorCode);
 			assertThat(response.getHeaders(HttpHeaders.SET_COOKIE)).isEmpty();
 			then(oauthLoginService).shouldHaveNoInteractions();
 		}
