@@ -1,6 +1,7 @@
 package com.mansereok.server.domain.auth.controller;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
@@ -273,8 +274,12 @@ class AuthControllerContractTest {
 		@DisplayName("두 글자 이름으로 개인정보 처리방침에 동의하면 가입하고 200 을 준다")
 		void signsUpWithTwoLetterName() throws Exception {
 			// given
-			given(userService.createUser("이훈", "new@example.com", "password1", null, null, true, false))
-				.willReturn(emailMember(3L, "new@example.com", "이훈"));
+			// UserService 가 진짜라 저장소 스텁이 저장을 받아 준다. IDENTITY 처럼 받은 User 에 id 를 넣어 돌려준다.
+			given(userRepository.saveAndFlush(any(User.class))).willAnswer(invocation -> {
+				User user = invocation.getArgument(0);
+				UserFixture.withId(user, 3L);
+				return user;
+			});
 
 			// when & then
 			mockMvc.perform(signUp("""
@@ -283,6 +288,15 @@ class AuthControllerContractTest {
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.name").value("이훈"))
 				.andExpect(jsonPath("$.role").value("USER"));
+
+			// then
+			ArgumentCaptor<User> savedUser = ArgumentCaptor.forClass(User.class);
+			then(userRepository).should().saveAndFlush(savedUser.capture());
+			assertThat(savedUser.getValue())
+				.extracting(User::getName, User::getEmail, User::getBirthDate, User::getGender,
+					User::isPrivacyPolicyAgreed, User::isMarketingAgreed)
+				.containsExactly("이훈", "new@example.com", null, null, true, false);
+			assertThat(PASSWORD_ENCODER.matches("password1", savedUser.getValue().getPassword())).isTrue();
 		}
 
 		@ParameterizedTest(name = "[{index}] {0} → errors.{2}")
@@ -298,7 +312,7 @@ class AuthControllerContractTest {
 			JsonNode responseBody = objectMapper.readTree(response.getContentAsString(StandardCharsets.UTF_8));
 			assertThat(responseBody.get("errorCode").asText()).isEqualTo("VALIDATION_ERROR");
 			assertThat(responseBody.get("errors")).isEqualTo(objectMapper.createObjectNode().put(field, message));
-			then(userService).shouldHaveNoInteractions();
+			then(userRepository).shouldHaveNoInteractions();
 		}
 
 		private RequestBuilder signUp(String body) {
