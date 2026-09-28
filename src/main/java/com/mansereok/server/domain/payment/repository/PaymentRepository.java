@@ -28,6 +28,14 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
 	Optional<Payment> findByImpUidWithLock(@Param("impUid") String impUid);
 
 	/**
+	 * 해석 시작용 행 잠금 조회. 해석 API 는 결제 PK 를 받으므로 PK 로 잠근다. 환불도 같은 결제 행을 먼저 잠그므로(imp_uid 로
+	 * 찾아도 잠기는 행은 같다) 해석 시작과 환불이 이 행에서 줄을 선다. 뒤진 쪽은 앞선 쪽이 커밋한 최신 상태를 읽는다.
+	 */
+	@Lock(LockModeType.PESSIMISTIC_WRITE)
+	@Query("SELECT p FROM Payment p WHERE p.id = :id")
+	Optional<Payment> findByIdWithLock(@Param("id") Long id);
+
+	/**
 	 * 대사용 창 조회. createdAt 이 LocalDateTime.now() 로 기록되므로 같은 시간대의 LocalDateTime 으로 자른다.
 	 */
 	List<Payment> findAllByCreatedAtGreaterThanEqualAndCreatedAtLessThan(LocalDateTime from,
