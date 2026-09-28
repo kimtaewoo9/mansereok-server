@@ -118,7 +118,8 @@ app:
   jwt:
     secret: ${JWT_SECRET_KEY}
     access-token-expiration: 28800000
-    refresh-token-expiration: 2592000000
+    # 7일(밀리초). DB 의 토큰 만료와 리프레시 쿠키의 Max-Age 가 모두 이 값을 따른다.
+    refresh-token-expiration: 604800000
     issuer: ${JWT_ISSUER:www.namedsaju.com}
   frontend-url: https://dev-front.namedsaju.com
   # 브라우저에서 이 API 를 부를 수 있는 프론트엔드 출처. 쿠키를 싣는 요청을 받으므로 와일드카드 없이 정확한 주소만 적는다.
@@ -129,6 +130,11 @@ app:
       - https://dev-front.namedsaju.com
       - http://localhost:3000
       - https://manselab-front.vercel.app
+  # 리프레시 토큰 쿠키. 기본 SameSite=Lax 는 API 와 같은 사이트의 프론트엔드에서만 실린다. localhost 와 vercel.app 은 개발 API 와
+  # 다른 사이트라 None 으로 둔다.
+  auth:
+    refresh-cookie:
+      same-site: None
 
 # Server 설정
 server:

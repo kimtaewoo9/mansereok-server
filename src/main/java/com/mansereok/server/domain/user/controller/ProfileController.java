@@ -1,5 +1,6 @@
 package com.mansereok.server.domain.user.controller;
 
+import com.mansereok.server.domain.auth.util.RefreshTokenCookies;
 import com.mansereok.server.domain.interpret.dto.response.CompatibilityPageResponse;
 import com.mansereok.server.domain.interpret.dto.response.InterpretationPageResponse;
 import com.mansereok.server.domain.interpret.dto.response.InterpretationResultResponse;
@@ -31,6 +32,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class ProfileController {
 
 	private final UserService userService;
+	private final RefreshTokenCookies refreshTokenCookies;
 
 	@GetMapping("/api/v1/users/me/profiles")
 	public ResponseEntity<ProfileResponseDto> getProfile(
@@ -109,12 +111,7 @@ public class ProfileController {
 		userService.deleteUser(username);
 
 		// 2. 클라이언트 쿠키 삭제 (로그아웃 처리)
-		Cookie refreshCookie = new Cookie("REFRESH_TOKEN", null);
-		refreshCookie.setMaxAge(0);
-		refreshCookie.setPath("/");
-		refreshCookie.setHttpOnly(true);
-		refreshCookie.setSecure(true);
-		response.addCookie(refreshCookie);
+		refreshTokenCookies.addExpired(response);
 
 		Cookie jsessionCookie = new Cookie("JSESSIONID", null);
 		jsessionCookie.setMaxAge(0);

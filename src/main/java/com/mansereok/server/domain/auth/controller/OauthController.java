@@ -11,12 +11,12 @@ import com.mansereok.server.domain.auth.service.oauth.OauthLoginService;
 import com.mansereok.server.domain.auth.service.oauth.OauthProfile;
 import com.mansereok.server.domain.auth.service.oauth.XService;
 import com.mansereok.server.domain.auth.util.JwtUtil;
+import com.mansereok.server.domain.auth.util.RefreshTokenCookies;
 import com.mansereok.server.domain.user.entity.User;
 import com.mansereok.server.domain.user.service.RefreshTokenService;
 import jakarta.servlet.http.HttpServletResponse;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
-import org.springframework.http.ResponseCookie;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -44,6 +44,7 @@ public class OauthController {
 	// Access Token, Refresh Token
 	private final JwtUtil jwtUtil;
 	private final RefreshTokenService refreshTokenService;
+	private final RefreshTokenCookies refreshTokenCookies;
 
 	@PostMapping("/member/google/doLogin")
 	public ResponseEntity<?> googleLogin(
@@ -107,17 +108,7 @@ public class OauthController {
 
 		// 이 기기의 토큰만 새로 넣는다. 다른 기기에서 받은 토큰은 그대로 쓸 수 있다.
 		String refreshToken = refreshTokenService.issue(user);
-
-		// refresh 토큰을 쿠키에 저장
-		ResponseCookie refreshCookie = ResponseCookie.from("REFRESH_TOKEN", refreshToken)
-			.path("/")
-			.sameSite("None")
-			.httpOnly(true)
-			.secure(true)
-			.maxAge(7 * 24 * 60 * 60)
-			.build();
-
-		response.addHeader("Set-Cookie", refreshCookie.toString());
+		refreshTokenCookies.addIssued(response, refreshToken);
 
 		// 최종 응답 생성 .
 		Map<String, Object> responseBody = Map.of(

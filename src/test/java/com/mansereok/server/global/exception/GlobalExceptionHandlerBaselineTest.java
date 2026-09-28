@@ -48,7 +48,7 @@ class GlobalExceptionHandlerBaselineTest {
 			Arguments.of(new IllegalArgumentException("생년월일 형식이 잘못되었습니다."),
 				400, "INVALID_INPUT", "생년월일 형식이 잘못되었습니다."),
 			Arguments.of(new BadCredentialsException("password mismatch"),
-				401, "INVALID_CREDENTIALS", "이메일 또는 비밀번호가 일치하지 않습니다."),
+				401, "INVALID_CREDENTIALS", "이메일 또는 비밀번호가 일치하지 않습니다. 소셜로 가입하셨다면 소셜 로그인을 이용해주세요."),
 			Arguments.of(new InsufficientAuthenticationException("token missing"),
 				401, "AUTHENTICATION_FAILED", "인증에 실패했습니다. 다시 로그인해주세요."),
 			Arguments.of(new InvalidRefreshTokenException("리프레시 토큰이 만료되었습니다."),

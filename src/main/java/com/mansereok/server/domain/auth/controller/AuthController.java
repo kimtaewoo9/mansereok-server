@@ -7,6 +7,7 @@ import com.mansereok.server.domain.auth.dto.request.RegisterRequest;
 import com.mansereok.server.domain.auth.dto.response.TokenRefreshResponse;
 import com.mansereok.server.domain.auth.dto.response.TokenRefreshResponse.UserDto;
 import com.mansereok.server.domain.auth.util.JwtUtil;
+import com.mansereok.server.domain.auth.util.RefreshTokenCookies;
 import com.mansereok.server.domain.user.entity.User;
 import com.mansereok.server.domain.user.service.CustomUserDetailsService;
 import com.mansereok.server.domain.user.service.RefreshTokenService;
@@ -41,39 +42,31 @@ public class AuthController {
 	private final UserService userService;
 	private final JwtUtil jwtUtil;
 	private final RefreshTokenService refreshTokenService;
+	private final RefreshTokenCookies refreshTokenCookies;
 
 	/**
 	 * 사용자 로그인 (Refresh Token 포함)
+	 *
+	 * <p>가입하지 않은 이메일, 소셜로 가입한 이메일(비밀번호가 없다), 틀린 비밀번호는 모두 BadCredentialsException 이 되어 같은 401
+	 * INVALID_CREDENTIALS 응답으로 끝난다(GlobalExceptionHandler). 세 경우 모두 BCrypt 비교를 한 번 해서 응답 시간도 비슷하다.
+	 * 소셜 가입 이메일은 CustomUserDetailsService 가 가입하지 않은 이메일처럼 다뤄, DaoAuthenticationProvider 가 미리 만들어 둔
+	 * BCrypt 해시와 비교한다. 로그인 응답의 본문과 시간만 보고는 그 이메일이 가입했는지, 어떤 방식으로 가입했는지 알 수 없게 하려는
+	 * 것이다.
 	 *
 	 * @param loginRequest 로그인 요청 정보
 	 * @return Access Token과 Refresh Token
 	 */
 	@PostMapping("/api/auth/sign-in")
-	public ResponseEntity<?> login(
+	public ResponseEntity<Map<String, Object>> login(
 		@Valid @RequestBody LoginRequest loginRequest,
 		HttpServletResponse response) {
 
-		// 0. 소셜 로그인 계정인지 확인
-		boolean socialAccount = userService.findByEmail(loginRequest.getEmail())
-			.filter(socialCheckUser -> socialCheckUser.getSocialType() != null)
-			.isPresent();
-		if (socialAccount) {
-			return ResponseEntity.status(409).body(Map.of(
-				"error", "소셜 로그인으로 가입된 이메일입니다. 소셜 로그인을 이용해주세요."
-			));
-		}
-
-		// 1. 인증 시도 (실패 시 BadCredentialsException 또는 AuthenticationException 발생)
 		Authentication authentication = authenticationManager.authenticate(
 			new UsernamePasswordAuthenticationToken(
 				loginRequest.getEmail(),
 				loginRequest.getPassword()
 			)
 		);
-		// 2. (실패 시) GlobalExceptionHandler가 예외를 낚아채서
-		//    ErrorResponse DTO와 400/401 상태 코드를 반환함.
-
-		// 3. (성공 시) 아래 로직 실행
 		User user = ((CustomUserDetailsService.CustomUserPrincipal) authentication.getPrincipal()).getUser();
 
 		Map<String, Object> claims = Map.of(
@@ -96,13 +89,7 @@ public class AuthController {
 
 		// 이 기기의 토큰만 새로 넣는다. 다른 기기에서 받은 토큰은 그대로 쓸 수 있다.
 		String refreshToken = refreshTokenService.issue(user);
-
-		Cookie refreshCookie = new Cookie("REFRESH_TOKEN", refreshToken);
-		refreshCookie.setHttpOnly(true);
-		refreshCookie.setSecure(true);
-		refreshCookie.setPath("/");
-		refreshCookie.setMaxAge(7 * 24 * 60 * 60); // 7일
-		response.addCookie(refreshCookie);
+		refreshTokenCookies.addIssued(response, refreshToken);
 
 		return ResponseEntity.ok(responseBody);
 	}
@@ -134,17 +121,11 @@ public class AuthController {
 	}
 
 	@PostMapping("/api/auth/refresh")
-	public ResponseEntity<?> refreshToken(
-		@CookieValue(value = "REFRESH_TOKEN", required = false) String token,
+	public ResponseEntity<TokenRefreshResponse> refreshToken(
+		@CookieValue(value = RefreshTokenCookies.NAME, required = false) String token,
 		HttpServletResponse response
 	) {
-		if (token == null || token.isBlank()) {
-			throw new InvalidRefreshTokenException("인증 정보가 없습니다.");
-		}
-
-		// 쿠키의 토큰 하나만 새 토큰으로 바꾼다(토큰 회전). 같은 회원이 다른 기기에서 받은 토큰은 건드리지 않는다.
-		// 없거나 폐기·만료·재사용된 토큰이면 사유를 담은 InvalidRefreshTokenException(401)이 난다.
-		RotatedRefreshToken rotated = refreshTokenService.rotate(token);
+		RotatedRefreshToken rotated = rotateOrExpireCookie(token, response);
 		User user = rotated.user();
 
 		// 새로운 Access Token 생성
@@ -157,34 +138,39 @@ public class AuthController {
 
 		String newAccessToken = jwtUtil.generateAccessToken(user.getUsername(), claims);
 
-		// refresh 토큰은 쿠키에 저장해서 전달 .
-		Cookie refreshCookie = new Cookie("REFRESH_TOKEN", rotated.token());
-		refreshCookie.setHttpOnly(true);
-		refreshCookie.setSecure(true); // HTTPS 환경에서만
+		refreshTokenCookies.addIssued(response, rotated.token());
 
-		refreshCookie.setPath("/");
-		refreshCookie.setMaxAge(7 * 24 * 60 * 60); // 7일
-		response.addCookie(refreshCookie);
+		return ResponseEntity.ok(new TokenRefreshResponse(UserDto.from(user), newAccessToken));
+	}
 
-		// 응답 생성
-		TokenRefreshResponse tokenRefreshResponse = new TokenRefreshResponse(
-			new UserDto(
-				user.getId().toString(),
-				user.getCreatedAt().toString(),
-				user.getEmail(),
-				user.getUsername(),
-				user.getRole().toString(),
-				false
-			),
-			newAccessToken
-		);
-
-		return ResponseEntity.ok(tokenRefreshResponse);
+	/**
+	 * 쿠키의 토큰 하나만 새 토큰으로 바꾼다(토큰 회전). 같은 회원이 다른 기기에서 받은 토큰은 건드리지 않는다.
+	 *
+	 * <p>쿠키가 없거나 비었거나, 없거나 폐기·만료·재사용된 토큰이면 InvalidRefreshTokenException(401)을 그대로 던진다. 던지기 전에
+	 * 쿠키를 지우는 Set-Cookie 를 응답에 넣어, 쓸 수 없는 쿠키를 브라우저가 요청마다 다시 싣지 않게 한다. 예외 처리기는 응답
+	 * 본문만 새로 쓰고 이미 넣은 Set-Cookie 헤더는 그대로 둔다(DispatcherServlet 은 Content-Type·Content-Disposition 과 본문만
+	 * 비운다).
+	 *
+	 * <p>재사용으로 거절할 때도 쿠키를 지운다. 그래서 같은 브라우저가 같은 토큰으로 보낸 재발급 두 건 중 뒤의 것이 유예 시간
+	 * (app.auth.refresh-token.reuse-grace)이 지나서야 처리되면, 그 거절 응답이 앞 요청이 방금 넣은 새 토큰 쿠키까지 지워 다음
+	 * 재발급에서 로그아웃된다. 이 PR 전에는 거절 응답이 쿠키를 건드리지 않았다.
+	 */
+	private RotatedRefreshToken rotateOrExpireCookie(String token, HttpServletResponse response) {
+		if (token == null || token.isBlank()) {
+			refreshTokenCookies.addExpired(response);
+			throw new InvalidRefreshTokenException("인증 정보가 없습니다.");
+		}
+		try {
+			return refreshTokenService.rotate(token);
+		} catch (InvalidRefreshTokenException e) {
+			refreshTokenCookies.addExpired(response);
+			throw e;
+		}
 	}
 
 	@PostMapping("/api/auth/sign-out")
 	public ResponseEntity<Void> signOut(
-		@CookieValue(value = "REFRESH_TOKEN", required = false) String token,
+		@CookieValue(value = RefreshTokenCookies.NAME, required = false) String token,
 		HttpServletRequest request,
 		HttpServletResponse response
 	) {
@@ -192,35 +178,27 @@ public class AuthController {
 			refreshTokenService.revoke(token);
 		}
 
-		Cookie cookie = new Cookie("REFRESH_TOKEN", "");
-		cookie.setMaxAge(0);
-		cookie.setPath("/");
-		cookie.setHttpOnly(true);
-		response.addCookie(cookie);
+		refreshTokenCookies.addExpired(response);
 
 		HttpSession session = request.getSession(false);
 		if (session != null) {
 			session.invalidate();
 		}
 
-		Cookie csrfCookie = new Cookie("JSESSIONID", "");
-		csrfCookie.setMaxAge(0);
-		csrfCookie.setPath("/");
-		response.addCookie(csrfCookie);
+		// 서블릿 세션 쿠키를 지운다. CSRF 토큰은 세션이 아니라 XSRF-TOKEN 쿠키에 있어 이 쿠키와 상관없다.
+		Cookie sessionCookie = new Cookie("JSESSIONID", "");
+		sessionCookie.setMaxAge(0);
+		sessionCookie.setPath("/");
+		response.addCookie(sessionCookie);
 
 		return ResponseEntity.noContent().build();
 	}
 
 	@GetMapping("/api/auth/csrf-token")
 	public ResponseEntity<Map<String, String>> getCsrfToken(CsrfToken csrfToken) {
-		// 요청을 보내기 전에 먼저 서버로 부터 CSRF 토큰을 달라고 요청을 보냄 .
-		// 사용자는 요청을 보낼때 csrf token 을 헤더 같은 곳에 넣어서 요청과 같이 보냄 .
-		// 서버는 CSRF 토큰이 있는 요청만 유효하다고 판단하고 처리를 한다 .
-
-		// 서버가 이 csrf 토큰이 공격자가 보낸건지 사용자가 보낸건지 어떻게 알지 ?
-		// 서버가 자동으로 토큰을 생성하고 .. session 에 저장함 . 그래서 요청마다 이제 token 을 검증
-
-		// 그러면 모든 요청에 대해서 csrf 토큰을 검증을 해야함 session 사용해서 .. -> 그럼 jwt 사용하는 의미가 없잖아.
+		// 쓰기 요청을 보내기 전에 CSRF 토큰을 받아 가는 API 다. 토큰은 세션이 아니라 XSRF-TOKEN 쿠키에 저장된다
+		// (SecurityConfig 의 CookieCsrfTokenRepository). 프론트엔드는 그 값을 X-XSRF-TOKEN 헤더에 담아 보내고, 서버는 헤더 값과
+		// 쿠키 값이 같은지 확인한다.
 		if (csrfToken != null) {
 			return ResponseEntity.ok(Map.of(
 				"token", csrfToken.getToken(), // body 에 csrf 토큰 전달 .
