@@ -7,6 +7,7 @@ import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
@@ -190,7 +191,8 @@ public class SinsalCalculator {
 	 * @return 기둥 라벨({@link Pillar#label()})별 신살 목록
 	 */
 	public Map<String, List<String>> analyzeAllSinsal(FourPillars pillars) {
-		String ilgan = pillars.dayStem();
+		// 신살 표는 고칠 수 없는 맵이라 null 로 찾으면 메시지 없는 NullPointerException 이 난다. 일간이 빠진 원인이 보이게 먼저 막는다.
+		String ilgan = Objects.requireNonNull(pillars.dayStem(), "일간이 비어 있습니다");
 		String yearJiji = pillars.yearBranch();
 		String monthJiji = pillars.monthBranch();
 		String dayJiji = pillars.dayBranch();
