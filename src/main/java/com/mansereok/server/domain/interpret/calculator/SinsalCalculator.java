@@ -7,6 +7,7 @@ import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
@@ -208,6 +209,9 @@ public class SinsalCalculator {
 		String timeSkyChinese,
 		String timeJijiChinese
 	) {
+		// 신살 표는 고칠 수 없는 맵이라 null 로 찾으면 메시지 없는 NullPointerException 이 난다. 일간이 빠진 원인이 보이게 먼저 막는다.
+		Objects.requireNonNull(ilganChinese, "일간이 비어 있습니다");
+
 		Map<String, List<String>> result = new HashMap<>();
 
 		// 연지/일지 + 월지/일간 기준 신살 계산

@@ -1,6 +1,7 @@
 package com.mansereok.server.domain.interpret.calculator;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.ArrayList;
@@ -228,6 +229,16 @@ class SinsalCalculatorTest {
 	@Nested
 	@DisplayName("일간 기준 신살은")
 	class ByDayStem {
+
+		@Test
+		@DisplayName("일간이 비어 있으면 원인을 적은 NullPointerException 을 던진다")
+		void rejectsMissingDayStem() {
+			// when & then
+			assertThatThrownBy(() -> calculator.analyzeAllSinsal(
+				null, "甲", "戌", "甲", "寅", "甲", "戌", null, null))
+				.isInstanceOf(NullPointerException.class)
+				.hasMessage("일간이 비어 있습니다");
+		}
 
 		@ParameterizedTest(name = "[{index}] {0} 일간 → {1}, {2}")
 		@DisplayName("천을귀인은 일간마다 정해진 두 지지에 붙는다")

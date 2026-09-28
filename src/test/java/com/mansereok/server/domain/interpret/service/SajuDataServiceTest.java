@@ -2,8 +2,6 @@ package com.mansereok.server.domain.interpret.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Named.named;
 
 import com.mansereok.server.domain.interpret.service.SajuDataService.HiddenStem;
@@ -20,6 +18,7 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.MethodSource;
 
 class SajuDataServiceTest {
@@ -63,22 +62,27 @@ class SajuDataServiceTest {
 	private final SajuDataService sajuDataService = new SajuDataService();
 
 	@Test
+	@DisplayName("지장간이 하나뿐인 子 를 찾으면 정기 癸 가 비율 30 을 모두 갖고 나머지 칸은 비어 있다")
 	void shouldUseStandardHiddenStemForSingleBranch() {
+		// when
 		HiddenStems ja = sajuDataService.hiddenStemsOf("子");
 
-		assertEquals("癸", ja.first().chinese());
-		assertEquals(30, ja.first().rate());
-		assertNull(ja.second());
-		assertNull(ja.third());
+		// then
+		assertThat(ja.first()).extracting(HiddenStem::chinese, HiddenStem::rate).containsExactly("癸", 30);
+		assertThat(ja.second()).isNull();
+		assertThat(ja.third()).isNull();
 	}
 
 	@Test
+	@DisplayName("寅 을 찾으면 지장간을 정기 甲, 중기 丙, 여기 戊 순서로 돌려준다")
 	void shouldUseStandardHiddenStemOrderForInBranch() {
+		// when
 		HiddenStems in = sajuDataService.hiddenStemsOf("寅");
 
-		assertEquals("甲", in.first().chinese());
-		assertEquals("丙", in.second().chinese());
-		assertEquals("戊", in.third().chinese());
+		// then
+		assertThat(List.of(in.first(), in.second(), in.third()))
+			.extracting(HiddenStem::chinese)
+			.containsExactly("甲", "丙", "戊");
 	}
 
 	@Nested
@@ -173,6 +177,53 @@ class SajuDataServiceTest {
 
 			// then
 			assertThat(tenStar.split(",")[0]).isEqualTo(expectedName);
+		}
+	}
+
+	/**
+	 * 기둥에 보여 주는 음양과 한글 이름을 22글자 모두 값 그대로 적는다. 지지의 표시 음양은 子부터 양·음을 번갈아 매긴 값이라, 십성을
+	 * 가르는 음양(子午 음, 巳亥 양)과 네 글자가 다르다.
+	 */
+	@Nested
+	@DisplayName("음양·한글 이름 표는")
+	class YinYangAndKoreanTable {
+
+		@ParameterizedTest(name = "[{index}] {0} → {1}, {2}")
+		@CsvSource(textBlock = """
+			# 천간
+			甲, 갑, 양
+			乙, 을, 음
+			丙, 병, 양
+			丁, 정, 음
+			戊, 무, 양
+			己, 기, 음
+			庚, 경, 양
+			辛, 신, 음
+			壬, 임, 양
+			癸, 계, 음
+			# 지지
+			子, 자, 양
+			丑, 축, 음
+			寅, 인, 양
+			卯, 묘, 음
+			辰, 진, 양
+			巳, 사, 음
+			午, 오, 양
+			未, 미, 음
+			申, 신, 양
+			酉, 유, 음
+			戌, 술, 양
+			亥, 해, 음
+			""")
+		@DisplayName("천간 10글자와 지지 12글자 모두 적힌 한글 이름과 음양을 돌려준다")
+		void returnsKoreanAndYinYangOfEveryLetter(String hanja, String expectedKorean, String expectedYinYang) {
+			// when
+			String korean = sajuDataService.koreanOf(hanja);
+			String yinYang = sajuDataService.yinYangOf(hanja);
+
+			// then
+			assertThat(korean).as("%s 의 한글 이름", hanja).isEqualTo(expectedKorean);
+			assertThat(yinYang).as("%s 의 음양", hanja).isEqualTo(expectedYinYang);
 		}
 	}
 
