@@ -1,25 +1,40 @@
 package com.mansereok.server.domain.auth.dto.response.oauth;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import com.mansereok.server.domain.auth.service.oauth.OauthProfile;
 import com.mansereok.server.domain.user.entity.SocialType;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import lombok.ToString;
 
+/**
+ * 네이버 회원 프로필 조회(/v1/nid/me) 응답. toString 은 로그에 이메일·이름·별명이 남지 않도록 결과 코드와 사용자 번호만 보여 준다.
+ */
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
+@ToString(onlyExplicitlyIncluded = true)
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class NaverProfileDto {
 
-	private String resultcode;
+	@ToString.Include
+	@JsonProperty("resultcode")
+	private String resultCode;
+
+	@ToString.Include
 	private String message;
+
+	@ToString.Include
 	private Response response;
 
 	@Data
+	@ToString(onlyExplicitlyIncluded = true)
+	@JsonIgnoreProperties(ignoreUnknown = true)
 	public static class Response {
 
+		@ToString.Include
 		private String id; // social id
 		private String nickname;
 		private String email;

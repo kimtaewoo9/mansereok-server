@@ -7,18 +7,25 @@ import com.mansereok.server.domain.user.entity.SocialType;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import lombok.ToString;
 
+/**
+ * 구글 userinfo 응답. toString 은 로그에 이메일·이름·사진 주소가 남지 않도록 사용자 번호와 이메일 확인 여부만 보여 준다.
+ */
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
+@ToString(onlyExplicitlyIncluded = true)
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class GoogleProfileDto {
 
+	@ToString.Include
 	private String sub; // Oauth 회원가입이 되어있는지 확인하고 싶으면 이 sub 를 DB에 검색하면 됨.
 	private String name;
 	private String email;
 
 	// 구글이 이 이메일의 주인을 확인했는지. 값이 없으면 확인되지 않은 것으로 본다.
+	@ToString.Include
 	@JsonProperty("email_verified")
 	private Boolean emailVerified;
 

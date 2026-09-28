@@ -43,4 +43,42 @@ class PersonalInfoMaskerTest {
 	void returnsNullForNullName() {
 		assertThat(PersonalInfoMasker.maskName(null)).isNull();
 	}
+
+	@ParameterizedTest(name = "[{index}] [{0}] → [{1}]")
+	@DisplayName("이메일은 '@' 앞의 첫 글자만 남기고 가리며 도메인은 그대로 둔다")
+	@CsvSource(textBlock = """
+		# 원래 이메일,            가린 이메일
+		user@example.com,         u***@example.com
+		ab@example.com,           a*@example.com
+		a@example.com,            *@example.com
+		' user@example.com ',     u***@example.com
+		홍길동@example.com,       홍**@example.com
+		# char 두 개로 된 글자(𠮷)도 한 글자로 센다
+		𠮷a@example.com,          𠮷*@example.com
+		# '@' 가 여러 개면 마지막 '@' 뒤를 도메인으로 본다
+		'"a@b"@example.com',      "****@example.com
+		# '@' 가 없으면 전체를 앞부분으로 보고 가린다
+		not-an-email,             n***********
+		# 앞부분이 없으면 가릴 것이 없다
+		@example.com,             @example.com
+		""")
+	void masksEmailLocalPart(String email, String expected) {
+		assertThat(PersonalInfoMasker.maskEmail(email)).isEqualTo(expected);
+	}
+
+	@ParameterizedTest(name = "[{index}] [{0}] → 빈 문자열")
+	@DisplayName("공백뿐인 이메일은 빈 문자열로 돌려준다")
+	@CsvSource(textBlock = """
+		''
+		'   '
+		""")
+	void returnsEmptyForBlankEmail(String email) {
+		assertThat(PersonalInfoMasker.maskEmail(email)).isEmpty();
+	}
+
+	@Test
+	@DisplayName("이메일이 없으면 null 을 그대로 돌려준다")
+	void returnsNullForNullEmail() {
+		assertThat(PersonalInfoMasker.maskEmail(null)).isNull();
+	}
 }
