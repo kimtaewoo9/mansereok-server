@@ -6,6 +6,7 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.mock;
 
+import com.mansereok.server.domain.interpret.entity.CompatibilityResult;
 import com.mansereok.server.domain.interpret.entity.Result;
 import com.mansereok.server.domain.interpret.entity.ResultStatus;
 import com.mansereok.server.domain.interpret.repository.CompatibilityResultRepository;
@@ -21,6 +22,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Consumer;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
@@ -61,12 +63,43 @@ class AsyncExecutorWiringTest {
 	}
 
 	/**
-	 * OG 이미지는 해석 작업 스레드가 결과를 저장한 직후 그 자리에서 만든다. @Async 가 다시 붙으면 기본 풀로 넘어가 풀이 가득 찼거나
-	 * 종료 중일 때 버려질 수 있다. @EnableAsync 가 켜진 컨텍스트에서 부른 스레드와 업로드한 스레드가 같은지 본다.
+	 * OG 이미지는 해석 작업 스레드가 결과를 저장한 직후 그 자리에서 만든다. 사주와 궁합 중 어느 메서드에든 @Async 가 다시 붙으면 그
+	 * 결과의 OG 이미지는 기본 풀로 넘어가, 풀이 가득 찼거나 종료 중일 때 버려질 수 있다. 그래서 두 메서드를 따로 불러, @EnableAsync 가
+	 * 켜진 컨텍스트에서 부른 스레드와 업로드한 스레드가 같은지 본다.
 	 */
 	@Test
-	@DisplayName("OG 이미지 서비스는 비동기로 넘기지 않고 부른 스레드에서 바로 업로드한다")
-	void ogImageRunsOnCallingThread() {
+	@DisplayName("사주 결과의 OG 이미지는 비동기로 넘기지 않고 부른 스레드에서 바로 올린다")
+	void sajuOgImageRunsOnCallingThread() {
+		// given
+		Result saju = ResultFixture.saju(1L, 100L, ResultStatus.COMPLETED);
+		ReflectionTestUtils.setField(saju, "id", 7L);
+
+		// when
+		String uploadThread = uploadThreadWhenCalledHere(service -> service.generateAndUploadOgImage(saju));
+
+		// then
+		assertThat(uploadThread).as("사주 OG 이미지를 올린 스레드").isEqualTo(Thread.currentThread().getName());
+	}
+
+	@Test
+	@DisplayName("궁합 결과의 OG 이미지는 비동기로 넘기지 않고 부른 스레드에서 바로 올린다")
+	void compatibilityOgImageRunsOnCallingThread() {
+		// given
+		CompatibilityResult compatibility = ResultFixture.compatibility(1L, 100L, ResultStatus.COMPLETED);
+		ReflectionTestUtils.setField(compatibility, "id", 7L);
+
+		// when
+		String uploadThread = uploadThreadWhenCalledHere(service -> service.generateAndUploadOgImage(compatibility));
+
+		// then
+		assertThat(uploadThread).as("궁합 OG 이미지를 올린 스레드").isEqualTo(Thread.currentThread().getName());
+	}
+
+	/**
+	 * @EnableAsync 가 켜진 컨텍스트에서 OG 이미지 서비스를 지금 스레드로 부르고, S3 업로드가 일어난 스레드 이름을 돌려준다. 컨텍스트를
+	 * 닫은 뒤에 읽으므로 @Async 로 기본 풀에 넘어갔다면 기본 풀이 종료 때 남은 작업을 마친 뒤의 스레드 이름(DefaultAsync-)이 나온다.
+	 */
+	private String uploadThreadWhenCalledHere(Consumer<OgImageGenerationService> call) {
 		S3UploadService s3UploadService = mock(S3UploadService.class);
 		AtomicReference<String> uploadThread = new AtomicReference<>();
 		given(s3UploadService.uploadFileAndGetPublicUrl(any(byte[].class), anyString(), anyString()))
@@ -80,11 +113,8 @@ class AsyncExecutorWiringTest {
 			.withBean(ResultRepository.class, () -> mock(ResultRepository.class))
 			.withBean(CompatibilityResultRepository.class, () -> mock(CompatibilityResultRepository.class))
 			.withBean(OgImageGenerationService.class)
-			.run(context -> {
-				context.getBean(OgImageGenerationService.class).generateAndUploadOgImage(completedResult());
-
-				assertThat(uploadThread.get()).isEqualTo(Thread.currentThread().getName());
-			});
+			.run(context -> call.accept(context.getBean(OgImageGenerationService.class)));
+		return uploadThread.get();
 	}
 
 	private static List<String> asyncExecutorNamesOf(Class<?> type) {
@@ -94,12 +124,6 @@ class AsyncExecutorWiringTest {
 			.map(Async::value)
 			.distinct()
 			.toList();
-	}
-
-	private static Result completedResult() {
-		Result result = ResultFixture.saju(1L, 100L, ResultStatus.COMPLETED);
-		ReflectionTestUtils.setField(result, "id", 7L);
-		return result;
 	}
 
 	/** 자기가 돈 스레드 이름을 돌려주는 시험용 빈. */

@@ -5,8 +5,6 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mansereok.server.domain.interpret.client.OpenAiProperties.ModelTier;
 import com.mansereok.server.domain.interpret.dto.request.Gpt5Request;
-import com.mansereok.server.domain.interpret.dto.request.Gpt5Request.SystemInstruction;
-import com.mansereok.server.domain.interpret.dto.request.Gpt5Request.UserPrompt;
 import com.mansereok.server.global.exception.OpenAiIncompleteResponseException;
 import com.mansereok.server.global.exception.OpenAiRefusalException;
 import com.mansereok.server.global.exception.OpenAiRequestException;
@@ -142,7 +140,7 @@ public class OpenAiResponsesRestClient implements OpenAiResponsesClient {
 			lastFailure == null ? "알 수 없음" : lastFailure.getMessage(),
 			fallback.model());
 
-		Gpt5Request fallbackRequest = copyRequestForTier(request, fallback);
+		Gpt5Request fallbackRequest = request.withTier(fallback);
 		try {
 			return extractOutputText(sendOnce(fallbackRequest), fallback.model());
 		} catch (RetryableFailure e) {
@@ -157,15 +155,6 @@ public class OpenAiResponsesRestClient implements OpenAiResponsesClient {
 					+ ", 앞선 재시도 " + properties.maxAttempts() + "회 실패 뒤). 원인: " + e.getMessage(),
 				e.getCause());
 		}
-	}
-
-	private Gpt5Request copyRequestForTier(Gpt5Request request, ModelTier tier) {
-		return Gpt5Request.of(
-			tier,
-			new SystemInstruction(request.getInstructions()),
-			new UserPrompt(request.getInput()),
-			request.getText().getFormat()
-		);
 	}
 
 	private String sendOnce(Gpt5Request request) {

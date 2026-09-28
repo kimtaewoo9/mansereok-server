@@ -27,6 +27,8 @@ public record OpenAiProperties(
 	private static final long DEFAULT_BACKOFF_DELAY_MS = 2_000L;
 	private static final double DEFAULT_BACKOFF_MULTIPLIER = 2.0;
 	private static final int KEY_VISIBLE_PREFIX_LENGTH = 3;
+	/** 이 길이 이하인 key 는 앞 3글자도 보이지 않고 길이만 남긴다. */
+	private static final int KEY_LENGTH_HIDING_PREFIX = 8;
 
 	public OpenAiProperties {
 		if (key == null || key.isBlank()) {
@@ -63,7 +65,7 @@ public record OpenAiProperties(
 
 	/**
 	 * record 가 자동으로 만드는 toString 은 key 를 그대로 찍으므로, key 는 앞 3글자와 길이만 남긴다.
-	 * 나머지 값은 설정 확인에 필요하므로 그대로 보여 준다.
+	 * 8글자 이하인 key 는 길이만 남긴다. 나머지 값은 설정 확인에 필요하므로 그대로 보여 준다.
 	 */
 	@Override
 	public String toString() {
@@ -82,8 +84,9 @@ public record OpenAiProperties(
 	}
 
 	private String maskedKey() {
-		// 3글자 이하인 key 는 앞 3글자만 보여 줘도 전부 드러나므로 길이만 남긴다.
-		String visiblePrefix = key.length() > KEY_VISIBLE_PREFIX_LENGTH
+		// 8글자 이하인 key 는 앞 3글자만 보여 줘도 3분의 1 넘게 드러나므로 길이만 남긴다.
+		// 실제 OpenAI 키(sk-...)는 이보다 훨씬 길어 앞 3글자가 보인다.
+		String visiblePrefix = key.length() > KEY_LENGTH_HIDING_PREFIX
 			? key.substring(0, KEY_VISIBLE_PREFIX_LENGTH)
 			: "";
 		return visiblePrefix + "***(" + key.length() + "자)";
@@ -92,7 +95,7 @@ public record OpenAiProperties(
 	/**
 	 * 모델 티어 하나의 설정. 유료 단일·유료 궁합은 primary, 무료 단일은 light,
 	 * 재시도 소진 뒤 마지막 한 번은 fallback 을 쓴다.
-	 * reasoning-effort 와 verbosity 는 enum 이라, 목록에 없는 값을 적으면 기동할 때 실패한다. 적지 않으면 medium 이다.
+	 * reasoning-effort 와 verbosity 는 enum 이라, 목록에 없는 값을 적으면 기동할 때 실패한다. 적지 않거나 비워 두면 medium 이다.
 	 */
 	public record ModelTier(
 		String model,
