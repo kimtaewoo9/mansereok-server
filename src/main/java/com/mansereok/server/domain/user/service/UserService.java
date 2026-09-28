@@ -129,7 +129,7 @@ public class UserService {
 	/**
 	 * 이메일로 새 회원을 등록한다. 이메일 가입은 username 도 이메일이다.
 	 *
-	 * @param name     사용자명
+	 * @param name     이름(사용자 본명)
 	 * @param password 평문 비밀번호 (암호화되어 저장됨)
 	 * @param email    이메일
 	 * @return 생성된 사용자 엔티티
@@ -245,9 +245,11 @@ public class UserService {
 
 	/**
 	 * 로그인한 사용자의 프로필을 바꾼다. 규칙은 {@link User#updateProfile} 이 지키고, 바뀐 값은 트랜잭션이 끝날 때 변경 감지로
-	 * 저장된다.
+	 * 저장된다. save 를 따로 부르지 않으므로 이 메서드의 쓰기 트랜잭션이 저장의 전부다. DB 에 남는지는 ProfileUpdateMySqlTest 가
+	 * 본다.
 	 *
-	 * @throws IllegalArgumentException 태어난 장소가 공백만 있거나, 바뀐 뒤 이름·생년월일·성별 중 하나라도 비어 있을 때(400)
+	 * @throws IllegalArgumentException 태어난 장소가 공백만 있거나, 바뀐 뒤 이름·생년월일·성별 중 하나라도 비어 있거나, 이름을
+	 *                                  20자가 넘는 다른 이름으로 바꾸려 할 때(400)
 	 */
 	@Transactional
 	public User updateUserProfile(String username, ProfileUpdateRequestDto requestDto) {

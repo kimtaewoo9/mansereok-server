@@ -16,6 +16,8 @@ import org.springframework.security.web.access.intercept.RequestAuthorizationCon
 
 /**
  * 지표 수집 경로는 "Bearer {수집 토큰}" 을 실은 요청만 통과하고, 수집 토큰 설정이 비어 있으면 어떤 요청도 통과하지 못하는지 확인한다.
+ *
+ * <p>테스트는 authorize 를 부른다. authorize 는 기본 구현이 check 로 넘기므로, 운영의 요청 판정이 부르는 check 를 그대로 검증한다.
  */
 class ScrapeTokenAuthorizationManagerTest {
 

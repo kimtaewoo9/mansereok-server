@@ -7,7 +7,7 @@ import org.springframework.http.HttpStatus;
 /**
  * JWT 인증 실패의 종류. 응답 상태, 응답 본문의 error 값, 사용자에게 보여 줄 안내 문구를 한곳에 묶는다.
  *
- * <p>error 값은 프론트엔드가 재발급 여부 등을 판단하는 데 읽으므로 바꾸지 않는다.
+ * <p>error 값은 응답 본문에 그대로 실려 프론트엔드가 읽을 수 있으므로 바꾸지 않는다.
  */
 @Getter
 @RequiredArgsConstructor

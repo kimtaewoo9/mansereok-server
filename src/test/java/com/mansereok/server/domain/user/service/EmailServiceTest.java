@@ -86,6 +86,18 @@ class EmailServiceTest {
 			assertThat(request.message().subject().charset()).isEqualTo("UTF-8");
 			assertThat(request.message().body().html().charset()).isEqualTo("UTF-8");
 		}
+
+		@Test
+		@DisplayName("전송 완료 로그에는 받는 주소를 가려서 남기고 재설정 토큰은 남기지 않는다")
+		void logsMaskedAddressOnSuccess(CapturedOutput output) {
+			// when
+			emailService.sendPasswordResetEmail("user@example.com", "tok-1");
+
+			// then: 메일을 보낼 때마다 찍히는 로그라 받는 주소 원문이 남으면 개인정보가 가장 많이 쌓인다
+			assertThat(output.getAll())
+				.contains("메일 전송 완료", "u***@example.com")
+				.doesNotContain("user@example.com", "tok-1");
+		}
 	}
 
 	@Nested
@@ -102,6 +114,17 @@ class EmailServiceTest {
 			assertThat(htmlBodyOf(sentRequest()))
 				.contains("안녕하세요, &lt;b&gt;x&lt;/b&gt;님.")
 				.doesNotContain("<b>x</b>");
+		}
+
+		@Test
+		@DisplayName("이름의 é, —, © 같은 글자는 엔티티로 바꾸지 않고 UTF-8 글자 그대로 넣는다")
+		void keepsNonAsciiLettersInName() {
+			// when
+			emailService.sendSocialLoginGuideEmail("user@example.com", "José — 홍길동 © <b>");
+
+			// then: 본문 바닥글에 원래 '&copy;' 가 있으므로 이름이 들어간 인사 줄로만 확인한다
+			assertThat(htmlBodyOf(sentRequest()))
+				.contains("안녕하세요, José — 홍길동 © &lt;b&gt;님.");
 		}
 
 		@Test
@@ -163,7 +186,7 @@ class EmailServiceTest {
 	class WhenSendingFails {
 
 		@Test
-		@DisplayName("SES 가 거절해도 예외를 밖으로 던지지 않고, 로그에는 가린 받는 주소와 오류 코드만 남긴다")
+		@DisplayName("SES 가 거절해도 예외를 밖으로 던지지 않고, 로그에는 SES 메시지 대신 가린 받는 주소·오류 코드·요청 id 를 남긴다")
 		void swallowsSesRejectionAndLogsMaskedAddress(CapturedOutput output) {
 			// given: SES 샌드박스의 거절 메시지처럼 오류 메시지에 받는 주소가 그대로 들어 있다
 			String rejectedMessage = "Email address is not verified. The following identities failed the check in "

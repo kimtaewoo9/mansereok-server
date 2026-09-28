@@ -127,7 +127,11 @@ public class User {
 	 *
 	 * <p>필수: 이름, 생년월일, 성별. 선택: 태어난 시각, 태어난 장소. 마케팅 동의 여부와 관계없이 같은 규칙이다.
 	 *
-	 * @throws IllegalArgumentException 태어난 장소가 공백만 있거나, 바뀐 뒤 이름·생년월일·성별 중 하나라도 비어 있을 때(400)
+	 * <p>이름 길이({@link NameRule#MAX_LENGTH})는 이름을 지금과 다른 값으로 바꿀 때만 검사한다. 소셜 가입자의 이름은 제공자가 준
+	 * 값이라 20자를 넘을 수 있는데, 추가 정보 입력 화면이 그 이름을 그대로 담아 보내도 생년월일·성별을 저장할 수 있어야 한다.
+	 *
+	 * @throws IllegalArgumentException 태어난 장소가 공백만 있거나, 바뀐 뒤 이름·생년월일·성별 중 하나라도 비어 있거나, 이름을
+	 *                                  20자가 넘는 다른 이름으로 바꾸려 할 때(400)
 	 */
 	public void updateProfile(ProfileChange change) {
 		String newName = hasText(change.name()) ? change.name() : this.name;
@@ -146,6 +150,9 @@ public class User {
 
 		if (!hasText(newName)) {
 			throw new IllegalArgumentException("이름을 입력해주세요.");
+		}
+		if (!newName.equals(this.name) && newName.length() > NameRule.MAX_LENGTH) {
+			throw new IllegalArgumentException(NameRule.TOO_LONG_MESSAGE);
 		}
 		if (newBirthDate == null) {
 			throw new IllegalArgumentException("생년월일을 입력해주세요.");

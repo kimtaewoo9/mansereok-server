@@ -19,6 +19,8 @@ import org.junit.jupiter.params.provider.MethodSource;
  * <ul>
  *   <li>updateProfile: null 인 항목은 그대로 두고, 공백 이름은 무시하며, 태어난 장소는 앞뒤 공백을 떼어 저장한다.</li>
  *   <li>updateProfile: 바뀐 뒤 필수값(이름·생년월일·성별)이 비거나 장소가 공백뿐이면 거절하고, 이때 어떤 필드도 바뀌지 않는다.</li>
+ *   <li>updateProfile: 이름 20자 한도는 이름을 다른 값으로 바꿀 때만 본다. 소셜 가입 때 받은 20자 넘는 이름을 그대로 보내면
+ *   받아들인다.</li>
  *   <li>isProfileIncomplete: 이름·생년월일·성별 중 하나라도 비면 true 다.</li>
  * </ul>
  */
@@ -31,8 +33,9 @@ class UserTest {
 		@Test
 		@DisplayName("보낸 항목만 바뀌고 보내지 않은(null) 항목은 그대로다")
 		void changesOnlyGivenFields() {
-			// given
+			// given: 태어난 시각과 장소까지 채운 회원
 			User member = completeMember();
+			member.updateProfile(new ProfileChange(null, null, LocalTime.of(7, 15), "부산", null, null));
 
 			// when
 			member.updateProfile(new ProfileChange(null, LocalDate.of(1995, 5, 5), null, null, null, true));
@@ -40,10 +43,23 @@ class UserTest {
 			// then
 			assertThat(member.getName()).isEqualTo("기존이름");
 			assertThat(member.getBirthDate()).isEqualTo(LocalDate.of(1995, 5, 5));
-			assertThat(member.getBirthTime()).isNull();
-			assertThat(member.getBirthPlace()).isNull();
+			assertThat(member.getBirthTime()).isEqualTo(LocalTime.of(7, 15));
+			assertThat(member.getBirthPlace()).isEqualTo("부산");
 			assertThat(member.getGender()).isEqualTo(Gender.MALE);
 			assertThat(member.isMarketingAgreed()).isTrue();
+		}
+
+		@Test
+		@DisplayName("다른 이름으로 바꿀 때 20자까지는 받아들인다")
+		void acceptsNewNameUpToLimit() {
+			// given
+			User member = completeMember();
+
+			// when
+			member.updateProfile(new ProfileChange("가".repeat(20), null, null, null, null, null));
+
+			// then
+			assertThat(member.getName()).isEqualTo("가".repeat(20));
 		}
 
 		@Test
@@ -106,6 +122,9 @@ class UserTest {
 					"이름을 입력해주세요."),
 				Arguments.of("이름 없음", new ProfileChange(null, birthDate, birthTime, "서울", Gender.FEMALE, true),
 					"이름을 입력해주세요."),
+				Arguments.of("이름이 21자",
+					new ProfileChange("가".repeat(21), birthDate, birthTime, "서울", Gender.FEMALE, true),
+					"이름은 20자까지 입력할 수 있습니다."),
 				Arguments.of("생년월일 없음", new ProfileChange("새이름", null, birthTime, "서울", Gender.FEMALE, true),
 					"생년월일을 입력해주세요."),
 				Arguments.of("성별 없음", new ProfileChange("새이름", birthDate, birthTime, "서울", null, true),
@@ -128,6 +147,46 @@ class UserTest {
 			assertThat(member.getBirthDate()).isEqualTo(LocalDate.of(1990, 1, 1));
 			assertThat(member.getGender()).isEqualTo(Gender.FEMALE);
 			assertThat(member.isProfileIncomplete()).isFalse();
+		}
+	}
+
+	@Nested
+	@DisplayName("소셜 가입 때 받은 이름이 20자를 넘는 회원이 프로필을 바꾸면")
+	class WhenMemberWithLongProviderNameUpdatesProfile {
+
+		// 구글이 준 표시 이름(27자). 소셜 가입은 제공자 이름을 길이 제한 없이 저장한다.
+		private static final String PROVIDER_NAME = "Christopher Alexander Smith";
+
+		@Test
+		@DisplayName("지금 이름을 그대로 담아 보내도 받아들이고 생년월일·성별을 저장한다")
+		void acceptsCurrentNameLongerThanLimit() {
+			// given
+			User member = User.createByOauth("google-1", PROVIDER_NAME, null, "google-1", SocialType.GOOGLE);
+
+			// when
+			member.updateProfile(
+				new ProfileChange(PROVIDER_NAME, LocalDate.of(1990, 1, 1), null, null, Gender.MALE, null));
+
+			// then
+			assertThat(member.getName()).isEqualTo(PROVIDER_NAME);
+			assertThat(member.getBirthDate()).isEqualTo(LocalDate.of(1990, 1, 1));
+			assertThat(member.getGender()).isEqualTo(Gender.MALE);
+		}
+
+		@Test
+		@DisplayName("20자가 넘는 다른 이름으로 바꾸려 하면 거절하고 같이 보낸 생년월일·성별도 바꾸지 않는다")
+		void rejectsDifferentNameLongerThanLimit() {
+			// given
+			User member = User.createByOauth("google-1", PROVIDER_NAME, null, "google-1", SocialType.GOOGLE);
+
+			// when & then
+			assertThatThrownBy(() -> member.updateProfile(new ProfileChange("Christopher A. Smith Jr.",
+				LocalDate.of(1990, 1, 1), null, null, Gender.MALE, null)))
+				.isInstanceOf(IllegalArgumentException.class)
+				.hasMessage("이름은 20자까지 입력할 수 있습니다.");
+			assertThat(member.getName()).as("이름").isEqualTo(PROVIDER_NAME);
+			assertThat(member.getBirthDate()).as("생년월일").isNull();
+			assertThat(member.getGender()).as("성별").isNull();
 		}
 	}
 

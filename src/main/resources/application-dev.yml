@@ -20,7 +20,6 @@ spring:
   jpa:
     # 요청이 끝날 때까지 DB 커넥션을 쥐지 않는다. 까닭은 application.yml 의 같은 설정에 적었다.
     open-in-view: false
-    database: mysql
     hibernate:
       ddl-auto: validate  # 스키마를 바꾸지 않고 기동 때 엔티티와 맞는지만 확인한다
     show-sql: false

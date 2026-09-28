@@ -25,7 +25,7 @@ import org.springframework.http.converter.json.Jackson2ObjectMapperBuilder;
  *
  * <ul>
  *   <li>수정 요청의 gender 는 열거 상수 이름("MALE", "FEMALE")만 읽는다. 읽지 못한 값은 RequestErrorExceptionHandler 가 400 으로
- *   답한다(ProfileControllerRequestTest).</li>
+ *   답한다(ProfileControllerRequestTest). 빈 문자열이나 공백뿐인 값은 성별을 바꾸지 않는 null 로 읽는다.</li>
  *   <li>응답의 추가 정보 필요 여부는 예전과 같은 키 newUser 로 나간다.</li>
  * </ul>
  */
@@ -53,8 +53,8 @@ class ProfileJsonTest {
 	}
 
 	@ParameterizedTest(name = "[{index}] gender \"{0}\" → 읽지 못함")
-	@ValueSource(strings = {"M", "male", "여자", ""})
-	@DisplayName("수정 요청의 gender 가 성별 코드·소문자·한글·빈 문자열이면 읽지 못하고, 예외에 보낸 값이 담긴다")
+	@ValueSource(strings = {"M", "male", "여자"})
+	@DisplayName("수정 요청의 gender 가 성별 코드·소문자·한글이면 읽지 못하고, 예외에 보낸 값이 담긴다")
 	void rejectsGenderOtherThanConstantName(String sent) {
 		// when & then
 		assertThatThrownBy(() -> objectMapper.readValue("{\"gender\": \"" + sent + "\"}",
@@ -75,6 +75,18 @@ class ProfileJsonTest {
 		// then
 		assertThat(missing.getGender()).isNull();
 		assertThat(explicitNull.getGender()).isNull();
+	}
+
+	@ParameterizedTest(name = "[{index}] gender \"{0}\" → null")
+	@ValueSource(strings = {"", "   "})
+	@DisplayName("수정 요청의 gender 가 빈 문자열이거나 공백뿐이면 오류 없이 성별을 바꾸지 않는 null 로 읽는다")
+	void readsBlankGenderAsNull(String sent) throws Exception {
+		// when
+		ProfileUpdateRequestDto request = objectMapper.readValue("{\"gender\": \"" + sent + "\"}",
+			ProfileUpdateRequestDto.class);
+
+		// then
+		assertThat(request.getGender()).isNull();
 	}
 
 	@Test

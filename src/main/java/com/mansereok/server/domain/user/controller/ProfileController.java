@@ -12,13 +12,11 @@ import com.mansereok.server.domain.user.entity.User;
 import com.mansereok.server.domain.user.service.UserService;
 import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletResponse;
-import jakarta.validation.Valid;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -50,7 +48,7 @@ public class ProfileController {
 	@PatchMapping("/api/v1/users/me/profiles")
 	public ResponseEntity<ProfileResponseDto> updateProfile(
 		@AuthenticationPrincipal String username,
-		@Valid @RequestBody ProfileUpdateRequestDto requestDto
+		@RequestBody ProfileUpdateRequestDto requestDto
 	) {
 		// username을 서비스로 직접 전달
 		User updatedUser = userService.updateUserProfile(username, requestDto);
@@ -113,7 +111,7 @@ public class ProfileController {
 		userService.deleteUser(username);
 
 		// 2. 클라이언트 쿠키 삭제 (로그아웃 처리)
-		response.addHeader(HttpHeaders.SET_COOKIE, refreshTokenCookies.expire().toString());
+		refreshTokenCookies.addExpired(response);
 
 		Cookie jsessionCookie = new Cookie("JSESSIONID", null);
 		jsessionCookie.setMaxAge(0);
