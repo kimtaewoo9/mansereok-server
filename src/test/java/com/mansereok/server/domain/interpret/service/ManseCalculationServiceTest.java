@@ -279,6 +279,108 @@ class ManseCalculationServiceTest {
 				.isExactlyInstanceOf(IllegalStateException.class)
 				.hasMessage(message);
 		}
+
+		/**
+		 * 지지 寅·巳·申·亥 는 여섯 짝 모두 관계가 있다(寅巳 형·해, 寅申 충·형, 巳申 형·파, 寅亥 파, 巳亥 충, 申亥 해). 천간은 한
+		 * 글자에 합 짝이 하나, 충 짝이 많아야 하나(戊·己 는 충 짝이 없다)뿐이고 같은 글자끼리는 관계가 없어, 네 글자로 여섯 짝을 모두
+		 * 채울 수 없다. 그래서 관계가 생기는 짝이 서로 다른 두 사주로 나눠 본다. 어느 짝이 다른 기둥 글자를 읽으면 관계가 없던 짝에
+		 * 관계가 생기거나 있던 관계가 빠진다.
+		 *
+		 * <p>시주는 일간과 출생시각으로 정해진다. 22:00 은 해시라 일간 戊 이면 癸亥, 일간 甲 이면 乙亥 다.
+		 */
+		@Nested
+		@DisplayName("지지·천간 관계를 모을 때")
+		class WhenCollectingRelations {
+
+			private final LocalDate birthDate = LocalDate.of(2000, 1, 1);
+
+			/** 연주·월주·일주만 정한 행 하나와, 연간이 양간이라 남자가 순행으로 대운을 셀 다음 절입 하나로 된 표. */
+			private ManseCalculationService serviceWithPillars(Manse birthRow) {
+				ManseRepository table = ManseTableFixture.of(
+					birthRow,
+					ManseRow.on(LocalDate.of(2000, 1, 6)).season("소한", LocalDateTime.of(2000, 1, 6, 12, 0)).build()
+				).newRepository();
+				return serviceWith(table, FIXED_CLOCK);
+			}
+
+			@Test
+			@DisplayName("시주가 있으면 지지 여섯 짝을 년지-월지, 년지-일지, 월지-일지, 년지-시지, 월지-시지, 일지-시지 순서로 적는다")
+			void listsSixGroundPairsInOrderWhenTimeIsKnown() {
+				// given
+				ManseCalculationService serviceWithRows = serviceWithPillars(ManseRow.on(birthDate)
+					.yearPillar("戊", "寅").monthPillar("癸", "巳").dayPillar("戊", "申").build());
+
+				// when
+				SajuInfo saju = serviceWithRows.calculate(solarRequest(birthDate, LocalTime.of(22, 0), "MALE")).getSaju();
+
+				// then
+				assertThat(pillarsOf(saju)).as("준비한 네 기둥").isEqualTo("戊寅 癸巳 戊申 癸亥");
+				assertThat(saju.getGroundRelations()).containsExactly(
+					"년지-월지: 형, 해",
+					"년지-일지: 충, 형",
+					"월지-일지: 형, 파",
+					"년지-시지: 파",
+					"월지-시지: 충",
+					"일지-시지: 해");
+			}
+
+			@Test
+			@DisplayName("시주가 있으면 천간 짝 가운데 관계가 있는 짝만 년간-월간, 월간-일간, 년간-시간, 일간-시간 순서로 적는다")
+			void listsSkyPairsWithRelationInOrderWhenTimeIsKnown() {
+				// given: 戊·癸 는 합이고 같은 글자끼리는 관계가 없다
+				ManseCalculationService serviceWithRows = serviceWithPillars(ManseRow.on(birthDate)
+					.yearPillar("戊", "寅").monthPillar("癸", "巳").dayPillar("戊", "申").build());
+
+				// when
+				SajuInfo saju = serviceWithRows.calculate(solarRequest(birthDate, LocalTime.of(22, 0), "MALE")).getSaju();
+
+				// then
+				assertThat(saju.getSkyRelations()).containsExactly(
+					"년간-월간: 천간합",
+					"월간-일간: 천간합",
+					"년간-시간: 천간합",
+					"일간-시간: 천간합");
+			}
+
+			@Test
+			@DisplayName("시주가 있으면 庚辛甲乙 사주의 년간-일간 충, 년간-시간 합, 월간-시간 충을 짝 순서대로 적는다")
+			void listsRemainingSkyPairsWhenTimeIsKnown() {
+				// given: 庚甲 충, 庚乙 합, 辛乙 충이고 나머지 짝(庚辛, 辛甲, 甲乙)은 관계가 없다
+				ManseCalculationService serviceWithRows = serviceWithPillars(ManseRow.on(birthDate)
+					.yearPillar("庚", "寅").monthPillar("辛", "巳").dayPillar("甲", "申").build());
+
+				// when
+				SajuInfo saju = serviceWithRows.calculate(solarRequest(birthDate, LocalTime.of(22, 0), "MALE")).getSaju();
+
+				// then
+				assertThat(pillarsOf(saju)).as("준비한 네 기둥").isEqualTo("庚寅 辛巳 甲申 乙亥");
+				assertThat(saju.getSkyRelations()).containsExactly(
+					"년간-일간: 천간충",
+					"년간-시간: 천간합",
+					"월간-시간: 천간충");
+			}
+
+			@Test
+			@DisplayName("출생시간을 몰라 시주가 없으면 연·월·일 세 기둥끼리의 짝만 적는다")
+			void listsOnlyThreePillarPairsWhenTimeIsUnknown() {
+				// given
+				ManseCalculationService serviceWithRows = serviceWithPillars(ManseRow.on(birthDate)
+					.yearPillar("戊", "寅").monthPillar("癸", "巳").dayPillar("戊", "申").build());
+
+				// when
+				SajuInfo saju = serviceWithRows.calculate(solarRequest(birthDate, null, "MALE")).getSaju();
+
+				// then
+				assertThat(pillarsOf(saju)).as("준비한 네 기둥").isEqualTo("戊寅 癸巳 戊申 --");
+				assertThat(saju.getGroundRelations()).containsExactly(
+					"년지-월지: 형, 해",
+					"년지-일지: 충, 형",
+					"월지-일지: 형, 파");
+				assertThat(saju.getSkyRelations()).containsExactly(
+					"년간-월간: 천간합",
+					"월간-일간: 천간합");
+			}
+		}
 	}
 
 	@Nested
@@ -330,13 +432,14 @@ class ManseCalculationServiceTest {
 					SajuInfo::getBigFortuneStartYearMax)
 				.as("대운 시작 연도와 그 최소·최대")
 				.containsOnly(bigFortuneStartYear);
-			assertThat(saju.getUncertaintyNotes()).as("출생시간을 알면 불확정 안내가 없다").isNull();
+			assertThat(saju.getUncertaintyNotes()).as("출생시간을 알면 불확정 안내가 null 이 아닌 빈 목록이다").isEmpty();
 		}
 
 		/**
 		 * 1990-01-27 23:29 남자(己巳 丁丑 壬辰 辛亥, 일간 壬)의 기둥 한 칸이 SajuDataService 조회표에서 채우는 값(한글 이름, 오행, 색, 십성,
-		 * 음양, 지장간)을 천간·지지·지장간마다 본다. 12운성은 UnseongCalculatorTest 가 본다. 십성은 일간 壬(양수)에서 본 관계이고, 색은
-		 * 오행마다 정해진 값(토 #FFD600, 화 #F44336, 수 #039BE5, 목 #4CAF50)이다.
+		 * 음양, 지장간)을 천간·지지·지장간마다 보고, 지지 칸에 채우는 일간 기준 12운성도 본다. 일간·지지 전체 조합의 12운성 표는
+		 * UnseongCalculatorTest 가 본다. 십성은 일간 壬(양수)에서 본 관계이고, 색은 오행마다 정해진 값(토 #FFD600, 화 #F44336,
+		 * 수 #039BE5, 금 #E0E0E0, 목 #4CAF50)이다.
 		 */
 		@Nested
 		@DisplayName("기둥 한 칸을 채울 때")
@@ -346,18 +449,20 @@ class ManseCalculationServiceTest {
 				solarRequest(LocalDate.of(1990, 1, 27), LocalTime.of(23, 29), "MALE");
 
 			@Test
-			@DisplayName("천간은 한자·한글 이름·오행·색·일간 기준 십성·음양을 채운다")
+			@DisplayName("네 천간 모두 한자·한글 이름·오행·색·일간 기준 십성·음양을 채운다")
 			void fillsStemFromLookupTables() {
 				// when
 				SajuInfo saju = service.calculate(request).getSaju();
 
-				// then
-				assertThat(List.of(saju.getYearSky(), saju.getDaySky()))
+				// then: 십성은 모두 일간 壬 에서 본 값이다. 다른 천간(예: 연간 己)을 기준으로 보면 월간·시간 십성이 달라진다
+				assertThat(List.of(saju.getYearSky(), saju.getMonthSky(), saju.getDaySky(), saju.getTimeSky()))
 					.extracting(PillarElement::getChinese, PillarElement::getKorean, PillarElement::getFiveCircle,
 						PillarElement::getFiveCircleColor, PillarElement::getTenStar, PillarElement::getMinusPlus)
 					.containsExactly(
 						tuple("己", "기", "토", "#FFD600", "정관", "음"),
-						tuple("壬", "임", "수", "#039BE5", "비견", "양"));
+						tuple("丁", "정", "화", "#F44336", "정재", "음"),
+						tuple("壬", "임", "수", "#039BE5", "비견", "양"),
+						tuple("辛", "신", "금", "#E0E0E0", "정인", "음"));
 			}
 
 			@Test
@@ -397,6 +502,22 @@ class ManseCalculationServiceTest {
 						tuple("壬", "임", "수", "#039BE5", "양", 20, "비견"),
 						tuple("甲", "갑", "목", "#4CAF50", "양", 10, "식신"));
 				assertThat(timeBranch.getThird()).isNull();
+			}
+
+			@Test
+			@DisplayName("지지는 일간 기준 12운성과 그 설명을 채운다")
+			void fillsTwelveStagesOnBranches() {
+				// when
+				SajuInfo saju = service.calculate(request).getSaju();
+
+				// then: 일간 壬 기준 巳 절, 丑 쇠, 辰 묘, 亥 건록
+				assertThat(List.of(saju.getYearGround(), saju.getMonthGround(), saju.getDayGround(), saju.getTimeGround()))
+					.extracting(PillarElement::getChinese, PillarElement::getUnseong, PillarElement::getUnseongDescription)
+					.containsExactly(
+						tuple("巳", "절", "극복과 인내, 재기"),
+						tuple("丑", "쇠", "쇠퇴의 시작, 정리"),
+						tuple("辰", "묘", "잠재력 저장, 휴식"),
+						tuple("亥", "건록", "왕성한 활동, 안정과 번영"));
 			}
 
 			@Test
@@ -574,6 +695,81 @@ class ManseCalculationServiceTest {
 
 				// then
 				assertThat(json.path("saju").path("daewoon_direction").asText()).isEqualTo(label);
+			}
+		}
+
+		/**
+		 * 불확정 안내는 출생시간을 알면 비고, 월운은 지금이 표의 첫 절입(1900-01-06 소한)보다 앞서면 빈다. 두 목록은 비어도 null 이
+		 * 아니어서 쓰는 쪽이 null 을 검사하지 않아도 된다. 응답 JSON 에서는 예전에 null 로 나가던 두 필드를 빼고, 값이 null 이거나
+		 * 빈 다른 필드는 그대로 싣는다.
+		 */
+		@Nested
+		@DisplayName("불확정 안내와 월운이 비면")
+		class WhenListsAreEmpty {
+
+			// 1900-01-02 00:00 (서울). 표의 첫 절입보다 앞이라 월운을 셀 기준 절입이 없다.
+			private final ManseCalculationService serviceBeforeFirstSeason = serviceWith(realTable,
+				Clock.fixed(LocalDateTime.of(1900, 1, 2, 0, 0).atZone(SEOUL).toInstant(), SEOUL));
+
+			// 1998-09-02 12:02 남자(戊寅 庚申 壬子 丙午). 절입일이 아니라 절입 시각이 없고 삼합도 없다.
+			private final ManseryeokCalculationRequest request =
+				solarRequest(LocalDate.of(1998, 9, 2), LocalTime.of(12, 2), "MALE");
+
+			@Test
+			@DisplayName("월운을 셀 기준 절입이 없으면 월운은 null 이 아닌 빈 목록이다")
+			void monthlyFortunesAreEmptyListWhenCurrentSeasonIsMissing() {
+				// when
+				SajuInfo saju = serviceBeforeFirstSeason.calculate(request).getSaju();
+
+				// then
+				assertThat(saju.getMonthlyFortunes()).isNotNull().isEmpty();
+			}
+
+			@Test
+			@DisplayName("응답 JSON 의 saju 에서 uncertainty_notes·monthly_fortunes 만 빠지고 null 이거나 빈 다른 필드는 남는다")
+			void omitsOnlyTheTwoEmptyListsFromJson() throws Exception {
+				// given
+				ObjectMapper objectMapper = Jackson2ObjectMapperBuilder.json().build();
+				ManseryeokCalculationResponse response = serviceBeforeFirstSeason.calculate(request);
+
+				// when
+				JsonNode saju = objectMapper.readTree(objectMapper.writeValueAsString(response)).path("saju");
+
+				// then
+				assertThat(saju.fieldNames()).toIterable().containsExactlyInAnyOrder(
+					"big_fortune_number", "big_fortune_number_min", "big_fortune_number_max",
+					"big_fortune_start_year", "big_fortune_start_year_min", "big_fortune_start_year_max",
+					"daewoon_direction", "season_start_time",
+					"year_sky", "year_ground", "month_sky", "month_ground",
+					"day_sky", "day_ground", "time_sky", "time_ground",
+					"sinsal_info", "has_goegang", "has_baekho", "gongmang",
+					"ground_relations", "sky_relations", "samhap", "yongsin_info");
+				assertThat(saju.get("season_start_time").isNull()).as("null 인 절입 시각은 남는다").isTrue();
+				assertThat(saju.get("samhap").isEmpty()).as("빈 삼합 목록은 남는다").isTrue();
+			}
+		}
+
+		@Nested
+		@DisplayName("불확정 안내와 월운에 값이 있으면")
+		class WhenListsHaveValues {
+
+			@Test
+			@DisplayName("응답 JSON 의 saju 에 uncertainty_notes·monthly_fortunes 를 그대로 싣는다")
+			void keepsNonEmptyListsInJson() throws Exception {
+				// given: 출생시간을 모르면 불확정 안내가 생기고, 지금(2026-09-26)은 월운 12개월을 모두 센다
+				ObjectMapper objectMapper = Jackson2ObjectMapperBuilder.json().build();
+				ManseryeokCalculationResponse response = service.calculate(
+					solarRequest(LocalDate.of(1990, 1, 1), null, "MALE"));
+
+				// when
+				JsonNode saju = objectMapper.readTree(objectMapper.writeValueAsString(response)).path("saju");
+
+				// then
+				assertThat(saju.path("uncertainty_notes")).extracting(JsonNode::asText).containsExactly(
+					"출생시간 미입력: 시주는 계산하지 않았습니다.",
+					"출생시간 미입력: 야자시(23:30 이후) 보정은 적용하지 않았습니다.",
+					"대운 시작 나이는 8세로 추정됩니다.");
+				assertThat(saju.path("monthly_fortunes")).hasSize(12);
 			}
 		}
 
@@ -783,6 +979,23 @@ class ManseCalculationServiceTest {
 					tuple("망종", LocalDateTime.of(2027, 6, 6, 6, 58), LocalDateTime.of(2027, 7, 7, 17, 14, 59), "丙午"),
 					tuple("소서", LocalDateTime.of(2027, 7, 7, 17, 15), LocalDateTime.of(2027, 8, 8, 3, 1, 59), "丁未"),
 					tuple("입추", LocalDateTime.of(2027, 8, 8, 3, 2), LocalDateTime.of(2027, 9, 8, 5, 53, 59), "戊申"));
+		}
+
+		@Test
+		@DisplayName("월운 칸의 십성과 12운성은 그 달 절입일의 일간이 아니라 사주의 일간을 기준으로 채운다")
+		void fillsMonthlyFortuneFromSajuDayStem() {
+			// when: 1998-09-02 12:02 남자(戊寅 庚申 壬子 丙午)의 일간은 壬 이고, 첫 달 백로(2026-09-08) 행의 일간은 乙 이다
+			MonthlyFortune firstMonth = service
+				.calculate(solarRequest(LocalDate.of(1998, 9, 2), LocalTime.of(12, 2), "MALE"))
+				.getSaju().getMonthlyFortunes().get(0);
+
+			// then: 일간 壬 기준 丁 정재, 酉 정인·목욕이다. 乙 기준이면 丁 식신, 酉 절이 된다
+			assertThat(firstMonth.getMonthSky())
+				.extracting(PillarElement::getChinese, PillarElement::getTenStar)
+				.containsExactly("丁", "정재");
+			assertThat(firstMonth.getMonthGround())
+				.extracting(PillarElement::getChinese, PillarElement::getTenStar, PillarElement::getUnseong)
+				.containsExactly("酉", "정인", "목욕");
 		}
 
 		@ParameterizedTest(name = "[{index}] 지금 {0} → {1}개월, 마지막 달 {2} {3} ~ {4}")

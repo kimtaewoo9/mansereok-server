@@ -1,5 +1,6 @@
 package com.mansereok.server.domain.interpret.dto.response;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.mansereok.server.domain.interpret.calculator.DaewoonDirection;
 import com.mansereok.server.domain.interpret.calculator.YongsinCalculator.YongsinResult;
@@ -30,18 +31,18 @@ public class ManseryeokCalculationResponse {
 	@Builder
 	@NoArgsConstructor
 	@AllArgsConstructor
-		public static class InputInfo {
+	public static class InputInfo {
 
 		@JsonProperty("solar_date")
 		private LocalDate solarDate;
-			@JsonProperty("solar_time")
-			private LocalTime solarTime;
-			@JsonProperty("time_unknown")
-			private Boolean timeUnknown;
-			private String gender;
-			@JsonProperty("is_lunar")
-			private Boolean isLunar;
-		}
+		@JsonProperty("solar_time")
+		private LocalTime solarTime;
+		@JsonProperty("time_unknown")
+		private Boolean timeUnknown;
+		private String gender;
+		@JsonProperty("is_lunar")
+		private Boolean isLunar;
+	}
 
 	@Data
 	@Builder
@@ -49,25 +50,27 @@ public class ManseryeokCalculationResponse {
 	@AllArgsConstructor
 	public static class SajuInfo {
 
-			@JsonProperty("big_fortune_number")
-			private Integer bigFortuneNumber;
-			@JsonProperty("big_fortune_number_min")
-			private Integer bigFortuneNumberMin;
-			@JsonProperty("big_fortune_number_max")
-			private Integer bigFortuneNumberMax;
-			@JsonProperty("big_fortune_start_year")
-			private Integer bigFortuneStartYear;
-			@JsonProperty("big_fortune_start_year_min")
-			private Integer bigFortuneStartYearMin;
-			@JsonProperty("big_fortune_start_year_max")
-			private Integer bigFortuneStartYearMax;
-			@JsonProperty("daewoon_direction")
-			@Schema(description = "대운 방향. 양남음녀는 순행, 음남양녀는 역행", example = "순행")
-			private DaewoonDirection daewoonDirection;
-			@JsonProperty("season_start_time")
-			private String seasonStartTime;
-			@JsonProperty("uncertainty_notes")
-			private List<String> uncertaintyNotes;
+		@JsonProperty("big_fortune_number")
+		private Integer bigFortuneNumber;
+		@JsonProperty("big_fortune_number_min")
+		private Integer bigFortuneNumberMin;
+		@JsonProperty("big_fortune_number_max")
+		private Integer bigFortuneNumberMax;
+		@JsonProperty("big_fortune_start_year")
+		private Integer bigFortuneStartYear;
+		@JsonProperty("big_fortune_start_year_min")
+		private Integer bigFortuneStartYearMin;
+		@JsonProperty("big_fortune_start_year_max")
+		private Integer bigFortuneStartYearMax;
+		@JsonProperty("daewoon_direction")
+		@Schema(description = "대운 방향. 양남음녀는 순행, 음남양녀는 역행", example = "순행")
+		private DaewoonDirection daewoonDirection;
+		@JsonProperty("season_start_time")
+		private String seasonStartTime;
+		// 불확정 안내가 없으면 빈 목록이다. 응답 JSON 에는 빈 목록을 [] 로 싣지 않고 필드를 뺀다.
+		@JsonProperty("uncertainty_notes")
+		@JsonInclude(JsonInclude.Include.NON_EMPTY)
+		private List<String> uncertaintyNotes;
 
 		@JsonProperty("year_sky")
 		private PillarElement yearSky;
@@ -95,9 +98,8 @@ public class ManseryeokCalculationResponse {
 		@JsonProperty("gongmang")
 		private List<String> gongmang;
 
-		// [100점짜리 수정] 모든 지지/천간 관계를 리스트로 통합
 		@JsonProperty("ground_relations")
-		@Schema(description = "지지 관계 분석 (합, 충, 원진)", example = "[\"년지-월지: 충\", \"일지-월지: 원진\"]")
+		@Schema(description = "지지 관계 분석 (충, 원진, 형, 파, 해, 반합)", example = "[\"년지-월지: 충\", \"월지-일지: 원진\"]")
 		private List<String> groundRelations;
 
 		@JsonProperty("sky_relations")
@@ -110,7 +112,9 @@ public class ManseryeokCalculationResponse {
 		@JsonProperty("yongsin_info")
 		private YongsinResult yongsinInfo;
 
+		// 지금이 든 절입을 만세력 표에서 찾지 못하면 빈 목록이다. 응답 JSON 에는 빈 목록을 [] 로 싣지 않고 필드를 뺀다.
 		@JsonProperty("monthly_fortunes")
+		@JsonInclude(JsonInclude.Include.NON_EMPTY)
 		private List<MonthlyFortune> monthlyFortunes;
 	}
 
