@@ -173,10 +173,10 @@ class CorsPolicyTest {
 	}
 
 	/**
-	 * SecurityConfig 가 모든 경로에 거는 CORS 설정을 꺼낸다. CORS 설정은 출처 목록만 쓰므로 필터와 처리기는 비워 둔다.
+	 * SecurityConfig 가 모든 경로에 거는 CORS 설정을 꺼낸다. CORS 설정은 출처 목록만 쓰므로 필터와 처리기, 수집 토큰 설정은 비워 둔다.
 	 */
 	private static CorsConfiguration corsConfigurationFor(CorsProperties properties) {
-		SecurityConfig securityConfig = new SecurityConfig(null, null, null, properties);
+		SecurityConfig securityConfig = new SecurityConfig(null, null, null, properties, null);
 		return securityConfig.corsConfigurationSource()
 			.getCorsConfiguration(new MockHttpServletRequest("POST", "/api/auth/refresh"));
 	}

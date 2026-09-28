@@ -20,11 +20,9 @@ spring:
   jpa:
     # 요청이 끝날 때까지 DB 커넥션을 쥐지 않는다. 까닭은 application.yml 의 같은 설정에 적었다.
     open-in-view: false
-    database: mysql
-    database-platform: org.hibernate.dialect.MySQL8Dialect
     hibernate:
-      ddl-auto: validate  # 운영에서는 validate 사용
-    show-sql: false  # 운영에서는 false
+      ddl-auto: validate  # 스키마를 바꾸지 않고 기동 때 엔티티와 맞는지만 확인한다
+    show-sql: false
     properties:
       hibernate:
         format_sql: false
@@ -158,21 +156,21 @@ server:
         same-site: none
         secure: true
 
-# Actuator
+# Actuator. health 는 누구나 부르되 상태(UP·DOWN)만 내려준다. prometheus 는 수집 토큰(app.management.scrape-token)이 있어야 한다.
 management:
   endpoints:
     web:
       exposure:
-        include: "health,prometheus,metrics"
+        include: "health,prometheus"
   endpoint:
     health:
-      show-details: always
+      show-details: never
   metrics:
     tags:
       application: ${spring.application.name}
       environment: dev
 
-# Logging (운영 환경)
+# Logging (개발 환경)
 logging:
   level:
     root: INFO

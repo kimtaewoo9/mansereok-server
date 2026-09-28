@@ -52,7 +52,7 @@ import org.springframework.web.bind.annotation.RestController;
  * <p>커넥션 수는 확인용 컨트롤러({@link ConnectionCountController})가 트랜잭션 하나를 커밋한 직후, 같은 요청 안에서 잰다. 커밋 뒤
  * 리스너(AFTER_COMMIT) 안에서는 트랜잭션 정리 전이라 설정과 상관없이 커넥션을 쥐고 있으므로 거기서는 재지 않는다.
  *
- * <p>세 설정 파일이 open-in-view 를 false 로 적어 두었는지는 DB 가 필요 없어 기본 test 에서 도는 {@link OpenInViewSettingTest} 가
+ * <p>세 설정 파일이 open-in-view 를 false 로 적어 두었는지는 DB 가 필요 없어 기본 test 에서 도는 {@link ProfileConfigFileTest} 가
  * 확인한다. 여기서는 그 설정으로 뜬 컨텍스트의 동작만 본다.
  *
  * <p>회원과 토큰은 이번 실행의 runId 를 넣은 이메일로 만들고, 뒤 정리에서 그 회원의 행만 지운다.

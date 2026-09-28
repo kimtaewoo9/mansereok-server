@@ -42,3 +42,6 @@ out/
 .env.*.local
 .env.production
 .env.prod
+
+# Prometheus 가 지표를 가져갈 때 쓰는 수집 토큰(docker-compose.yml 이 컨테이너에 붙인다)
+prometheus-scrape-token

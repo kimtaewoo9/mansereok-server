@@ -35,7 +35,7 @@ import org.springframework.web.filter.CorsFilter;
 @Configuration
 @EnableWebSecurity
 @EnableMethodSecurity(prePostEnabled = true)
-@EnableConfigurationProperties(CorsProperties.class)
+@EnableConfigurationProperties({CorsProperties.class, ScrapeTokenProperties.class})
 @RequiredArgsConstructor
 public class SecurityConfig {
 
@@ -43,6 +43,7 @@ public class SecurityConfig {
 	private final JwtAuthenticationEntryPoint jwtAuthenticationEntryPoint;
 	private final JwtAccessDeniedHandler jwtAccessDeniedHandler;
 	private final CorsProperties corsProperties;
+	private final ScrapeTokenProperties scrapeTokenProperties;
 
 	@Bean
 	public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
@@ -100,9 +101,10 @@ public class SecurityConfig {
 				.requestMatchers("/api/v1/manseryeok/calculate").permitAll()
 				// Swagger UI 접근 (개발/테스트 환경용)
 				.requestMatchers("/swagger-ui/**", "/v3/api-docs/**").permitAll()
-				.requestMatchers("/actuator/**").permitAll()
+				// 서버 상태 확인(로드 밸런서·컨테이너 헬스 체크). 응답에는 UP·DOWN 같은 상태만 담는다(show-details: never).
+				.requestMatchers("/actuator/health").permitAll()
 
-				// 2. 로그인한 회원만 접근 허용 (여기 없는 경로도 4번 기본 규칙에 따라 로그인이 필요하다)
+				// 2. 로그인한 회원만 접근 허용 (여기 없는 경로도 5번 기본 규칙에 따라 로그인이 필요하다)
 				// ProfileController: 내 정보 관련 모든 API
 				.requestMatchers("/api/v1/users/me/**").authenticated()
 				// PaymentController: 내 결제 내역, 특정 주문/결제 조회, 주문 생성, 결제 완료 확인
@@ -122,7 +124,12 @@ public class SecurityConfig {
 				.requestMatchers(HttpMethod.DELETE, "/api/v1/reviews/**")
 				.hasAnyRole("ADMIN", "SUPER_ADMIN")
 
-				// 4. 그 외 모든 요청은 인증 필요 (기본 규칙)
+				// 4. health 를 뺀 actuator 경로(지표 수집 /actuator/prometheus 등)는 수집 토큰을 실은 요청만 받는다.
+				// 회원 토큰으로는 열리지 않는다. 어떤 actuator 를 노출할지는 yml 의 management.endpoints.web.exposure 가 정한다.
+				.requestMatchers("/actuator/**")
+				.access(new ScrapeTokenAuthorizationManager(scrapeTokenProperties))
+
+				// 5. 그 외 모든 요청은 인증 필요 (기본 규칙)
 				.anyRequest().authenticated()
 			)
 			// JWT 인증 예외 처리

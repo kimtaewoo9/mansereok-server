@@ -114,6 +114,10 @@ app:
   cors:
     allowed-origins:
       - http://localhost:3000
+  # Prometheus 가 /actuator/prometheus 를 가져갈 때 Authorization: Bearer 헤더에 싣는 수집 토큰. dev·prod 도 이 키를 그대로 쓴다.
+  # 비어 있으면(환경변수 MANAGEMENT_SCRAPE_TOKEN 이 없으면) 지표 요청을 모두 401 로 막는다.
+  management:
+    scrape-token: ${MANAGEMENT_SCRAPE_TOKEN:}
 
 server:
   port: 8080
@@ -156,16 +160,16 @@ discord:
     payment-url: ${DISCORD_PAYMENT_URL}
     interpretation-request-url: ${DISCORD_INTERPRET_URL}
 
-# Actuator
+# Actuator. health 는 누구나 부르되 상태(UP·DOWN)만 내려준다. prometheus 는 수집 토큰(app.management.scrape-token)이 있어야 한다.
 management:
   endpoints:
     web:
       exposure:
-        include: "health,prometheus,metrics"  # ← prometheus, metrics 추가
+        include: "health,prometheus"
   endpoint:
     health:
-      show-details: always
+      show-details: never
   metrics:
     tags:
       application: ${spring.application.name}
-      environment: dev
+      environment: local
