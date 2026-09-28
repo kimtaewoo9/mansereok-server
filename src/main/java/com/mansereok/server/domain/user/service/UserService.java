@@ -160,8 +160,6 @@ public class UserService {
 
 		User savedUser = saveNewUser(newUser, EMAIL_SIGNUP_PATH, "이미 존재하는 이메일 입니다: " + email);
 
-//		emailService.sendWelcomeEmail(savedUser.getEmail(), savedUser.getName());
-
 		return savedUser;
 	}
 
@@ -193,8 +191,6 @@ public class UserService {
 
 		User savedUser = saveNewUser(newUser, profile.socialType().name() + " OAuth",
 			"이미 가입된 계정과 겹쳐 가입할 수 없습니다.");
-
-//		emailService.sendWelcomeEmail(savedUser.getEmail(), savedUser.getName());
 
 		return savedUser;
 	}
