@@ -44,8 +44,9 @@ public final class AccessTokenFixture {
 	}
 
 	/**
-	 * 이 서버가 발급하는 토큰과 같은 클레임(subject member, 발급자, 발급 시각 NOW, 만료 NOW+30분, role ROLE_USER)을 채운 빌더.
-	 * 서명하기 전에 바꾸고 싶은 클레임만 덮어쓴다. 값에 null 을 넣으면 그 클레임이 빠진다.
+	 * 필터가 읽는 클레임(subject member, role ROLE_USER)과 검증 조건(발급자, 발급 시각 NOW, 만료 NOW+30분)을 이 서버와 같게 채운
+	 * 빌더. 이 서버가 실제로 발급하는 토큰에 더 들어 있는 email·userId(이메일 로그인 토큰은 name 도)는 필터가 읽지 않아
+	 * 넣지 않는다. 서명하기 전에 바꾸고 싶은 클레임만 덮어쓴다. 값에 null 을 넣으면 그 클레임이 빠진다.
 	 */
 	public static JwtBuilder claimsOfThisServer() {
 		return Jwts.builder()

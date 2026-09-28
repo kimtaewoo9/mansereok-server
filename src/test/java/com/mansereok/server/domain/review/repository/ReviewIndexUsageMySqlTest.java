@@ -38,7 +38,7 @@ class ReviewIndexUsageMySqlTest extends LocalMySqlTest {
 
 	private final String runId = UUID.randomUUID().toString().substring(0, 8);
 	private final long runNumber = Long.parseLong(runId, 16);
-	// 실제 데이터와 겹치지 않게 큰 수에서 시작하고, 컬럼마다 다른 수에서 시작해 쿼리가 컬럼을 바꿔 써도 알아챌 수 있게 한다.
+	// 실제 데이터와 겹치지 않게 큰 수에서 시작한다.
 	// reviews 의 user_id·sub_category_id 와 subcategories 의 category_id 에는 외래 키가 없다.
 	private final long subCategoryId = 7_000_000_000L + runNumber;
 	private final long otherSubCategoryId = 7_100_000_000L + runNumber;

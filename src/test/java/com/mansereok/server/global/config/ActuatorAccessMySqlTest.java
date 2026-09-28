@@ -82,17 +82,6 @@ class ActuatorAccessMySqlTest extends LocalMySqlTest {
 		}
 
 		@Test
-		@DisplayName("토큰이 다르면 prometheus 를 부를 수 없어 401 로 막힌다")
-		void wrongTokenIsRejected() throws Exception {
-			// when
-			ResultActions result = mockMvc.perform(
-				get("/actuator/prometheus").header(HttpHeaders.AUTHORIZATION, "Bearer wrong-token"));
-
-			// then
-			result.andExpect(status().isUnauthorized());
-		}
-
-		@Test
 		@DisplayName("metrics 를 부르면 노출하지 않은 경로라 404 를 받는다")
 		void metricsIsNotExposed() throws Exception {
 			// when
@@ -101,6 +90,22 @@ class ActuatorAccessMySqlTest extends LocalMySqlTest {
 
 			// then
 			result.andExpect(status().isNotFound());
+		}
+	}
+
+	@Nested
+	@DisplayName("다른 토큰을 실은 요청이")
+	class WithWrongToken {
+
+		@Test
+		@DisplayName("prometheus 를 부르면 401 로 막힌다")
+		void prometheusIsRejected() throws Exception {
+			// when
+			ResultActions result = mockMvc.perform(
+				get("/actuator/prometheus").header(HttpHeaders.AUTHORIZATION, "Bearer wrong-token"));
+
+			// then
+			result.andExpect(status().isUnauthorized());
 		}
 	}
 }

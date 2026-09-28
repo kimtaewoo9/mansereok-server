@@ -9,6 +9,7 @@ import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Locale;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -21,14 +22,18 @@ import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
 /**
- * 리뷰(reviews)와 상품(subcategories) 표의 schema.sql 블록이 엔티티 선언과 맞는지, 그리고 schema.sql 이 표를 지우는 문장 없이
- * 참고용 DDL 로만 쓰이는지 DB 없이 확인한다.
+ * 리뷰(reviews)와 상품(subcategories) 표의 schema.sql 블록이 엔티티 선언과 맞는지, 그리고 schema.sql 이 표나 행을 지우는 문장
+ * 없이 참고용 DDL 로만 쓰이는지 DB 없이 확인한다.
  *
  * <p>운영은 ddl-auto: validate 라 엔티티의 UNIQUE·인덱스 선언이 운영에 아무것도 만들지 않는다. 운영에는 schema.sql 과 같은 이름으로
  * 손으로 적용하므로, 엔티티와 schema.sql 이 같은 이름·컬럼 순서·정렬 방향을 쓰는지를 여기서 본다. 실제 MySQL 에서 쿼리가 그
  * 인덱스를 타는지는 ReviewIndexUsageMySqlTest 가 본다.
  */
 class ReviewProductSchemaSqlTest {
+
+	// statementFirstWords 가 쓴다. 공백과 주석을 건너뛸 때 되돌아가지 않게(*+) 해서, 주석 안의 낱말을 첫 낱말로 잡지 않는다.
+	private static final Pattern STATEMENT_FIRST_WORD = Pattern.compile(
+		"(?:\\A|;)(?:\\s++|--[^\\n]*+|#[^\\n]*+|/\\*[\\s\\S]*?\\*/)*+(\\w+)");
 
 	private final SchemaSqlFile schema = SchemaSqlFile.load();
 
@@ -49,15 +54,15 @@ class ReviewProductSchemaSqlTest {
 			Arguments.of(SubCategory.class, "subcategories", "idx_subcategories_category_id", List.of("category_id")));
 	}
 
-	@ParameterizedTest(name = "[{index}] 문장 첫머리의 {0}")
-	@ValueSource(strings = {"DROP", "TRUNCATE"})
-	@DisplayName("schema.sql 에는 표나 데이터를 지우는 문장이 없다")
+	@ParameterizedTest(name = "[{index}] {0} 로 시작하는 문장")
+	@ValueSource(strings = {"DROP", "TRUNCATE", "DELETE"})
+	@DisplayName("schema.sql 에는 표를 지우거나 행을 지우는 문장(DROP·TRUNCATE·DELETE)이 없다")
 	void schemaSqlHasNoDestructiveStatement(String keyword) {
 		// when
-		Matcher statementStart = Pattern.compile("(?im)^\\s*" + keyword + "\\b").matcher(schema.text());
+		List<String> firstWords = statementFirstWords(schema.text());
 
 		// then
-		assertThat(statementStart.find()).as("통째로 실행하면 운영 표를 지우는 %s 문장", keyword).isFalse();
+		assertThat(firstWords).as("통째로 실행하면 운영 표나 행을 지우는 %s 문장", keyword).doesNotContain(keyword);
 	}
 
 	@ParameterizedTest(name = "[{index}] {1}")
@@ -113,6 +118,17 @@ class ReviewProductSchemaSqlTest {
 			});
 		assertThat(keyColumnsInSchema(table, "INDEX", indexName)).as("schema.sql 의 INDEX %s 컬럼", indexName)
 			.containsExactlyElementsOf(columns);
+	}
+
+	/**
+	 * 문장마다 첫 낱말을 대문자로 꺼낸다. 문장은 파일 처음이나 세미콜론 바로 뒤에서 시작하고, 그 사이의 공백과 주석(--, #, 블록
+	 * 주석)은 건너뛴다. 그래서 다른 문장 뒤 같은 줄에 붙인 DROP 은 찾고, 주석 안의 낱말이나 ALTER TABLE ... DROP INDEX 처럼 문장
+	 * 가운데 있는 낱말은 첫 낱말로 보지 않는다.
+	 */
+	private static List<String> statementFirstWords(String sql) {
+		return STATEMENT_FIRST_WORD.matcher(sql).results()
+			.map(result -> result.group(1).toUpperCase(Locale.ROOT))
+			.toList();
 	}
 
 	/** "a, b DESC" 를 [a, b DESC] 로 나눈다. 컬럼과 정렬 방향 사이 공백은 하나로 맞춘다. */
