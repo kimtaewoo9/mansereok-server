@@ -1,5 +1,6 @@
 package com.mansereok.server.domain.interpret.prompt;
 
+import com.mansereok.server.domain.interpret.calculator.DaewoonDirection;
 import com.mansereok.server.domain.interpret.calculator.Strength;
 import com.mansereok.server.domain.interpret.calculator.YongsinCalculator.YongsinResult;
 import com.mansereok.server.domain.interpret.dto.response.ManseryeokCalculationResponse;
@@ -47,6 +48,8 @@ public final class PromptFixtures {
 			.bigFortuneStartYear(1995)
 			.bigFortuneStartYearMin(1994)
 			.bigFortuneStartYearMax(1996)
+			// 남성·년간 甲(양)이라 만세력 계산이 순행으로 정한다
+			.daewoonDirection(DaewoonDirection.FORWARD)
 			.seasonStartTime("1990-01-06 05:33")
 			.uncertaintyNotes(List.of("절기 경계 근처라 월주가 흔들릴 수 있음"))
 			.yearSky(pillar("甲", "갑", "목", "식신", "양", "건록", "자기 힘으로 서는 자리",
@@ -98,6 +101,8 @@ public final class PromptFixtures {
 			.bigFortuneStartYear(1998)
 			.bigFortuneStartYearMin(1997)
 			.bigFortuneStartYearMax(1999)
+			// 여성·년간 乙(음)이라 만세력 계산이 순행으로 정한다
+			.daewoonDirection(DaewoonDirection.FORWARD)
 			.seasonStartTime("1995-08-08 09:12")
 			.uncertaintyNotes(List.of())
 			.yearSky(pillar("乙", "을", "목", "정인", "음", "병", "기운이 꺾이는 자리",
@@ -161,6 +166,8 @@ public final class PromptFixtures {
 			.bigFortuneStartYear(2000)
 			.bigFortuneStartYearMin(1999)
 			.bigFortuneStartYearMax(2001)
+			// 남성·년간 癸(음)이라 만세력 계산이 역행으로 정한다
+			.daewoonDirection(DaewoonDirection.BACKWARD)
 			.seasonStartTime("1993-02-04 10:38")
 			.uncertaintyNotes(List.of())
 			.yearSky(pillar("癸", "계", "수", "정인", "음", "목욕", "다듬어지는 자리",
@@ -210,6 +217,8 @@ public final class PromptFixtures {
 	 */
 	public static ManseryeokCalculationResponse personEdge() {
 		SajuInfo saju = SajuInfo.builder()
+			// 여성·년간 丙(양)이라 만세력 계산이 역행으로 정한다. 대운수가 없어 프롬프트에는 나오지 않는다
+			.daewoonDirection(DaewoonDirection.BACKWARD)
 			.yearSky(simplePillar("丙", "병", "화", "편관", "양"))
 			.yearGround(simplePillar("寅", "인", "목", "식신", "양"))
 			.monthSky(simplePillar("戊", "무", "토", "정재", "양"))

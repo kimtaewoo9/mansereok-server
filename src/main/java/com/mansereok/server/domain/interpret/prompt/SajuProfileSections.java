@@ -163,11 +163,11 @@ final class SajuProfileSections {
 			prompt.append("""
 				시작:%d세 | 방향:%s
 				"""
-				.formatted(saju.getBigFortuneNumber(), DaewoonSections.getDaewoonDirection(saju, input.getGender())));
+				.formatted(saju.getBigFortuneNumber(), DaewoonSections.directionLabel(saju)));
 
 			// [수정] birthYear 전달!
 			int birthYear = input.getSolarDate().getYear();
-			DaewoonSections.appendDaewoonPeriods(prompt, saju, input.getGender(), birthYear, referenceYear);
+			DaewoonSections.appendDaewoonPeriods(prompt, saju, birthYear, referenceYear);
 
 		} else if (saju.getBigFortuneNumberMin() != null && saju.getBigFortuneNumberMax() != null) {
 			prompt.append("""
@@ -177,7 +177,7 @@ final class SajuProfileSections {
 				.formatted(
 					saju.getBigFortuneNumberMin(),
 					saju.getBigFortuneNumberMax(),
-					DaewoonSections.getDaewoonDirection(saju, input.getGender())));
+					DaewoonSections.directionLabel(saju)));
 		} else {
 			prompt.append("""
 				대운 정보 없음
