@@ -1,8 +1,11 @@
 package com.mansereok.server.domain.review.controller;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.BDDMockito.then;
 import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.never;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -55,7 +58,8 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 /**
  * 리뷰 작성 API 가 거절할 때 이유에 맞는 상태 코드와 리뷰 전용 errorCode REVIEW_NOT_ALLOWED, 사용자 문구로 답하는지 확인한다.
- * 탈퇴한 회원의 주문도 500 이 아니라 거절 이유로 답한다.
+ * 탈퇴한 회원의 주문도 500 이 아니라 거절 이유로 답한다. 본문(content)이 빠진 요청도 NPE 로 500 이 나지 않고 400
+ * VALIDATION_ERROR 로 답하는지 함께 확인한다.
  *
  * <p>문구는 프런트가 그대로 보여주는 값이라 표에 글자 그대로 적는다. RejectionReason 의 문구를 바꾸면 이 표도 함께 고쳐야 한다.
  *
@@ -141,6 +145,50 @@ class ReviewErrorResponseTest {
 			.andExpect(jsonPath("$.message").value(expectedMessage));
 	}
 
+	static Stream<Arguments> invalidContents() {
+		return Stream.of(
+			Arguments.of("본문 없음", "{\"subCategoryId\": 3, \"orderId\": 100}", "리뷰 내용을 입력해주세요."),
+			Arguments.of("공백 20칸", "{\"subCategoryId\": 3, \"orderId\": 100, \"content\": \"" + " ".repeat(20)
+				+ "\"}", "리뷰 내용을 입력해주세요."),
+			Arguments.of("2001자", "{\"subCategoryId\": 3, \"orderId\": 100, \"content\": \"" + "가".repeat(2001)
+				+ "\"}", "리뷰 내용은 20자 이상 2000자 이하로 입력해주세요.")
+		);
+	}
+
+	@ParameterizedTest(name = "[{index}] {0} → 400")
+	@MethodSource("invalidContents")
+	@DisplayName("본문이 없거나 공백뿐이거나 2000자를 넘으면 500 이 아니라 400 VALIDATION_ERROR 와 content 필드의 문구로 답하고 리뷰 저장소에 가지 않는다")
+	void invalidContentIsAnsweredWithValidationError(String situation, String body, String expectedMessage)
+		throws Exception {
+		// when
+		ResultActions result = mockMvc.perform(
+			post("/api/v1/reviews").contentType(MediaType.APPLICATION_JSON).content(body));
+
+		// then
+		result.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.errorCode").value("VALIDATION_ERROR"))
+			.andExpect(jsonPath("$.errors.content").value(expectedMessage));
+		then(reviewRepository).shouldHaveNoInteractions();
+	}
+
+	@Test
+	@DisplayName("앞뒤 공백을 빼면 20자가 안 되는 본문은 요청 검증을 지나도 리뷰를 만들 때 막혀, 500 이 아니라 400 INVALID_INPUT 으로 답하고 저장하지 않는다")
+	void contentShortWithoutSurroundingSpacesIsAnsweredWithBadRequest() throws Exception {
+		// given: 공백을 포함하면 23자라 @Size(min = 20) 은 지나간다
+		givenOrderLookup(OrderFixture.paidOrder().build(), false);
+		String body = "{\"subCategoryId\": 3, \"orderId\": 100, \"content\": \"  " + "가".repeat(19) + "  \"}";
+
+		// when
+		ResultActions result = mockMvc.perform(
+			post("/api/v1/reviews").contentType(MediaType.APPLICATION_JSON).content(body));
+
+		// then
+		result.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.errorCode").value("INVALID_INPUT"))
+			.andExpect(jsonPath("$.message").value("리뷰 내용은 앞뒤 공백을 빼고 최소 20자 이상이어야 합니다."));
+		then(reviewRepository).should(never()).saveAndFlush(any());
+	}
+
 	@Test
 	@DisplayName("리뷰 거절은 결제 오류 로그가 아니라 리뷰 거절 로그로 남는다")
 	void rejectedWriteIsLoggedAsReviewRejection(CapturedOutput output) throws Exception {
@@ -184,12 +232,14 @@ class ReviewErrorResponseTest {
 
 	/**
 	 * JWT 필터가 하는 것처럼 회원 아이디를 principal 로 넣고, 그 회원을 DB 에서 찾으면 주어진 id 의 회원이 나오게 한다.
+	 *
+	 * <p>회원 조회는 lenient 로 둔다. 본문 검증에서 막힌 요청은 서비스까지 가지 않아 회원을 찾지 않는 것이 맞는 동작이다.
 	 */
 	private void givenLoggedIn(String username, Long userId) {
 		User user = User.create(username, "홍길동", "password", username + "@example.com",
 			LocalDate.of(1990, 1, 1), Gender.MALE, true, true, false);
 		UserFixture.withId(user, userId);
-		given(userRepository.findByUsername(username)).willReturn(Optional.of(user));
+		lenient().when(userRepository.findByUsername(username)).thenReturn(Optional.of(user));
 		SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(
 			username, null, List.of(new SimpleGrantedAuthority(Role.USER.getAuthority()))));
 	}

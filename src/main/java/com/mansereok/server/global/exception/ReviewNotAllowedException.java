@@ -16,4 +16,12 @@ public class ReviewNotAllowedException extends RuntimeException {
 		super(reason.getMessage());
 		this.reason = reason;
 	}
+
+	/**
+	 * DB 제약 위반처럼 거절 이유를 알게 해 준 예외를 원인으로 남긴다.
+	 */
+	public ReviewNotAllowedException(RejectionReason reason, Throwable cause) {
+		super(reason.getMessage(), cause);
+		this.reason = reason;
+	}
 }
