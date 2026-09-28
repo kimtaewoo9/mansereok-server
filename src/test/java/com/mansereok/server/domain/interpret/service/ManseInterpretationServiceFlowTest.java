@@ -50,7 +50,9 @@ import com.mansereok.server.support.fixture.ResultFixture;
 import jakarta.persistence.EntityNotFoundException;
 import java.lang.reflect.Method;
 import java.time.Clock;
+import java.time.Instant;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
@@ -69,7 +71,6 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.CannotAcquireLockException;
 import org.springframework.scheduling.annotation.Async;
-import org.springframework.test.util.ReflectionTestUtils;
 
 /**
  * 네 갈래 해석 흐름이 공통 파이프라인을 타고 같은 순서로 도는지, 그리고 곁가지(알림·OG·이메일)
@@ -733,6 +734,9 @@ class ManseInterpretationServiceFlowTest {
 	class RealEntityStatus {
 
 		private static final Long USER_ID = 1L;
+		// 해석을 시작한 시각(STARTED_AT)과 같은 2026-09-26 09:00 (서울).
+		private static final Clock FIXED_CLOCK = Clock.fixed(Instant.parse("2026-09-26T00:00:00Z"),
+			ZoneId.of("Asia/Seoul"));
 
 		@Mock
 		private ResultRepository resultRepository;
@@ -748,15 +752,14 @@ class ManseInterpretationServiceFlowTest {
 		@BeforeEach
 		void setUpRealResultServices() {
 			// 컨트롤러가 STARTED_AT 에 해석을 시작해 둔 행이다.
-			sajuRow = ResultFixture.saju(USER_ID, PAYMENT_ID, ResultStatus.PROCESSING, STARTED_AT);
-			ReflectionTestUtils.setField(sajuRow, "id", RESULT_ID);
-			compatibilityRow = ResultFixture.compatibility(USER_ID, PAYMENT_ID, ResultStatus.PROCESSING, STARTED_AT);
-			ReflectionTestUtils.setField(compatibilityRow, "id", RESULT_ID);
+			sajuRow = ResultFixture.withId(
+				ResultFixture.saju(USER_ID, PAYMENT_ID, ResultStatus.PROCESSING, STARTED_AT), RESULT_ID);
+			compatibilityRow = ResultFixture.withId(
+				ResultFixture.compatibility(USER_ID, PAYMENT_ID, ResultStatus.PROCESSING, STARTED_AT), RESULT_ID);
 
 			serviceWithRealResults = newService(
 				new SajuResultService(resultRepository, compatibilityResultRepository),
-				new ResultService(resultRepository, compatibilityResultRepository, subCategoryRepository,
-					Clock.systemDefaultZone()),
+				new ResultService(resultRepository, compatibilityResultRepository, subCategoryRepository, FIXED_CLOCK),
 				analysisNormalizer);
 		}
 
@@ -911,8 +914,7 @@ class ManseInterpretationServiceFlowTest {
 				.willReturn(PAID_SINGLE_PROMPT);
 			ManseInterpretationService serviceWithRealNormalizer = newService(
 				new SajuResultService(resultRepository, compatibilityResultRepository),
-				new ResultService(resultRepository, compatibilityResultRepository, subCategoryRepository,
-					Clock.systemDefaultZone()),
+				new ResultService(resultRepository, compatibilityResultRepository, subCategoryRepository, FIXED_CLOCK),
 				new AnalysisNormalizer());
 
 			// when
@@ -1238,7 +1240,7 @@ class ManseInterpretationServiceFlowTest {
 		}
 
 		@Test
-		@DisplayName("유료 재회운(19) 요청은 전용 지시를 쓰면서도 primary 티어의 모델·출력 토큰 상한·추론 강도·출력 길이를 쓴다")
+		@DisplayName("유료 재회운(19) 요청도 primary 티어의 모델·출력 토큰 상한·추론 강도·출력 길이를 쓴다")
 		void paidReunionRequestUsesPrimaryTier() {
 			// given
 			givenCompatibilityResponse();
