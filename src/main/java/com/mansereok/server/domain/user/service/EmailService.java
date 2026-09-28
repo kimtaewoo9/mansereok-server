@@ -70,12 +70,13 @@ public class EmailService {
 	/**
 	 * 소셜 로그인으로 가입한 회원이 비밀번호 재설정을 요청하면, 비밀번호 대신 소셜 로그인을 쓰라고 안내한다.
 	 *
-	 * <p>이름은 회원이 프로필에서 마음대로 바꿀 수 있으므로 HTML 로 해석되지 않게 이스케이프해서 넣는다.
+	 * <p>이름은 회원이 프로필에서 마음대로 바꿀 수 있으므로 HTML 로 해석되지 않게 이스케이프해서 넣는다. 본문이 UTF-8 이라
+	 * HTML 특수 문자 다섯 개({@code < > & " '})만 바꾸고 é 같은 글자는 그대로 둔다.
 	 */
 	@Async
 	public void sendSocialLoginGuideEmail(String toEmail, String name) {
 		String subject = "[NAMED] 비밀번호 재설정 안내";
-		String displayName = name != null ? HtmlUtils.htmlEscape(name) : "회원";
+		String displayName = name != null ? HtmlUtils.htmlEscape(name, CHARSET) : "회원";
 		send(toEmail, subject, createSocialLoginGuideEmailHtml(displayName));
 	}
 

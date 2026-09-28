@@ -15,7 +15,6 @@ import com.mansereok.server.domain.order.entity.Order;
 import com.mansereok.server.domain.order.entity.OrderStatus;
 import com.mansereok.server.domain.order.repository.OrderRepository;
 import com.mansereok.server.domain.review.repository.ReviewRepository;
-import com.mansereok.server.domain.review.service.RejectionReason;
 import com.mansereok.server.domain.review.service.ReviewService;
 import com.mansereok.server.domain.user.entity.Gender;
 import com.mansereok.server.domain.user.entity.Role;
@@ -58,12 +57,14 @@ import org.springframework.test.web.servlet.ResultActions;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 /**
- * 리뷰 작성 API 가 거절할 때 이유에 맞는 상태 코드와 리뷰 전용 errorCode REVIEW_NOT_ALLOWED 로 답하는지 확인한다. 예전에는 결제
- * 오류(PAYMENT_ERROR, 400)로 답했고, 탈퇴한 회원의 주문이면 500 이 났다. 본문(content)이 빠진 요청도 검증을 통과해 NPE 로 500 이
- * 났는데, 지금은 400 VALIDATION_ERROR 인지 함께 확인한다.
+ * 리뷰 작성 API 가 거절할 때 이유에 맞는 상태 코드와 리뷰 전용 errorCode REVIEW_NOT_ALLOWED, 사용자 문구로 답하는지 확인한다.
+ * 탈퇴한 회원의 주문도 500 이 아니라 거절 이유로 답한다. 본문(content)이 빠진 요청도 NPE 로 500 이 나지 않고 400
+ * VALIDATION_ERROR 로 답하는지 함께 확인한다.
  *
- * <p>운영과 같게 세 예외 처리기를 모두 등록하고 ReviewExceptionHandler 를 가장 나중에 등록한다. 그래도 먼저 답하는 것은 등록 순서가
- * 아니라 @Order(HIGHEST_PRECEDENCE) 덕분임을 확인하기 위해서다.
+ * <p>문구는 프런트가 그대로 보여주는 값이라 표에 글자 그대로 적는다. RejectionReason 의 문구를 바꾸면 이 표도 함께 고쳐야 한다.
+ *
+ * <p>ReviewController 에 적용되는 세 예외 처리기를 모두 등록하고 ReviewExceptionHandler 를 가장 나중에 등록한다. 그래도 먼저 답하는
+ * 것은 등록 순서가 아니라 @Order(HIGHEST_PRECEDENCE) 덕분임을 확인하기 위해서다.
  *
  * <p>컨트롤러, 서비스, 예외 처리기는 진짜를 쓰고 저장소는 돌려줄 값만 정한다. 지금은 한국 시각 2026-09-25 00:00 으로 고정한다.
  * 로그인한 요청은 JWT 필터처럼 SecurityContextHolder 에 회원 아이디를 principal 로 넣어 흉내 낸다.
@@ -109,19 +110,19 @@ class ReviewErrorResponseTest {
 	static Stream<Arguments> rejectedWrites() {
 		return Stream.of(
 			Arguments.of("이미 리뷰를 쓴 주문", OrderFixture.paidOrder().build(), true, 409,
-				RejectionReason.ALREADY_WRITTEN),
+				"이미 해당 주문에 대한 리뷰를 작성하셨습니다."),
 			Arguments.of("결제 후 31일째 주문",
 				OrderFixture.paidOrder().paidAt(LocalDateTime.of(2026, 8, 25, 23, 59)).build(), false, 400,
-				RejectionReason.EXPIRED),
+				"구매 후 30일이 지나 리뷰를 작성할 수 없습니다."),
 			Arguments.of("환불한 주문", OrderFixture.paidOrder().status(OrderStatus.CANCELLED).build(), false, 400,
-				RejectionReason.NOT_PAID),
+				"결제가 완료된 주문만 리뷰를 작성할 수 있습니다."),
 			Arguments.of("다른 상품의 주문", OrderFixture.paidOrder().subCategoryId(4L).build(), false, 400,
-				RejectionReason.MISMATCH_PRODUCT),
+				"주문한 상품 정보와 일치하지 않습니다."),
 			Arguments.of("남의 주문", OrderFixture.paidOrder().userId(11L).build(), false, 403,
-				RejectionReason.NOT_OWNER),
+				"본인의 주문에 대해서만 리뷰를 작성할 수 있습니다."),
 			Arguments.of("탈퇴한 회원의 주문(user_id NULL)", OrderFixture.paidOrder().userId(null).build(), false, 403,
-				RejectionReason.NOT_OWNER),
-			Arguments.of("없는 주문", null, false, 404, RejectionReason.ORDER_NOT_FOUND)
+				"본인의 주문에 대해서만 리뷰를 작성할 수 있습니다."),
+			Arguments.of("없는 주문", null, false, 404, "유효하지 않은 주문 정보입니다.")
 		);
 	}
 
@@ -129,7 +130,7 @@ class ReviewErrorResponseTest {
 	@MethodSource("rejectedWrites")
 	@DisplayName("리뷰를 쓸 수 없는 주문으로 쓰면 이유에 맞는 상태 코드와 errorCode REVIEW_NOT_ALLOWED, 이유의 문구로 답한다")
 	void rejectedWriteIsAnsweredWithReviewErrorCode(String situation, Order order, boolean alreadyWritten,
-		int expectedStatus, RejectionReason expectedReason) throws Exception {
+		int expectedStatus, String expectedMessage) throws Exception {
 		// given
 		givenOrderLookup(order, alreadyWritten);
 
@@ -141,7 +142,7 @@ class ReviewErrorResponseTest {
 		result.andExpect(status().is(expectedStatus))
 			.andExpect(jsonPath("$.status").value(expectedStatus))
 			.andExpect(jsonPath("$.errorCode").value("REVIEW_NOT_ALLOWED"))
-			.andExpect(jsonPath("$.message").value(expectedReason.getMessage()));
+			.andExpect(jsonPath("$.message").value(expectedMessage));
 	}
 
 	static Stream<Arguments> invalidContents() {

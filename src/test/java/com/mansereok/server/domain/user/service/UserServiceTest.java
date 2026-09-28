@@ -38,6 +38,7 @@ import com.mansereok.server.domain.user.event.UserWithdrawnEvent;
 import com.mansereok.server.domain.user.repository.RefreshTokenRepository;
 import com.mansereok.server.domain.user.repository.UserRepository;
 import com.mansereok.server.global.exception.DuplicateEmailException;
+import com.mansereok.server.support.fixture.ResultFixture;
 import com.mansereok.server.support.fixture.UserFixture;
 import jakarta.persistence.EntityNotFoundException;
 import java.sql.SQLIntegrityConstraintViolationException;
@@ -72,7 +73,6 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.crypto.password.PasswordEncoder;
-import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.transaction.PlatformTransactionManager;
 
 /**
@@ -303,8 +303,7 @@ public class UserServiceTest {
 		@DisplayName("내 사주 결과이면 돌려준다")
 		void returnsOwnSajuResult() {
 			// given
-			Result result = Result.createInitial(MEMBER_ID, 10L, "인생 총운");
-			ReflectionTestUtils.setField(result, "id", RESULT_ID);
+			Result result = ResultFixture.withId(Result.createInitial(MEMBER_ID, 10L, "인생 총운"), RESULT_ID);
 			given(resultRepository.findById(RESULT_ID)).willReturn(Optional.of(result));
 
 			// when
@@ -319,8 +318,8 @@ public class UserServiceTest {
 		@DisplayName("내 궁합 결과이면 돌려준다")
 		void returnsOwnCompatibilityResult() {
 			// given
-			CompatibilityResult result = CompatibilityResult.createInitial(MEMBER_ID, 10L, "궁합");
-			ReflectionTestUtils.setField(result, "id", RESULT_ID);
+			CompatibilityResult result = ResultFixture.withId(CompatibilityResult.createInitial(MEMBER_ID, 10L, "궁합"),
+				RESULT_ID);
 			given(compatibilityResultRepository.findById(RESULT_ID)).willReturn(Optional.of(result));
 
 			// when
@@ -414,17 +413,11 @@ public class UserServiceTest {
 	}
 
 	private static Result sajuResult(Long id, LocalDateTime createdAt) {
-		Result result = Result.createInitial(1L, id, "인생 총운");
-		ReflectionTestUtils.setField(result, "id", id);
-		ReflectionTestUtils.setField(result, "createdAt", createdAt);
-		return result;
+		return ResultFixture.withIdAndCreatedAt(Result.createInitial(1L, id, "인생 총운"), id, createdAt);
 	}
 
 	private static CompatibilityResult compatibilityResult(Long id, LocalDateTime createdAt) {
-		CompatibilityResult result = CompatibilityResult.createInitial(1L, id, "궁합");
-		ReflectionTestUtils.setField(result, "id", id);
-		ReflectionTestUtils.setField(result, "createdAt", createdAt);
-		return result;
+		return ResultFixture.withIdAndCreatedAt(CompatibilityResult.createInitial(1L, id, "궁합"), id, createdAt);
 	}
 
 	@ParameterizedTest(name = "[{index}] {0} 가입 → 가입 경로 [{1}]")

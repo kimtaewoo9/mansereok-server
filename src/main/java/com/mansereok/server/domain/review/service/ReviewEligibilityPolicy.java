@@ -22,6 +22,9 @@ import java.util.function.BooleanSupplier;
  * </ol>
  *
  * <p>주문을 찾지 못한 경우는 부르는 쪽이 {@link RejectionReason#ORDER_NOT_FOUND} 로 답한다.
+ *
+ * <p>이 판단은 리뷰를 쓰는 순간의 주문만 본다. 결제한 뒤 사주 정보를 넣기 전에 리뷰를 먼저 쓰고 환불하면(환불은 결과가 INPUT_REQUIRED
+ * 일 때 할 수 있다) 리뷰는 그대로 남는다. 환불 처리에서 그 주문의 리뷰를 따로 다루지 않기 때문이다.
  */
 public final class ReviewEligibilityPolicy {
 

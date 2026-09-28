@@ -31,8 +31,9 @@ import org.springframework.security.core.context.SecurityContextHolder;
 /**
  * 필터가 Authorization 헤더를 인증 정보나 요청 속성(JWT_EXCEPTION_ATTRIBUTE)의 오류로 바꾸는 규칙을 표로 확인한다.
  *
- * <p>필터는 어떤 경우에도 응답을 직접 쓰지 않고 요청을 다음 필터로 넘긴다. 로그인이 필요한 경로인지는 SecurityConfig 가 정하고, 그
- * 경로에서 인증이 없으면 JwtAuthenticationEntryPoint 가 이 필터가 남긴 오류로 답한다.
+ * <p>필터는 어떤 경우에도 응답을 직접 쓰지 않고 요청을 다음 필터로 넘긴다. 예상하지 못한 예외(INTERNAL_ERROR)도 오류만 남기고
+ * 넘긴다. 필터는 어느 경로가 로그인 없이 열리는지 모른다. 로그인이 필요한 경로인지는 SecurityConfig 가 정하고(SecurityRulesTest),
+ * 그 경로에서 인증이 없으면 JwtAuthenticationEntryPoint 가 이 필터가 남긴 오류로 답한다.
  */
 class JwtAuthenticationFilterTest {
 
@@ -63,6 +64,7 @@ class JwtAuthenticationFilterTest {
 
 			// then
 			Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+			assertThat(authentication.isAuthenticated()).isTrue();
 			assertThat(authentication.getPrincipal()).isEqualTo(expectedPrincipal);
 			assertThat(authentication.getAuthorities()).extracting(GrantedAuthority::getAuthority)
 				.containsExactly(expectedAuthority);
@@ -78,7 +80,11 @@ class JwtAuthenticationFilterTest {
 			Arguments.of("관리자 토큰", "admin", "ROLE_ADMIN",
 				signedByThisServer(claimsOfThisServer().subject("admin").claim("role", "ROLE_ADMIN"))),
 			Arguments.of("만료 1초 전 토큰", "member", "ROLE_USER",
-				signedByThisServer(claimsOfThisServer().expiration(Date.from(NOW.plusSeconds(1))))));
+				signedByThisServer(claimsOfThisServer().expiration(Date.from(NOW.plusSeconds(1))))),
+			// 요구사항이 아니라 지금 동작을 적은 줄이다. jjwt 는 지금 시각이 만료 시각보다 뒤일 때만 만료로 보므로 만료 시각과 같은
+			// 순간의 토큰은 통과한다. RFC 7519 는 이 순간부터 거부하라고 하므로, 파서 설정을 그렇게 바꾸면 이 줄도 함께 바꾼다.
+			Arguments.of("만료 시각과 같은 순간의 토큰", "member", "ROLE_USER",
+				signedByThisServer(claimsOfThisServer().expiration(Date.from(NOW)))));
 	}
 
 	@Nested
@@ -87,15 +93,16 @@ class JwtAuthenticationFilterTest {
 
 		@ParameterizedTest(name = "[{index}] {0} → {2}")
 		@MethodSource("com.mansereok.server.domain.auth.filter.JwtAuthenticationFilterTest#rejectedHeaders")
-		@DisplayName("인증 정보를 넣지 않고 오류 종류와 문구를 요청 속성에 남긴 뒤 다음 필터로 넘긴다")
+		@DisplayName("인증 정보를 넣지 않고 응답도 쓰지 않은 채, 오류 종류와 문구를 요청 속성에 남기고 다음 필터로 넘긴다")
 		void leavesErrorAndContinues(String description, String authorizationHeader, JwtErrorCode expectedCode,
 			String expectedMessage) throws Exception {
 			// given
 			MockHttpServletRequest request = request(PROTECTED_PATH, authorizationHeader);
+			MockHttpServletResponse response = new MockHttpServletResponse();
 			MockFilterChain chain = new MockFilterChain();
 
 			// when
-			filter.doFilter(request, new MockHttpServletResponse(), chain);
+			filter.doFilter(request, response, chain);
 
 			// then
 			assertThat(SecurityContextHolder.getContext().getAuthentication()).isNull();
@@ -105,6 +112,9 @@ class JwtAuthenticationFilterTest {
 					assertThat(e.getMessage()).isEqualTo(expectedMessage);
 				});
 			assertThat(chain.getRequest()).isSameAs(request);
+			assertThat(response.isCommitted()).isFalse();
+			assertThat(response.getStatus()).isEqualTo(200);
+			assertThat(response.getContentAsString()).isEmpty();
 		}
 	}
 
@@ -116,6 +126,8 @@ class JwtAuthenticationFilterTest {
 			Arguments.of("다른 키로 서명한 토큰",
 				"Bearer " + signedWithOtherKey(claimsOfThisServer()),
 				JwtErrorCode.SIGNATURE_INVALID, "JWT 토큰의 서명이 유효하지 않습니다."),
+			// 발급자가 다른 토큰은 IncorrectClaimException, 발급자가 없는 토큰은 MissingClaimException 으로 파서를 빠져나온다.
+			// 필터가 둘 중 하나라도 놓치면 그 토큰은 예상하지 못한 오류(INTERNAL_ERROR, 500)로 떨어진다.
 			Arguments.of("같은 키로 서명했지만 발급자가 다른 토큰",
 				"Bearer " + signedByThisServer(claimsOfThisServer().issuer("staging." + ISSUER)),
 				JwtErrorCode.SIGNATURE_INVALID, "JWT 토큰의 발급자가 올바르지 않습니다."),
@@ -140,9 +152,16 @@ class JwtAuthenticationFilterTest {
 			Arguments.of("Basic 인증 헤더",
 				"Basic bWVtYmVyOnBhc3N3b3Jk",
 				JwtErrorCode.TOKEN_MALFORMED, "Authorization Header 는 'Bearer '로 시작해야 합니다."),
+			// 요구사항이 아니라 지금 동작을 적은 줄이다. RFC 7235 는 인증 방식 이름의 대소문자를 가리지 않으므로, 표준대로
+			// 'bearer' 도 받게 고치면 이 줄은 회귀가 아니라 바뀐 동작에 맞춰 고칠 대상이다.
 			Arguments.of("소문자 bearer 헤더",
 				"bearer " + signedByThisServer(claimsOfThisServer()),
-				JwtErrorCode.TOKEN_MALFORMED, "Authorization Header 는 'Bearer '로 시작해야 합니다."));
+				JwtErrorCode.TOKEN_MALFORMED, "Authorization Header 는 'Bearer '로 시작해야 합니다."),
+			// 필터가 종류별로 나눠 잡지 않은 예외는 모두 이 줄처럼 INTERNAL_ERROR 로 남는다. 이 서버 키로 서명했어도 role 이 문자열이
+			// 아니면 클레임을 읽는 곳에서 jjwt 의 RequiredTypeException 이 난다.
+			Arguments.of("role 이 숫자인 토큰",
+				"Bearer " + signedByThisServer(claimsOfThisServer().claim("role", 1)),
+				JwtErrorCode.INTERNAL_ERROR, "JWT 처리 중 내부 오류가 발생했습니다."));
 	}
 
 	@Nested
@@ -220,30 +239,6 @@ class JwtAuthenticationFilterTest {
 
 			// then
 			assertThat(SecurityContextHolder.getContext().getAuthentication()).isNull();
-		}
-	}
-
-	@Nested
-	@DisplayName("로그인 없이 여는 경로에 잘못된 토큰이 실려 오면")
-	class WhenPublicPathHasBadToken {
-
-		@Test
-		@DisplayName("응답을 쓰지 않고 다음 필터로 넘겨, 경로를 열지 막을지는 뒤의 보안 규칙이 정하게 한다")
-		void leavesResponseUntouched() throws Exception {
-			// given
-			MockHttpServletRequest request = new MockHttpServletRequest("POST", "/api/auth/refresh");
-			request.addHeader(HttpHeaders.AUTHORIZATION, "Bearer abc");
-			MockHttpServletResponse response = new MockHttpServletResponse();
-			MockFilterChain chain = new MockFilterChain();
-
-			// when
-			filter.doFilter(request, response, chain);
-
-			// then
-			assertThat(chain.getRequest()).isSameAs(request);
-			assertThat(response.isCommitted()).isFalse();
-			assertThat(response.getStatus()).isEqualTo(200);
-			assertThat(response.getContentAsString()).isEmpty();
 		}
 	}
 
