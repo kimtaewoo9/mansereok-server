@@ -7,7 +7,6 @@ import com.mansereok.server.domain.interpret.calculator.RelationCalculator;
 import com.mansereok.server.domain.interpret.calculator.SinsalCalculator;
 import com.mansereok.server.domain.interpret.calculator.UnseongCalculator;
 import com.mansereok.server.domain.interpret.calculator.YongsinCalculator;
-import com.mansereok.server.domain.interpret.calculator.YongsinCalculator.YongsinResult;
 import com.mansereok.server.domain.interpret.dto.request.ManseryeokCalculationRequest;
 import com.mansereok.server.domain.interpret.dto.response.ManseryeokCalculationResponse;
 import com.mansereok.server.domain.interpret.dto.response.ManseryeokCalculationResponse.SajuInfo;
@@ -25,7 +24,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.stream.Collectors;
+import java.util.function.BiFunction;
+import java.util.stream.Stream;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Limit;
@@ -88,113 +88,10 @@ public class ManseCalculationService {
 			BigFortuneRangeResult bigFortune = calculateBigFortuneRange(daewoonDirection, samju, rawSolarTime,
 				timeUnknown, uncertaintyNotes);
 			TimePillarResult timePillar = getTimePillar(samju.getDaySky(), rawSolarTime);
-			String ilganChinese = samju.getDaySky();
 
-			Map<String, List<String>> sinsalInfo = sinsalCalculator.analyzeAllSinsal(new FourPillars(
-				samju.getYearSky(),
-				samju.getYearGround(),
-				samju.getMonthSky(),
-				samju.getMonthGround(),
-				samju.getDaySky(),
-				samju.getDayGround(),
-				timePillar.getTimeSky(),
-				timePillar.getTimeGround()
-			));
-			boolean hasGoegang = sinsalCalculator.hasGoegang(ilganChinese, samju.getDayGround());
-			boolean hasBaekho = sinsalCalculator.hasBaekho(ilganChinese, samju.getDayGround());
-			List<String> gongmang = sinsalCalculator.calculateGongmang(ilganChinese,
-				samju.getDayGround());
-
-			// 12. 지지 관계 분석 (모든 조합 6개)
-			List<String> allGroundRelations = new ArrayList<>();
-			addRelations(allGroundRelations, "년지-월지",
-				relationCalculator.analyzeRelation(samju.getYearGround(), samju.getMonthGround()));
-			addRelations(allGroundRelations, "년지-일지",
-				relationCalculator.analyzeRelation(samju.getYearGround(), samju.getDayGround()));
-			addRelations(allGroundRelations, "월지-일지",
-				relationCalculator.analyzeRelation(samju.getMonthGround(), samju.getDayGround()));
-
-			if (timePillar.getTimeGround() != null) {
-				addRelations(allGroundRelations, "년지-시지",
-					relationCalculator.analyzeRelation(samju.getYearGround(),
-						timePillar.getTimeGround()));
-				addRelations(allGroundRelations, "월지-시지",
-					relationCalculator.analyzeRelation(samju.getMonthGround(),
-						timePillar.getTimeGround()));
-				addRelations(allGroundRelations, "일지-시지",
-					relationCalculator.analyzeRelation(samju.getDayGround(),
-						timePillar.getTimeGround()));
-			}
-
-			// 13. 천간 관계 분석 (모든 조합)
-			List<String> allSkyRelations = new ArrayList<>();
-			addRelations(allSkyRelations, "년간-월간",
-				relationCalculator.analyzeSkyRelation(samju.getYearSky(), samju.getMonthSky()));
-			addRelations(allSkyRelations, "년간-일간",
-				relationCalculator.analyzeSkyRelation(samju.getYearSky(), samju.getDaySky()));
-			addRelations(allSkyRelations, "월간-일간",
-				relationCalculator.analyzeSkyRelation(samju.getMonthSky(), samju.getDaySky()));
-
-			if (timePillar.getTimeSky() != null) {
-				addRelations(allSkyRelations, "년간-시간",
-					relationCalculator.analyzeSkyRelation(samju.getYearSky(),
-						timePillar.getTimeSky()));
-				addRelations(allSkyRelations, "월간-시간",
-					relationCalculator.analyzeSkyRelation(samju.getMonthSky(),
-						timePillar.getTimeSky()));
-				addRelations(allSkyRelations, "일간-시간",
-					relationCalculator.analyzeSkyRelation(samju.getDaySky(),
-						timePillar.getTimeSky()));
-			}
-
-			// 14. 삼합 체크
-			List<String> fullSamhap = relationCalculator.findFullSamhap(
-				java.util.stream.Stream.of(samju.getYearGround(), samju.getMonthGround(),
-						samju.getDayGround(), timePillar.getTimeGround())
-					.filter(Objects::nonNull).collect(Collectors.toList())
-			);
-
-			// 15. DTO 빌드
-			SajuInfo sajuInfo = SajuInfo.builder()
-				.bigFortuneNumber(bigFortune.getBigFortuneNumber())
-				.bigFortuneNumberMin(bigFortune.getBigFortuneNumberMin())
-				.bigFortuneNumberMax(bigFortune.getBigFortuneNumberMax())
-				.bigFortuneStartYear(bigFortune.getBigFortuneStart())
-				.bigFortuneStartYearMin(bigFortune.getBigFortuneStartMin())
-				.bigFortuneStartYearMax(bigFortune.getBigFortuneStartMax())
-				.daewoonDirection(daewoonDirection)
-				.seasonStartTime(samju.getSeasonStartTime())
-				.uncertaintyNotes(uncertaintyNotes.isEmpty() ? null : uncertaintyNotes)
-				.yearSky(formatChinese(samju.getYearSky(), samju.getDaySky(), false, ilganChinese))
-				.yearGround(
-					formatChineseWithUnseong(samju.getYearGround(), ilganChinese, samju.getDaySky(),
-						true, ilganChinese))
-				.monthSky(
-					formatChinese(samju.getMonthSky(), samju.getDaySky(), false, ilganChinese))
-				.monthGround(formatChineseWithUnseong(samju.getMonthGround(), ilganChinese,
-					samju.getDaySky(), true, ilganChinese))
-				.daySky(formatChinese(samju.getDaySky(), samju.getDaySky(), false, ilganChinese))
-				.dayGround(
-					formatChineseWithUnseong(samju.getDayGround(), ilganChinese, samju.getDaySky(),
-						true, ilganChinese))
-				.timeSky(timePillar.getTimeSky() != null ? formatChinese(timePillar.getTimeSky(),
-					samju.getDaySky(), false, ilganChinese) : null)
-				.timeGround(timePillar.getTimeGround() != null ? formatChineseWithUnseong(
-					timePillar.getTimeGround(), ilganChinese, samju.getDaySky(), true, ilganChinese)
-					: null)
-				.sinsalInfo(sinsalInfo)
-				.hasGoegang(hasGoegang)
-				.hasBaekho(hasBaekho)
-				.gongmang(gongmang)
-				.groundRelations(allGroundRelations)
-				.skyRelations(allSkyRelations)
-				.samhap(fullSamhap)
-				.monthlyFortunes(calculateMonthlyFortunes(samju.getDaySky(), ilganChinese))
-				.build();
-
-			// 16. 용신 계산
-			YongsinResult yongsinResult = yongsinCalculator.analyzeYongsin(sajuInfo);
-			sajuInfo.setYongsinInfo(yongsinResult);
+			SajuInfo sajuInfo = buildSajuInfo(samju, timePillar, daewoonDirection, bigFortune, uncertaintyNotes);
+			// 용신은 기둥 칸과 지장간까지 채운 사주를 보고 정하므로 사주 정보를 다 채운 뒤에 넣는다.
+			sajuInfo.setYongsinInfo(yongsinCalculator.analyzeYongsin(sajuInfo));
 
 			return ManseryeokCalculationResponse.builder()
 				.input(ManseryeokCalculationResponse.InputInfo.builder()
@@ -212,11 +109,116 @@ public class ManseCalculationService {
 		}
 	}
 
-	// 헬퍼 메서드: 관계 리스트에 추가
-	private void addRelations(List<String> targetList, String label, List<String> relations) {
-		if (relations != null && !relations.isEmpty()) {
-			targetList.add(label + ": " + String.join(", ", relations));
+	/**
+	 * 네 기둥과 대운 결과로 응답의 사주 정보를 채운다. 기둥 칸, 신살, 지지·천간 관계, 삼합, 월운까지 넣고 용신은 비워 둔다.
+	 */
+	private SajuInfo buildSajuInfo(SamjuResult samju, TimePillarResult timePillar,
+		DaewoonDirection daewoonDirection, BigFortuneRangeResult bigFortune, List<String> uncertaintyNotes) {
+		String ilganChinese = samju.getDaySky();
+
+		Map<String, List<String>> sinsalInfo = sinsalCalculator.analyzeAllSinsal(new FourPillars(
+			samju.getYearSky(),
+			samju.getYearGround(),
+			samju.getMonthSky(),
+			samju.getMonthGround(),
+			samju.getDaySky(),
+			samju.getDayGround(),
+			timePillar.getTimeSky(),
+			timePillar.getTimeGround()
+		));
+		boolean hasGoegang = sinsalCalculator.hasGoegang(ilganChinese, samju.getDayGround());
+		boolean hasBaekho = sinsalCalculator.hasBaekho(ilganChinese, samju.getDayGround());
+		List<String> gongmang = sinsalCalculator.calculateGongmang(ilganChinese, samju.getDayGround());
+		List<String> groundRelations = analyzeGroundRelations(samju, timePillar);
+		List<String> skyRelations = analyzeSkyRelations(samju, timePillar);
+		List<String> fullSamhap = relationCalculator.findFullSamhap(
+			Stream.of(samju.getYearGround(), samju.getMonthGround(), samju.getDayGround(),
+					timePillar.getTimeGround())
+				.filter(Objects::nonNull)
+				.toList());
+
+		return SajuInfo.builder()
+			.bigFortuneNumber(bigFortune.getBigFortuneNumber())
+			.bigFortuneNumberMin(bigFortune.getBigFortuneNumberMin())
+			.bigFortuneNumberMax(bigFortune.getBigFortuneNumberMax())
+			.bigFortuneStartYear(bigFortune.getBigFortuneStart())
+			.bigFortuneStartYearMin(bigFortune.getBigFortuneStartMin())
+			.bigFortuneStartYearMax(bigFortune.getBigFortuneStartMax())
+			.daewoonDirection(daewoonDirection)
+			.seasonStartTime(samju.getSeasonStartTime())
+			.uncertaintyNotes(uncertaintyNotes.isEmpty() ? null : uncertaintyNotes)
+			.yearSky(formatChinese(samju.getYearSky(), samju.getDaySky(), false, ilganChinese))
+			.yearGround(
+				formatChineseWithUnseong(samju.getYearGround(), ilganChinese, samju.getDaySky(),
+					true, ilganChinese))
+			.monthSky(
+				formatChinese(samju.getMonthSky(), samju.getDaySky(), false, ilganChinese))
+			.monthGround(formatChineseWithUnseong(samju.getMonthGround(), ilganChinese,
+				samju.getDaySky(), true, ilganChinese))
+			.daySky(formatChinese(samju.getDaySky(), samju.getDaySky(), false, ilganChinese))
+			.dayGround(
+				formatChineseWithUnseong(samju.getDayGround(), ilganChinese, samju.getDaySky(),
+					true, ilganChinese))
+			.timeSky(timePillar.getTimeSky() != null ? formatChinese(timePillar.getTimeSky(),
+				samju.getDaySky(), false, ilganChinese) : null)
+			.timeGround(timePillar.getTimeGround() != null ? formatChineseWithUnseong(
+				timePillar.getTimeGround(), ilganChinese, samju.getDaySky(), true, ilganChinese)
+				: null)
+			.sinsalInfo(sinsalInfo)
+			.hasGoegang(hasGoegang)
+			.hasBaekho(hasBaekho)
+			.gongmang(gongmang)
+			.groundRelations(groundRelations)
+			.skyRelations(skyRelations)
+			.samhap(fullSamhap)
+			.monthlyFortunes(calculateMonthlyFortunes(samju.getDaySky(), ilganChinese))
+			.build();
+	}
+
+	/**
+	 * 지지 여섯 짝의 충·원진·형·파·해·반합을 년지-월지, 년지-일지, 월지-일지, 년지-시지, 월지-시지, 일지-시지 순서로 적는다.
+	 */
+	private List<String> analyzeGroundRelations(SamjuResult samju, TimePillarResult timePillar) {
+		String timeGround = timePillar.getTimeGround();
+		return describeRelations(relationCalculator::analyzeRelation, List.of(
+			new RelationPair("년지-월지", samju.getYearGround(), samju.getMonthGround()),
+			new RelationPair("년지-일지", samju.getYearGround(), samju.getDayGround()),
+			new RelationPair("월지-일지", samju.getMonthGround(), samju.getDayGround()),
+			new RelationPair("년지-시지", samju.getYearGround(), timeGround),
+			new RelationPair("월지-시지", samju.getMonthGround(), timeGround),
+			new RelationPair("일지-시지", samju.getDayGround(), timeGround)));
+	}
+
+	/**
+	 * 천간 여섯 짝의 천간합·천간충을 년간-월간, 년간-일간, 월간-일간, 년간-시간, 월간-시간, 일간-시간 순서로 적는다.
+	 */
+	private List<String> analyzeSkyRelations(SamjuResult samju, TimePillarResult timePillar) {
+		String timeSky = timePillar.getTimeSky();
+		return describeRelations(relationCalculator::analyzeSkyRelation, List.of(
+			new RelationPair("년간-월간", samju.getYearSky(), samju.getMonthSky()),
+			new RelationPair("년간-일간", samju.getYearSky(), samju.getDaySky()),
+			new RelationPair("월간-일간", samju.getMonthSky(), samju.getDaySky()),
+			new RelationPair("년간-시간", samju.getYearSky(), timeSky),
+			new RelationPair("월간-시간", samju.getMonthSky(), timeSky),
+			new RelationPair("일간-시간", samju.getDaySky(), timeSky)));
+	}
+
+	/**
+	 * 짝마다 관계를 찾아 "년지-월지: 충, 형" 처럼 한 줄로 적는다. 관계가 없는 짝과, 시간을 몰라 시주 글자가 비어 있는 짝은 적지 않는다.
+	 */
+	private static List<String> describeRelations(BiFunction<String, String, List<String>> relationsOf,
+		List<RelationPair> pairs) {
+		List<String> lines = new ArrayList<>();
+		for (RelationPair pair : pairs) {
+			if (pair.left() == null || pair.right() == null) {
+				continue;
+			}
+			List<String> relations = relationsOf.apply(pair.left(), pair.right());
+			if (!relations.isEmpty()) {
+				lines.add(pair.label() + ": " + String.join(", ", relations));
+			}
 		}
+		return lines;
 	}
 
 	private List<ManseryeokCalculationResponse.MonthlyFortune> calculateMonthlyFortunes(
@@ -643,6 +645,13 @@ public class ManseCalculationService {
 			}
 			return isLunar ? LUNAR : SOLAR;
 		}
+	}
+
+	/**
+	 * 관계를 볼 두 글자와, 결과 줄 앞에 붙일 "년지-월지" 같은 이름.
+	 */
+	private record RelationPair(String label, String left, String right) {
+
 	}
 
 	@lombok.Data
