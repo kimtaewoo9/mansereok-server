@@ -2,72 +2,106 @@ package com.mansereok.server.domain.interpret.dto.request;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.mansereok.server.domain.interpret.client.OpenAiProperties.ModelTier;
+import com.mansereok.server.domain.interpret.client.ReasoningEffort;
+import com.mansereok.server.domain.interpret.client.Verbosity;
 import java.util.Map;
 import lombok.Getter;
 
+/**
+ * OpenAI Responses API 요청 본문. 새로 만드는 길은 {@link #of} 하나뿐이고, 티어만 바꾼 사본은 {@link #withTier} 로 만든다.
+ *
+ * <p>시스템 지시와 사용자 프롬프트를 String 이 아닌 각자의 타입({@link SystemInstruction}, {@link UserPrompt})으로 받는다.
+ * 둘 다 String 이면 순서를 뒤바꿔 넘겨도 컴파일이 통과하고, 그러면 사용자 프롬프트가 신뢰 채널인 instructions 로 올라가
+ * 시스템 지시와 사용자 입력의 경계가 무너진다. 모델·토큰 상한·추론 강도·출력 길이도 티어({@link ModelTier}) 하나로 받아,
+ * 호출부가 네 값을 풀어서 넘기다 순서를 바꿀 여지를 없앤다.
+ */
 @Getter
 public class Gpt5Request {
 
-	private String model;
+	private final String model;
 
 	/**
 	 * Responses API 의 최상위 시스템 지시 필드. 사용자 입력과 다른 채널로 전달되므로
 	 * input 에 섞인 문장이 이 지시를 덮어쓰기 어렵다.
 	 */
-	@JsonInclude(JsonInclude.Include.NON_NULL)
-	private String instructions;
+	private final String instructions;
 
-	private String input; // 사용자 프롬프트만 담는다. 시스템 지시는 instructions 로 간다.
+	private final String input; // 사용자 프롬프트만 담는다. 시스템 지시는 instructions 로 간다.
 	@JsonProperty("max_output_tokens")
-	private int maxOutputTokens;
-	private Reasoning reasoning;
-	private Text text;
+	private final int maxOutputTokens;
+	private final Reasoning reasoning;
+	private final Text text;
 
-	public Gpt5Request(String model, String input, int maxOutputTokens, String effort,
-		String verbosity) {
-		this(model, input, maxOutputTokens, effort, verbosity, null);
-	}
-
-	/**
-	 * Structured Outputs 지원 생성자. outputFormat에 json_schema 포맷을 넘기면
-	 * 모델 출력이 스키마에 강제되어, 프롬프트의 JSON 문법 지시와 잘린 JSON 복구가 불필요해진다.
-	 */
-	public Gpt5Request(String model, String input, int maxOutputTokens, String effort,
-		String verbosity, Map<String, Object> outputFormat) {
-		this(model, null, input, maxOutputTokens, effort, verbosity, outputFormat);
-	}
-
-	/**
-	 * 시스템 지시와 사용자 입력을 분리해 요청을 만든다.
-	 * instructions 에는 서버가 만든 시스템 지시만, userInput 에는 사용자 프롬프트만 넣는다.
-	 *
-	 * <p>생성자가 아니라 이름 있는 정적 팩터리로 두는 이유는, 앞쪽 String 세 개가 나란히 있는 생성자라
-	 * 두 값을 뒤바꿔 넘겨도 컴파일이 통과하기 때문이다. 그렇게 되면 사용자 프롬프트가 통째로 신뢰 채널인
-	 * instructions 로 올라가 경계가 무너진다. (Effective Java 아이템 1·51)
-	 */
-	public static Gpt5Request withSystemInstruction(String model, String instructions,
-		String userInput, int maxOutputTokens, String effort, String verbosity,
+	private Gpt5Request(ModelTier tier, SystemInstruction instructions, UserPrompt input,
 		Map<String, Object> outputFormat) {
-		return new Gpt5Request(model, instructions, userInput, maxOutputTokens, effort, verbosity,
-			outputFormat);
+		this.model = tier.model();
+		this.instructions = instructions.text();
+		this.input = input.text();
+		this.maxOutputTokens = tier.maxOutputTokens();
+		this.reasoning = new Reasoning(tier.reasoningEffort());
+		this.text = new Text(tier.verbosity(), outputFormat);
 	}
 
-	private Gpt5Request(String model, String instructions, String input, int maxOutputTokens,
-		String effort, String verbosity, Map<String, Object> outputFormat) {
-		this.model = model;
-		this.instructions = instructions;
-		this.input = input;
-		this.maxOutputTokens = maxOutputTokens;
-		this.reasoning = new Reasoning(effort);
-		this.text = new Text(verbosity, outputFormat);
+	/** source 의 시스템 지시·사용자 프롬프트·출력 형식을 그대로 옮기고 티어 값만 바꾼다. */
+	private Gpt5Request(Gpt5Request source, ModelTier tier) {
+		this.model = tier.model();
+		this.instructions = source.instructions;
+		this.input = source.input;
+		this.maxOutputTokens = tier.maxOutputTokens();
+		this.reasoning = new Reasoning(tier.reasoningEffort());
+		this.text = new Text(tier.verbosity(), source.text.format);
+	}
+
+	/**
+	 * 티어 설정으로 요청을 만든다. instructions 에는 서버가 만든 시스템 지시만, input 에는 사용자 프롬프트만 들어간다.
+	 * outputFormat 에 json_schema 포맷을 넘기면 모델 출력이 스키마에 맞춰진다(Structured Outputs). 없으면 null 을 넘긴다.
+	 */
+	public static Gpt5Request of(ModelTier tier, SystemInstruction instructions, UserPrompt input,
+		Map<String, Object> outputFormat) {
+		if (tier == null || instructions == null || input == null) {
+			throw new IllegalArgumentException("티어, 시스템 지시, 사용자 프롬프트는 모두 있어야 합니다.");
+		}
+		return new Gpt5Request(tier, instructions, input, outputFormat);
+	}
+
+	/**
+	 * 모델·토큰 상한·추론 강도·출력 길이만 tier 로 바꾼 사본을 만든다. fallback 호출이 쓴다.
+	 * 시스템 지시와 사용자 프롬프트는 String 으로 꺼내 다시 감싸지 않고 같은 이름의 필드로 그대로 옮긴다.
+	 */
+	public Gpt5Request withTier(ModelTier tier) {
+		if (tier == null) {
+			throw new IllegalArgumentException("티어는 있어야 합니다.");
+		}
+		return new Gpt5Request(this, tier);
+	}
+
+	/** 서버가 정한 시스템 지시. 요청 본문의 instructions 로만 간다. */
+	public record SystemInstruction(String text) {
+
+		public SystemInstruction {
+			if (text == null || text.isBlank()) {
+				throw new IllegalArgumentException("시스템 지시는 비어 있을 수 없습니다.");
+			}
+		}
+	}
+
+	/** 사용자 데이터가 들어간 프롬프트. 요청 본문의 input 으로만 간다. */
+	public record UserPrompt(String text) {
+
+		public UserPrompt {
+			if (text == null || text.isBlank()) {
+				throw new IllegalArgumentException("사용자 프롬프트는 비어 있을 수 없습니다.");
+			}
+		}
 	}
 
 	@Getter
 	public static class Reasoning {
 
-		private String effort; // minimal, low, medium, high
+		private final ReasoningEffort effort;
 
-		public Reasoning(String effort) {
+		private Reasoning(ReasoningEffort effort) {
 			this.effort = effort;
 		}
 	}
@@ -75,18 +109,15 @@ public class Gpt5Request {
 	@Getter
 	public static class Text {
 
-		private String verbosity; // low, medium, high
+		private final Verbosity verbosity;
 
 		@JsonInclude(JsonInclude.Include.NON_NULL)
-		private Map<String, Object> format; // Responses API structured outputs (json_schema)
+		private final Map<String, Object> format; // Responses API structured outputs (json_schema)
 
-		public Text(String verbosity) {
-			this(verbosity, null);
-		}
-
-		public Text(String verbosity, Map<String, Object> format) {
+		private Text(Verbosity verbosity, Map<String, Object> format) {
 			this.verbosity = verbosity;
-			this.format = format;
+			// 넘겨받은 Map 을 호출부가 나중에 바꿔도 이미 만든 요청 본문이 바뀌지 않게 바깥 Map 을 복사해 둔다.
+			this.format = format == null ? null : Map.copyOf(format);
 		}
 	}
 }
