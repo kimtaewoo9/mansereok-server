@@ -22,8 +22,6 @@ import jakarta.validation.Valid;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.http.HttpHeaders;
-import org.springframework.http.ResponseCookie;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
@@ -49,9 +47,11 @@ public class AuthController {
 	/**
 	 * 사용자 로그인 (Refresh Token 포함)
 	 *
-	 * <p>가입하지 않은 이메일, 소셜로 가입한 이메일(비밀번호가 없어 어떤 비밀번호도 맞지 않는다), 틀린 비밀번호는 모두
-	 * BadCredentialsException 이 되어 같은 401 INVALID_CREDENTIALS 응답으로 끝난다(GlobalExceptionHandler). 로그인 응답만 보고는
-	 * 그 이메일이 가입했는지, 어떤 방식으로 가입했는지 알 수 없게 하려는 것이다.
+	 * <p>가입하지 않은 이메일, 소셜로 가입한 이메일(비밀번호가 없다), 틀린 비밀번호는 모두 BadCredentialsException 이 되어 같은 401
+	 * INVALID_CREDENTIALS 응답으로 끝난다(GlobalExceptionHandler). 세 경우 모두 BCrypt 비교를 한 번 해서 응답 시간도 비슷하다.
+	 * 소셜 가입 이메일은 CustomUserDetailsService 가 가입하지 않은 이메일처럼 다뤄, DaoAuthenticationProvider 가 미리 만들어 둔
+	 * BCrypt 해시와 비교한다. 로그인 응답의 본문과 시간만 보고는 그 이메일이 가입했는지, 어떤 방식으로 가입했는지 알 수 없게 하려는
+	 * 것이다.
 	 *
 	 * @param loginRequest 로그인 요청 정보
 	 * @return Access Token과 Refresh Token
@@ -89,7 +89,7 @@ public class AuthController {
 
 		// 이 기기의 토큰만 새로 넣는다. 다른 기기에서 받은 토큰은 그대로 쓸 수 있다.
 		String refreshToken = refreshTokenService.issue(user);
-		addCookie(response, refreshTokenCookies.issue(refreshToken));
+		refreshTokenCookies.addIssued(response, refreshToken);
 
 		return ResponseEntity.ok(responseBody);
 	}
@@ -138,7 +138,7 @@ public class AuthController {
 
 		String newAccessToken = jwtUtil.generateAccessToken(user.getUsername(), claims);
 
-		addCookie(response, refreshTokenCookies.issue(rotated.token()));
+		refreshTokenCookies.addIssued(response, rotated.token());
 
 		return ResponseEntity.ok(new TokenRefreshResponse(UserDto.from(user), newAccessToken));
 	}
@@ -150,15 +150,20 @@ public class AuthController {
 	 * 쿠키를 지우는 Set-Cookie 를 응답에 넣어, 쓸 수 없는 쿠키를 브라우저가 요청마다 다시 싣지 않게 한다. 예외 처리기는 응답
 	 * 본문만 새로 쓰고 이미 넣은 Set-Cookie 헤더는 그대로 둔다(DispatcherServlet 은 Content-Type·Content-Disposition 과 본문만
 	 * 비운다).
+	 *
+	 * <p>재사용으로 거절할 때도 쿠키를 지운다. 그래서 같은 브라우저가 같은 토큰으로 보낸 재발급 두 건 중 뒤의 것이 유예 시간
+	 * (app.auth.refresh-token.reuse-grace)이 지나서야 처리되면, 그 거절 응답이 앞 요청이 방금 넣은 새 토큰 쿠키까지 지워 다음
+	 * 재발급에서 로그아웃된다. 이 PR 전에는 거절 응답이 쿠키를 건드리지 않았다.
 	 */
 	private RotatedRefreshToken rotateOrExpireCookie(String token, HttpServletResponse response) {
+		if (token == null || token.isBlank()) {
+			refreshTokenCookies.addExpired(response);
+			throw new InvalidRefreshTokenException("인증 정보가 없습니다.");
+		}
 		try {
-			if (token == null || token.isBlank()) {
-				throw new InvalidRefreshTokenException("인증 정보가 없습니다.");
-			}
 			return refreshTokenService.rotate(token);
 		} catch (InvalidRefreshTokenException e) {
-			addCookie(response, refreshTokenCookies.expire());
+			refreshTokenCookies.addExpired(response);
 			throw e;
 		}
 	}
@@ -173,7 +178,7 @@ public class AuthController {
 			refreshTokenService.revoke(token);
 		}
 
-		addCookie(response, refreshTokenCookies.expire());
+		refreshTokenCookies.addExpired(response);
 
 		HttpSession session = request.getSession(false);
 		if (session != null) {
@@ -215,9 +220,5 @@ public class AuthController {
 	public ResponseEntity<?> confirmPasswordReset(@Valid @RequestBody PasswordResetConfirmDto confirmDto) {
 		userService.resetPassword(confirmDto.token(), confirmDto.newPassword());
 		return ResponseEntity.ok(Map.of("message", "비밀번호가 성공적으로 변경되었습니다."));
-	}
-
-	private static void addCookie(HttpServletResponse response, ResponseCookie cookie) {
-		response.addHeader(HttpHeaders.SET_COOKIE, cookie.toString());
 	}
 }
