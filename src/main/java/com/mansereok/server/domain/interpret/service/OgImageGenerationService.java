@@ -6,226 +6,142 @@ import com.mansereok.server.domain.interpret.repository.CompatibilityResultRepos
 import com.mansereok.server.domain.interpret.repository.ResultRepository;
 import java.awt.Color;
 import java.awt.Font;
+import java.awt.FontFormatException;
 import java.awt.FontMetrics;
 import java.awt.Graphics2D;
 import java.awt.RenderingHints;
 import java.awt.image.BufferedImage;
-import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.function.BiConsumer;
 import javax.imageio.ImageIO;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.io.ClassPathResource;
-import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
+/**
+ * 해석 결과의 요약을 공유 미리보기(OG) 이미지로 그려 S3 에 올리고, 그 주소를 결과에 저장한다.
+ *
+ * <p>해석 작업 스레드가 결과를 저장한 직후 이 서비스를 바로 부른다(비동기로 넘기지 않는다). 그래서 다른 풀이 가득 찼거나 먼저 닫혀서
+ * 이미지 작업이 버려지는 일이 없다. 대신 해석 스레드가 이미지 생성과 업로드 시간만큼 더 붙잡힌다.
+ *
+ * <p>이미지 생성이나 업로드가 Exception 으로 실패하면 해석 결과는 그대로 두고 로그만 남긴다. OutOfMemoryError 같은 Error 는 잡지
+ * 않는다. Error 는 해석 스레드로 올라가므로, 그 해석의 뒤 단계(결과 준비 메일)는 돌지 않는다.
+ */
 @Slf4j
 @Service
 public class OgImageGenerationService {
 
+	private static final String FONT_PATH = "fonts/NotoSansKR-Light.ttf";
+	private static final String TEMPLATE_PATH = "static/result_image_template.png";
+
+	private static final String SAJU_KEY_PREFIX = "og-images/saju-";
+	private static final String COMPATIBILITY_KEY_PREFIX = "og-images/compat-";
+	private static final String CONTENT_TYPE = "image/png";
+
+	// 요약 글자 모양. 디자인의 font-size 36px, line-height 48px, 좌우 여백 60px 을 그대로 옮겼다.
+	private static final float FONT_SIZE = 36f;
+	private static final Color TEXT_COLOR = new Color(0x111111);
+	private static final int LINE_HEIGHT = 48;
+	private static final int SIDE_MARGIN = 60;
+
 	private final S3UploadService s3UploadService;
 	private final ResultRepository resultRepository;
 	private final CompatibilityResultRepository compatibilityResultRepository;
+	private final Font summaryFont;
 
-	// 1. 폰트 경로
-	private static final String FONT_PATH_REGULAR = "fonts/NotoSansKR-Light.ttf";
-	// private static final String FONT_PATH_BOLD = "fonts/NotoSansKR-Bold.ttf"; // Bold 제거
-
-	private static final String SAJU_TEMPLATE_PATH = "static/result_image_template.png";
-	private static final String COMPAT_TEMPLATE_PATH = "static/result_image_template.png";
-
-	private Font notoSansRegular;
-	// private Font notoSansBold; // Bold 제거
-
-	// 2. 폰트 로드
 	public OgImageGenerationService(S3UploadService s3UploadService,
 		ResultRepository resultRepository,
 		CompatibilityResultRepository compatibilityResultRepository) {
 		this.s3UploadService = s3UploadService;
 		this.resultRepository = resultRepository;
 		this.compatibilityResultRepository = compatibilityResultRepository;
+		this.summaryFont = loadSummaryFont();
+	}
 
-		try {
-			InputStream regularStream = new ClassPathResource(FONT_PATH_REGULAR).getInputStream();
-			this.notoSansRegular = Font.createFont(Font.TRUETYPE_FONT, regularStream)
-				.deriveFont(30f); // 기본 로드 크기 (나중에 deriveFont로 조절)
-			regularStream.close();
-
-			// Bold 폰트 로드 제거
-		} catch (Exception e) {
-			log.error("!!!!!!!!!! Noto Sans KR Light 폰트 로드 실패: {}. 기본 폰트를 사용합니다. !!!!!!!!!!!",
-				e.getMessage());
-			this.notoSansRegular = new Font("Arial", Font.PLAIN, 30);
-			// this.notoSansBold = new Font("Arial", Font.BOLD, 30); // Bold 제거
+	/**
+	 * 요약에 쓰는 글꼴(Noto Sans KR Light 36px)을 읽는다. 글꼴 파일을 읽지 못하면 Arial 로 대신 그린다. 글꼴 스트림은 읽다가
+	 * 실패해도 닫는다.
+	 */
+	static Font loadSummaryFont() {
+		try (InputStream fontStream = new ClassPathResource(FONT_PATH).getInputStream()) {
+			return Font.createFont(Font.TRUETYPE_FONT, fontStream).deriveFont(FONT_SIZE);
+		} catch (IOException | FontFormatException e) {
+			log.error("Noto Sans KR Light 폰트 로드 실패. 기본 폰트(Arial)를 사용합니다.", e);
+			return new Font("Arial", Font.PLAIN, Math.round(FONT_SIZE));
 		}
 	}
 
-	@Async
+	/** 사주 결과의 OG 이미지를 만들어 올리고 주소를 저장한다. 요약이 없으면 아무것도 하지 않는다. */
 	public void generateAndUploadOgImage(Result savedResult) {
-		try {
-			String summary = savedResult.getSummary();
-			if (summary == null) {
-				return;
-			}
-
-			// (1) 이미지 그리기
-			byte[] imageBytes = generateSajuOgImage(summary);
-
-			// (2) S3 업로드 (DB 연결 없이 수행)
-			String objectKey = "og-images/saju-" + savedResult.getId() + ".png";
-			String publicUrl = s3UploadService.uploadFileAndGetPublicUrl(
-				new ByteArrayInputStream(imageBytes),
-				imageBytes.length,
-				objectKey,
-				"image/png"
-			);
-
-			// (3) DB 업데이트 (여기서만 짧게 트랜잭션 사용)
-			resultRepository.updateOgImageUrl(savedResult.getId(), publicUrl);
-
-			log.info("Result(id={}) OG 이미지 URL 저장 완료: {}", savedResult.getId(), publicUrl);
-
-		} catch (Exception e) {
-			log.error("OG 실패", e);
-		}
+		uploadAndSave(SAJU_KEY_PREFIX, savedResult.getId(), savedResult.getSummary(),
+			resultRepository::updateOgImageUrl);
 	}
 
-	@Async
+	/** 궁합 결과의 OG 이미지를 만들어 올리고 주소를 저장한다. 요약이 없으면 아무것도 하지 않는다. */
 	public void generateAndUploadOgImage(CompatibilityResult savedResult) {
+		uploadAndSave(COMPATIBILITY_KEY_PREFIX, savedResult.getId(), savedResult.getSummary(),
+			compatibilityResultRepository::updateOgImageUrl);
+	}
+
+	/**
+	 * 요약을 이미지로 그려 "{keyPrefix}{id}.png" 키로 올리고, 받은 공개 주소를 saveUrl 로 저장한다. 실패는 로그로만 남긴다.
+	 *
+	 * <p>이미지 생성과 업로드는 DB 커넥션 없이 하고, 주소 저장만 짧은 UPDATE 하나로 한다.
+	 */
+	private void uploadAndSave(String keyPrefix, Long id, String summary, BiConsumer<Long, String> saveUrl) {
+		if (summary == null) {
+			return;
+		}
+		String objectKey = keyPrefix + id + ".png";
 		try {
-			String summary = savedResult.getSummary();
-			if (summary == null) {
-				return;
-			}
-
-			// (1) 이미지 생성
-			byte[] imageBytes = generateCompatOgImage(savedResult.getSummary());
-
-			// (2) S3 업로드 (DB 커넥션 없이 수행)
-			String objectKey = "og-images/compat-" + savedResult.getId() + ".png";
-			String publicUrl = s3UploadService.uploadFileAndGetPublicUrl(
-				new ByteArrayInputStream(imageBytes),
-				imageBytes.length,
-				objectKey,
-				"image/png"
-			);
-
-			// (3) DB 업데이트 (짧게 치고 빠지기)
-			compatibilityResultRepository.updateOgImageUrl(savedResult.getId(), publicUrl);
-
-			log.info("CompatResult(id={}) OG 이미지 URL 저장 완료: {}", savedResult.getId(), publicUrl);
-
+			byte[] imageBytes = renderSummaryImage(summary);
+			String publicUrl = s3UploadService.uploadFileAndGetPublicUrl(imageBytes, objectKey, CONTENT_TYPE);
+			saveUrl.accept(id, publicUrl);
+			log.info("OG 이미지 URL 저장 완료 - key: {}, url: {}", objectKey, publicUrl);
 		} catch (Exception e) {
-			log.error("CompatResult OG 실패", e);
+			log.error("OG 이미지 생성 실패 - key: {}", objectKey, e);
 		}
 	}
 
-	// --- 3. 이미지 그리기 메서드 (스타일 및 정렬 적용) ---
+	/**
+	 * 템플릿 이미지 위에 요약을 가로·세로 가운데 맞춰 그린 PNG 를 돌려준다. 사주와 궁합이 같은 모양을 쓴다.
+	 */
+	private byte[] renderSummaryImage(String summary) throws IOException {
+		BufferedImage image = loadTemplate();
+		Graphics2D g2d = image.createGraphics();
+		try {
+			setupGraphics(g2d);
+			g2d.setFont(summaryFont);
+			g2d.setColor(TEXT_COLOR);
 
-	// 1인 사주 이미지 그리기
-	private byte[] generateSajuOgImage(String summary) throws IOException {
-		BufferedImage baseImage = loadTemplate(SAJU_TEMPLATE_PATH);
-		Graphics2D g2d = baseImage.createGraphics();
-		setupGraphics(g2d);
+			FontMetrics metrics = g2d.getFontMetrics();
+			int maxWidth = image.getWidth() - SIDE_MARGIN * 2;
+			List<String> lines = getWrappedLines(metrics, summary, maxWidth);
 
-		// [스타일 적용]
-		Color textColor = new Color(0x111111);
-		Font summaryFont = this.notoSansRegular.deriveFont(36f); // (font-size: 36px)
-		int lineHeight = 48; // (line-height: 48px)
-		int margin = 60; // (양 옆 마진 60px)
+			// 글자 블록 전체 높이로 첫 줄의 기준선을 정해 위아래 가운데에 놓는다.
+			int blockHeight = (lines.size() - 1) * LINE_HEIGHT + metrics.getHeight();
+			int baselineY = (image.getHeight() - blockHeight) / 2 + metrics.getAscent();
 
-		g2d.setFont(summaryFont);
-		g2d.setColor(textColor);
-
-		// [레이아웃 적용]
-		// int x = margin; // [수정] 고정 x좌표 제거
-		int maxWidth = baseImage.getWidth() - (margin * 2);
-
-		// 1. 텍스트 줄바꿈 계산
-		List<String> lines = getWrappedLines(g2d, summary, maxWidth);
-
-		// 2. 전체 텍스트 블록의 세로 높이 계산
-		FontMetrics metrics = g2d.getFontMetrics();
-		int blockHeight = (lines.size() - 1) * lineHeight + metrics.getHeight();
-
-		// 3. 텍스트 블록의 시작 Y좌표 계산 (위아래 가운데 정렬)
-		int startY = (baseImage.getHeight() - blockHeight) / 2 + metrics.getAscent();
-
-		// 4. 텍스트 그리기
-		int currentY = startY;
-		int imageWidth = baseImage.getWidth(); // [수정] 이미지 전체 폭 가져오기
-
-		for (String line : lines) {
-			// [수정] 1. 현재 라인의 텍스트 가로 길이 계산
-			int textWidth = metrics.stringWidth(line);
-			// [수정] 2. 가운데 정렬을 위한 x 좌표 계산
-			int x = (imageWidth - textWidth) / 2;
-
-			g2d.drawString(line, x, currentY); // [수정] 계산된 x좌표로 그리기
-			currentY += lineHeight;
+			for (String line : lines) {
+				int x = (image.getWidth() - metrics.stringWidth(line)) / 2;
+				g2d.drawString(line, x, baselineY);
+				baselineY += LINE_HEIGHT;
+			}
+		} finally {
+			g2d.dispose();
 		}
-
-		g2d.dispose();
-		return toByteArray(baseImage, "png");
+		return toPngBytes(image);
 	}
 
-	// 궁합 이미지 그리기 (사주 이미지와 동일하게 수정)
-	private byte[] generateCompatOgImage(String summary) throws IOException {
-		BufferedImage baseImage = loadTemplate(COMPAT_TEMPLATE_PATH);
-		Graphics2D g2d = baseImage.createGraphics();
-		setupGraphics(g2d);
-
-		// [스타일 적용]
-		Color textColor = new Color(0x111111);
-		Font summaryFont = this.notoSansRegular.deriveFont(36f); // (font-size: 36px)
-		int lineHeight = 48; // (line-height: 48px)
-		int margin = 60; // (양 옆 마진 60px)
-
-		g2d.setFont(summaryFont);
-		g2d.setColor(textColor);
-
-		// [레이아웃 적용]
-		// int x = margin; // [수정] 고정 x좌표 제거
-		int maxWidth = baseImage.getWidth() - (margin * 2);
-
-		// 1. 텍스트 줄바꿈 계산
-		List<String> lines = getWrappedLines(g2d, summary, maxWidth);
-
-		// 2. 전체 텍스트 블록의 세로 높이 계산
-		FontMetrics metrics = g2d.getFontMetrics();
-		int blockHeight = (lines.size() - 1) * lineHeight + metrics.getHeight();
-
-		// 3. 텍스트 블록의 시작 Y좌표 계산 (위아래 가운데 정렬)
-		int startY = (baseImage.getHeight() - blockHeight) / 2 + metrics.getAscent();
-
-		// 4. 텍스트 그리기
-		int currentY = startY;
-		int imageWidth = baseImage.getWidth(); // [수정] 이미지 전체 폭 가져오기
-
-		for (String line : lines) {
-			// [수정] 1. 현재 라인의 텍스트 가로 길이 계산
-			int textWidth = metrics.stringWidth(line);
-			// [수정] 2. 가운데 정렬을 위한 x 좌표 계산
-			int x = (imageWidth - textWidth) / 2;
-
-			g2d.drawString(line, x, currentY); // [수정] 계산된 x좌표로 그리기
-			currentY += lineHeight;
-		}
-
-		g2d.dispose();
-		return toByteArray(baseImage, "png");
-	}
-
-	// --- 그래픽스 도우미 ---
-
-	private BufferedImage loadTemplate(String path) throws IOException {
-		try (InputStream is = new ClassPathResource(path).getInputStream()) {
+	private BufferedImage loadTemplate() throws IOException {
+		try (InputStream is = new ClassPathResource(TEMPLATE_PATH).getInputStream()) {
 			BufferedImage image = ImageIO.read(is);
 			if (image == null) {
-				throw new IOException("템플릿 이미지 읽기 실패: " + path);
+				throw new IOException("템플릿 이미지 읽기 실패: " + TEMPLATE_PATH);
 			}
 
 			BufferedImage newImage = new BufferedImage(image.getWidth(), image.getHeight(),
@@ -244,48 +160,63 @@ public class OgImageGenerationService {
 		g2d.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY);
 	}
 
-	// (수정) AI가 넣은 \n을 인식하고, 긴 줄은 자동으로 줄바꿈하도록 수정
-	private List<String> getWrappedLines(Graphics2D g, String text, int maxWidth) {
-		List<String> finalLines = new ArrayList<>();
-		FontMetrics metrics = g.getFontMetrics();
-
-		// 1. AI가 의도한 줄바꿈(\n)을 기준으로 먼저 나눕니다.
-		String[] intendedLines = text.split("\n");
-
-		for (String line : intendedLines) {
-			// 2. AI가 나눈 한 줄이 이미지 폭(maxWidth)보다 긴지 확인합니다.
-			if (metrics.stringWidth(line) <= maxWidth) {
-				// 2-1. 안 길면 그대로 사용
-				finalLines.add(line);
-			} else {
-				// 2-2. 만약 길다면, 띄어쓰기를 기준으로 자동 줄바꿈을 추가로 수행
-				StringBuilder currentLine = new StringBuilder();
-				String[] words = line.split(" ");
-
-				for (String word : words) {
-					// (한글은 보통 띄어쓰기 기준이므로 이 로직이 잘 동작합니다)
-					if (metrics.stringWidth(currentLine + " " + word) < maxWidth) {
-						if (currentLine.length() > 0) {
-							currentLine.append(" ");
-						}
-						currentLine.append(word);
-					} else {
-						finalLines.add(currentLine.toString());
-						currentLine = new StringBuilder(word);
-					}
+	/**
+	 * 요약을 그릴 줄로 나눈다. AI 가 넣은 '\n' 은 그대로 줄바꿈으로 쓰고, 한 줄이 maxWidth 보다 넓으면 띄어쓰기에서 나눈다.
+	 * 띄어쓰기 없이 maxWidth 보다 넓은 단어(긴 URL, 붙여 쓴 구절)는 글자 단위로 자른다. 그래서 모든 줄의 폭이 maxWidth 이하다.
+	 *
+	 * <p>'\n' 이 두 번 이어진 빈 줄은 AI 가 의도한 문단 간격이라 그대로 둔다. 폭 때문에 나누다 생기는 빈 줄은 넣지 않는다.
+	 */
+	static List<String> getWrappedLines(FontMetrics metrics, String text, int maxWidth) {
+		List<String> lines = new ArrayList<>();
+		for (String intendedLine : text.split("\n")) {
+			if (metrics.stringWidth(intendedLine) <= maxWidth) {
+				lines.add(intendedLine);
+				continue;
+			}
+			String currentLine = "";
+			for (String word : intendedLine.split(" ")) {
+				String candidate = currentLine.isEmpty() ? word : currentLine + " " + word;
+				if (metrics.stringWidth(candidate) <= maxWidth) {
+					currentLine = candidate;
+					continue;
 				}
-				if (currentLine.length() > 0) {
-					finalLines.add(currentLine.toString());
+				if (!currentLine.isEmpty()) {
+					lines.add(currentLine);
+				}
+				currentLine = word;
+				if (metrics.stringWidth(word) > maxWidth) {
+					// 단어 하나가 한 줄보다 넓으면 글자 단위로 잘라 앞부분을 줄로 넣고, 남은 끝부분 뒤에 다음 단어를 이어 붙인다.
+					List<String> pieces = splitByCharacters(metrics, word, maxWidth);
+					lines.addAll(pieces.subList(0, pieces.size() - 1));
+					currentLine = pieces.getLast();
 				}
 			}
+			if (!currentLine.isEmpty()) {
+				lines.add(currentLine);
+			}
 		}
-		return finalLines;
+		return lines;
 	}
 
-	// BufferedImage -> byte[] 변환
-	private byte[] toByteArray(BufferedImage image, String format) throws IOException {
+	/** 띄어쓰기 없는 문자열을 폭이 maxWidth 이하인 조각으로 글자 단위로 자른다. 글자 하나가 maxWidth 보다 넓어도 한 조각에는 한 글자가 들어간다. */
+	private static List<String> splitByCharacters(FontMetrics metrics, String word, int maxWidth) {
+		List<String> pieces = new ArrayList<>();
+		StringBuilder piece = new StringBuilder();
+		word.codePoints().forEach(codePoint -> {
+			String character = Character.toString(codePoint);
+			if (!piece.isEmpty() && metrics.stringWidth(piece + character) > maxWidth) {
+				pieces.add(piece.toString());
+				piece.setLength(0);
+			}
+			piece.append(character);
+		});
+		pieces.add(piece.toString());
+		return pieces;
+	}
+
+	private byte[] toPngBytes(BufferedImage image) throws IOException {
 		try (ByteArrayOutputStream baos = new ByteArrayOutputStream()) {
-			ImageIO.write(image, format, baos);
+			ImageIO.write(image, "png", baos);
 			return baos.toByteArray();
 		}
 	}
