@@ -160,6 +160,50 @@ public class DiscordNotificationService {
 		}
 	}
 
+	/**
+	 * 결제는 확정했지만 사람이 확인해야 하는 일을 결제 채널에 알린다. 요약 한 문장 아래에 details 를 넣은 순서대로 한 줄씩 적는다.
+	 *
+	 * <p>고객 개인정보는 담지 않는다. 호출자가 주문 번호·쿠폰 ID 같은 식별자만 넘긴다.
+	 *
+	 * @param summary 무슨 일이 생겼는지 한 문장
+	 * @param details 항목 이름 → 값
+	 */
+	public void sendPaymentAnomalyNotification(String summary, Map<String, String> details) {
+		try {
+			StringBuilder description = new StringBuilder(summary);
+			if (!details.isEmpty()) {
+				description.append("\n");
+			}
+			details.forEach((name, value) ->
+				description.append(String.format("\n**%s:** %s", name, value)));
+
+			Map<String, Object> embed = new HashMap<>();
+			embed.put("title", "🚨 결제 이상 확인 필요");
+			embed.put("color", 15158332); // 빨간색
+			embed.put("description", description.toString());
+
+			Map<String, Object> footer = new HashMap<>();
+			footer.put("text", "만세력 서비스");
+			embed.put("footer", footer);
+
+			Map<String, Object> message = new HashMap<>();
+			message.put("username", "결제 Bot");
+			message.put("embeds", new Object[]{embed});
+
+			HttpHeaders headers = new HttpHeaders();
+			headers.setContentType(MediaType.APPLICATION_JSON);
+
+			HttpEntity<Map<String, Object>> request = new HttpEntity<>(message, headers);
+
+			restTemplate.postForEntity(paymentWebhookUrl, request, String.class);
+
+			log.info("Discord 결제 이상 알림 전송 완료: summary={}, details={}", summary, details);
+
+		} catch (Exception e) {
+			log.error("Discord 결제 이상 알림 전송 실패: summary={}, details={}", summary, details, e);
+		}
+	}
+
 	// 단일 사주 해석
 	public void sendInterpretationRequestNotification(
 		String userName,
