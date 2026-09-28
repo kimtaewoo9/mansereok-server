@@ -89,4 +89,13 @@ class ManseInterpretationRequestValidationTest {
 
 		assertThat(violatedFields(request)).contains("solarDate", "gender");
 	}
+
+	@Test
+	@DisplayName("양력·음력 여부가 없으면 isLunar 위반이 잡힌다")
+	void shouldRejectMissingIsLunar() {
+		ManseInterpretationRequest request = new ManseInterpretationRequest(
+			"김태우", LocalDate.of(1995, 5, 5), LocalTime.of(12, 0), "MALE", null, false, null, 1L);
+
+		assertThat(violatedFields(request)).containsExactly("isLunar");
+	}
 }

@@ -12,11 +12,16 @@ import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.NullAndEmptySource;
+import org.junit.jupiter.params.provider.ValueSource;
 
 /**
  * 무료 궁합 엔드포인트가 받는 DTO. 이름이 그대로 프롬프트에 들어가므로
  * 유료 경로와 같은 규칙이 컨트롤러 입구에서 걸려야 한다.
  * 여기서 막히지 않으면 비동기 처리 중 정화기가 예외를 던져 202 뒤에 조용히 실패한다.
+ *
+ * <p>생년월일과 성별은 만세력 계산에 꼭 필요하다. 비어 있거나 생년월일 형식이 틀리면 계산에 들어가기 전에 입구에서 400 으로 끝나야 한다.
  */
 @DisplayName("CompatibilityAnalysisRequest - 무료 궁합 요청 검증")
 class CompatibilityAnalysisRequestValidationTest {
@@ -96,5 +101,55 @@ class CompatibilityAnalysisRequestValidationTest {
 	@DisplayName("두 인물 정보는 필수다")
 	void shouldRequireBothPersons() {
 		assertThat(violatedFields(request(null, null))).contains("person1", "person2");
+	}
+
+	@ParameterizedTest(name = "[{index}] 생년월일 \"{0}\"")
+	@DisplayName("생년월일을 YYYY/MM/DD 나 YYYY-MM-DD 로 적으면 위반이 없다")
+	@ValueSource(strings = {"1995/05/05", "1995-05-05"})
+	void acceptsBirthdayFormats(String birthday) {
+		// given
+		ManseryeokCreateRequest person2 = person("이영희");
+		person2.setBirthday(birthday);
+
+		// when & then
+		assertThat(violatedFields(request(person("김태우"), person2))).isEmpty();
+	}
+
+	@ParameterizedTest(name = "[{index}] 생년월일 \"{0}\"")
+	@DisplayName("생년월일의 월일이 한 자리거나 구분자가 다르면 person2.birthday 위반이 잡힌다")
+	@ValueSource(strings = {"1995/5/5", "1995/05-05", "19950505", "1995.05.05", "95/05/05", "1995/05/05 12:00"})
+	void rejectsOtherBirthdayFormats(String birthday) {
+		// given
+		ManseryeokCreateRequest person2 = person("이영희");
+		person2.setBirthday(birthday);
+
+		// when & then
+		assertThat(violatedFields(request(person("김태우"), person2))).containsExactly("person2.birthday");
+	}
+
+	@ParameterizedTest(name = "[{index}] 생년월일 \"{0}\"")
+	@DisplayName("생년월일이 없거나 비어 있으면 person1.birthday 위반이 잡힌다")
+	@NullAndEmptySource
+	@ValueSource(strings = {"   "})
+	void shouldRequireBirthday(String birthday) {
+		// given
+		ManseryeokCreateRequest person1 = person("김태우");
+		person1.setBirthday(birthday);
+
+		// when & then
+		assertThat(violatedFields(request(person1, person("이영희")))).containsExactly("person1.birthday");
+	}
+
+	@ParameterizedTest(name = "[{index}] 성별 \"{0}\"")
+	@DisplayName("성별이 없거나 비어 있으면 person2.gender 위반이 잡힌다")
+	@NullAndEmptySource
+	@ValueSource(strings = {"   "})
+	void shouldRequireGender(String gender) {
+		// given
+		ManseryeokCreateRequest person2 = person("이영희");
+		person2.setGender(gender);
+
+		// when & then
+		assertThat(violatedFields(request(person("김태우"), person2))).containsExactly("person2.gender");
 	}
 }

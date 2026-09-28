@@ -53,6 +53,8 @@ class ControllerStartOnceMySqlTest extends InterpretationMySqlTest {
 	// HikariCP 기본 최대 커넥션 수(10)를 넘기지 않는다.
 	private static final int REQUEST_COUNT = 10;
 	private static final Long SUBCATEGORY_ID = 1L;
+	// 궁합 엔드포인트는 궁합 상품 번호만 받는다(아이돌 궁합).
+	private static final Long COMPATIBILITY_SUBCATEGORY_ID = 7L;
 	private static final String USERNAME = "start-once-user";
 
 	@MockitoBean
@@ -117,7 +119,7 @@ class ControllerStartOnceMySqlTest extends InterpretationMySqlTest {
 
 		// when
 		List<CallResult<ResponseEntity<?>>> calls = ConcurrentCalls.runAtTheSameTime(REQUEST_COUNT,
-			() -> controller.analyzeCompatibility(SUBCATEGORY_ID, compatibilityRequest(), USERNAME));
+			() -> controller.analyzeCompatibility(COMPATIBILITY_SUBCATEGORY_ID, compatibilityRequest(), USERNAME));
 
 		// then
 		assertThat(calls).filteredOn(CallResult::succeeded).as("접수된 요청").singleElement()
@@ -126,7 +128,8 @@ class ControllerStartOnceMySqlTest extends InterpretationMySqlTest {
 			.allSatisfy(call -> assertThat(call.error()).isInstanceOf(InterpretationAlreadyStartedException.class));
 		ArgumentCaptor<LocalDateTime> startedAt = ArgumentCaptor.forClass(LocalDateTime.class);
 		then(manseInterpretationService).should(times(1)).analyzeCompatibilityWithSubcategory(anyString(), any(),
-			anyString(), any(), eq(SUBCATEGORY_ID), eq(paymentId), startedAt.capture(), anyString(), any(), any());
+			anyString(), any(), eq(COMPATIBILITY_SUBCATEGORY_ID), eq(paymentId), startedAt.capture(), anyString(), any(),
+			any());
 		assertThat(statusOf("compatibility_results")).isEqualTo("PROCESSING");
 		assertThat(updatedAtOf("compatibility_results")).as("해석에 넘긴 시작 시각과 DB 의 updated_at")
 			.isEqualTo(startedAt.getValue());

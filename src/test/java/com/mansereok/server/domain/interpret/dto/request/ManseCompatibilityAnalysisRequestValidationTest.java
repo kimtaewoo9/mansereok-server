@@ -104,4 +104,14 @@ class ManseCompatibilityAnalysisRequestValidationTest {
 		assertThat(violatedFields(request(broken, person("이영희", null))))
 			.contains("person1.solarDate", "person1.gender");
 	}
+
+	@Test
+	@DisplayName("중첩 인물의 양력·음력 여부가 없으면 person2.isLunar 위반이 잡힌다")
+	void shouldRequireNestedIsLunar() {
+		PersonInfo broken = person("이영희", null);
+		broken.setIsLunar(null);
+
+		assertThat(violatedFields(request(person("김태우", null), broken)))
+			.containsExactly("person2.isLunar");
+	}
 }
