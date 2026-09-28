@@ -76,7 +76,7 @@ class YongsinCalculatorTest {
 	class WithClimateMonth {
 
 		@ParameterizedTest(name = "[{index}] {0} {1} {2} {3} → {4} {5}/{6}, 용신 {7}")
-		@DisplayName("강약과 상관없이 여름(巳午未)은 수, 겨울(亥子丑)은 화가 용신이고 억부로 고른 오행은 희신이 된다")
+		@DisplayName("강약과 상관없이 여름(巳午未)은 수, 겨울(亥子丑)은 화가 용신이고, 희신은 신강·신약이면 억부로 고른 오행, 중화면 가장 모자란 오행이다")
 		@CsvSource(textBlock = """
 			# 연주, 월주, 일주, 시주(비면 시간 모름), 강약, 나의 점수, 전체 점수, 용신, 설명
 			己丑, 己巳, 己巳, 甲子, 신강(身强), 8.0, 10.8, 수, '조후+억부용신(한난 조절 후 강한 기운 제어) / 희신:목 / 행운색:검정, 남색, 방향:북쪽'
@@ -98,25 +98,36 @@ class YongsinCalculatorTest {
 	}
 
 	/**
-	 * 나의 힘 비율(나의 점수 / 전체 점수)이 경계 바로 위·아래인 사주로 강약 판정을 확인한다. 비율은 반올림하지 않은 값이다.
+	 * 나의 힘 비율(나의 점수 / 전체 점수)이 경계와 같거나 바로 위·아래인 사주로 강약과 용신을 확인한다.
+	 *
+	 * <p>계산기는 강약 이름을 정할 때와 용신을 고를 때 같은 0.58·0.42 기준을 따로 비교한다. 그래서 강약 이름만 보면 용신 쪽 비교가
+	 * 경계에서 어긋나도 모른다. 다른 표처럼 강약, 점수, 용신, 설명을 함께 확인한다.
+	 * 비율은 결과에 들어 있지 않아 단언할 수 없으므로 줄마다 위 주석에만 적었다(지금 코드로 계산한 값을 소수 여섯째 자리까지).
 	 * 경계와 같은 두 줄은 부동소수 계산 결과가 정확히 0.58, 0.42 로 나오는 사주를 골랐다.
 	 */
-	@ParameterizedTest(name = "[{index}] {0} {1} {2} {3} (비율 {4}) → {5}")
-	@DisplayName("나의 힘 비율이 0.58 이상이면 신강, 0.42 이하면 신약, 그 사이면 중화다")
+	@ParameterizedTest(name = "[{index}] {0} {1} {2} {3} → {4} {5}/{6}, 용신 {7}")
+	@DisplayName("나의 힘 비율이 0.58 이상이면 신강, 0.42 이하면 신약, 그 사이면 중화로 보고 용신도 그 강약에 맞춰 고른다")
 	@CsvSource(textBlock = """
-		# 연주, 월주, 일주, 시주, 나의 힘 비율, 강약
-		甲子, 己巳, 壬子, 庚戌, 0.58,     신강(身强)
-		丙申, 庚寅, 壬子, 壬寅, 0.579988, 중화(中和)
-		庚午, 丙戌, 丁亥, 庚戌, 0.420006, 중화(中和)
-		丁丑, 乙巳, 甲子, 己巳, 0.42,     신약(身弱)
+		# 연주, 월주, 일주, 시주, 강약, 나의 점수, 전체 점수, 용신, 설명
+		# 壬(수) 일간. 비율이 정확히 0.58 이라 신강이고, 巳월 조후인 수가 용신, 억부로 고른 식상 목(1.0)이 관살 토(2.36)보다 낮아 희신이다
+		甲子, 己巳, 壬子, 庚戌, 신강(身强), 6.1, 10.5, 수, '조후+억부용신(한난 조절 후 강한 기운 제어) / 희신:목 / 행운색:검정, 남색, 방향:북쪽'
+		# 비율 0.579988 이라 중화다
+		丙申, 庚寅, 壬子, 壬寅, 중화(中和), 6.3, 10.8, 토, '중화용신(오행 균형) / 희신:금 / 행운색:황색, 베이지, 방향:중앙, 거주지 근처'
+		# 비율 0.420006 이라 중화다
+		庚午, 丙戌, 丁亥, 庚戌, 중화(中和), 4.4, 10.4, 목, '중화용신(오행 균형) / 희신:목 / 행운색:청색, 녹색, 방향:동쪽'
+		# 甲(목) 일간. 비율이 정확히 0.42 라 신약이고, 巳월 조후인 수가 용신, 억부로 고른 인성 수(1.6)가 비겁 목(2.6)보다 낮아 희신이다
+		丁丑, 乙巳, 甲子, 己巳, 신약(身弱), 4.2, 10.0, 수, '조후+억부용신(한난 조절 후 약한 기운 보강) / 희신:수 / 행운색:검정, 남색, 방향:북쪽'
 		""")
-	void judgesStrengthAtRatioBoundaries(String year, String month, String day, String time, String ratio,
-		String strength) {
+	void decidesStrengthAndYongsinAtRatioBoundaries(String year, String month, String day, String time,
+		String strength, double myScore, double totalScore, String yongsin, String description) {
 		// when
 		YongsinResult result = calculator.analyzeYongsin(saju(year, month, day, time));
 
 		// then
-		assertThat(result.getStrength().label()).isEqualTo(strength);
+		assertThat(result)
+			.extracting(YongsinCalculatorTest::strengthLabel, YongsinResult::getMyScore, YongsinResult::getTotalScore,
+				YongsinResult::getYongsin, YongsinResult::getDescription)
+			.containsExactly(strength, myScore, totalScore, yongsin, description);
 	}
 
 	@Test

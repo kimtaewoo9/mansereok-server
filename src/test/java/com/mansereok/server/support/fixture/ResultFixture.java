@@ -16,6 +16,9 @@ import org.springframework.test.util.ReflectionTestUtils;
  * <p>updated_at 을 받는 메서드는 DB 없이 "이 시각에 시작한 해석 중" 인 결과가 필요한 테스트를 위한 것이다. 해석 중인 결과의
  * updated_at 은 해석을 시작한 시각이다. DB 에 저장하면 @PrePersist 가 updated_at 을 지금으로 덮어쓰므로, MySQL 테스트는 저장한 뒤
  * JdbcTemplate 로 바꾼다.
+ *
+ * <p>withId 는 DB 없이 결과 ID 로 행을 찾는 테스트(저장소를 목으로 두는 서비스 테스트)를 위한 것이다. DB 에 저장하면 IDENTITY 가
+ * 채우는 칸이다.
  */
 public final class ResultFixture {
 
@@ -60,6 +63,18 @@ public final class ResultFixture {
 		LocalDateTime updatedAt) {
 		CompatibilityResult result = compatibility(userId, paymentId, status);
 		ReflectionTestUtils.setField(result, "updatedAt", updatedAt);
+		return result;
+	}
+
+	/** result 에 결과 ID 를 넣어 그대로 돌려준다. */
+	public static Result withId(Result result, Long id) {
+		ReflectionTestUtils.setField(result, "id", id);
+		return result;
+	}
+
+	/** result 에 궁합 결과 ID 를 넣어 그대로 돌려준다. */
+	public static CompatibilityResult withId(CompatibilityResult result, Long id) {
+		ReflectionTestUtils.setField(result, "id", id);
 		return result;
 	}
 }

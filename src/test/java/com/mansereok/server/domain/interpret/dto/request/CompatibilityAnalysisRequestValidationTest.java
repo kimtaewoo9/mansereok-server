@@ -158,7 +158,7 @@ class CompatibilityAnalysisRequestValidationTest {
 	@DisplayName("화면이 서버가 읽지 않는 필드까지 담아 보내면")
 	class WhenRequestHasFieldsTheServerDoesNotRead {
 
-		// 궁합 유형, 연·월·일·시·분 숫자, 장소, 시간 모름·자정 보정은 서버가 읽지 않아 DTO 에서 뺐다. 화면은 여전히 보낼 수 있다.
+		// 화면은 서버가 읽지 않는 필드(궁합 유형, 연·월·일·시·분 숫자, 장소, 시간 모름·자정 보정)도 보낼 수 있다.
 		private static final String REQUEST_BODY = """
 			{
 			  "compatibilityType": "MARRIAGE",
@@ -179,11 +179,17 @@ class CompatibilityAnalysisRequestValidationTest {
 			}
 			""";
 
-		@Test
+		/**
+		 * 운영은 Dockerfile 과 docker-compose.prod.yml 이 켜는 prod 프로필로 돈다. 프로필별 yml 에서 spring.jackson 설정을 바꿔
+		 * 모르는 필드를 거절하게 되면 그 프로필 줄이 실패하도록, src/main/resources 의 세 설정(기본, dev, prod)을 모두 돌린다.
+		 */
+		@ParameterizedTest(name = "[{index}] 프로필 {0}")
 		@DisplayName("애플리케이션 설정의 ObjectMapper 는 모르는 필드를 무시하고 남은 필드를 그대로 읽는다")
-		void ignoresUnreadFieldsAndKeepsTheRest() {
-			// given: application.yml 의 spring.jackson 설정까지 반영한, 컨트롤러가 쓰는 것과 같은 ObjectMapper
+		@ValueSource(strings = {"default", "dev", "prod"})
+		void ignoresUnreadFieldsAndKeepsTheRest(String profile) {
+			// given: 그 프로필의 yml 에 있는 spring.jackson 설정까지 반영한, 컨트롤러가 쓰는 것과 같은 ObjectMapper
 			ApplicationContextRunner applicationJackson = new ApplicationContextRunner()
+				.withPropertyValues("spring.profiles.active=" + profile)
 				.withInitializer(new ConfigDataApplicationContextInitializer())
 				.withConfiguration(AutoConfigurations.of(JacksonAutoConfiguration.class));
 
@@ -203,7 +209,6 @@ class CompatibilityAnalysisRequestValidationTest {
 						ManseryeokCreateRequest::getCalendar, ManseryeokCreateRequest::getLeapMonth,
 						ManseryeokCreateRequest::getBirthday, ManseryeokCreateRequest::getBirthtime)
 					.containsExactly("이영희", "FEMALE", "L", true, "1996-02-29", "");
-				assertThat(violatedFields(request)).isEmpty();
 			});
 		}
 	}

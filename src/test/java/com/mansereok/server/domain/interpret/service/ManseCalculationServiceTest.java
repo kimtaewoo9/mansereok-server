@@ -8,11 +8,11 @@ import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
 import static org.mockito.Mockito.never;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mansereok.server.domain.interpret.calculator.RelationCalculator;
 import com.mansereok.server.domain.interpret.calculator.SinsalCalculator;
 import com.mansereok.server.domain.interpret.calculator.UnseongCalculator;
 import com.mansereok.server.domain.interpret.calculator.YongsinCalculator;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mansereok.server.domain.interpret.dto.request.ManseryeokCalculationRequest;
 import com.mansereok.server.domain.interpret.dto.request.ManseryeokCreateRequest;
 import com.mansereok.server.domain.interpret.dto.response.ManseryeokCalculationResponse;
@@ -251,22 +251,23 @@ class ManseCalculationServiceTest {
 		}
 
 		/**
-		 * 사용자 입력이 아니라 서버가 가진 표(음양 표, 시주 표)에 값이 없는 경우다. 원래 예외를 다른 예외로 감싸지 않아 로그에 처음 던진
-		 * 곳의 스택이 그대로 남는다.
+		 * 사용자 입력이 아니라 서버가 가진 표(음양 표, 시주 표, 십성 표)에 값이 없는 경우다. 원래 예외를 다른 예외로 감싸지 않아 로그에
+		 * 처음 던진 곳의 스택이 그대로 남는다.
 		 */
 		@ParameterizedTest(name = "[{index}] {0}")
-		@DisplayName("만세력 행의 간지가 서버의 음양 표나 시주 표에 없으면 IllegalStateException 을 감싸지 않고 그대로 던진다")
+		@DisplayName("만세력 행의 간지가 서버의 음양 표·시주 표·십성 표에 없으면 IllegalStateException 을 감싸지 않고 그대로 던진다")
 		@CsvSource(delimiter = '|', textBlock = """
-			# 사례                                    | 연간 | 일간 | 오류 메시지
-			연간이 음양 표에 없으면 대운 방향을 정하지 못한다 | X    | 甲   | 연간 X의 음양 정보를 찾을 수 없습니다
-			일간이 시주 표에 없으면 시주를 정하지 못한다      | 庚   | X    | 일간 X의 시주 데이터를 찾을 수 없습니다
+			# 사례                                    | 연간 | 연지 | 일간 | 오류 메시지
+			연간이 음양 표에 없으면 대운 방향을 정하지 못한다 | X    | 午   | 甲   | 연간 X의 음양 정보를 찾을 수 없습니다
+			일간이 시주 표에 없으면 시주를 정하지 못한다      | 庚   | 午   | X    | 일간 X의 시주 데이터를 찾을 수 없습니다
+			연지가 십성 표에 없으면 연지의 십성을 정하지 못한다 | 庚   | X    | 甲   | 간지 X의 십성 정보를 찾을 수 없습니다
 			""")
-		void throwsIllegalStateWhenServerTableLacksStem(String description, String yearSky, String daySky,
-			String message) {
+		void throwsIllegalStateWhenServerTableLacksGanji(String description, String yearSky, String yearGround,
+			String daySky, String message) {
 			// given: 연간 庚 은 양간이라 남자는 다음 절입(소한)으로 대운을 센다
 			LocalDate birthDate = LocalDate.of(1990, 1, 1);
 			ManseRepository table = ManseTableFixture.of(
-				ManseRow.on(birthDate).yearPillar(yearSky, "午").dayPillar(daySky, "子").build(),
+				ManseRow.on(birthDate).yearPillar(yearSky, yearGround).dayPillar(daySky, "子").build(),
 				ManseRow.on(LocalDate.of(1990, 1, 5)).season("소한", LocalDateTime.of(1990, 1, 5, 12, 0)).build()
 			).newRepository();
 			ManseCalculationService serviceWithBrokenRow = serviceWith(table, FIXED_CLOCK);
@@ -642,6 +643,10 @@ class ManseCalculationServiceTest {
 			assertThat(chineseOf(saju.getTimeSky()) + chineseOf(saju.getTimeGround())).as("시주").isEqualTo(timePillar);
 		}
 
+		/**
+		 * 위 경계 표를 보완하는 전수 확인이다. 경계 표는 시주가 바뀌는 시각을 값으로 고정하고, 이 테스트는 경계 사이의 초 단위 시각에서도
+		 * 시주가 비지 않는지만 본다. 시각 목록을 만드느라 테스트 안에서 반복하지만, 어느 시각이 빠졌는지는 실패 메시지에 그대로 나온다.
+		 */
 		@Test
 		@DisplayName("하루를 30초 간격으로 모두 넣어도 시주가 빠지는 시각이 없다")
 		void everyThirtySecondsOfDayHasTimePillar() {

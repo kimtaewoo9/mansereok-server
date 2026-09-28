@@ -42,7 +42,8 @@ import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.test.util.ReflectionTestUtils;
 
 /**
- * 해석 요청 하나가 운영 로그 수준(INFO)에서 남기는 줄에 username·생년월일·출생시각이 없는지 확인한다.
+ * 해석 요청 하나가 운영 로그 수준(INFO)에서 남기는 줄에 username·생년월일·출생시각·성별이 없는지 확인한다. 대운 시작 해에서
+ * 대운수를 빼면 출생 연도가 나오므로 대운 계산 줄(bigFortuneStart=, diffDays=)도 없어야 한다.
  *
  * <p>운영 설정은 com.mansereok 을 INFO 로 둔다. 컨트롤러가 username 을 찍고 같은 요청 스레드에서 계산 서비스가 생년월일과
  * 출생시각을 찍으면, 로그만으로 특정 계정의 생년월일시를 알 수 있다. 계산 서비스는 진짜를 쓰고 만세력 표는 운영 데이터를 메모리에
@@ -99,7 +100,7 @@ class ManseryeokControllerLogTest {
 	}
 
 	@Test
-	@DisplayName("유료 단일 해석 요청은 결제 ID 만 남기고 username·생년월일·출생시각을 남기지 않는다")
+	@DisplayName("유료 단일 해석 요청은 절입일 출생이어도 username·생년월일·출생시각·성별·대운 시작 해를 남기지 않는다")
 	void paidSingleRequestLogsNoPersonalData(CapturedOutput output) {
 		// given: 1990-02-04 는 입춘 절입일이다
 		given(resultService.startProcessing(PAYMENT_ID)).willReturn(STARTED_AT);
@@ -109,12 +110,13 @@ class ManseryeokControllerLogTest {
 
 		// then
 		assertThat(output.getOut()).as("요청 로그가 잡혀야 아래 확인을 믿을 수 있다").contains("paymentId=100");
-		assertThat(output.getOut()).doesNotContain(USERNAME, "1990-02-04", "gender=")
+		assertThat(output.getOut())
+			.doesNotContain(USERNAME, "1990-02-04", "gender=", "bigFortuneStart=", "diffDays=", "절입시간 이전 출생")
 			.doesNotContainPattern(BIRTH_TIME_0907);
 	}
 
 	@Test
-	@DisplayName("무료 단일 해석 요청은 야자시 출생이어도 생년월일·다음 날 날짜·출생시각을 남기지 않는다")
+	@DisplayName("무료 단일 해석 요청은 야자시 출생이어도 username·생년월일·다음 날 날짜·출생시각·성별·대운 시작 해를 남기지 않는다")
 	void freeSingleRequestLogsNoPersonalData(CapturedOutput output) {
 		// given
 		givenFreeOrder(101L);
@@ -125,12 +127,13 @@ class ManseryeokControllerLogTest {
 
 		// then
 		assertThat(output.getOut()).as("요청 로그가 잡혀야 아래 확인을 믿을 수 있다").contains("paymentId=200");
-		assertThat(output.getOut()).doesNotContain(USERNAME, "1990-03-24", "1990-03-25", "gender=")
+		assertThat(output.getOut())
+			.doesNotContain(USERNAME, "1990-03-24", "1990-03-25", "gender=", "bigFortuneStart=", "diffDays=")
 			.doesNotContainPattern(BIRTH_TIME_2345);
 	}
 
 	@Test
-	@DisplayName("유료 궁합 요청은 두 사람의 생년월일·출생시각을 남기지 않는다")
+	@DisplayName("유료 궁합 요청은 username·두 사람의 생년월일·출생시각·성별·대운 시작 해를 남기지 않는다")
 	void paidCompatibilityRequestLogsNoPersonalData(CapturedOutput output) {
 		// given
 		given(resultService.startCompatibilityProcessing(PAYMENT_ID)).willReturn(STARTED_AT);
@@ -144,13 +147,14 @@ class ManseryeokControllerLogTest {
 
 		// then
 		assertThat(output.getOut()).as("요청 로그가 잡혀야 아래 확인을 믿을 수 있다").contains("paymentId=100");
-		assertThat(output.getOut()).doesNotContain(USERNAME, "1990-02-04", "1992-11-03", "gender=")
+		assertThat(output.getOut())
+			.doesNotContain(USERNAME, "1990-02-04", "1992-11-03", "gender=", "bigFortuneStart=", "diffDays=")
 			.doesNotContainPattern(BIRTH_TIME_0907)
 			.doesNotContainPattern(BIRTH_TIME_2115);
 	}
 
 	@Test
-	@DisplayName("무료 궁합 요청은 두 사람의 생년월일 문자열과 출생시각을 남기지 않는다")
+	@DisplayName("무료 궁합 요청은 username·두 사람의 생년월일 문자열·출생시각·성별·대운 시작 해를 남기지 않는다")
 	void freeCompatibilityRequestLogsNoPersonalData(CapturedOutput output) {
 		// given
 		givenFreeOrder(7L);
@@ -165,13 +169,14 @@ class ManseryeokControllerLogTest {
 		// then
 		assertThat(output.getOut()).as("요청 로그가 잡혀야 아래 확인을 믿을 수 있다").contains("paymentId=200");
 		assertThat(output.getOut())
-			.doesNotContain(USERNAME, "1990/02/04", "1990-02-04", "1992/11/03", "1992-11-03", "gender=")
+			.doesNotContain(USERNAME, "1990/02/04", "1990-02-04", "1992/11/03", "1992-11-03", "gender=",
+				"bigFortuneStart=", "diffDays=")
 			.doesNotContainPattern(BIRTH_TIME_0907)
 			.doesNotContainPattern(BIRTH_TIME_2115);
 	}
 
 	@Test
-	@DisplayName("/calculate 요청은 계산을 마쳤다는 줄만 남기고 생년월일·출생시각을 남기지 않는다")
+	@DisplayName("/calculate 요청은 생년월일·출생시각·성별·대운 시작 해를 남기지 않는다")
 	void calculateRequestLogsNoPersonalData(CapturedOutput output) {
 		// given
 		ManseryeokCalculationRequest request = ManseryeokCalculationRequest.builder()
@@ -184,7 +189,7 @@ class ManseryeokControllerLogTest {
 
 		// then
 		assertThat(output.getOut()).as("요청 로그가 잡혀야 아래 확인을 믿을 수 있다").contains("만세력 계산 완료");
-		assertThat(output.getOut()).doesNotContain("1990-02-04", "gender=")
+		assertThat(output.getOut()).doesNotContain("1990-02-04", "gender=", "bigFortuneStart=", "diffDays=")
 			.doesNotContainPattern(BIRTH_TIME_0907);
 	}
 
