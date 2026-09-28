@@ -10,6 +10,8 @@ import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.stream.Stream;
 
 /**
  * 지장간과 오행 분포를 다루는 조각.
@@ -47,45 +49,47 @@ final class SajuElementSections {
 		return value != null ? value : "-";
 	}
 
+	/**
+	 * 지지 하나의 지장간을 "- 년지(자): 임수(비견,30%), 계수(겁재,70%)" 처럼 한 줄로 적는다. 빈 칸은 건너뛰고, 칸 안의 빈 값은 "?" 로
+	 * 적는다.
+	 */
 	static void appendJijangganLine(StringBuilder prompt, String pillarName,
 		PillarElement pillar) {
 		if (pillar == null || pillar.getJijanggan() == null) {
 			return;
 		}
-		JijangganInfo jijanggan = pillar.getJijanggan();
 		prompt.append("""
 			- %s(%s):\s\
 			"""
 			.formatted(pillarName, pillar.getKorean()));
 
 		List<String> jijangganElements = new ArrayList<>();
-
-		if (jijanggan.getFirst() != null) {
-			jijangganElements.add(String.format("%s%s(%s,%d%%)",
-				jijanggan.getFirst().getKorean(),
-				jijanggan.getFirst().getFiveCircle(),
-				orUnknown(jijanggan.getFirst().getTenStar()),
-				// ⭐ 십성 추가
-				jijanggan.getFirst().getRate()));
-		}
-		if (jijanggan.getSecond() != null) {
-			jijangganElements.add(String.format("%s%s(%s,%d%%)",
-				jijanggan.getSecond().getKorean(),
-				jijanggan.getSecond().getFiveCircle(),
-				jijanggan.getSecond().getTenStar() != null ? jijanggan.getSecond().getTenStar()
-					: "?",  // ⭐ 십성 추가
-				jijanggan.getSecond().getRate()));
-		}
-		if (jijanggan.getThird() != null) {
-			jijangganElements.add(String.format("%s%s(%s,%d%%)",
-				jijanggan.getThird().getKorean(),
-				jijanggan.getThird().getFiveCircle(),
-				orUnknown(jijanggan.getThird().getTenStar()),
-				// ⭐ 십성 추가
-				jijanggan.getThird().getRate()));
+		for (JijangganElement element : presentElements(pillar.getJijanggan())) {
+			jijangganElements.add(formatJijangganElement(element));
 		}
 
 		prompt.append(String.join(", ", jijangganElements) + "\n");
+	}
+
+	/**
+	 * 지장간 한 칸을 "임수(비견,30%)" 처럼 적는다. 한글 이름·오행·십성·비율 중 빈 값은 "?" 로 적어 프롬프트에 "null" 이 나가지 않게 한다.
+	 */
+	private static String formatJijangganElement(JijangganElement element) {
+		String rate = element.getRate() != null ? element.getRate() + "%" : "?";
+		return "%s%s(%s,%s)".formatted(
+			orUnknown(element.getKorean()),
+			orUnknown(element.getFiveCircle()),
+			orUnknown(element.getTenStar()),
+			rate);
+	}
+
+	/**
+	 * 지장간 세 칸 중 값이 있는 칸만 first·second·third 순서로 돌려준다. 지지마다 지장간이 한 개에서 세 개라 빈 칸이 있다.
+	 */
+	private static List<JijangganElement> presentElements(JijangganInfo jijanggan) {
+		return Stream.of(jijanggan.getFirst(), jijanggan.getSecond(), jijanggan.getThird())
+			.filter(Objects::nonNull)
+			.toList();
 	}
 
 	/**
@@ -144,15 +148,8 @@ final class SajuElementSections {
 		// 지장간 계산 (가중치 적용)
 		JijangganInfo jijanggan = ground.getJijanggan();
 		if (jijanggan != null) {
-			if (jijanggan.getFirst() != null) {
-				addJijangganElement(ohaengCounts, sipseongCounts,
-					jijanggan.getFirst());  // ⭐ 십성 카운트 추가
-			}
-			if (jijanggan.getSecond() != null) {
-				addJijangganElement(ohaengCounts, sipseongCounts, jijanggan.getSecond());
-			}
-			if (jijanggan.getThird() != null) {
-				addJijangganElement(ohaengCounts, sipseongCounts, jijanggan.getThird());
+			for (JijangganElement element : presentElements(jijanggan)) {
+				addJijangganElement(ohaengCounts, sipseongCounts, element);
 			}
 		}
 	}
@@ -167,11 +164,12 @@ final class SajuElementSections {
 			ohaengCounts.merge(FiveElement.of(ohaeng), weight, Double::sum);
 		}
 
-		// ⭐ 십성 카운팅 (추가)
+		// 십성 카운팅
 		String tenStar = element.getTenStar();
 		if (tenStar != null && element.getRate() != null) {
 			double weight = element.getRate() / 100.0;
-			// 반올림하여 정수로 카운트 (0.1개 이상이면 카운팅)
+			// 비율을 반올림해 정수로 센다. 0.5 미만은 0 이 되므로 rate 50 이상인 지장간만 1개로 센다.
+			// 만세력 계산의 지장간 rate 는 한 지지 합이 30 이라, 실제 계산 결과에서는 여기에 닿는 지장간이 없다
 			int intWeight = (int) Math.round(weight);
 			if (intWeight > 0) {
 				sipseongCounts.compute(tenStar, (k, v) -> (v == null ? 0 : v) + intWeight);
