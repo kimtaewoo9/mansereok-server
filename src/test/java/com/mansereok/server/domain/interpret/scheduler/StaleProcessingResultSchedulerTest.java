@@ -26,6 +26,8 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.dao.QueryTimeoutException;
 
@@ -36,13 +38,14 @@ import org.springframework.dao.QueryTimeoutException;
  *   <li>되돌리는 기준 시각은 주입된 Clock 의 "지금 - staleAfter" 이고, 되돌린 행의 변경 시각은 그 "지금" 이다.</li>
  *   <li>대상 ID 를 먼저 읽고 한 행씩 되돌린다. 대상이 없으면 UPDATE 를 보내지 않는다.</li>
  *   <li>한 표에서 실패해도 예외를 밖으로 던지지 않고 다른 표를 되돌린다.</li>
+ *   <li>한 행에서 실패해도 그 표의 다음 행을 되돌리고, 실제로 되돌린 건수를 남긴다.</li>
  *   <li>staleAfter 가 OpenAI 호출 한 건이 가장 오래 걸리는 시간보다 길지 않으면 애플리케이션이 뜨지 않는다.</li>
  * </ol>
  *
  * <p>조건부 UPDATE 가 어떤 행을 되돌리는지, 도는 해석의 저장과 교착하지 않는지는 DB 가 정하므로 ResultStartOnceMySqlTest 가 실제
  * MySQL 로 본다. 여기서는 리포지토리에 넘기는 ID 와 두 시각만 본다.
  */
-@ExtendWith(MockitoExtension.class)
+@ExtendWith({MockitoExtension.class, OutputCaptureExtension.class})
 class StaleProcessingResultSchedulerTest {
 
 	// 2026-09-26 09:00 (서울). 시간대를 명시해 개발자 PC 의 시간대에 결과가 흔들리지 않게 한다.
@@ -101,19 +104,45 @@ class StaleProcessingResultSchedulerTest {
 		}
 
 		@Test
-		@DisplayName("사주 결과 표에서 실패해도 예외를 밖으로 던지지 않고 궁합 결과 표를 되돌린다")
+		@DisplayName("사주 결과 표의 대상을 읽지 못해도 예외를 밖으로 던지지 않고 궁합 결과 표를 되돌린다")
 		void keepsGoingAfterOneTableFails() {
 			// given
 			StaleProcessingResultScheduler scheduler = schedulerWith(Duration.ofMinutes(60));
 			LocalDateTime staleBefore = LocalDateTime.of(2026, 9, 26, 8, 0);
-			given(resultRepository.findIdsProcessingUpdatedBefore(staleBefore)).willReturn(List.of(10L));
-			given(resultRepository.revertIfProcessingUpdatedBefore(10L, staleBefore, NOW))
-				.willThrow(new QueryTimeoutException("잠금 대기 시간 초과"));
+			given(resultRepository.findIdsProcessingUpdatedBefore(staleBefore))
+				.willThrow(new QueryTimeoutException("조회 시간 초과"));
 			given(compatibilityResultRepository.findIdsProcessingUpdatedBefore(staleBefore)).willReturn(List.of(20L));
 
 			// when & then
 			assertThatCode(scheduler::revertStaleProcessingResults).doesNotThrowAnyException();
 			then(compatibilityResultRepository).should().revertIfProcessingUpdatedBefore(20L, staleBefore, NOW);
+		}
+
+		/**
+		 * 한 행씩 자기 트랜잭션으로 되돌리므로, 가운데 행이 실패할 때 앞 행은 이미 되돌려져 있다. 그 행에서 멈추면 뒤 행은 다음 실행까지
+		 * 남고, 이미 되돌린 건수를 남기는 WARN 도 빠진다.
+		 */
+		@Test
+		@DisplayName("한 행을 되돌리다 실패하면 그 결과 ID 를 ERROR 로 남기고 다음 행을 되돌린 뒤, 실제로 되돌린 건수를 WARN 으로 남긴다")
+		void keepsRevertingNextRowsAfterOneRowFails(CapturedOutput output) {
+			// given
+			StaleProcessingResultScheduler scheduler = schedulerWith(Duration.ofMinutes(60));
+			LocalDateTime staleBefore = LocalDateTime.of(2026, 9, 26, 8, 0);
+			given(resultRepository.findIdsProcessingUpdatedBefore(staleBefore)).willReturn(List.of(10L, 11L, 12L));
+			given(resultRepository.revertIfProcessingUpdatedBefore(10L, staleBefore, NOW)).willReturn(1);
+			given(resultRepository.revertIfProcessingUpdatedBefore(11L, staleBefore, NOW))
+				.willThrow(new QueryTimeoutException("잠금 대기 시간 초과"));
+			given(resultRepository.revertIfProcessingUpdatedBefore(12L, staleBefore, NOW)).willReturn(1);
+			given(compatibilityResultRepository.findIdsProcessingUpdatedBefore(staleBefore)).willReturn(List.of());
+
+			// when
+			scheduler.revertStaleProcessingResults();
+
+			// then
+			then(resultRepository).should().revertIfProcessingUpdatedBefore(12L, staleBefore, NOW);
+			assertThat(output.getOut())
+				.contains("해석 중에 멈춘 사주 결과 id=11 되돌리기 실패")
+				.contains("해석 중에 멈춘 사주 결과 2건을 정보 입력 대기로 되돌렸다");
 		}
 	}
 

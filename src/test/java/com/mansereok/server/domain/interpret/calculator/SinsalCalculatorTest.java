@@ -1,6 +1,7 @@
 package com.mansereok.server.domain.interpret.calculator;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.ArrayList;
@@ -16,6 +17,7 @@ import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.MethodSource;
 
+@DisplayName("신살 계산")
 class SinsalCalculatorTest {
 
 	private static final List<String> STEMS = List.of(
@@ -29,6 +31,12 @@ class SinsalCalculatorTest {
 		{"申子辰", "酉", "寅", "辰"},
 		{"巳酉丑", "午", "亥", "丑"},
 		{"亥卯未", "子", "巳", "未"},
+	};
+
+	// 일간마다 천을귀인이 붙는 두 지지
+	private static final String[][] CHEONEUL_RULE = {
+		{"甲", "丑未"}, {"乙", "子申"}, {"丙", "亥酉"}, {"丁", "亥酉"}, {"戊", "丑未"},
+		{"己", "子申"}, {"庚", "丑未"}, {"辛", "寅午"}, {"壬", "卯巳"}, {"癸", "卯巳"},
 	};
 
 	// 괴강살이 있는 일주
@@ -204,19 +212,25 @@ class SinsalCalculatorTest {
 			assertThat(timePillarSinsal).contains(sinsal);
 		}
 
-		@ParameterizedTest(name = "[{index}] 연지 {0}, 일지 {1}, 시지 {2}")
-		@DisplayName("연지와 일지 중 한쪽만 기준에 맞아도 도화살이 붙는다")
+		@ParameterizedTest(name = "[{index}] {0}: 연지 {1}, 일지 {2}, 시지 {3}")
+		@DisplayName("연지와 일지 중 한쪽만 기준에 맞아도 도화·역마·화개살이 붙는다")
 		@CsvSource(textBlock = """
-			# 연지, 일지, 시지. 寅의 도화는 卯, 子의 도화는 酉
-			寅, 子, 卯
-			子, 寅, 卯
+			# 신살, 연지, 일지, 시지. 寅은 도화 卯·역마 申·화개 戌, 子는 도화 酉·역마 寅·화개 辰
+			# 신살마다 연지 寅만 맞는 줄과 일지 寅만 맞는 줄을 둔다
+			도화살, 寅, 子, 卯
+			도화살, 子, 寅, 卯
+			역마살, 寅, 子, 申
+			역마살, 子, 寅, 申
+			화개살, 寅, 子, 戌
+			화개살, 子, 寅, 戌
 			""")
-		void attachesWhenEitherYearOrDayMatches(String yearBranch, String dayBranch, String timeBranch) {
+		void attachesWhenEitherYearOrDayMatches(String sinsal, String yearBranch, String dayBranch,
+			String timeBranch) {
 			// when
 			List<String> timePillarSinsal = timePillarSinsal("甲", yearBranch, dayBranch, timeBranch);
 
 			// then
-			assertThat(timePillarSinsal).contains("도화살");
+			assertThat(timePillarSinsal).contains(sinsal);
 		}
 	}
 
@@ -224,28 +238,25 @@ class SinsalCalculatorTest {
 	@DisplayName("일간 기준 신살은")
 	class ByDayStem {
 
-		@ParameterizedTest(name = "[{index}] {0} 일간 → {1}, {2}")
-		@DisplayName("천을귀인은 일간마다 정해진 두 지지에 붙는다")
-		@CsvSource(textBlock = """
-			甲, 丑, 未
-			乙, 子, 申
-			丙, 亥, 酉
-			丁, 亥, 酉
-			戊, 丑, 未
-			己, 子, 申
-			庚, 丑, 未
-			辛, 寅, 午
-			壬, 卯, 巳
-			癸, 卯, 巳
-			""")
-		void cheoneulAttachesToTwoBranches(String stem, String monthBranch, String timeBranch) {
+		@Test
+		@DisplayName("일간이 비어 있으면 원인을 적은 NullPointerException 을 던진다")
+		void rejectsMissingDayStem() {
+			// when & then
+			assertThatThrownBy(() -> calculator.analyzeAllSinsal(new FourPillars(
+				"甲", "戌", "甲", "寅", null, "戌", null, null)))
+				.isInstanceOf(NullPointerException.class)
+				.hasMessage("일간이 비어 있습니다");
+		}
+
+		@ParameterizedTest(name = "[{index}] {0} 일간 + 시지 {1} → 천을귀인 {2}")
+		@MethodSource("com.mansereok.server.domain.interpret.calculator.SinsalCalculatorTest#everyStemAndBranchWithCheoneul")
+		@DisplayName("120칸 모두 천을귀인은 일간마다 정해진 두 지지에만 붙고 나머지 10개 지지에는 붙지 않는다")
+		void cheoneulOnlyForTwoBranchesOfStem(String stem, String timeBranch, boolean expected) {
 			// when
-			Map<String, List<String>> result = calculator.analyzeAllSinsal(new FourPillars(
-				"甲", "戌", "甲", monthBranch, stem, "戌", null, timeBranch));
+			List<String> timePillarSinsal = timePillarSinsal(stem, "戌", "戌", timeBranch);
 
 			// then
-			assertThat(result.get("월주")).contains("천을귀인");
-			assertThat(result.get("시주")).contains("천을귀인");
+			assertThat(timePillarSinsal.contains("천을귀인")).as("시주 신살 %s", timePillarSinsal).isEqualTo(expected);
 		}
 
 		@ParameterizedTest(name = "[{index}] {0} 일간 + 시지 {1}")
@@ -537,6 +548,14 @@ class SinsalCalculatorTest {
 			String branch = BRANCHES.get(index % 12);
 			return Arguments.of(stem, branch, BAEKHO_ILJU.contains(stem + branch));
 		});
+	}
+
+	/**
+	 * 일간 10개 x 지지 12개마다 그 지지가 일간의 천을귀인 두 지지에 드는지를 기대값으로 둔다.
+	 */
+	static Stream<Arguments> everyStemAndBranchWithCheoneul() {
+		return Stream.of(CHEONEUL_RULE).flatMap(rule -> BRANCHES.stream()
+			.map(branch -> Arguments.of(rule[0], branch, rule[1].contains(branch))));
 	}
 
 	static Stream<Arguments> samhapSinsalOfEveryBranch() {

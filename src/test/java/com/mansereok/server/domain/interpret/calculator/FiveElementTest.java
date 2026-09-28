@@ -8,8 +8,6 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.EnumSource;
-import org.junit.jupiter.params.provider.NullAndEmptySource;
-import org.junit.jupiter.params.provider.ValueSource;
 
 /**
  * 오행 다섯 개의 이름·색·행운색·방향과 생(生)·극(剋) 관계를 값 그대로 고정한다.
@@ -88,14 +86,28 @@ class FiveElementTest {
 		assertThat(element.controlledBy().controls()).isEqualTo(element);
 	}
 
-	@ParameterizedTest(name = "[{index}] \"{0}\"")
-	@DisplayName("한글 목·화·토·금·수 가 아닌 이름(한자, 빈 값)이면 빈 색으로 넘기지 않고 IllegalStateException 을 던진다")
-	@NullAndEmptySource
-	@ValueSource(strings = {"木", "나무", " 목"})
-	void rejectsUnknownName(String name) {
+	@ParameterizedTest(name = "[{index}] \"{0}\" → {1}")
+	@DisplayName("한글 목·화·토·금·수 가 아닌 이름(한자, 빈 값, 앞 공백)이면 빈 색으로 넘기지 않고 받은 이름을 담아 IllegalStateException 을 던진다")
+	@CsvSource(textBlock = """
+		# 받은 이름, 예외 메시지
+		'',    '오행 이름이 목·화·토·금·수 가 아닙니다: '
+		木,    '오행 이름이 목·화·토·금·수 가 아닙니다: 木'
+		나무,  '오행 이름이 목·화·토·금·수 가 아닙니다: 나무'
+		' 목', '오행 이름이 목·화·토·금·수 가 아닙니다:  목'
+		""")
+	void rejectsUnknownName(String name, String message) {
 		// when & then
 		assertThatThrownBy(() -> FiveElement.of(name))
 			.isInstanceOf(IllegalStateException.class)
-			.hasMessage("오행 이름이 목·화·토·금·수 가 아닙니다: " + name);
+			.hasMessage(message);
+	}
+
+	@Test
+	@DisplayName("오행 이름이 null 이면 IllegalStateException 을 던진다")
+	void rejectsNullName() {
+		// when & then
+		assertThatThrownBy(() -> FiveElement.of(null))
+			.isInstanceOf(IllegalStateException.class)
+			.hasMessage("오행 이름이 목·화·토·금·수 가 아닙니다: null");
 	}
 }

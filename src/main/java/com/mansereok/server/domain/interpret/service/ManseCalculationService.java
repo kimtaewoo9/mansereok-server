@@ -21,6 +21,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.ZoneId;
+import java.time.temporal.ChronoField;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
@@ -45,9 +46,13 @@ public class ManseCalculationService {
 	private static final Limit MONTHLY_SEASON_LIMIT = Limit.of(MONTHLY_FORTUNE_MONTHS + 1);
 	// 자시가 시작하는 시각. 이때부터 일주를 다음 날로 넘기고(야자시), 시주도 이 시각부터 2시간씩 자·축·인… 순서로 센다.
 	private static final LocalTime JASI_START = LocalTime.of(23, 30);
+	private static final int JASI_START_MINUTE_OF_DAY = JASI_START.get(ChronoField.MINUTE_OF_DAY);
 	private static final int MINUTES_PER_DAY = 24 * 60;
 	private static final int MINUTES_PER_TIME_PILLAR = 2 * 60;
 	// 만세력 표(manses)에 들어 있는 양력 날짜 범위. 표에서 날짜를 못 찾으면 입력 오류로 보고 이 범위를 알려 준다.
+	// 범위 안이라도 가장자리 날짜는 계산이 실패할 수 있다. 표의 절입은 1900-01-06 04:08~2100-12-07 10:04 만 있어
+	// 1900-01-06 04:08 전 출생의 역행 대운과 2100-12-07 10:04 이후 출생의 순행 대운은 셀 절입이 없고,
+	// 2100-12-31 23:30 이후 출생은 야자시로 표에 없는 다음 날 일주가 필요하다.
 	private static final String SUPPORTED_RANGE = "지원 범위(양력 1900-01-01~2100-12-31)";
 
 	private final ManseRepository manseRepository;
@@ -66,7 +71,8 @@ public class ManseCalculationService {
 				request.getSolarDate(), request.getGender(), request.getIsLunar(),
 				request.getLeapMonth());
 
-			// 시주 구간과 절입 시각이 분 단위라 초는 버린다. 초를 남기면 hh:29:30 같은 시각이 어느 시주에도 들지 않는다.
+			// 응답·프롬프트에 돌려주는 출생시각을 분 단위로 맞추고, 분 단위인 절입 시각과의 비교와 대운 날수 계산도 같은 단위로 하려고
+			// 초를 버린다. 시주 번호는 시·분만 보므로 초가 남아도 시주가 빠지지는 않는다.
 			LocalTime rawSolarTime = request.getSolarTime() == null ? null
 				: request.getSolarTime().truncatedTo(ChronoUnit.MINUTES);
 			boolean timeUnknown = rawSolarTime == null;
@@ -363,12 +369,13 @@ public class ManseCalculationService {
 			LocalDate solarDate = baseManse.getSolarDate();
 			if (birthtime == null) {
 				seasonBoundaryUncertain = true;
-				log.info("출생시간 미입력 + 절입일: 연주/월주 경계 불확정");
+				// 절입일에 태어났다는 사실도 생년월일 후보를 절입일로 좁히므로 DEBUG 로 남긴다. 아래 절입시간 이전 출생 줄도 같다.
+				log.debug("출생시간 미입력 + 절입일: 연주/월주 경계 불확정");
 			} else {
 				LocalDateTime solarDatetime = LocalDateTime.of(solarDate, birthtime);
 
 				if (solarDatetime.isBefore(seasonTime)) {
-					log.info("절입시간 이전 출생: 이전 날짜 만세력 사용(월주 변경), 일주는 유지");
+					log.debug("절입시간 이전 출생: 이전 날짜 만세력 사용(월주 변경), 일주는 유지");
 					yearMonthManse = manseRepository.findBySolarDate(solarDate.minusDays(1))
 						.orElseThrow(() -> new IllegalArgumentException(
 							"절입 시각 전 출생은 전날로 연주·월주를 세는데, 전날이 " + SUPPORTED_RANGE + " 밖입니다."));
@@ -425,7 +432,8 @@ public class ManseCalculationService {
 		return switch (normalized) {
 			case "MALE", "M" -> "MALE";
 			case "FEMALE", "F" -> "FEMALE";
-			default -> throw new IllegalArgumentException("지원하지 않는 성별 값입니다: " + gender);
+			// 입력값은 메시지에 넣지 않는다. 위 calculate 가 메시지를 경고 로그에 그대로 남기기 때문이다.
+			default -> throw new IllegalArgumentException("지원하지 않는 성별 값입니다.");
 		};
 	}
 
@@ -510,7 +518,8 @@ public class ManseCalculationService {
 			int bigFortuneNumber = 1;
 			int bigFortuneStart = solarDatetime.getYear() + bigFortuneNumber;
 
-			log.info("대운 계산 완료 (early return): diffDays={}, bigFortuneNumber={}, bigFortuneStart={}",
+			// 대운 시작 해에서 대운수를 빼면 출생 연도가 나오므로 DEBUG 로 남긴다.
+			log.debug("대운 계산 완료 (early return): diffDays={}, bigFortuneNumber={}, bigFortuneStart={}",
 				diffDays, bigFortuneNumber, bigFortuneStart);
 
 			return BigFortuneResult.builder()
@@ -529,7 +538,8 @@ public class ManseCalculationService {
 
 		int bigFortuneStart = solarDatetime.getYear() + bigFortuneNumber;
 
-		log.info("대운 계산 완료: diffDays={}, bigFortuneNumber={}, bigFortuneStart={}",
+		// 대운 시작 해에서 대운수를 빼면 출생 연도가 나오므로 DEBUG 로 남긴다.
+		log.debug("대운 계산 완료: diffDays={}, bigFortuneNumber={}, bigFortuneStart={}",
 			diffDays, bigFortuneNumber, bigFortuneStart);
 
 		return BigFortuneResult.builder()
@@ -568,9 +578,8 @@ public class ManseCalculationService {
 	 * 빈틈없이 한 번호에 든다. 자정을 넘는 자시(23:30~01:29)도 따로 다루지 않는다. 초는 보지 않는다.
 	 */
 	private static int getTimeJuIndex(LocalTime time) {
-		int minuteOfDay = time.getHour() * 60 + time.getMinute();
-		int jasiStartMinuteOfDay = JASI_START.getHour() * 60 + JASI_START.getMinute();
-		int minutesSinceJasiStart = Math.floorMod(minuteOfDay - jasiStartMinuteOfDay, MINUTES_PER_DAY);
+		int minutesSinceJasiStart = Math.floorMod(time.get(ChronoField.MINUTE_OF_DAY) - JASI_START_MINUTE_OF_DAY,
+			MINUTES_PER_DAY);
 		return minutesSinceJasiStart / MINUTES_PER_TIME_PILLAR;
 	}
 

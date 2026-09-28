@@ -68,7 +68,9 @@ import org.springframework.web.context.WebApplicationContext;
  * 붙잡는다.
  *
  * <p>HTTP 응답 코드(202·409·503)는 스프링 MVC 를 그대로 거치는 MockMvc 로 본다. 보안 필터는 붙이지 않으므로 요청자 이름은 비어
- * 있고, 결과 준비 이메일 단계만 사용자를 찾지 못해 실패 로그를 남긴다. 결과 상태에는 영향이 없다.
+ * 있고, 결과 준비 이메일 단계만 사용자를 찾지 못해 실패 로그를 남긴다. 결과 상태에는 영향이 없다. 서로 다른 결제 50건을 보내는
+ * 테스트는 WARN 이상 로그가 없는지까지 보므로, 요청자 이름을 넘길 수 있게 MockMvc 를 거치지 않고 컨트롤러를 직접 부른다. 그래서 그
+ * 테스트는 요청 본문 검증(@Valid)을 거치지 않는다.
  *
  * <p>결제 ID 와 사용자 ID 는 실행마다 새로 만든다. 행은 이번 실행의 사용자 ID 로 만들고 뒤 정리에서 그 사용자 ID 와 이름으로만
  * 지운다. 결과 표는 결제 표를 참조하지 않으므로 결제 행은 만들지 않는다.
@@ -205,29 +207,39 @@ class InterpretationFlowMySqlTest extends InterpretationMySqlTest {
 		assertThat(compatibilityColumns(paymentId)).containsExactly("궁합 본문", 88, "궁합 요약");
 	}
 
+	@Test
+	@DisplayName("유료 단일 해석에서 GPT 호출이 실패하면 사주 결과가 DB 에서 INPUT_REQUIRED 로 돌아간다")
+	void sajuReturnsToInputRequiredWhenGptFails() {
+		// given
+		Long paymentId = paymentId(1);
+		willThrow(new IllegalStateException("OpenAI 장애")).given(openAiResponsesClient).createResponse(any());
+		LocalDateTime startedAt = startSaju(paymentId);
+
+		// when
+		manseInterpretationService.interpret(sajuCommand(paymentId, startedAt, InterpretationProduct.LIFE_OVERALL));
+
+		// then
+		awaitSajuStatus(paymentId, "INPUT_REQUIRED");
+	}
+
 	/**
 	 * 궁합 결과의 되돌리기는 예전에 상태 인자를 무시해, 실패한 궁합이 PROCESSING 에 갇혔다. 목 테스트는 되돌리기 호출까지만 봐서 이를
 	 * 놓쳤다. 여기서는 DB 에 남은 상태를 본다.
 	 */
 	@Test
-	@DisplayName("GPT 호출이 실패하면 사주 결과와 궁합 결과 모두 DB 에서 INPUT_REQUIRED 로 돌아간다")
-	void bothResultKindsReturnToInputRequiredWhenGptFails() {
+	@DisplayName("유료 궁합 해석에서 GPT 호출이 실패하면 궁합 결과가 DB 에서 INPUT_REQUIRED 로 돌아간다")
+	void compatibilityReturnsToInputRequiredWhenGptFails() {
 		// given
-		Long sajuPayment = paymentId(1);
-		Long compatibilityPayment = paymentId(2);
+		Long paymentId = paymentId(1);
 		willThrow(new IllegalStateException("OpenAI 장애")).given(openAiResponsesClient).createResponse(any());
-		LocalDateTime sajuStartedAt = startSaju(sajuPayment);
-		LocalDateTime compatibilityStartedAt = startCompatibility(compatibilityPayment);
+		LocalDateTime startedAt = startCompatibility(paymentId);
 
 		// when
-		manseInterpretationService.interpret(
-			sajuCommand(sajuPayment, sajuStartedAt, InterpretationProduct.LIFE_OVERALL));
 		manseInterpretationService.analyzeCompatibilityWithSubcategory(
-			compatibilityCommand(compatibilityPayment, compatibilityStartedAt, InterpretationProduct.LOVE_STORY_4));
+			compatibilityCommand(paymentId, startedAt, InterpretationProduct.LOVE_STORY_4));
 
 		// then
-		awaitSajuStatus(sajuPayment, "INPUT_REQUIRED");
-		awaitCompatibilityStatus(compatibilityPayment, "INPUT_REQUIRED");
+		awaitCompatibilityStatus(paymentId, "INPUT_REQUIRED");
 	}
 
 	@Test
@@ -293,7 +305,8 @@ class InterpretationFlowMySqlTest extends InterpretationMySqlTest {
 
 	/**
 	 * 서로 다른 결제는 서로의 행을 기다리지 않아야 한다. 해석 시작(조건부 UPDATE), 입력 정보 채우기와 결과 저장(행 잠금 조회), 오래 멈춘
-	 * 결과 되돌리기(상태·시각 범위 UPDATE)가 한꺼번에 돌아도 잠금 대기 초과나 교착, 커넥션 대기 초과가 없어야 한다.
+	 * 결과 되돌리기(대상 ID 를 잠그지 않고 읽은 뒤 기본 키로 한 행씩 조건부 UPDATE)가 한꺼번에 돌아도 잠금 대기 초과나 교착, 커넥션 대기
+	 * 초과가 없어야 한다.
 	 *
 	 * <p>해석 실행은 일시적 DB 오류를 두 번까지 다시 시도하고, 그때마다 WARN 을 남긴다. 결과가 모두 COMPLETED 여도 다시 시도해서 겨우
 	 * 성공했을 수 있으므로, 해석 실행과 컨트롤러가 WARN 이상을 한 줄도 남기지 않았는지도 본다. 오래 멈춘 결과 되돌리기는 다른 실행이

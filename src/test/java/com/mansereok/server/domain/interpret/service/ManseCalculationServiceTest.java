@@ -36,6 +36,7 @@ import java.time.ZoneId;
 import java.util.List;
 import java.util.Optional;
 import java.util.stream.Stream;
+import org.assertj.core.groups.Tuple;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -252,22 +253,23 @@ class ManseCalculationServiceTest {
 		}
 
 		/**
-		 * 사용자 입력이 아니라 서버가 가진 표(음양 표, 시주 표)에 값이 없는 경우다. 원래 예외를 다른 예외로 감싸지 않아 로그에 처음 던진
-		 * 곳의 스택이 그대로 남는다.
+		 * 사용자 입력이 아니라 서버가 가진 표(음양 표, 시주 표, 십성 표)에 값이 없는 경우다. 원래 예외를 다른 예외로 감싸지 않아 로그에
+		 * 처음 던진 곳의 스택이 그대로 남는다.
 		 */
 		@ParameterizedTest(name = "[{index}] {0}")
-		@DisplayName("만세력 행의 간지가 서버의 음양 표나 시주 표에 없으면 IllegalStateException 을 감싸지 않고 그대로 던진다")
+		@DisplayName("만세력 행의 간지가 서버의 음양 표·시주 표·십성 표에 없으면 IllegalStateException 을 감싸지 않고 그대로 던진다")
 		@CsvSource(delimiter = '|', textBlock = """
-			# 사례                                    | 연간 | 일간 | 오류 메시지
-			연간이 음양 표에 없으면 대운 방향을 정하지 못한다 | X    | 甲   | 연간 X의 음양 정보를 찾을 수 없습니다
-			일간이 시주 표에 없으면 시주를 정하지 못한다      | 庚   | X    | 일간 X의 시주 데이터를 찾을 수 없습니다
+			# 사례                                    | 연간 | 연지 | 일간 | 오류 메시지
+			연간이 음양 표에 없으면 대운 방향을 정하지 못한다 | X    | 午   | 甲   | 연간 X의 음양 정보를 찾을 수 없습니다
+			일간이 시주 표에 없으면 시주를 정하지 못한다      | 庚   | 午   | X    | 일간 X의 시주 데이터를 찾을 수 없습니다
+			연지가 십성 표에 없으면 연지의 십성을 정하지 못한다 | 庚   | X    | 甲   | 간지 X의 십성 정보를 찾을 수 없습니다
 			""")
-		void throwsIllegalStateWhenServerTableLacksStem(String description, String yearSky, String daySky,
-			String message) {
+		void throwsIllegalStateWhenServerTableLacksGanji(String description, String yearSky, String yearGround,
+			String daySky, String message) {
 			// given: 연간 庚 은 양간이라 남자는 다음 절입(소한)으로 대운을 센다
 			LocalDate birthDate = LocalDate.of(1990, 1, 1);
 			ManseRepository table = ManseTableFixture.of(
-				ManseRow.on(birthDate).yearPillar(yearSky, "午").dayPillar(daySky, "子").build(),
+				ManseRow.on(birthDate).yearPillar(yearSky, yearGround).dayPillar(daySky, "子").build(),
 				ManseRow.on(LocalDate.of(1990, 1, 5)).season("소한", LocalDateTime.of(1990, 1, 5, 12, 0)).build()
 			).newRepository();
 			ManseCalculationService serviceWithBrokenRow = serviceWith(table, FIXED_CLOCK);
@@ -434,25 +436,26 @@ class ManseCalculationServiceTest {
 		}
 
 		/**
-		 * 1990-01-27 23:29 남자(己巳 丁丑 壬辰 辛亥, 일간 壬)의 기둥 한 칸이 조회표에서 채우는 값을 모두 본다. 십성은 일간 壬(양수)에서 본
-		 * 관계이고, 색은 오행마다 정해진 값(토 #FFD600, 화 #F44336, 수 #039BE5, 금 #E0E0E0, 목 #4CAF50)이다.
+		 * 1990-01-27 23:29 남자(己巳 丁丑 壬辰 辛亥, 일간 壬)의 기둥 한 칸이 SajuDataService 조회표에서 채우는 값(한글 이름, 오행, 색, 십성,
+		 * 음양, 지장간)을 천간·지지·지장간마다 보고, 지지 칸에 채우는 일간 기준 12운성도 본다. 일간·지지 전체 조합의 12운성 표는
+		 * UnseongCalculatorTest 가 본다. 십성은 일간 壬(양수)에서 본 관계이고, 색은 오행마다 정해진 값(토 #FFD600, 화 #F44336,
+		 * 수 #039BE5, 금 #E0E0E0, 목 #4CAF50)이다.
 		 */
 		@Nested
 		@DisplayName("기둥 한 칸을 채울 때")
 		class WhenFillingPillarElement {
 
-			private final SajuInfo saju = service.calculate(
-				solarRequest(LocalDate.of(1990, 1, 27), LocalTime.of(23, 29), "MALE")).getSaju();
+			private final ManseryeokCalculationRequest request =
+				solarRequest(LocalDate.of(1990, 1, 27), LocalTime.of(23, 29), "MALE");
 
 			@Test
 			@DisplayName("네 천간 모두 한자·한글 이름·오행·색·일간 기준 십성·음양을 채운다")
 			void fillsStemFromLookupTables() {
 				// when
-				List<PillarElement> stems = List.of(saju.getYearSky(), saju.getMonthSky(), saju.getDaySky(),
-					saju.getTimeSky());
+				SajuInfo saju = service.calculate(request).getSaju();
 
 				// then: 십성은 모두 일간 壬 에서 본 값이다. 다른 천간(예: 연간 己)을 기준으로 보면 월간·시간 십성이 달라진다
-				assertThat(stems)
+				assertThat(List.of(saju.getYearSky(), saju.getMonthSky(), saju.getDaySky(), saju.getTimeSky()))
 					.extracting(PillarElement::getChinese, PillarElement::getKorean, PillarElement::getFiveCircle,
 						PillarElement::getFiveCircleColor, PillarElement::getTenStar, PillarElement::getMinusPlus)
 					.containsExactly(
@@ -463,13 +466,30 @@ class ManseCalculationServiceTest {
 			}
 
 			@Test
+			@DisplayName("지지는 한자·한글 이름·오행·색·일간 기준 십성·음양을 채운다")
+			void fillsBranchFromLookupTables() {
+				// when
+				SajuInfo saju = service.calculate(request).getSaju();
+
+				// then: 巳·亥 는 표시 음양(음)과 십성을 가르는 음양(정기 丙·壬 의 양)이 다르다
+				assertThat(List.of(saju.getYearGround(), saju.getDayGround(), saju.getTimeGround()))
+					.extracting(PillarElement::getChinese, PillarElement::getKorean, PillarElement::getFiveCircle,
+						PillarElement::getFiveCircleColor, PillarElement::getTenStar, PillarElement::getMinusPlus)
+					.containsExactly(
+						tuple("巳", "사", "화", "#F44336", "편재", "음"),
+						tuple("辰", "진", "토", "#FFD600", "편관", "양"),
+						tuple("亥", "해", "수", "#039BE5", "비견", "음"));
+			}
+
+			@Test
 			@DisplayName("지지의 지장간은 한자·한글 이름·오행·색·음양·비율과 일간 기준 십성을 채우고, 없는 칸은 비운다")
 			void fillsHiddenStemsFromLookupTables() {
 				// when
-				JijangganInfo dayBranch = saju.getDayGround().getJijanggan();
-				JijangganInfo timeBranch = saju.getTimeGround().getJijanggan();
+				SajuInfo saju = service.calculate(request).getSaju();
 
 				// then: 일지 辰 은 戊 乙 癸, 시지 亥 는 壬 甲 두 칸이다
+				JijangganInfo dayBranch = saju.getDayGround().getJijanggan();
+				JijangganInfo timeBranch = saju.getTimeGround().getJijanggan();
 				assertThat(List.of(dayBranch.getFirst(), dayBranch.getSecond(), dayBranch.getThird(),
 					timeBranch.getFirst(), timeBranch.getSecond()))
 					.extracting(JijangganElement::getChinese, JijangganElement::getKorean,
@@ -488,11 +508,10 @@ class ManseCalculationServiceTest {
 			@DisplayName("지지는 일간 기준 12운성과 그 설명을 채운다")
 			void fillsTwelveStagesOnBranches() {
 				// when
-				List<PillarElement> branches = List.of(saju.getYearGround(), saju.getMonthGround(), saju.getDayGround(),
-					saju.getTimeGround());
+				SajuInfo saju = service.calculate(request).getSaju();
 
 				// then: 일간 壬 기준 巳 절, 丑 쇠, 辰 묘, 亥 건록
-				assertThat(branches)
+				assertThat(List.of(saju.getYearGround(), saju.getMonthGround(), saju.getDayGround(), saju.getTimeGround()))
 					.extracting(PillarElement::getChinese, PillarElement::getUnseong, PillarElement::getUnseongDescription)
 					.containsExactly(
 						tuple("巳", "절", "극복과 인내, 재기"),
@@ -504,21 +523,26 @@ class ManseCalculationServiceTest {
 			@Test
 			@DisplayName("같은 오행이면 천간·지지 글자와 지장간 글자의 색이 같다")
 			void paintsSameElementWithSameColorInPillarsAndHiddenStems() {
-				// when: 네 기둥 여덟 글자와 지지 네 개의 지장간 열한 글자. 목은 지장간(乙·甲)에만 있다
-				List<Object> letters = List.of(
-					saju.getYearSky(), saju.getYearGround(), saju.getMonthSky(), saju.getMonthGround(),
-					saju.getDaySky(), saju.getDayGround(), saju.getTimeSky(), saju.getTimeGround(),
-					saju.getYearGround().getJijanggan().getFirst(), saju.getYearGround().getJijanggan().getSecond(),
-					saju.getYearGround().getJijanggan().getThird(),
-					saju.getMonthGround().getJijanggan().getFirst(), saju.getMonthGround().getJijanggan().getSecond(),
-					saju.getMonthGround().getJijanggan().getThird(),
-					saju.getDayGround().getJijanggan().getFirst(), saju.getDayGround().getJijanggan().getSecond(),
-					saju.getDayGround().getJijanggan().getThird(),
-					saju.getTimeGround().getJijanggan().getFirst(), saju.getTimeGround().getJijanggan().getSecond());
+				// when
+				SajuInfo saju = service.calculate(request).getSaju();
 
-				// then: 오행과 색 짝이 다섯 가지뿐이다. 한쪽 색만 바뀌면 짝이 여섯 가지가 된다
-				assertThat(letters)
-					.extracting("fiveCircle", "fiveCircleColor")
+				// then: 네 기둥 여덟 글자와 지지 네 개의 지장간 열한 글자에서 오행과 색 짝을 따로 꺼낸다. 목은 지장간(乙·甲)에만 있다
+				Stream<Tuple> pillarColors = Stream.of(
+						saju.getYearSky(), saju.getYearGround(), saju.getMonthSky(), saju.getMonthGround(),
+						saju.getDaySky(), saju.getDayGround(), saju.getTimeSky(), saju.getTimeGround())
+					.map(letter -> tuple(letter.getFiveCircle(), letter.getFiveCircleColor()));
+				Stream<Tuple> hiddenStemColors = Stream.of(
+						saju.getYearGround().getJijanggan().getFirst(), saju.getYearGround().getJijanggan().getSecond(),
+						saju.getYearGround().getJijanggan().getThird(),
+						saju.getMonthGround().getJijanggan().getFirst(), saju.getMonthGround().getJijanggan().getSecond(),
+						saju.getMonthGround().getJijanggan().getThird(),
+						saju.getDayGround().getJijanggan().getFirst(), saju.getDayGround().getJijanggan().getSecond(),
+						saju.getDayGround().getJijanggan().getThird(),
+						saju.getTimeGround().getJijanggan().getFirst(), saju.getTimeGround().getJijanggan().getSecond())
+					.map(hidden -> tuple(hidden.getFiveCircle(), hidden.getFiveCircleColor()));
+
+				// 합친 오행과 색 짝이 다섯 가지뿐이다. 한쪽 색만 바뀌면 짝이 여섯 가지가 된다
+				assertThat(Stream.concat(pillarColors, hiddenStemColors))
 					.containsOnly(
 						tuple("목", "#4CAF50"),
 						tuple("화", "#F44336"),
@@ -863,6 +887,10 @@ class ManseCalculationServiceTest {
 			assertThat(chineseOf(saju.getTimeSky()) + chineseOf(saju.getTimeGround())).as("시주").isEqualTo(timePillar);
 		}
 
+		/**
+		 * 위 경계 표를 보완하는 전수 확인이다. 경계 표는 시주가 바뀌는 시각을 값으로 고정하고, 이 테스트는 경계 사이의 초 단위 시각에서도
+		 * 시주가 비지 않는지만 본다. 시각 목록을 만드느라 테스트 안에서 반복하지만, 어느 시각이 빠졌는지는 실패 메시지에 그대로 나온다.
+		 */
 		@Test
 		@DisplayName("하루를 30초 간격으로 모두 넣어도 시주가 빠지는 시각이 없다")
 		void everyThirtySecondsOfDayHasTimePillar() {
