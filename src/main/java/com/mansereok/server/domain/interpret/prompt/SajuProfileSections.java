@@ -5,8 +5,6 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
-import java.util.HashMap;
-import java.util.Map;
 
 /**
  * 사주 원국·월운·대운을 프롬프트용 텍스트로 옮기는 상세 데이터 블록.
@@ -115,17 +113,15 @@ final class SajuProfileSections {
 		prompt.append("""
 			**오행 분포(점수)**
 			""");
-		Map<String, Double> ohaengCounts = new HashMap<>();
-		Map<String, Integer> sipseongCounts = new HashMap<>();
-		SajuElementSections.calculateDistributionWithJijanggan(saju, ohaengCounts, sipseongCounts);
-		ohaengCounts.forEach(
-			(key, value) -> prompt.append(String.format("- %s: %.1f\n", key, value)));
+		ElementDistribution distribution = SajuElementSections.calculateDistributionWithJijanggan(saju);
+		distribution.elementScores().forEach(
+			(element, score) -> prompt.append(String.format("- %s: %.1f\n", element.korean(), score)));
 		prompt.append("\n");
 
 		prompt.append("""
 			**십성 분포(개수)**
 			""");
-		sipseongCounts.forEach(
+		distribution.tenStarCounts().forEach(
 			(key, value) -> prompt.append(String.format("- %s: %d\n", key, value)));
 		prompt.append("\n");
 
@@ -276,7 +272,7 @@ final class SajuProfileSections {
 				※ 이 용신 정보를 바탕으로 사용자에게 행운의 조언을 해주세요.
 				"""
 				.formatted(
-					saju.getYongsinInfo().getStrength(),
+					saju.getYongsinInfo().getStrength().label(),
 					saju.getYongsinInfo().getMyScore(),
 					(saju.getYongsinInfo().getTotalScore() - saju.getYongsinInfo().getMyScore()),
 					saju.getYongsinInfo().getAppliedRuleName(),

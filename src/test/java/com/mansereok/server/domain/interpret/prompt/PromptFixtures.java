@@ -1,5 +1,6 @@
 package com.mansereok.server.domain.interpret.prompt;
 
+import com.mansereok.server.domain.interpret.calculator.Strength;
 import com.mansereok.server.domain.interpret.calculator.YongsinCalculator.YongsinResult;
 import com.mansereok.server.domain.interpret.dto.response.ManseryeokCalculationResponse;
 import com.mansereok.server.domain.interpret.dto.response.ManseryeokCalculationResponse.InputInfo;
@@ -289,7 +290,7 @@ public final class PromptFixtures {
 	}
 
 	private static YongsinResult yongsin() {
-		return new YongsinResult("신약", 32.5, 100.0, "금", "일간을 받쳐주는 금 기운이 필요합니다.", "R-04",
+		return new YongsinResult(Strength.WEAK, 32.5, 100.0, "금", "일간을 받쳐주는 금 기운이 필요합니다.", "R-04",
 			"억부용신");
 	}
 

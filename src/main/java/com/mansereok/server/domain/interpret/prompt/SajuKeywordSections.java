@@ -1,5 +1,6 @@
 package com.mansereok.server.domain.interpret.prompt;
 
+import com.mansereok.server.domain.interpret.calculator.FiveElement;
 import com.mansereok.server.domain.interpret.dto.response.ManseryeokCalculationResponse;
 import com.mansereok.server.domain.interpret.dto.response.ManseryeokCalculationResponse.PillarElement;
 import com.mansereok.server.domain.interpret.dto.response.ManseryeokCalculationResponse.SajuInfo;
@@ -75,9 +76,9 @@ final class SajuKeywordSections {
 		ManseryeokCalculationResponse.SajuInfo saju = response.getSaju();
 
 		// 1. 오행/십성 데이터 계산 (판단을 위해 필요)
-		Map<String, Double> ohaengCounts = new HashMap<>();
-		Map<String, Integer> sipseongCounts = new HashMap<>();
-		SajuElementSections.calculateDistributionWithJijanggan(saju, ohaengCounts, sipseongCounts);
+		ElementDistribution distribution = SajuElementSections.calculateDistributionWithJijanggan(saju);
+		Map<FiveElement, Double> ohaengCounts = distribution.elementScores();
+		Map<String, Integer> sipseongCounts = distribution.tenStarCounts();
 
 		prompt.append("""
 
@@ -94,21 +95,23 @@ final class SajuKeywordSections {
 				- 용신 판단 규칙: %s (%s)
 				"""
 				.formatted(
-					saju.getYongsinInfo().getStrength(),
+					saju.getYongsinInfo().getStrength().label(),
 					saju.getYongsinInfo().getMyScore(),
 					(saju.getYongsinInfo().getTotalScore() - saju.getYongsinInfo().getMyScore()),
 					saju.getYongsinInfo().getAppliedRuleName(),
 					saju.getYongsinInfo().getAppliedRuleCode()));
 
-			// AI에게 '신강/신약'에 따른 처세술 힌트 제공
-			if (saju.getYongsinInfo().getMyScore() >= saju.getYongsinInfo().getTotalScore() / 2) {
-				prompt.append("""
+			// AI에게 '신강/신약'에 따른 처세술 힌트 제공. 점수로 다시 판정하지 않고 계산기의 판정을 그대로 따른다.
+			// 중화는 어느 쪽으로도 기울지 않았다는 판정이라 지침을 붙이지 않는다.
+			switch (saju.getYongsinInfo().getStrength()) {
+				case STRONG -> prompt.append("""
 					  -> (지침) 주관이 뚜렷하고 고집이 셉니다. '독단적인 행동'을 주의하라고 조언하세요.
 					""");
-			} else {
-				prompt.append("""
+				case WEAK -> prompt.append("""
 					  -> (지침) 주변 환경에 잘 휩쓸립니다. '자기 주관'을 가지라고 조언하세요.
 					""");
+				case BALANCED -> {
+				}
 			}
 
 			prompt.append(
@@ -121,42 +124,38 @@ final class SajuKeywordSections {
 		// ==========================================
 		// 2. [성격] 오행 과다/결핍 (Ohaeng)
 		// ==========================================
-		if (ohaengCounts.getOrDefault("목", 0.0) >= 4.0) {
+		if (ohaengCounts.get(FiveElement.WOOD) >= 4.0) {
 			prompt.append("""
 				- [성격 키워드] 목(Wood) 과다: 계획과 시작이 많고 성장 욕구가 강하나, 벌여놓은 일의 마무리가 약해지기 쉬움. 우선순위 정리가 핵심 과제.
 				""");
 		}
-		if (ohaengCounts.getOrDefault("화", 0.0) >= 4.0) {
+		if (ohaengCounts.get(FiveElement.FIRE) >= 4.0) {
 			prompt.append("""
 				- [성격 키워드] 화(Fire) 과다: 성격이 매우 급하고 다혈질, 화려함을 추구함. 감정 조절이 핵심 과제.
 				""");
 		}
-		if (ohaengCounts.getOrDefault("토", 0.0) >= 4.0) {
+		if (ohaengCounts.get(FiveElement.EARTH) >= 4.0) {
 			prompt.append("""
 				- [성격 키워드] 토(Earth) 과다: 신중하고 묵직해 신뢰를 얻지만, 변화 대응이 느리고 고집이 셈. 결단의 타이밍이 과제.
 				""");
 		}
-		if (ohaengCounts.getOrDefault("금", 0.0) >= 4.0) {
+		if (ohaengCounts.get(FiveElement.METAL) >= 4.0) {
 			prompt.append("""
 				- [성격 키워드] 금(Metal) 과다: 원칙과 기준이 분명하고 맺고 끊음이 확실하나, 융통성 부족과 날카로운 말로 관계가 상하기 쉬움.
 				""");
 		}
-		if (ohaengCounts.getOrDefault("수", 0.0) >= 4.0) {
+		if (ohaengCounts.get(FiveElement.WATER) >= 4.0) {
 			prompt.append("""
 				- [성격 키워드] 수(Water) 과다: 생각이 너무 많아 우울감 주의, 비밀이 많고 융통성이 좋음.
 				""");
 		}
-		for (Map.Entry<String, String> lack : Map.of(
-			"목", "성장/확장 동력이 약해 새 일을 벌이는 결단이 늦음",
-			"화", "표현과 열정의 발산이 약해 존재감이 묻히기 쉬움",
-			"토", "중심을 잡아주는 안정감이 약해 환경 변화에 흔들리기 쉬움",
-			"금", "맺고 끊는 결단력이 약해 정리와 거절이 어려움",
-			"수", "유연한 사고와 휴식이 부족해 번아웃에 취약함").entrySet()) {
-			if (ohaengCounts.getOrDefault(lack.getKey(), 0.0) <= 0.7) {
+		// 부족한 오행이 여럿이면 늘 목·화·토·금·수 순서로 적는다. 줄 순서도 프롬프트의 일부다.
+		for (FiveElement element : FiveElement.values()) {
+			if (ohaengCounts.get(element) <= 0.7) {
 				prompt.append("""
 					- [결핍] %s 부족: %s. 보완 방향을 조언에 반영하세요.
 					"""
-					.formatted(lack.getKey(), lack.getValue()));
+					.formatted(element.korean(), lackDescription(element)));
 			}
 		}
 
@@ -344,6 +343,19 @@ final class SajuKeywordSections {
 		}
 
 		prompt.append("\n");
+	}
+
+	/**
+	 * 오행이 부족할 때 성격에 드러나는 모습.
+	 */
+	private static String lackDescription(FiveElement element) {
+		return switch (element) {
+			case WOOD -> "성장/확장 동력이 약해 새 일을 벌이는 결단이 늦음";
+			case FIRE -> "표현과 열정의 발산이 약해 존재감이 묻히기 쉬움";
+			case EARTH -> "중심을 잡아주는 안정감이 약해 환경 변화에 흔들리기 쉬움";
+			case METAL -> "맺고 끊는 결단력이 약해 정리와 거절이 어려움";
+			case WATER -> "유연한 사고와 휴식이 부족해 번아웃에 취약함";
+		};
 	}
 
 	/**

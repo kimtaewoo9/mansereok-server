@@ -65,7 +65,7 @@ class YongsinCalculatorTest {
 
 			// then
 			assertThat(result)
-				.extracting(YongsinResult::getStrength, YongsinResult::getMyScore, YongsinResult::getTotalScore,
+				.extracting(YongsinCalculatorTest::strengthLabel, YongsinResult::getMyScore, YongsinResult::getTotalScore,
 					YongsinResult::getYongsin, YongsinResult::getDescription)
 				.containsExactly(strength, myScore, totalScore, yongsin, description);
 		}
@@ -91,7 +91,7 @@ class YongsinCalculatorTest {
 
 			// then
 			assertThat(result)
-				.extracting(YongsinResult::getStrength, YongsinResult::getMyScore, YongsinResult::getTotalScore,
+				.extracting(YongsinCalculatorTest::strengthLabel, YongsinResult::getMyScore, YongsinResult::getTotalScore,
 					YongsinResult::getYongsin, YongsinResult::getDescription)
 				.containsExactly(strength, myScore, totalScore, yongsin, description);
 		}
@@ -125,7 +125,7 @@ class YongsinCalculatorTest {
 
 		// then
 		assertThat(result)
-			.extracting(YongsinResult::getStrength, YongsinResult::getMyScore, YongsinResult::getTotalScore,
+			.extracting(YongsinCalculatorTest::strengthLabel, YongsinResult::getMyScore, YongsinResult::getTotalScore,
 				YongsinResult::getYongsin, YongsinResult::getDescription)
 			.containsExactly(strength, myScore, totalScore, yongsin, description);
 	}
@@ -143,10 +143,30 @@ class YongsinCalculatorTest {
 
 		// then: 申월은 甲(목) 일간에게 힘을 빼는 달이라, 월지를 못 읽으면 전체 점수가 10.6 이 아니라 9.4 가 된다
 		assertThat(result)
-			.extracting(YongsinResult::getStrength, YongsinResult::getMyScore, YongsinResult::getTotalScore,
+			.extracting(YongsinCalculatorTest::strengthLabel, YongsinResult::getMyScore, YongsinResult::getTotalScore,
 				YongsinResult::getYongsin, YongsinResult::getDescription)
 			.containsExactly("신약(身弱)", 3.8, 10.6, "수",
 				"억부용신(신약 사주 보강) / 희신:목 / 행운색:검정, 남색, 방향:북쪽");
+	}
+
+	@Test
+	@DisplayName("지지에 지장간이 없으면 지지 오행을 기둥 가중치 그대로 세고, 일간과 같은 오행의 지지는 뿌리 가중치의 0.6 을 나의 점수에 더한다")
+	void countsBranchElementAndFixedRootRateWhenHiddenStemsAreMissing() {
+		// given: 만세력 계산은 지장간을 늘 채우므로 운영에서는 닿지 않는 대비 경로다. 지장간을 모두 뺀다
+		SajuInfo saju = saju("甲子", "丙戌", "戊辰", "庚申");
+		saju.getYearGround().setJijanggan(null);
+		saju.getMonthGround().setJijanggan(null);
+		saju.getDayGround().setJijanggan(null);
+		saju.getTimeGround().setJijanggan(null);
+
+		// when
+		YongsinResult result = calculator.analyzeYongsin(saju);
+
+		// then: 戊(토) 일간. 나의 점수는 토 4.3 + 화 1.4 + 戌월 득령 1.6 + 뿌리(戌 0.9 + 辰 0.7) x 0.6 = 8.26,
+		// 남의 점수는 목 1.0 + 금 1.7 + 수 1.0 = 3.7 이다. 뿌리 비율이 0.5 면 8.1/11.8 이 된다
+		assertThat(result)
+			.extracting(YongsinCalculatorTest::strengthLabel, YongsinResult::getMyScore, YongsinResult::getTotalScore)
+			.containsExactly("신강(身强)", 8.3, 12.0);
 	}
 
 	@Test
@@ -158,6 +178,13 @@ class YongsinCalculatorTest {
 		// then
 		assertThat(result.getAppliedRuleCode()).isEqualTo("EOKBU_JOHU_V1");
 		assertThat(result.getAppliedRuleName()).isEqualTo("억부 중심 + 조후 보정");
+	}
+
+	/**
+	 * 표에는 응답 JSON 과 프롬프트에 나가는 강약 이름("신강(身强)")을 그대로 적는다.
+	 */
+	private static String strengthLabel(YongsinResult result) {
+		return result.getStrength().label();
 	}
 
 	/**
