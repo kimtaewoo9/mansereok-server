@@ -65,6 +65,8 @@ class ManseInterpretationInstructionChannelTest {
 	private EmailService emailService;
 	@Mock
 	private SajuResultService sajuResultService;
+	@Mock
+	private ResultService resultService;
 
 	private ManseInterpretationService service;
 
@@ -80,6 +82,7 @@ class ManseInterpretationInstructionChannelTest {
 			discordNotificationService,
 			emailService,
 			sajuResultService,
+			resultService,
 			new SajuPromptFactory(),
 			new CompatibilityPromptFactory(),
 			new AnalysisNormalizer(),

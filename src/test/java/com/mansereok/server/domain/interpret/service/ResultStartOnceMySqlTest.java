@@ -85,9 +85,6 @@ class ResultStartOnceMySqlTest extends InterpretationMySqlTest {
 	private ResultService resultService;
 
 	@Autowired
-	private SajuResultService sajuResultService;
-
-	@Autowired
 	private ResultRepository resultRepository;
 
 	@Autowired
@@ -393,11 +390,11 @@ class ResultStartOnceMySqlTest extends InterpretationMySqlTest {
 		void doesNotRevertSecondRunWhenFirstRunFails() {
 			// given
 			Long paymentId = runKey + 1;
-			Long resultId = saveSajuStartedByFirstRun(paymentId);
+			saveSajuStartedByFirstRun(paymentId);
 			LocalDateTime secondStartedAt = restartSajuBySecondRun(paymentId);
 
-			// when
-			sajuResultService.rollbackStatus(resultId, FIRST_STARTED_AT);
+			// when: 해석 실행은 실패하면 결제 ID 와 자기가 해석을 시작한 시각으로 되돌린다
+			resultService.rollbackStatusByPaymentId(paymentId, FIRST_STARTED_AT);
 
 			// then
 			assertThat(statusRowsOf("results")).containsExactly(new StatusRow(paymentId, "PROCESSING", secondStartedAt));

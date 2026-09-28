@@ -24,7 +24,8 @@ import org.springframework.beans.factory.annotation.Autowired;
  * <p>해석 중 행은 실제 해석 시작(startProcessing)으로 만들고, 그 시작이 돌려준 시각으로 되돌린다. 되돌리기는 그 시각이 DB 에
  * 남은 updated_at 과 같을 때만 움직이므로, 시작 시각이 칸에 담기며 달라지면 이 테스트가 실패한다. 되돌리기 테스트는 행이 DB 에서
  * 실제로 PROCESSING 인지 given 끝에서 먼저 확인한다. 그렇지 않으면 행이 처음부터 INPUT_REQUIRED 라 아무것도 되돌리지 않고
- * 통과한다. 해석 시작의 동시 요청과 409 는 ResultStartOnceMySqlTest 가 본다.
+ * 통과한다. 해석 시작의 동시 요청과 409 는 ResultStartOnceMySqlTest 가, 해석 실행이 실패했을 때 이 되돌리기까지 이어지는지는
+ * PipelineRollbackMySqlTest 가 본다.
  *
  * <p>행은 이번 실행의 결제 ID 로 만들고 뒤 정리에서 그 결제 ID 로만 지운다. 결과 표는 결제 표를 참조하지 않으므로 결제 행은
  * 만들지 않는다.
@@ -33,9 +34,6 @@ class ResultRollbackMySqlTest extends InterpretationMySqlTest {
 
 	@Autowired
 	private ResultService resultService;
-
-	@Autowired
-	private SajuResultService sajuResultService;
 
 	@Autowired
 	private ResultRepository resultRepository;
@@ -58,7 +56,7 @@ class ResultRollbackMySqlTest extends InterpretationMySqlTest {
 	class Compatibility {
 
 		@Test
-		@DisplayName("제출이 거부돼 결제 ID 로 되돌리면 해석 중이던 행이 DB 에서 INPUT_REQUIRED 가 된다")
+		@DisplayName("제출이 거부되거나 해석이 실패해 결제 ID 로 되돌리면 해석 중이던 행이 DB 에서 INPUT_REQUIRED 가 된다")
 		void rollbackByPaymentIdIsSaved() {
 			// given
 			saveCompatibility(inputRequiredCompatibility());
@@ -67,21 +65,6 @@ class ResultRollbackMySqlTest extends InterpretationMySqlTest {
 
 			// when
 			resultService.rollbackCompatibilityStatusByPaymentId(paymentId, startedAt);
-
-			// then
-			assertThat(compatibilityStatusInDatabase()).isEqualTo("INPUT_REQUIRED");
-		}
-
-		@Test
-		@DisplayName("해석이 실패해 결과 ID 로 되돌리면 해석 중이던 행이 DB 에서 INPUT_REQUIRED 가 된다")
-		void rollbackByResultIdIsSaved() {
-			// given
-			Long resultId = saveCompatibility(inputRequiredCompatibility());
-			LocalDateTime startedAt = resultService.startCompatibilityProcessing(paymentId);
-			assertThat(compatibilityStatusInDatabase()).as("준비: DB 에 해석 중으로 저장").isEqualTo("PROCESSING");
-
-			// when
-			sajuResultService.rollbackCompatibilityStatus(resultId, startedAt);
 
 			// then
 			assertThat(compatibilityStatusInDatabase()).isEqualTo("INPUT_REQUIRED");
@@ -106,7 +89,7 @@ class ResultRollbackMySqlTest extends InterpretationMySqlTest {
 	class Saju {
 
 		@Test
-		@DisplayName("제출이 거부돼 결제 ID 로 되돌리면 해석 중이던 행이 DB 에서 INPUT_REQUIRED 가 된다")
+		@DisplayName("제출이 거부되거나 해석이 실패해 결제 ID 로 되돌리면 해석 중이던 행이 DB 에서 INPUT_REQUIRED 가 된다")
 		void rollbackByPaymentIdIsSaved() {
 			// given
 			saveSaju(inputRequiredSaju());
@@ -115,21 +98,6 @@ class ResultRollbackMySqlTest extends InterpretationMySqlTest {
 
 			// when
 			resultService.rollbackStatusByPaymentId(paymentId, startedAt);
-
-			// then
-			assertThat(sajuStatusInDatabase()).isEqualTo("INPUT_REQUIRED");
-		}
-
-		@Test
-		@DisplayName("해석이 실패해 결과 ID 로 되돌리면 해석 중이던 행이 DB 에서 INPUT_REQUIRED 가 된다")
-		void rollbackByResultIdIsSaved() {
-			// given
-			Long resultId = saveSaju(inputRequiredSaju());
-			LocalDateTime startedAt = resultService.startProcessing(paymentId);
-			assertThat(sajuStatusInDatabase()).as("준비: DB 에 해석 중으로 저장").isEqualTo("PROCESSING");
-
-			// when
-			sajuResultService.rollbackStatus(resultId, startedAt);
 
 			// then
 			assertThat(sajuStatusInDatabase()).isEqualTo("INPUT_REQUIRED");

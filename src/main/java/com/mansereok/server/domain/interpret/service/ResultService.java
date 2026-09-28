@@ -133,11 +133,12 @@ public class ResultService {
 	}
 
 	/**
-	 * 비동기 해석 제출이 거부됐을 때, 이 요청이 startedAt 에 시작한 사주 해석을 정보 입력 대기(INPUT_REQUIRED)로 되돌린다.
+	 * 비동기 해석 제출이 거부됐거나 해석이 실패했을 때, startedAt 에 시작한 사주 해석을 정보 입력 대기(INPUT_REQUIRED)로 되돌린다.
 	 *
-	 * <p>컨트롤러는 비동기 제출 직전에 해석을 시작하는데, 스레드 풀이 포화면 제출 자체가 거부되어 해석이 시작조차 하지 않는다. 그 행을
-	 * 되돌리지 않으면 결과가 PROCESSING 에 남아, 오래 멈춘 결과를 되돌리는 작업(StaleProcessingResultScheduler)이 돌 때까지 사용자가
-	 * 재시도도 못 한다. 결과 ID 가 아니라 결제 ID 로 찾는 이유는, 거부 시점에는 아직 비동기 쪽 resultId 를 모르기 때문이다.
+	 * <p>컨트롤러는 비동기 제출 직전에 해석을 시작하는데, 스레드 풀이 포화면 제출 자체가 거부되어 해석이 시작조차 하지 않는다. 해석
+	 * 실행(InterpretationPipeline)도 어느 단계에서든 실패하면 여기로 되돌린다. 그 행을 되돌리지 않으면 결과가 PROCESSING 에 남아,
+	 * 오래 멈춘 결과를 되돌리는 작업(StaleProcessingResultScheduler)이 돌 때까지 사용자가 재시도도 못 한다. 결과 ID 가 아니라 결제
+	 * ID 로 찾는 이유는, 제출이 거부됐거나 해석 실행의 첫 DB 단계가 실패했을 때는 결과 ID 를 모르기 때문이다.
 	 *
 	 * <p>행을 잠그고 이 요청이 시작한 해석인지(Result.isProcessingStartedAt) 확인한 뒤에만 되돌린다. 그래서 다른 요청이 시작한 해석
 	 * 중 상태나 완료된 결과는 건드리지 않는다.
@@ -149,7 +150,10 @@ public class ResultService {
 			.ifPresent(Result::revertToInputRequired);
 	}
 
-	/** 비동기 해석 제출이 거부됐을 때, 이 요청이 startedAt 에 시작한 궁합 해석을 결제 ID 로 찾아 INPUT_REQUIRED 로 되돌린다. */
+	/**
+	 * 비동기 해석 제출이 거부됐거나 해석이 실패했을 때, startedAt 에 시작한 궁합 해석을 결제 ID 로 찾아 INPUT_REQUIRED 로 되돌린다.
+	 * {@link #rollbackStatusByPaymentId} 와 같은 규칙이다.
+	 */
 	@Transactional
 	public void rollbackCompatibilityStatusByPaymentId(Long paymentId, LocalDateTime startedAt) {
 		compatibilityResultRepository.findByPaymentIdForUpdate(paymentId)
