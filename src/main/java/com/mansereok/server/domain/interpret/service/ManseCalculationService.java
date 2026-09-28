@@ -23,6 +23,7 @@ import java.util.Objects;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.Limit;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -32,6 +33,9 @@ public class ManseCalculationService {
 
 	// 월운의 "지금" 은 서버 시간대와 상관없이 한국 시각으로 센다.
 	private static final ZoneId SEOUL = ZoneId.of("Asia/Seoul");
+	// 월운은 지금이 든 절기부터 12개월이다. 마지막 달이 끝나는 시각까지 알려면 절입이 하나 더 필요해 달 수 + 1 개를 한 번에 읽는다.
+	private static final int MONTHLY_FORTUNE_MONTHS = 12;
+	private static final Limit MONTHLY_SEASON_LIMIT = Limit.of(MONTHLY_FORTUNE_MONTHS + 1);
 
 	private final ManseRepository manseRepository;
 	private final SajuDataService sajuDataService;
@@ -219,24 +223,18 @@ public class ManseCalculationService {
 			return null;
 		}
 
-		LocalDateTime cursor = currentBoundary.getSeasonStartTime();
-		for (int i = 0; i < 12; i++) {
-			Manse startBoundary = manseRepository
-				.findFirstBySeasonStartTimeGreaterThanEqualOrderBySeasonStartTimeAsc(cursor)
-				.orElse(null);
-			if (startBoundary == null || startBoundary.getSeasonStartTime() == null) {
-				break;
-			}
-
+		// 지금이 든 절입(첫 행)부터 절입 시각 순서로 달 수 + 1 개까지 한 번에 읽는다. 이웃한 두 절입이 한 달의 시작과 끝이다.
+		// 표 끝(2100년)에 가까워 그만큼이 안 되면 있는 만큼만 세고, 다음 절입이 없는 마지막 달은 끝을 비운다.
+		List<Manse> boundaries = manseRepository
+			.findBySeasonStartTimeGreaterThanEqualOrderBySeasonStartTimeAsc(
+				currentBoundary.getSeasonStartTime(), MONTHLY_SEASON_LIMIT);
+		int months = Math.min(MONTHLY_FORTUNE_MONTHS, boundaries.size());
+		for (int i = 0; i < months; i++) {
+			Manse startBoundary = boundaries.get(i);
 			LocalDateTime periodStart = startBoundary.getSeasonStartTime();
-			Manse nextBoundary = manseRepository
-				.findFirstBySeasonStartTimeGreaterThanEqualOrderBySeasonStartTimeAsc(
-					periodStart.plusSeconds(1))
-				.orElse(null);
-			LocalDateTime periodEnd =
-				nextBoundary != null && nextBoundary.getSeasonStartTime() != null
-					? nextBoundary.getSeasonStartTime().minusSeconds(1)
-					: null;
+			LocalDateTime periodEnd = i + 1 < boundaries.size()
+				? boundaries.get(i + 1).getSeasonStartTime().minusSeconds(1)
+				: null;
 
 			ManseryeokCalculationResponse.PillarElement monthSky = formatChinese(
 				startBoundary.getMonthSky(), daySky, false, ilganChinese
@@ -254,11 +252,6 @@ public class ManseCalculationService {
 				.monthSky(monthSky)
 				.monthGround(monthGround)
 				.build());
-
-			if (nextBoundary == null || nextBoundary.getSeasonStartTime() == null) {
-				break;
-			}
-			cursor = nextBoundary.getSeasonStartTime();
 		}
 
 		return monthlyFortunes.isEmpty() ? null : monthlyFortunes;
@@ -350,10 +343,12 @@ public class ManseCalculationService {
 			if (lunarCandidates.size() == 1) {
 				baseManse = lunarCandidates.get(0);
 			} else {
-				// leapMonth가 null이면 평달(false)로 기본 처리
+				// leapMonth가 null이면 평달(false)로 기본 처리. 평달·윤달 두 행을 이미 받았으므로 다시 조회하지 않고 고른다.
 				Boolean resolvedLeapMonth = (leapMonth != null) ? leapMonth : false;
 				log.info("윤달 여부 결정: leapMonth={} -> resolvedLeapMonth={}", leapMonth, resolvedLeapMonth);
-				baseManse = manseRepository.findByLunarDateAndLeapMonth(birthday, resolvedLeapMonth)
+				baseManse = lunarCandidates.stream()
+					.filter(candidate -> resolvedLeapMonth.equals(candidate.getLeapMonth()))
+					.findFirst()
 					.orElseThrow(() -> new IllegalArgumentException(
 						"음력 날짜와 윤달 여부에 맞는 만세력 데이터를 찾을 수 없습니다."));
 			}
