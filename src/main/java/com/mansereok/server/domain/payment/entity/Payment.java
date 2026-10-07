@@ -165,16 +165,4 @@ public class Payment {
 		}
 		this.status = PaymentStatus.CANCELLED;
 	}
-
-	/**
-	 * 포트원 취소가 실패했을 때 취소 요청을 되돌린다. CANCEL_REQUESTED 에서만 PAID 로 돌아간다.
-	 */
-	public void revertCancelRequest() {
-		if (this.status != PaymentStatus.CANCEL_REQUESTED) {
-			throw new OrderStateException(
-				String.format("결제 상태가 CANCEL_REQUESTED 가 아니라 취소 요청을 되돌릴 수 없습니다. 현재 상태=%s, impUid=%s",
-					this.status, this.impUid));
-		}
-		this.status = PaymentStatus.PAID;
-	}
 }

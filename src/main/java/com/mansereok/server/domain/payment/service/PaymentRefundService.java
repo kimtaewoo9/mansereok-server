@@ -7,11 +7,14 @@ import com.mansereok.server.domain.order.entity.OrderStatus;
 import com.mansereok.server.domain.order.repository.OrderRepository;
 import com.mansereok.server.domain.order.service.OrderDiscountRestorer;
 import com.mansereok.server.domain.payment.client.PortOneClient;
+import com.mansereok.server.domain.payment.dto.response.PortOnePaymentResponse;
 import com.mansereok.server.domain.payment.entity.Payment;
 import com.mansereok.server.domain.payment.entity.PaymentStatus;
 import com.mansereok.server.domain.payment.repository.PaymentRepository;
 import com.mansereok.server.domain.user.entity.User;
 import com.mansereok.server.global.exception.PaymentException;
+import com.mansereok.server.global.exception.PortOneUnavailableException;
+import java.util.Locale;
 import java.util.Optional;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -25,7 +28,8 @@ import org.springframework.transaction.support.TransactionTemplate;
  * <ol>
  *   <li>트랜잭션 A: 검증 후 Payment 를 CANCEL_REQUESTED 로 기록하고 커밋한다. 이 흔적이 동시 환불을 막고,
  *       포트원 호출 도중 프로세스가 죽어도 수동 확인 대상이 남는다.</li>
- *   <li>트랜잭션 밖: 포트원 취소 API. 실패하면 트랜잭션 C 로 PAID 로 되돌리고 예외를 다시 던진다. 이 단계가 DB 커넥션을
+ *   <li>트랜잭션 밖: 포트원 취소 API. 실패하면 포트원에서 결제를 다시 조회해, 취소돼 있으면 B 로 가고, 거절이 확인되면
+ *       트랜잭션 C 로 PAID 로 되돌리고, 알 수 없으면 CANCEL_REQUESTED 로 남긴다({@link #cancel} 참고). 이 단계가 DB 커넥션을
  *       쥐지 않는 것은 spring.jpa.open-in-view 가 꺼져 있을 때다(아래 참고).</li>
  *   <li>트랜잭션 B: Payment·Order 를 CANCELLED 로 확정하고 초기 Result 를 지우고 할인을 복구한다.
  *       여기서 실패하면 CANCEL_REQUESTED 로 남겨 수동 확인 대상으로 둔다(포트원 환불은 되돌릴 수 없다).</li>
@@ -48,6 +52,11 @@ import org.springframework.transaction.support.TransactionTemplate;
 @Service
 @Slf4j
 public class PaymentRefundService {
+
+	/** 포트원 조회 API 의 전액 취소 상태. 부분 취소(PARTIAL_CANCELLED)는 포함하지 않는다. */
+	private static final String PORTONE_CANCELLED = "CANCELLED";
+	/** 포트원 조회 API 의 결제 완료 상태. 이 값일 때만 "취소되지 않았다"고 본다. */
+	private static final String PORTONE_PAID = "PAID";
 
 	private final PaymentUserLookup paymentUserLookup;
 	private final PaymentRepository paymentRepository;
@@ -80,25 +89,92 @@ public class PaymentRefundService {
 	/**
 	 * 사용자 직접 환불 (ResultStatus 가 INPUT_REQUIRED 일 때만 가능).
 	 *
-	 * @throws PaymentException 검증 실패(결제 없음 · 타인 결제 · 무료 결제 · 상태 부적합 · 해석 진행됨)
-	 * @throws com.mansereok.server.global.exception.PortOneUnavailableException 포트원 일시 장애 (PAID 로 되돌린 뒤 전파)
+	 * <p>포트원 취소가 실패로 보여도 곧바로 PAID 로 되돌리지 않는다. 포트원은 클라이언트가 연결을 끊어도 진행 중인 요청을 멈추지
+	 * 않으므로, 읽기 시간 초과나 5xx 뒤에도 취소가 반영돼 있을 수 있다. 되돌렸다가 돈만 환불된 결제가 PAID 로 남으면 환불받은
+	 * 사용자가 해석을 시작할 수 있고, 다시 환불을 눌러도 포트원이 "이미 취소됨"(409 PAYMENT_ALREADY_CANCELLED)을 돌려줘
+	 * 또 되돌리므로 스스로 회복되지 않는다. 그래서 실패하면 포트원에서 결제를 다시 조회해 세 갈래로 나눈다.
+	 * <ul>
+	 *   <li>포트원에서 전액 취소돼 있다 → 취소는 끝난 것이므로 B(DB 확정)로 간다. 응답만 늦게 온 경우와 "이미 취소됨" 거절이 여기 든다.</li>
+	 *   <li>취소돼 있지 않고 포트원이 요청을 거절했다(4xx) → 취소는 반영되지 않았으므로 C 로 PAID 로 되돌린다.</li>
+	 *   <li>그 밖(응답을 받지 못했거나 재조회도 실패) → 취소가 반영됐는지 알 수 없으므로 CANCEL_REQUESTED 로 남긴다. 해석 시작은
+	 *       PAID 만 허용하므로 그동안 막히고, 대사가 CANCEL_REQUESTED_STALE 로 잡는다. 사용자가 다시 환불을 누르면 아래 재개
+	 *       경로가 포트원 상태를 다시 본다.</li>
+	 * </ul>
+	 *
+	 * <p>재개: 이미 CANCEL_REQUESTED 인 결제의 환불 요청은 포트원을 다시 조회해, 전액 취소돼 있으면 취소 API 없이 B 만 한다.
+	 * 취소돼 있지 않으면 전처럼 "취소가 진행 중입니다." 로 거부한다(앞선 요청의 포트원 호출이 아직 진행 중일 수 있어 취소를 다시
+	 * 보내지 않는다).
+	 *
+	 * @throws PaymentException 검증 실패(결제 없음 · 타인 결제 · 무료 결제 · 상태 부적합 · 해석 진행됨), 포트원이 취소를 거절함
+	 * @throws com.mansereok.server.global.exception.PortOneUnavailableException 포트원 일시 장애. 취소가 반영됐는지 확인하지
+	 *                                                                           못하면 CANCEL_REQUESTED 로 남긴 채 전파한다
 	 */
 	public void cancel(String username, String impUid, String reason) {
-		// (1) 트랜잭션 A: 검증 + CANCEL_REQUESTED 커밋
-		Long paymentPkId = transactionTemplate.execute(
+		// (1) 트랜잭션 A: 검증 + CANCEL_REQUESTED 커밋. 이미 CANCEL_REQUESTED 면 재개 대상으로 돌려준다.
+		CancelRequestOutcome outcome = transactionTemplate.execute(
 			status -> markCancelRequested(username, impUid));
+		Long paymentPkId = outcome.paymentPkId();
 
-		// (2) 트랜잭션 밖: 포트원 취소. 실패하면 C 로 되돌리고 다시 던진다.
+		if (outcome.alreadyRequested()) {
+			resumeIfCancelledAtPortOne(paymentPkId, impUid);
+			return;
+		}
+
+		// (2) 트랜잭션 밖: 포트원 취소. 실패하면 포트원 상태를 다시 보고 되돌릴지, 확정할지, 남길지 정한다.
 		try {
 			portOneClient.cancelPayment(impUid, reason);
 		} catch (RuntimeException e) {
-			log.warn("포트원 취소 실패로 취소 요청을 되돌립니다: impUid={}, paymentPkId={}, reason={}",
-				impUid, paymentPkId, e.getMessage());
-			revertCancelRequest(paymentPkId, impUid);
-			throw e;
+			handleCancelFailure(paymentPkId, impUid, e);
 		}
 
 		// (3) 트랜잭션 B: DB 확정. 실패하면 CANCEL_REQUESTED 로 남겨 수동 확인 대상으로 둔다.
+		finalizeCancelledOrLeaveRequested(paymentPkId, impUid);
+		log.info("사용자 환불 완료: impUid={}, paymentPkId={}, reason={}", impUid, paymentPkId, reason);
+	}
+
+	/**
+	 * 포트원 취소 호출이 실패했을 때. 포트원에서 취소돼 있으면 그대로 돌아가 B 로 이어지고, 아니면 예외를 던진다.
+	 *
+	 * @throws RuntimeException 넘겨받은 실패를 그대로 던진다. 취소되지 않은 것이 확인된 거절이면 PAID 로 되돌린 뒤 던지고,
+	 *                          확인하지 못했으면 CANCEL_REQUESTED 로 남긴 채 던진다
+	 */
+	private void handleCancelFailure(Long paymentPkId, String impUid, RuntimeException failure) {
+		PortOneCancellation cancellation = lookupCancellationAtPortOne(impUid);
+		if (cancellation == PortOneCancellation.CANCELLED) {
+			log.warn("포트원 취소 응답은 실패였지만 포트원에서 취소돼 있어 DB 확정으로 진행합니다: impUid={}, paymentPkId={}, cause={}",
+				impUid, paymentPkId, failure.getMessage());
+			return;
+		}
+
+		// 거절로 보는 것은 포트원이 4xx 로 답한 경우(PaymentException)뿐이다. 그 밖의 예외는 취소가 반영됐는지 알 수 없다.
+		boolean rejectedByPortOne = failure instanceof PaymentException;
+		if (cancellation == PortOneCancellation.NOT_CANCELLED && rejectedByPortOne) {
+			log.warn("포트원이 취소를 거절했고 취소되지 않은 것을 확인해 취소 요청을 되돌립니다: impUid={}, paymentPkId={}, reason={}",
+				impUid, paymentPkId, failure.getMessage());
+			revertCancelRequest(paymentPkId, impUid);
+			throw failure;
+		}
+
+		log.error("포트원 취소가 반영됐는지 확인하지 못해 CANCEL_REQUESTED 로 남깁니다. 다음 환불 요청이나 대사에서 다시 봅니다: "
+			+ "impUid={}, paymentPkId={}, portOneState={}", impUid, paymentPkId, cancellation, failure);
+		throw failure;
+	}
+
+	/**
+	 * CANCEL_REQUESTED 로 남아 있는 결제의 환불 요청. 앞선 요청이 포트원 취소 뒤 끊겼다면 포트원에는 취소가 돼 있으므로 B 만
+	 * 다시 한다. 취소돼 있지 않으면 앞선 요청이 아직 진행 중일 수 있어 전처럼 거부한다.
+	 */
+	private void resumeIfCancelledAtPortOne(Long paymentPkId, String impUid) {
+		if (lookupCancellationAtPortOne(impUid) != PortOneCancellation.CANCELLED) {
+			throw new PaymentException("취소가 진행 중입니다.");
+		}
+		log.warn("CANCEL_REQUESTED 로 남아 있던 결제가 포트원에서 취소돼 있어 DB 확정만 다시 합니다: impUid={}, paymentPkId={}",
+			impUid, paymentPkId);
+		finalizeCancelledOrLeaveRequested(paymentPkId, impUid);
+		log.info("사용자 환불 완료(재개): impUid={}, paymentPkId={}", impUid, paymentPkId);
+	}
+
+	private void finalizeCancelledOrLeaveRequested(Long paymentPkId, String impUid) {
 		try {
 			transactionTemplate.executeWithoutResult(status -> finalizeCancelled(impUid));
 		} catch (RuntimeException e) {
@@ -106,8 +182,40 @@ public class PaymentRefundService {
 				+ "impUid={}, paymentPkId={}", impUid, paymentPkId, e);
 			throw e;
 		}
+	}
 
-		log.info("사용자 환불 완료: impUid={}, paymentPkId={}, reason={}", impUid, paymentPkId, reason);
+	/**
+	 * 포트원에서 결제가 전액 취소된 상태인지 다시 조회한다. 원문 상태가 CANCELLED 면 취소됨, PAID 면 취소되지 않음, 그 밖은 알 수
+	 * 없음이다. 부분 취소(PARTIAL_CANCELLED)는 남은 금액이 청구된 상태라 취소로도, 취소되지 않음으로도 보지 않는다
+	 * ({@link PaymentStatus#fromPortOneStatus} 는 부분 취소를 CANCELLED 로 접으므로 여기서는 원문 상태를 본다). 조회에 실패해도
+	 * 알 수 없음이다.
+	 */
+	private PortOneCancellation lookupCancellationAtPortOne(String impUid) {
+		try {
+			Optional<String> status = portOneClient.findPayment(impUid).map(PortOnePaymentResponse::getStatus);
+			if (status.isEmpty()) {
+				return PortOneCancellation.UNKNOWN;
+			}
+			return switch (status.get().trim().toUpperCase(Locale.ROOT)) {
+				case PORTONE_CANCELLED -> PortOneCancellation.CANCELLED;
+				case PORTONE_PAID -> PortOneCancellation.NOT_CANCELLED;
+				default -> PortOneCancellation.UNKNOWN;
+			};
+		} catch (RuntimeException e) {
+			log.warn("포트원 취소 실패 뒤 결제 상태를 다시 조회하지 못했습니다: impUid={}", impUid, e);
+			return PortOneCancellation.UNKNOWN;
+		}
+	}
+
+	/** 포트원 재조회로 본 취소 여부. */
+	private enum PortOneCancellation {
+		CANCELLED, NOT_CANCELLED, UNKNOWN
+	}
+
+	/**
+	 * 트랜잭션 A 의 결과. {@code alreadyRequested} 가 참이면 이 요청이 기록한 것이 아니라 이미 CANCEL_REQUESTED 였다는 뜻이다.
+	 */
+	private record CancelRequestOutcome(Long paymentPkId, boolean alreadyRequested) {
 	}
 
 	/**
@@ -117,9 +225,9 @@ public class PaymentRefundService {
 	 * 먼저 잠그면 그 전에 읽어 둔 Payment 가 영속성 컨텍스트에 남아 PAID 로 보인다. 잠금 순서(결제 → 주문)는
 	 * 결제 완료 경로(주문만 잠금)와 충돌하지 않으며, B 도 같은 순서로 잠근다.
 	 *
-	 * @return 취소 요청을 기록한 Payment 의 PK
+	 * @return 취소 요청을 기록한 Payment 의 PK. 이미 CANCEL_REQUESTED 였으면 기록하지 않고 재개 대상으로 표시한다
 	 */
-	private Long markCancelRequested(String username, String impUid) {
+	private CancelRequestOutcome markCancelRequested(String username, String impUid) {
 		// 1. 사용자 조회
 		User user = paymentUserLookup.getByUsername(username);
 
@@ -146,7 +254,8 @@ public class PaymentRefundService {
 			throw new PaymentException("이미 취소된 결제입니다.");
 		}
 		if (payment.getStatus() == PaymentStatus.CANCEL_REQUESTED) {
-			throw new PaymentException("취소가 진행 중입니다.");
+			// 앞선 환불이 포트원 취소 뒤 끊겼을 수 있다. 잠금을 쥔 채 포트원을 부르지 않도록 트랜잭션 밖에서 다시 본다.
+			return new CancelRequestOutcome(payment.getId(), true);
 		}
 		if (payment.getStatus() != PaymentStatus.PAID) {
 			throw new PaymentException("결제 완료 상태가 아니라 취소할 수 없습니다.");
@@ -173,11 +282,14 @@ public class PaymentRefundService {
 		payment.markCancelRequested();
 		log.info("환불 취소 요청 기록: userId={}, impUid={}, paymentPkId={}", user.getId(), impUid,
 			payment.getId());
-		return payment.getId();
+		return new CancelRequestOutcome(payment.getId(), false);
 	}
 
 	/**
-	 * 트랜잭션 C. 포트원 취소가 실패했을 때 CANCEL_REQUESTED 를 PAID 로 되돌린다.
+	 * 트랜잭션 C. 포트원 취소가 거절됐을 때 CANCEL_REQUESTED 를 PAID 로 되돌린다.
+	 *
+	 * <p>조건부 UPDATE 한 문장으로 되돌린다. 엔티티를 읽어 바꾸면 그 사이 다른 요청(재개 경로의 B)이 커밋한 CANCELLED 를
+	 * 보지 못하고 PAID 로 덮어쓸 수 있다. 조건부 UPDATE 는 B 의 행 잠금 뒤에 실행되어 B 가 확정했으면 0 건으로 끝난다.
 	 *
 	 * <p>되돌리기 자체가 실패하면 로그만 남긴다. 호출자는 원래 예외를 그대로 던지고, 결제는 CANCEL_REQUESTED 로 남아
 	 * 수동 확인 대상이 된다.
@@ -185,9 +297,12 @@ public class PaymentRefundService {
 	private void revertCancelRequest(Long paymentPkId, String impUid) {
 		try {
 			transactionTemplate.executeWithoutResult(status -> {
-				Payment payment = paymentRepository.findById(paymentPkId)
-					.orElseThrow(() -> new PaymentException("결제 정보를 찾을 수 없습니다."));
-				payment.revertCancelRequest();
+				int reverted = paymentRepository.updateStatusIf(paymentPkId, PaymentStatus.CANCEL_REQUESTED,
+					PaymentStatus.PAID);
+				if (reverted == 0) {
+					log.warn("취소 요청을 되돌리려 했지만 결제가 더 이상 CANCEL_REQUESTED 가 아니라 그대로 둡니다: impUid={}, paymentPkId={}",
+						impUid, paymentPkId);
+				}
 			});
 		} catch (RuntimeException e) {
 			log.error("취소 요청 되돌리기에 실패해 CANCEL_REQUESTED 로 남습니다. 수동 확인 필요: impUid={}, paymentPkId={}",
@@ -205,6 +320,12 @@ public class PaymentRefundService {
 	private void finalizeCancelled(String impUid) {
 		Payment payment = paymentRepository.findByImpUidWithLock(impUid)
 			.orElseThrow(() -> new PaymentException("결제 정보를 찾을 수 없습니다."));
+		// 재개 경로가 겹치면 먼저 잠근 쪽이 확정하고 뒤쪽은 여기서 CANCELLED 를 본다. 두 번 확정하지 않는다.
+		// 엔티티가 아니라 DB 를 본다. open-in-view 에서는 위 잠금 조회가 A 에서 읽어 둔 엔티티(CANCEL_REQUESTED)를 그대로 돌려준다.
+		if (paymentRepository.findStatusById(payment.getId()) == PaymentStatus.CANCELLED) {
+			log.info("이미 CANCELLED 로 확정된 결제라 DB 확정을 건너뜁니다: impUid={}, paymentPkId={}", impUid, payment.getId());
+			return;
+		}
 		Order order = orderRepository.findByMerchantUidWithLock(payment.getMerchantUid())
 			.orElseThrow(() -> new PaymentException("주문 정보를 찾을 수 없습니다."));
 
