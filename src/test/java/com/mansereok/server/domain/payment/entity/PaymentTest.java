@@ -128,53 +128,6 @@ class PaymentTest {
 		assertThat(payment.getStatus()).isEqualTo(status);
 	}
 
-	// ===== revertCancelRequest =====
-
-	@Test
-	@DisplayName("CANCEL_REQUESTED 결제에 revertCancelRequest 를 부르면 PAID 로 돌아간다")
-	void revertCancelRequest_fromCancelRequested() {
-		// given
-		Payment payment = paymentWith(PaymentStatus.CANCEL_REQUESTED);
-
-		// when
-		payment.revertCancelRequest();
-
-		// then
-		assertThat(payment.getStatus()).isEqualTo(PaymentStatus.PAID);
-	}
-
-	@ParameterizedTest(name = "{0} 결제에 revertCancelRequest 를 부르면 OrderStateException 이 난다")
-	@DisplayName("CANCEL_REQUESTED 가 아닌 결제는 취소 요청을 되돌릴 수 없다")
-	@EnumSource(value = PaymentStatus.class, names = {"PAID", "CANCELLED", "FAILED", "READY",
-		"VIRTUAL_ACCOUNT_ISSUED"})
-	void revertCancelRequest_fromNonCancelRequested_throws(PaymentStatus status) {
-		// given
-		Payment payment = paymentWith(status);
-
-		// when & then
-		assertThatThrownBy(payment::revertCancelRequest)
-			.isInstanceOf(OrderStateException.class)
-			.hasMessageContaining(status.name());
-
-		assertThat(payment.getStatus()).isEqualTo(status);
-	}
-
-	@Test
-	@DisplayName("취소 요청 → 되돌림 → 다시 취소 요청 → 확정 순서의 전이가 모두 허용된다")
-	void cancelRequest_revert_request_cancel_roundTrip() {
-		// given
-		Payment payment = paymentWith(PaymentStatus.PAID);
-
-		// when
-		payment.markCancelRequested();
-		payment.revertCancelRequest();
-		payment.markCancelRequested();
-		payment.markCancelled();
-
-		// then
-		assertThat(payment.getStatus()).isEqualTo(PaymentStatus.CANCELLED);
-	}
-
 	@Nested
 	@DisplayName("무료 판정(isFree, isFreePayment)은")
 	class IsFree {

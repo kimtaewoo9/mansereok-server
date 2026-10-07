@@ -68,4 +68,20 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
 		value = "UPDATE payments SET user_id = NULL WHERE user_id = :userId",
 		nativeQuery = true)
 	void detachUser(@Param("userId") Long userId);
+
+	/**
+	 * 환불 확정 직전에 DB 에 있는 결제 상태를 읽는다. open-in-view 에서는 잠금 조회도 이 요청이 앞서 읽어 둔 엔티티를 그대로
+	 * 돌려줘, 다른 요청이 그 사이 커밋한 CANCELLED 가 엔티티에 보이지 않는다. 스칼라 조회는 영속성 컨텍스트를 거치지 않는다.
+	 */
+	@Query("SELECT p.status FROM Payment p WHERE p.id = :id")
+	PaymentStatus findStatusById(@Param("id") Long id);
+
+	/**
+	 * 환불 되돌리기용 조건부 전이. 잠금 없이 한 문장으로 바꾸므로, 다른 요청이 그 사이 CANCELLED 로 확정했으면 0 을 돌려주고
+	 * 덮어쓰지 않는다. 호출자는 expected 로 CANCEL_REQUESTED, next 로 PAID 만 넘긴다(되돌리기는 이 전이뿐이다).
+	 */
+	@Modifying(clearAutomatically = true, flushAutomatically = true)
+	@Query("UPDATE Payment p SET p.status = :next WHERE p.id = :id AND p.status = :expected")
+	int updateStatusIf(@Param("id") Long id, @Param("expected") PaymentStatus expected,
+		@Param("next") PaymentStatus next);
 }
