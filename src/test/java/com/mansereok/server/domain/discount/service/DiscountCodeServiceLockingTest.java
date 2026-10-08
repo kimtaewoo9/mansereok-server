@@ -1,14 +1,12 @@
 package com.mansereok.server.domain.discount.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.BDDMockito.given;
 
 import com.mansereok.server.domain.discount.entity.DiscountCode;
 import com.mansereok.server.domain.discount.repository.DiscountCodeRepository;
 import com.mansereok.server.domain.discount.service.DiscountCodeService.DiscountValidationResult;
 import com.mansereok.server.domain.product.repository.SubCategoryRepository;
-import com.mansereok.server.global.exception.PaymentException;
 import com.mansereok.server.support.fixture.DiscountCodeFixture;
 import java.time.LocalDateTime;
 import java.util.Optional;
@@ -79,11 +77,11 @@ class DiscountCodeServiceLockingTest {
 	}
 
 	@Nested
-	@DisplayName("만료 뒤 결제된 주문 몫으로 사용 횟수를 다시 올릴 때(reapplyUsage)")
-	class ReapplyUsage {
+	@DisplayName("만료 뒤 결제된 주문 몫으로 사용 횟수를 다시 올릴 때(claimForPaidOrder)")
+	class ClaimForPaidOrder {
 
 		@Test
-		@DisplayName("올린 뒤에도 최대 횟수 안이면 1 올리고 false 를 돌려준다")
+		@DisplayName("최대 횟수 안이면 1 올리고 true 를 돌려준다")
 		void incrementsWithinLimit() {
 			// given: 최대 5번 중 4번 사용
 			DiscountCode discountCode = DiscountCodeFixture.usableCode().code(CODE).maxUses(5).currentUses(4)
@@ -91,31 +89,31 @@ class DiscountCodeServiceLockingTest {
 			givenLockedLookupReturns(discountCode);
 
 			// when
-			boolean exceeded = discountCodeService.reapplyUsage(CODE);
+			boolean claimed = discountCodeService.claimForPaidOrder(CODE);
 
 			// then
-			assertThat(exceeded).isFalse();
+			assertThat(claimed).isTrue();
 			assertThat(discountCode.getCurrentUses()).isEqualTo(5);
 		}
 
 		@Test
-		@DisplayName("이미 최대 횟수면 거절하지 않고 넘겨서 올린 뒤 true 를 돌려준다")
-		void incrementsPastLimitAndReportsIt() {
+		@DisplayName("이미 최대 횟수면 올리지 않고 false 를 돌려준다. 호출자가 그 결제를 취소한다")
+		void keepsCountAtLimit() {
 			// given: 최대 5번 중 5번 사용
 			DiscountCode discountCode = DiscountCodeFixture.usableCode().code(CODE).maxUses(5).currentUses(5)
 				.build();
 			givenLockedLookupReturns(discountCode);
 
 			// when
-			boolean exceeded = discountCodeService.reapplyUsage(CODE);
+			boolean claimed = discountCodeService.claimForPaidOrder(CODE);
 
 			// then
-			assertThat(exceeded).isTrue();
-			assertThat(discountCode.getCurrentUses()).isEqualTo(6);
+			assertThat(claimed).isFalse();
+			assertThat(discountCode.getCurrentUses()).isEqualTo(5);
 		}
 
 		@Test
-		@DisplayName("코드가 비활성이거나 기간이 지났어도 결제는 이미 끝났으므로 올린다")
+		@DisplayName("코드가 비활성이거나 기간이 지났어도 주문을 만들 때 이미 확인했으므로 올린다")
 		void incrementsInactiveExpiredCode() {
 			// given
 			DiscountCode discountCode = DiscountCodeFixture.usableCode().code(CODE).active(false)
@@ -123,23 +121,24 @@ class DiscountCodeServiceLockingTest {
 			givenLockedLookupReturns(discountCode);
 
 			// when
-			boolean exceeded = discountCodeService.reapplyUsage(CODE);
+			boolean claimed = discountCodeService.claimForPaidOrder(CODE);
 
 			// then
-			assertThat(exceeded).isFalse();
+			assertThat(claimed).isTrue();
 			assertThat(discountCode.getCurrentUses()).isEqualTo(1);
 		}
 
 		@Test
-		@DisplayName("코드가 없으면 '존재하지 않는 할인 코드입니다.' 로 거절한다")
-		void rejectsMissingCode() {
+		@DisplayName("코드가 없으면 예외 없이 false 를 돌려줘 호출자가 결제를 취소하게 한다")
+		void missingCodeIsNotClaimed() {
 			// given
 			given(discountCodeRepository.findByCodeForUpdate(CODE)).willReturn(Optional.empty());
 
-			// when & then
-			assertThatThrownBy(() -> discountCodeService.reapplyUsage(CODE))
-				.isInstanceOf(PaymentException.class)
-				.hasMessage("존재하지 않는 할인 코드입니다.");
+			// when
+			boolean claimed = discountCodeService.claimForPaidOrder(CODE);
+
+			// then
+			assertThat(claimed).isFalse();
 		}
 	}
 }

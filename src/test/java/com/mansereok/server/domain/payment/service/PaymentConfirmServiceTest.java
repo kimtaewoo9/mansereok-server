@@ -3,6 +3,7 @@ package com.mansereok.server.domain.payment.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.willThrow;
@@ -40,8 +41,8 @@ import com.mansereok.server.support.fixture.TestPayments;
 import java.sql.SQLIntegrityConstraintViolationException;
 import java.time.LocalDate;
 import java.util.Optional;
-import org.hibernate.exception.ConstraintViolationException;
 import org.hibernate.exception.ConstraintViolationException.ConstraintKind;
+import org.hibernate.exception.ConstraintViolationException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -118,7 +119,7 @@ class PaymentConfirmServiceTest {
 		lenient().when(transactionManager.getTransaction(any(TransactionDefinition.class)))
 			.thenAnswer(invocation -> new SimpleTransactionStatus(true));
 		PaidOrderFinalizer paidOrderFinalizer = new PaidOrderFinalizer(orderRepository,
-			paymentRepository, resultService, orderDiscountRestorer, eventPublisher);
+			paymentRepository, resultService, eventPublisher);
 		PaymentVerifier paymentVerifier = new PaymentVerifier(objectMapper);
 		paymentConfirmService = new PaymentConfirmService(
 			new PaymentUserLookup(userRepository),
@@ -127,6 +128,7 @@ class PaymentConfirmServiceTest {
 			portOneClient,
 			paymentVerifier,
 			paidOrderFinalizer,
+			orderDiscountRestorer,
 			new DuplicatePaymentCanceller(portOneClient, paymentVerifier, paymentRepository, eventPublisher),
 			transactionManager
 		);
@@ -929,6 +931,60 @@ class PaymentConfirmServiceTest {
 			.containsEntry("주문에 기록된 결제 ID", "없음")
 			.containsEntry("한 번 더 온 결제 ID", PAYMENT_ID);
 		verifyNoInteractions(paymentRepository, resultService);
+	}
+
+	@Nested
+	@DisplayName("만료(EXPIRED)된 주문에 결제가 늦게 들어오면")
+	class WhenLatePaymentArrivesForExpiredOrder {
+
+		private final Order order = createOrder(OrderStatus.EXPIRED);
+
+		@BeforeEach
+		void givenExpiredOrderAndPaidPayment() {
+			givenRequester();
+			givenLockedOrder(order);
+			givenNoDuplicatePayment();
+			givenPortOneReturns(portOneResponse("PAID", PRICE));
+		}
+
+		@Test
+		@DisplayName("만료 때 풀린 할인을 다시 잡으면 PAID 로 확정한다")
+		void confirmsWhenDiscountReclaimed() {
+			// given
+			given(orderDiscountRestorer.reclaim(order)).willReturn(true);
+			givenOrderSaveReturnsArgument();
+			givenPaymentSaveAssignsId();
+
+			// when
+			Order confirmed = paymentConfirmService.complete(USERNAME, completeRequest());
+
+			// then
+			assertThat(confirmed.getStatus()).isEqualTo(OrderStatus.PAID);
+			verify(portOneClient, never()).cancelPayment(any(), any());
+		}
+
+		@Test
+		@DisplayName("할인을 다시 잡지 못하면 확정하지 않고, 트랜잭션이 커밋된 뒤 포트원에서 취소하고 알림을 보낸 뒤 다시 주문하라는 안내로 거부한다")
+		void cancelsWhenDiscountCannotBeReclaimed() {
+			// given
+			given(orderDiscountRestorer.reclaim(order)).willReturn(false);
+
+			// when & then
+			assertThatThrownBy(() -> paymentConfirmService.complete(USERNAME, completeRequest()))
+				.isInstanceOf(PaymentException.class)
+				.hasMessage(PaymentConfirmService.LATE_PAYMENT_WITHOUT_DISCOUNT_MESSAGE);
+
+			InOrder inOrder = inOrder(transactionManager, portOneClient);
+			inOrder.verify(transactionManager).commit(any(TransactionStatus.class));
+			inOrder.verify(portOneClient).cancelPayment(PAYMENT_ID, DuplicatePaymentCanceller.LATE_PAYMENT_CANCEL_REASON);
+			assertThat(capturedAnomalyEvent().details())
+				.containsEntry("주문 번호", MERCHANT_UID)
+				.containsEntry("취소한 결제 ID", PAYMENT_ID);
+			assertThat(order.getStatus()).isEqualTo(OrderStatus.EXPIRED);
+			verify(paymentRepository).save(argThat(payment -> PAYMENT_ID.equals(payment.getImpUid())
+				&& payment.getStatus() == PaymentStatus.CANCEL_REQUESTED));
+			verifyNoInteractions(resultService);
+		}
 	}
 
 	/** eventPublisher 에 한 번 발행된 결제 이상 이벤트를 꺼낸다. 두 번 이상 발행됐으면 verify 가 실패한다. */

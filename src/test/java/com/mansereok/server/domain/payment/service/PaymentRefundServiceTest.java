@@ -629,6 +629,24 @@ class PaymentRefundServiceTest {
 	}
 
 	@Test
+	@DisplayName("만료된 주문의 늦은 결제를 자동 취소하는 중(CANCEL_REQUESTED)이면 환불 재개로 가지 않고 거부한다")
+	void cancel_latePaymentBeingAutoCancelled_rejects() {
+		// given
+		givenRequester();
+		Payment payment = payment(PaymentStatus.CANCEL_REQUESTED, PRICE, PAYMENT_ID);
+		Order order = order(OrderStatus.EXPIRED, null);
+		givenLockedPaymentAndOrder(payment, order);
+
+		// when & then
+		assertThatThrownBy(() -> paymentRefundService.cancel(USERNAME, PAYMENT_ID, REASON))
+			.isInstanceOf(PaymentException.class)
+			.hasMessage("자동으로 취소되는 중인 결제입니다.");
+
+		assertThat(payment.getStatus()).isEqualTo(PaymentStatus.CANCEL_REQUESTED);
+		verifyNoInteractions(portOneClient, orderDiscountRestorer, resultService);
+	}
+
+	@Test
 	@DisplayName("주문이 CANCELLED 로 갈 수 없는 상태면 포트원을 호출하기 전에 거부한다")
 	void cancel_orderNotCancellable_rejectsBeforeCallingPortOne() {
 		// given

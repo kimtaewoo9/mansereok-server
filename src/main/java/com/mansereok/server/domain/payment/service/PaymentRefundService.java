@@ -253,6 +253,10 @@ public class PaymentRefundService {
 		if (payment.getStatus() == PaymentStatus.CANCELLED) {
 			throw new PaymentException("이미 취소된 결제입니다.");
 		}
+		if (payment.getStatus() == PaymentStatus.CANCEL_REQUESTED && order.getStatus() == OrderStatus.EXPIRED) {
+			// 만료된 주문의 늦은 결제를 자동 취소하는 중이다(DuplicatePaymentCanceller.rejectLatePayment). 주문은 CANCELLED 로 갈 수 없다.
+			throw new PaymentException("자동으로 취소되는 중인 결제입니다.");
+		}
 		if (payment.getStatus() == PaymentStatus.CANCEL_REQUESTED) {
 			// 앞선 환불이 포트원 취소 뒤 끊겼을 수 있다. 잠금을 쥔 채 포트원을 부르지 않도록 트랜잭션 밖에서 다시 본다.
 			return new CancelRequestOutcome(payment.getId(), true);

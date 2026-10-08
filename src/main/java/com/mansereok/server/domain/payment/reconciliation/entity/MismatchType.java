@@ -15,7 +15,7 @@ public enum MismatchType {
 	MISSING_IN_PG("DB 에 있는 결제가 PG 에 없음"),
 	AMOUNT_MISMATCH("PG 와 DB 의 결제 금액이 다름"),
 	STATUS_MISMATCH("PG 와 DB 의 결제 상태가 다름"),
-	CANCEL_REQUESTED_STALE("환불 도중 CANCEL_REQUESTED 로 멈춤"),
+	CANCEL_REQUESTED_STALE("환불·자동 취소 도중 CANCEL_REQUESTED 로 멈춤"),
 	PG_LOOKUP_FAILED("PG 단건 조회가 일시 장애로 실패함"),
 	PG_ID_MISMATCH("PG 단건 조회가 DB 결제 ID 와 다른 결제를 돌려줌 (한 PG 결제에 DB 결제 여러 건이 붙었을 수 있음)");
 

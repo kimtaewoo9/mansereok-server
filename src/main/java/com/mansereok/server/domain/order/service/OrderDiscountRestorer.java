@@ -5,14 +5,10 @@ import com.mansereok.server.domain.discount.service.DiscountCodeService;
 import com.mansereok.server.domain.order.entity.Order;
 import com.mansereok.server.domain.order.entity.OrderStatus;
 import com.mansereok.server.domain.order.repository.OrderRepository;
-import com.mansereok.server.domain.payment.event.PaymentAnomalyEvent;
 import java.util.EnumSet;
-import java.util.LinkedHashMap;
-import java.util.Map;
 import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Component;
 
 /**
@@ -20,7 +16,8 @@ import org.springframework.stereotype.Component;
  *
  * <p>규칙은 "쿠폰이 있으면 쿠폰, 아니면 할인코드, 아니면 없음" 이고, 무료 이벤트 표기 같은 시스템 표기
  * ({@link Order#hasSystemDiscountCode()})는 대상이 아니다. 환불(PaymentRefundService)·만료(OrderExpirationService)·웹훅 실패 기록(PaymentWebhookService)이
- * 되돌리기를, 만료 뒤 결제 확정(PaidOrderFinalizer)이 다시 쓰기를 같은 규칙으로 부르도록 여기로 모았다.
+ * 되돌리기를, 만료된 주문의 늦은 결제 확정(PaymentConfirmService·PaymentWebhookService)이 다시 쓰기를 같은 규칙으로 부르도록
+ * 여기로 모았다.
  *
  * <p>지키려는 규칙은 "결제 대기·결제 완료 주문의 할인은 사용된 상태" 다. 트랜잭션은 호출자의 것에 참여한다. 여기서 건 잠금은
  * 호출자의 트랜잭션이 끝날 때 풀린다.
@@ -28,7 +25,7 @@ import org.springframework.stereotype.Component;
  * <p>할인 행을 잠그는 순서는 경로마다 다르다.
  * <ul>
  *   <li>주문 생성(PaymentOrderService.createOrder): 쿠폰·할인 코드 행 → orders INSERT</li>
- *   <li>늦은 결제 확정({@link #reapply}): 주문 행(호출자) → 쿠폰·할인 코드 행</li>
+ *   <li>늦은 결제 확정({@link #reclaim}): 주문 행(호출자) → 쿠폰·할인 코드 행</li>
  *   <li>할인 복구({@link #restore}, 만료·환불·웹훅 실패 기록): 주문 행(호출자) → 쿠폰·할인 코드 행. 같은 쿠폰을 쓴 다른 주문은
  *   잠그지 않고 읽는다.</li>
  * </ul>
@@ -53,7 +50,6 @@ public class OrderDiscountRestorer {
 	private final CouponService couponService;
 	private final DiscountCodeService discountCodeService;
 	private final OrderRepository orderRepository;
-	private final ApplicationEventPublisher eventPublisher;
 
 	/**
 	 * 주문이 쓴 쿠폰 또는 할인코드를 복구한다.
@@ -66,11 +62,8 @@ public class OrderDiscountRestorer {
 	 * 잠그며 훑어, 늦은 결제와 상관없이 쿠폰이 서로 다른 주문의 환불·만료끼리도 교착이 난다. 쿠폰 행은 잠가 읽는다
 	 * (CouponService#restoreCoupon).
 	 *
-	 * <p>그래서 남는 한계가 하나 있다. 늦은 결제 A 의 확정이 X 를 쥔 다른 주문 B 때문에 쿠폰 X 를 다시 쓰지 못한 채 커밋하기 전에
-	 * B 가 만료·환불되면, B 의 복구가 읽는 스냅샷에는 A 의 확정이 없어 A 를 아직 EXPIRED 로 보고 X 를 푼다. 쿠폰 행 잠금 때문에 푸는
-	 * 일은 A 의 커밋 뒤로 밀리지만 판단은 그대로라, 결제 완료된 A 가 쥔 X 가 미사용으로 남는다. 이때 A 의 확정은 X 를 다시 쓰지
-	 * 못했으므로 결제 이상 알림({@link PaymentAnomalyEvent})이 이미 나간다. 운영자는 그 알림으로 X 를 확인한다. A 의 확정이 X 를
-	 * 잠그기 전에 B 의 복구가 X 를 풀면, A 는 B 의 커밋을 기다렸다가 풀린 X 를 다시 쓰므로 이 한계에 들지 않는다.
+	 * <p>만료된 주문에 늦게 들어온 결제는 {@link #reclaim} 으로 할인을 다시 잡았을 때만 확정되므로, 결제 완료 주문이 쥔 쿠폰을 다른
+	 * 주문이 함께 쥐는 일은 생기지 않는다. 이 확인은 그 규칙이 생기기 전에 확정된 주문을 위해 남겨 둔다.
 	 */
 	public void restore(Order order) {
 		Long couponId = order.getCouponId();
@@ -96,45 +89,27 @@ public class OrderDiscountRestorer {
 	}
 
 	/**
-	 * 만료 때 되돌린 쿠폰 또는 할인코드를 다시 사용 처리한다. 만료된 주문이 늦게 결제되어 PAID 로 확정될 때 같은 트랜잭션에서 부른다.
+	 * 만료 때 되돌린 쿠폰 또는 할인코드를 다시 사용 처리한다. 만료된 주문에 결제가 늦게 들어왔을 때 확정하기 전에 부른다.
 	 *
-	 * <p>다시 쓸 수 없어도 예외를 던지지 않는다. 결제는 이미 끝났으므로 확정은 그대로 두고, 커밋 뒤 운영 채널로 알리도록
-	 * {@link PaymentAnomalyEvent} 를 발행한다. 알리는 경우는 둘이다.
-	 * <ul>
-	 *   <li>쿠폰을 그사이 다른 주문이 이미 쓰고 있다. 쿠폰 한 장의 할인이 두 결제에 들어갔다.</li>
-	 *   <li>할인 코드 사용 횟수가 최대 횟수를 넘었다. 선착순 인원보다 많이 할인됐다.</li>
-	 * </ul>
+	 * <p>그사이 다른 주문이 쿠폰을 썼거나 할인 코드가 최대 횟수에 닿았으면 아무것도 바꾸지 않고 false 를 돌려준다. 호출자는 그 결제를
+	 * 확정하지 않고 포트원에서 취소한다. 확정하면 쿠폰 한 장·선착순 한 자리의 할인이 두 결제에 들어간다.
 	 *
 	 * <p>호출자가 주문 행을 잠근 뒤 쿠폰·할인 코드 행을 잠근다. 주문 생성과는 반대 순서라 orders.merchant_uid 인덱스를 전제로 한다
 	 * (클래스 설명).
+	 *
+	 * @return 다시 사용 처리했거나 되돌릴 할인이 없으면 true, 다시 쓸 수 없으면 false
 	 */
-	public void reapply(Order order) {
+	public boolean reclaim(Order order) {
 		Long couponId = order.getCouponId();
 		if (couponId != null) {
-			if (!couponService.claimForPaidOrder(couponId)) {
-				log.error("만료 뒤 결제된 주문의 쿠폰을 다른 주문이 이미 쓰고 있습니다: orderId={}, couponId={}",
-					order.getId(), couponId);
-				publishAnomaly("만료 뒤 결제된 주문의 쿠폰을 다른 주문이 이미 쓰고 있습니다. 결제는 확정했습니다.",
-					order, "쿠폰 ID", String.valueOf(couponId));
-				return;
-			}
-			log.info("만료 뒤 결제된 주문의 쿠폰을 다시 사용 처리: orderId={}, couponId={}", order.getId(), couponId);
-			return;
+			return couponService.claimForPaidOrder(couponId);
 		}
 
 		String code = discountCodeOf(order);
 		if (code == null) {
-			return;
+			return true;
 		}
-
-		if (discountCodeService.reapplyUsage(code)) {
-			log.error("만료 뒤 결제된 주문 때문에 할인 코드 사용 횟수가 최대 횟수를 넘었습니다: orderId={}, code={}",
-				order.getId(), code);
-			publishAnomaly("만료 뒤 결제된 주문 때문에 할인 코드 사용 횟수가 최대 횟수를 넘었습니다. 결제는 확정했습니다.",
-				order, "할인 코드", code);
-			return;
-		}
-		log.info("만료 뒤 결제된 주문의 할인코드 사용 횟수를 다시 올림: orderId={}, code={}", order.getId(), code);
+		return discountCodeService.claimForPaidOrder(code);
 	}
 
 	/** 되돌리거나 다시 쓸 할인 코드. 없거나 공백이거나 시스템 표기(무료 이벤트)면 null. */
@@ -144,14 +119,5 @@ public class OrderDiscountRestorer {
 			return null;
 		}
 		return code;
-	}
-
-	private void publishAnomaly(String summary, Order order, String discountName, String discountValue) {
-		Map<String, String> details = new LinkedHashMap<>();
-		details.put("주문 번호", order.getMerchantUid());
-		details.put("주문 ID", String.valueOf(order.getId()));
-		details.put("결제 ID", order.getPaymentId());
-		details.put(discountName, discountValue);
-		eventPublisher.publishEvent(new PaymentAnomalyEvent(summary, details));
 	}
 }

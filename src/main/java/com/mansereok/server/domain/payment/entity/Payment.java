@@ -30,7 +30,7 @@ import lombok.NoArgsConstructor;
 	indexes = {
 		// 대사가 하루치 결제를 created_at 범위로 읽는다(PaymentRepository.findAllByCreatedAtGreaterThanEqualAndCreatedAtLessThan).
 		@Index(name = "idx_payments_created_at", columnList = "created_at"),
-		// 대사가 환불 도중 멈춘 CANCEL_REQUESTED 결제를 찾는다(PaymentRepository.findAllByStatus). 상태 종류는 적지만 찾는 상태가
+		// 대사가 환불·자동 취소 도중 멈춘 CANCEL_REQUESTED 결제를 찾는다(PaymentRepository.findAllByStatus). 상태 종류는 적지만 찾는 상태가
 		// 드물어 그 값의 범위만 읽는다.
 		@Index(name = "idx_payments_status", columnList = "status"),
 		// 내 결제 목록(PaymentRepository.findAllByUserIdOrderByCreatedAtDesc)이 user_id 로 거르고 created_at 순서로 읽어 따로
@@ -76,7 +76,8 @@ public class Payment {
 	private LocalDateTime createdAt;
 
 	/**
-	 * 확정된 주문의 결제를 만든다. 상태는 PAID 로 고정하고, 환불은 전이 메서드(markCancelRequested, markCancelled)로만 간다.
+	 * 확정된 주문의 결제를 만든다. 상태는 PAID 로 고정하고, 환불은 전이 메서드(markCancelRequested, markCancelled)로만 간다. 확정하지 않고 취소할 늦은 결제는
+	 * {@link #cancelRequestedForExpiredOrder} 로 만든다.
 	 * 주문 번호와 주문·사용자·상품 id 는 주문에서 옮겨 적어, 같은 타입 id 의 순서가 뒤바뀔 자리를 두지 않는다.
 	 *
 	 * @param order     PAID 로 확정한 주문. 저장돼 id 가 있어야 한다.
@@ -98,6 +99,30 @@ public class Payment {
 		payment.subCategoryId = order.getSubCategoryId();
 		payment.amount = amount;
 		payment.status = PaymentStatus.PAID;
+		payment.createdAt = LocalDateTime.now();
+		return payment;
+	}
+
+	/**
+	 * 만료된 주문에 늦게 들어왔지만 할인을 다시 잡지 못해 확정하지 않고 취소할 결제를 CANCEL_REQUESTED 로 기록한다. 포트원 취소보다
+	 * 먼저 커밋해, 취소를 기다리는 사이 같은 결제가 다시 와도 결제 중복 검사에 걸리게 하고, 취소가 끝나지 않으면 대사가 찾게 한다.
+	 *
+	 * @throws OrderStateException 주문이 EXPIRED 가 아닐 때
+	 */
+	public static Payment cancelRequestedForExpiredOrder(Order order, String paymentId, long amount) {
+		if (order.getStatus() != OrderStatus.EXPIRED) {
+			throw new OrderStateException(
+				String.format("만료(EXPIRED)된 주문의 늦은 결제만 취소 요청으로 기록할 수 있습니다. 주문 상태=%s, merchantUid=%s",
+					order.getStatus(), order.getMerchantUid()));
+		}
+		Payment payment = new Payment();
+		payment.impUid = paymentId;
+		payment.merchantUid = order.getMerchantUid();
+		payment.orderId = order.getId();
+		payment.userId = order.getUserId();
+		payment.subCategoryId = order.getSubCategoryId();
+		payment.amount = amount;
+		payment.status = PaymentStatus.CANCEL_REQUESTED;
 		payment.createdAt = LocalDateTime.now();
 		return payment;
 	}

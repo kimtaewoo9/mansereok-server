@@ -9,6 +9,7 @@ import com.mansereok.server.domain.payment.event.PaymentAnomalyEvent;
 import com.mansereok.server.domain.payment.repository.PaymentRepository;
 import com.mansereok.server.domain.payment.service.ConfirmOutcome.DuplicatePayment;
 import com.mansereok.server.domain.payment.service.ConfirmOutcome.Finished;
+import com.mansereok.server.domain.payment.service.ConfirmOutcome.LatePaymentWithoutDiscount;
 import com.mansereok.server.global.exception.PaymentException;
 import java.util.LinkedHashMap;
 import java.util.Locale;
@@ -22,6 +23,7 @@ import org.springframework.stereotype.Component;
 
 /**
  * 이미 결제가 끝난 주문에 다른 결제 ID 로 한 번 더 승인된 결제(중복 결제)를 가려내 포트원에서 취소하고 운영 채널에 알린다.
+ * 만료된 주문에 늦게 들어왔지만 할인을 다시 잡지 못한 결제도 같은 방식으로 취소한다({@link #cancelLatePayment}).
  *
  * <p>결제 완료 API(PaymentConfirmService)와 웹훅(PaymentWebhookService)이 함께 쓴다. 일은 두 단계로 나뉜다.
  * <ol>
@@ -52,6 +54,8 @@ public class DuplicatePaymentCanceller {
 
 	/** 포트원 취소 API 에 남기는 취소 사유. */
 	static final String CANCEL_REASON = "같은 주문의 중복 결제 자동 취소";
+	/** 할인을 다시 잡지 못한 늦은 결제를 취소할 때 포트원에 남기는 사유. */
+	static final String LATE_PAYMENT_CANCEL_REASON = "만료된 주문의 할인을 다시 적용할 수 없어 자동 취소";
 
 	/** 포트원 조회 API 의 부분 취소 상태. {@link PaymentStatus#fromPortOneStatus} 는 이 값을 CANCELLED 로 접는다. */
 	private static final String PORTONE_PARTIAL_CANCELLED = "PARTIAL_CANCELLED";
@@ -149,42 +153,93 @@ public class DuplicatePaymentCanceller {
 	 * 전액 취소돼 있지 않으면 error 로그와 알림을 남겨 운영자가 손으로 취소하게 한다. 남은 결제는 다음 날 대사에서도 한 번 더 잡힌다.
 	 */
 	void cancel(DuplicatePayment duplicate) {
-		Order paidOrder = duplicate.paidOrder();
-		String duplicatePaymentId = duplicate.duplicatePaymentId();
-		try {
-			portOneClient.cancelPayment(duplicatePaymentId, CANCEL_REASON);
-		} catch (RuntimeException e) {
-			handleCancelFailure(paidOrder, duplicatePaymentId, e);
-			return;
-		}
-
-		log.warn("같은 주문의 중복 결제를 자동 취소했습니다: orderId={}, recordedPaymentId={}, duplicatePaymentId={}",
-			paidOrder.getId(), paidOrder.getPaymentId(), duplicatePaymentId);
-		publishAnomaly("이미 결제가 끝난 주문에 결제가 한 번 더 승인돼 자동으로 취소했습니다.", paidOrder,
-			duplicatePaymentId, Map.of());
+		cancelAtPortOne(duplicate.duplicatePaymentId(),
+			paymentDetails(duplicate.paidOrder(), duplicate.duplicatePaymentId()), CANCEL_REASON,
+			"이미 결제가 끝난 주문에 결제가 한 번 더 승인돼 자동으로 취소했습니다.",
+			"이미 결제가 끝난 주문에 결제가 한 번 더 승인돼 취소를 요청했습니다.",
+			"이미 결제가 끝난 주문에 결제가 한 번 더 승인됐는데 자동 취소에 실패했습니다. 포트원에서 손으로 취소해 주세요.");
 	}
 
-	private void handleCancelFailure(Order paidOrder, String duplicatePaymentId, RuntimeException failure) {
-		if (isCancelledAtPortOne(duplicatePaymentId)) {
-			if (failure instanceof PaymentException) {
-				log.info("포트원이 중복 결제 취소 요청을 거절했지만 이미 취소돼 있습니다. 같은 결제의 다른 요청이 먼저 취소한 것으로 봅니다: "
-					+ "orderId={}, duplicatePaymentId={}, cause={}", paidOrder.getId(), duplicatePaymentId, failure.getMessage());
-				return;
-			}
+	/**
+	 * 만료된 주문에 늦게 들어왔지만 할인을 다시 잡지 못한 결제를 확정하지 않고 CANCEL_REQUESTED 로 기록한다. 주문 행을 잠근 트랜잭션
+	 * 안에서 부르고, 호출자는 트랜잭션이 끝난 뒤 {@link #cancelLatePayment} 를 부른다.
+	 *
+	 * <p>기록을 포트원 취소보다 먼저 커밋한다. 기록이 없으면 취소를 기다리는 사이 할인을 쥔 다른 주문이 풀렸을 때, 같은 결제의 다른
+	 * 요청(결제 완료 API 재호출, 웹훅)이 할인을 다시 잡아 주문을 PAID 로 확정하고, 그 결제가 곧이어 취소된다.
+	 */
+	LatePaymentWithoutDiscount rejectLatePayment(Order expiredOrder, String paymentId, long amount) {
+		paymentRepository.save(Payment.cancelRequestedForExpiredOrder(expiredOrder, paymentId, amount));
+		log.error("만료된 주문의 늦은 결제가 할인을 다시 잡지 못해 확정하지 않습니다. 잠금을 놓은 뒤 자동 취소합니다: orderId={}, "
+			+ "merchantUid={}, paymentId={}", expiredOrder.getId(), expiredOrder.getMerchantUid(), paymentId);
+		return new LatePaymentWithoutDiscount(expiredOrder, paymentId);
+	}
 
-			log.warn("중복 결제 취소 응답은 받지 못했지만 포트원에서 취소돼 있습니다. 이 요청의 취소가 반영됐을 수 있어 알립니다: "
-				+ "orderId={}, duplicatePaymentId={}, cause={}", paidOrder.getId(), duplicatePaymentId, failure.getMessage());
-			publishAnomaly("이미 결제가 끝난 주문에 결제가 한 번 더 승인돼 취소를 요청했습니다. 취소 응답은 받지 못했지만 포트원에서 취소된 "
-					+ "것을 확인했습니다. 따로 할 일은 없습니다.", paidOrder, duplicatePaymentId,
-				Map.of("취소 요청 실패 원인", String.valueOf(failure.getMessage())));
-			return;
+	/**
+	 * {@link #rejectLatePayment} 로 기록한 결제를 포트원에서 전액 취소하고 운영 채널에 알린다. 주문 행 잠금과 트랜잭션을 모두 놓은
+	 * 뒤에 부른다. 실패 처리는 {@link #cancel} 과 같다. 포트원에서 취소된 것을 확인하면 결제 기록을 CANCELLED 로 바꾸고, 확인하지
+	 * 못하면 CANCEL_REQUESTED 로 남겨 대사가 찾게 한다.
+	 */
+	void cancelLatePayment(LatePaymentWithoutDiscount late) {
+		Map<String, String> details = new LinkedHashMap<>();
+		details.put("주문 번호", late.expiredOrder().getMerchantUid());
+		details.put("주문 ID", String.valueOf(late.expiredOrder().getId()));
+		details.put("취소한 결제 ID", late.paymentId());
+		boolean cancelled = cancelAtPortOne(late.paymentId(), details, LATE_PAYMENT_CANCEL_REASON,
+			"만료된 주문에 결제가 늦게 들어왔는데 할인이 그사이 다른 주문에 쓰여 결제를 자동으로 취소했습니다.",
+			"만료된 주문의 늦은 결제를 할인을 다시 적용할 수 없어 취소를 요청했습니다.",
+			"만료된 주문의 늦은 결제를 할인을 다시 적용할 수 없어 취소하려 했지만 실패했습니다. 포트원에서 손으로 취소해 주세요.");
+		if (cancelled) {
+			paymentRepository.findByImpUid(late.paymentId()).ifPresent(payment -> {
+				payment.markCancelled();
+				paymentRepository.save(payment);
+			});
+		}
+	}
+
+	/**
+	 * @param details 알림에 실을 주문·결제 정보. 실패하면 원인을 덧붙인다.
+	 * @return 포트원에서 결제가 전액 취소된 것을 확인했으면 true
+	 */
+	private boolean cancelAtPortOne(String paymentId, Map<String, String> details, String reason,
+		String cancelledSummary, String requestedSummary, String failedSummary) {
+		try {
+			portOneClient.cancelPayment(paymentId, reason);
+		} catch (RuntimeException e) {
+			return handleCancelFailure(paymentId, details, e, requestedSummary, failedSummary);
 		}
 
-		log.error("중복 결제 자동 취소에 실패했습니다. 포트원에서 손으로 취소해야 합니다: orderId={}, merchantUid={}, "
-				+ "recordedPaymentId={}, duplicatePaymentId={}", paidOrder.getId(), paidOrder.getMerchantUid(),
-			paidOrder.getPaymentId(), duplicatePaymentId, failure);
-		publishAnomaly("이미 결제가 끝난 주문에 결제가 한 번 더 승인됐는데 자동 취소에 실패했습니다. 포트원에서 손으로 취소해 주세요.",
-			paidOrder, duplicatePaymentId, Map.of("실패 원인", String.valueOf(failure.getMessage())));
+		log.warn("결제를 자동 취소했습니다: {}, reason={}", details, reason);
+		eventPublisher.publishEvent(new PaymentAnomalyEvent(cancelledSummary, details));
+		return true;
+	}
+
+	private boolean handleCancelFailure(String paymentId, Map<String, String> details, RuntimeException failure,
+		String requestedSummary, String failedSummary) {
+		if (isCancelledAtPortOne(paymentId)) {
+			if (failure instanceof PaymentException) {
+				log.info("포트원이 취소 요청을 거절했지만 이미 취소돼 있습니다. 같은 결제의 다른 요청이 먼저 취소한 것으로 봅니다: "
+					+ "{}, cause={}", details, failure.getMessage());
+				return true;
+			}
+
+			log.warn("취소 응답은 받지 못했지만 포트원에서 취소돼 있습니다. 이 요청의 취소가 반영됐을 수 있어 알립니다: {}, cause={}",
+				details, failure.getMessage());
+			eventPublisher.publishEvent(new PaymentAnomalyEvent(
+				requestedSummary + " 취소 응답은 받지 못했지만 포트원에서 취소된 것을 확인했습니다. 따로 할 일은 없습니다.",
+				withDetail(details, "취소 요청 실패 원인", String.valueOf(failure.getMessage()))));
+			return true;
+		}
+
+		log.error("결제 자동 취소에 실패했습니다. 포트원에서 손으로 취소해야 합니다: {}", details, failure);
+		eventPublisher.publishEvent(new PaymentAnomalyEvent(failedSummary,
+			withDetail(details, "실패 원인", String.valueOf(failure.getMessage()))));
+		return false;
+	}
+
+	private static Map<String, String> withDetail(Map<String, String> details, String key, String value) {
+		Map<String, String> extended = new LinkedHashMap<>(details);
+		extended.put(key, value);
+		return extended;
 	}
 
 	/**
@@ -211,12 +266,17 @@ public class DuplicatePaymentCanceller {
 
 	private void publishAnomaly(String summary, Order paidOrder, String anotherPaymentId,
 		Map<String, String> extraDetails) {
+		Map<String, String> details = paymentDetails(paidOrder, anotherPaymentId);
+		details.putAll(extraDetails);
+		eventPublisher.publishEvent(new PaymentAnomalyEvent(summary, details));
+	}
+
+	private static Map<String, String> paymentDetails(Order paidOrder, String anotherPaymentId) {
 		Map<String, String> details = new LinkedHashMap<>();
 		details.put("주문 번호", paidOrder.getMerchantUid());
 		details.put("주문 ID", String.valueOf(paidOrder.getId()));
 		details.put("주문에 기록된 결제 ID", Objects.requireNonNullElse(paidOrder.getPaymentId(), "없음"));
 		details.put("한 번 더 온 결제 ID", anotherPaymentId);
-		details.putAll(extraDetails);
-		eventPublisher.publishEvent(new PaymentAnomalyEvent(summary, details));
+		return details;
 	}
 }

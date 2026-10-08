@@ -27,8 +27,6 @@ import com.mansereok.server.support.fixture.DiscountCodeFixture;
 import com.mansereok.server.support.fixture.SubCategoryFixture;
 import java.time.Duration;
 import java.time.LocalDate;
-import java.util.LinkedHashMap;
-import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
@@ -50,9 +48,7 @@ import org.springframework.transaction.support.TransactionTemplate;
  * 확인한다.
  *
  * <ul>
- *   <li>만료 뒤 늦게 결제된 주문 A 의 확정과, 같은 쿠폰 X 를 쥔 주문 B 의 만료·환불이 겹치는 경우. A 의 확정이 X 를 다시 쓰지 못한 채
- *   커밋하기 전에 B 가 X 를 풀면, 결제 완료된 A 가 쥔 X 가 미사용으로 남을 수 있다. 그때는 A 의 확정이 결제 이상 알림을 한 번
- *   보낸다(OrderDiscountRestorer#restore 설명).</li>
+ *   <li>만료 뒤 늦게 결제된 주문 A 의 확정과, 같은 쿠폰 X 를 쥔 주문 B 의 만료가 겹치는 경우. 교착 없이 둘 다 끝난다.</li>
  *   <li>쿠폰이 서로 다른 두 쿠폰 주문의 환불과 환불, 환불과 만료가 겹치는 경우. 쿠폰을 쥔 다른 주문이 있는지 잠그지 않고 읽으므로
  *   서로를 기다리지 않는다.</li>
  *   <li>할인 코드 D 를 잠근 주문 생성과 D 로 만든 주문 A 의 늦은 결제가 겹치는 경우.</li>
@@ -75,7 +71,6 @@ class LatePaidDiscountOverlapMySqlTest extends PaymentMySqlTest {
 	private static final int PRICE_WITH_COUPON = 7000;
 	private static final int CODE_DISCOUNT = 1000;
 	private static final int PRICE_WITH_CODE = 9000;
-	private static final String COUPON_TAKEN_ALERT = "만료 뒤 결제된 주문의 쿠폰을 다른 주문이 이미 쓰고 있습니다. 결제는 확정했습니다.";
 
 	@Autowired
 	private PaymentOrderService paymentOrderService;
@@ -163,66 +158,6 @@ class LatePaidDiscountOverlapMySqlTest extends PaymentMySqlTest {
 		}
 
 		@Test
-		@DisplayName("A 의 늦은 결제 확정이 X 를 다시 쓰지 못한 채 커밋하기 전에 B 를 만료하면, 교착 없이 둘 다 끝나고 A 의 확정이 결제 이상 알림을 한 번 보낸다")
-		void expiryOfBDuringUncommittedLatePaymentEndsWithOneAnomalyAlert() throws Exception {
-			// given: A 의 늦은 결제 확정이 X 를 다시 쓰지 못한 채 끝났지만 아직 커밋하지 않았다
-			Future<OrderStatus> latePaymentOfA = runInTransactionAndHoldBeforeCommit(() ->
-				paymentConfirmService.complete(username, completeRequest(paymentA, orderA.getMerchantUid())).getStatus());
-			assertThat(firstHoldsLocks.await(10, SECONDS)).as("A 의 확정이 커밋 직전에 멈췄다").isTrue();
-
-			// when: B 를 만료하고, B 가 잠금을 기다리기 시작하면 A 를 커밋시킨다
-			Future<Boolean> expiryOfB = executor.submit(
-				() -> orderExpirationService.expireIfStillPending(orderB.getOrderId()));
-			awaitWaitingForLockOrDone(expiryOfB);
-			releaseFirst.countDown();
-
-			// then: B 의 만료는 커밋 전인 A 를 EXPIRED 로 읽어 X 를 풀 수 있다(OrderDiscountRestorer#restore 의 남은 한계).
-			//       그래서 X 의 상태 대신, 운영자가 X 를 확인하도록 A 의 확정이 보낸 알림을 본다.
-			Outcome<OrderStatus> latePayment = outcomeOf(latePaymentOfA);
-			Outcome<Boolean> expiry = outcomeOf(expiryOfB);
-			assertThat(latePayment.error()).as("A 의 늦은 결제 확정 예외").isNull();
-			assertThat(expiry.error()).as("B 의 만료 예외").isNull();
-			assertThat(latePayment.value()).isEqualTo(OrderStatus.PAID);
-			assertThat(expiry.value()).as("B 만료 처리 여부").isTrue();
-			assertThat(orderStatus(orderA.getMerchantUid())).isEqualTo("PAID");
-			assertThat(orderStatus(orderB.getMerchantUid())).isEqualTo("EXPIRED");
-			await().atMost(Duration.ofSeconds(5)).untilAsserted(() ->
-				then(discordNotificationService).should(times(1))
-					.sendPaymentAnomalyNotification(COUPON_TAKEN_ALERT, couponTakenAlertDetailsOfA()));
-		}
-
-		@Test
-		@DisplayName("B 가 결제를 마친 뒤 A 의 늦은 결제 확정이 X 를 다시 쓰지 못한 채 커밋하기 전에 B 를 환불하면, 교착 없이 둘 다 끝나고 A 의 확정이 결제 이상 알림을 한 번 보낸다")
-		void refundOfBDuringUncommittedLatePaymentEndsWithOneAnomalyAlert() throws Exception {
-			// given: B 가 결제를 마쳤고, A 의 늦은 결제 확정이 X 를 다시 쓰지 못한 채 끝났지만 아직 커밋하지 않았다
-			String paymentB = "pay_overlap_b_" + runId;
-			given(portOneClient.getPayment(paymentB))
-				.willReturn(paidResponse(paymentB, orderB.getMerchantUid(), PRICE_WITH_COUPON));
-			paymentConfirmService.complete(username, completeRequest(paymentB, orderB.getMerchantUid()));
-			Future<OrderStatus> latePaymentOfA = runInTransactionAndHoldBeforeCommit(() ->
-				paymentConfirmService.complete(username, completeRequest(paymentA, orderA.getMerchantUid())).getStatus());
-			assertThat(firstHoldsLocks.await(10, SECONDS)).as("A 의 확정이 커밋 직전에 멈췄다").isTrue();
-
-			// when: B 를 환불하고, 환불이 잠금을 기다리기 시작하면 A 를 커밋시킨다
-			Future<Boolean> refundOfB = executor.submit(() -> refund(paymentB));
-			awaitWaitingForLockOrDone(refundOfB);
-			releaseFirst.countDown();
-
-			// then: 환불의 쿠폰 복구는 커밋 전인 A 를 EXPIRED 로 읽어 X 를 풀 수 있다(OrderDiscountRestorer#restore 의 남은 한계).
-			//       그래서 X 의 상태 대신, 운영자가 X 를 확인하도록 A 의 확정이 보낸 알림을 본다.
-			Outcome<OrderStatus> latePayment = outcomeOf(latePaymentOfA);
-			Outcome<Boolean> refund = outcomeOf(refundOfB);
-			assertThat(latePayment.error()).as("A 의 늦은 결제 확정 예외").isNull();
-			assertThat(refund.error()).as("B 의 환불 예외").isNull();
-			assertThat(orderStatus(orderA.getMerchantUid())).isEqualTo("PAID");
-			assertThat(orderStatus(orderB.getMerchantUid())).isEqualTo("CANCELLED");
-			assertThat(paymentStatus(paymentB)).isEqualTo("CANCELLED");
-			await().atMost(Duration.ofSeconds(5)).untilAsserted(() ->
-				then(discordNotificationService).should(times(1))
-					.sendPaymentAnomalyNotification(COUPON_TAKEN_ALERT, couponTakenAlertDetailsOfA()));
-		}
-
-		@Test
 		@DisplayName("A 의 늦은 결제 확정이 주문 행만 잠그고 X 를 다시 쓰기 전에 B 를 만료해도, 교착 없이 둘 다 끝나고 X 는 사용 상태로 남는다")
 		void expiryOfBAndLatePaymentOfAFinishWithoutDeadlock() throws Exception {
 			// given: A 의 늦은 결제 확정이 주문 행을 잠갔고, 아직 쿠폰 행은 잠그지 않았다
@@ -244,16 +179,6 @@ class LatePaidDiscountOverlapMySqlTest extends PaymentMySqlTest {
 			assertThat(orderStatus(orderA.getMerchantUid())).isEqualTo("PAID");
 			assertThat(orderStatus(orderB.getMerchantUid())).isEqualTo("EXPIRED");
 			assertThat(couponIsUsed(couponId)).as("결제 완료된 A 가 쥔 쿠폰 X 사용 여부").isTrue();
-		}
-
-		/** A 의 늦은 결제 확정이 B 가 쥔 X 를 다시 쓰지 못했을 때 보내는 결제 이상 알림의 내용. */
-		private Map<String, String> couponTakenAlertDetailsOfA() {
-			Map<String, String> details = new LinkedHashMap<>();
-			details.put("주문 번호", orderA.getMerchantUid());
-			details.put("주문 ID", String.valueOf(orderA.getOrderId()));
-			details.put("결제 ID", paymentA);
-			details.put("쿠폰 ID", String.valueOf(couponId));
-			return details;
 		}
 	}
 
@@ -363,19 +288,6 @@ class LatePaidDiscountOverlapMySqlTest extends PaymentMySqlTest {
 			assertThat(currentUses()).as("할인 코드 사용 횟수").isEqualTo(2);
 			assertThat(pendingOrPaidOrdersUsingCode()).as("결제 대기·결제 완료 주문 수").isEqualTo(2);
 		}
-	}
-
-	/**
-	 * 테스트가 연 트랜잭션에서 work 를 끝낸 뒤 커밋하기 전에 멈춘다. work 가 부른 서비스는 이 트랜잭션에 참여하므로, 멈춘 동안 서비스가
-	 * 건 잠금이 남는다. {@link #releaseFirst} 가 열리면 커밋한다.
-	 */
-	private <T> Future<T> runInTransactionAndHoldBeforeCommit(Supplier<T> work) {
-		return executor.submit(() -> new TransactionTemplate(transactionManager).execute(status -> {
-			T result = work.get();
-			firstHoldsLocks.countDown();
-			awaitRelease();
-			return result;
-		}));
 	}
 
 	/**

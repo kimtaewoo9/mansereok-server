@@ -42,7 +42,7 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
 		LocalDateTime until);
 
 	/**
-	 * 대사용 상태 조회. 환불 도중 CANCEL_REQUESTED 로 굳은 결제는 언제 만들어졌든 찾아내야 해서 창을 두지 않는다.
+	 * 대사용 상태 조회. 환불이나 늦은 결제 자동 취소 도중 CANCEL_REQUESTED 로 굳은 결제는 언제 만들어졌든 찾아내야 해서 창을 두지 않는다.
 	 */
 	List<Payment> findAllByStatus(PaymentStatus status);
 
