@@ -1,6 +1,8 @@
 package com.mansereok.server.domain.auth.filter;
 
 import com.mansereok.server.domain.auth.util.JwtUtil;
+import com.mansereok.server.domain.user.repository.UserRepository;
+import com.mansereok.server.global.exception.JwtAccountMismatchException;
 import com.mansereok.server.global.exception.JwtAuthenticationException;
 import com.mansereok.server.global.exception.JwtErrorCode;
 import com.mansereok.server.global.exception.JwtSignatureException;
@@ -56,6 +58,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 	);
 
 	private final JwtUtil jwtUtil;
+	private final UserRepository userRepository;
 
 	@Override
 	protected boolean shouldNotFilter(@NonNull HttpServletRequest request) {
@@ -121,6 +124,8 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 				List<GrantedAuthority> authorities =
 					Collections.singletonList(new SimpleGrantedAuthority(role));
 
+				requireSameAccount(claims, username);
+
 				UsernamePasswordAuthenticationToken authentication =
 					new UsernamePasswordAuthenticationToken(
 						username,
@@ -147,6 +152,28 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 			throw new JwtSignatureException("JWT 토큰의 발급자가 올바르지 않습니다.");
 		} catch (IllegalArgumentException e) {
 			throw new JwtTokenMalformedException("JWT 토큰이 비어있거나 올바르지 않습니다.");
+		}
+	}
+
+	/**
+	 * 토큰의 subject(username)가 지금도 토큰을 발급받은 그 계정을 가리키는지 확인한다.
+	 *
+	 * <p>이메일 가입자의 username 은 이메일이고, 탈퇴는 users 행을 지운다. 그래서 탈퇴한 뒤 같은 이메일로 다시 가입하면 username 은
+	 * 같고 id 만 다른 새 계정이 생긴다. subject 만 보고 인증하면 탈퇴 전에 발급받아 아직 만료되지 않은(최대 30분) 토큰이 새 계정으로
+	 * 통한다. 로그인·소셜 로그인·재발급이 토큰에 넣는 userId 는 계정이 사는 동안 바뀌지 않으므로, (id, username) 이 함께 맞는 계정이
+	 * 있을 때만 인증한다. 계정이 없거나 id 가 다르거나 userId 클레임이 없으면 서명이 맞아도 거절한다(401 JWT_ACCOUNT_MISMATCH).
+	 *
+	 * <p>이 확인은 토큰을 실은 요청마다 users 를 기본 키로 한 번 읽는다. 로그인이 필요한 요청은 어차피 뒤에서 username 으로 회원을
+	 * 읽으므로 더해지는 부담은 그 조회 하나다.
+	 *
+	 * <p>남는 위험: principal 은 여전히 username 이라, 이 확인과 컨트롤러의 username 조회 사이의 짧은 틈에 탈퇴와 재가입이 둘 다
+	 * 커밋되면 그 요청은 새 계정으로 풀린다. 확인한 id 를 principal 로 넘기고 뒤 코드가 id 로 회원을 찾게 바꾸면 없어지는 틈이라
+	 * 후속 과제로 남긴다.
+	 */
+	private void requireSameAccount(Claims claims, String username) {
+		Object userId = claims.get("userId");
+		if (!(userId instanceof Number id) || !userRepository.existsByIdAndUsername(id.longValue(), username)) {
+			throw new JwtAccountMismatchException("토큰이 가리키는 계정을 찾을 수 없습니다.");
 		}
 	}
 }

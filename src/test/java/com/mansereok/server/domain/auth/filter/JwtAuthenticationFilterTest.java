@@ -1,18 +1,24 @@
 package com.mansereok.server.domain.auth.filter;
 
 import static com.mansereok.server.support.fixture.AccessTokenFixture.ISSUER;
+import static com.mansereok.server.support.fixture.AccessTokenFixture.MEMBER_ID;
 import static com.mansereok.server.support.fixture.AccessTokenFixture.NOW;
 import static com.mansereok.server.support.fixture.AccessTokenFixture.claimsOfThisServer;
 import static com.mansereok.server.support.fixture.AccessTokenFixture.signedByThisServer;
 import static com.mansereok.server.support.fixture.AccessTokenFixture.signedWithOtherKey;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.BDDMockito.given;
+import static org.mockito.BDDMockito.then;
+import static org.mockito.Mockito.mock;
 
+import com.mansereok.server.domain.user.repository.UserRepository;
 import com.mansereok.server.global.exception.JwtAuthenticationException;
 import com.mansereok.server.global.exception.JwtErrorCode;
 import com.mansereok.server.support.fixture.AccessTokenFixture;
 import java.util.Date;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -39,7 +45,16 @@ class JwtAuthenticationFilterTest {
 
 	private static final String PROTECTED_PATH = "/api/v1/users/me/profiles";
 
-	private final JwtAuthenticationFilter filter = new JwtAuthenticationFilter(AccessTokenFixture.jwtUtil());
+	private final UserRepository userRepository = mock(UserRepository.class);
+	private final JwtAuthenticationFilter filter = new JwtAuthenticationFilter(AccessTokenFixture.jwtUtil(),
+		userRepository);
+
+	@BeforeEach
+	void memberAndAdminAccountsExist() {
+		// 표의 토큰이 가리키는 (userId, subject) 조합. 그 밖의 조합은 목이 false 를 돌려줘 "계정 없음" 이 된다.
+		given(userRepository.existsByIdAndUsername(MEMBER_ID, "member")).willReturn(true);
+		given(userRepository.existsByIdAndUsername(MEMBER_ID, "admin")).willReturn(true);
+	}
 
 	@AfterEach
 	void clearSecurityContext() {
@@ -162,6 +177,57 @@ class JwtAuthenticationFilterTest {
 			Arguments.of("role 이 숫자인 토큰",
 				"Bearer " + signedByThisServer(claimsOfThisServer().claim("role", 1)),
 				JwtErrorCode.INTERNAL_ERROR, "JWT 처리 중 내부 오류가 발생했습니다."));
+	}
+
+	@Nested
+	@DisplayName("서명·발급자·만료는 맞지만 토큰이 가리키는 계정이 지금 없으면")
+	class WhenAccountIsGone {
+
+		@ParameterizedTest(name = "[{index}] {0}")
+		@MethodSource("com.mansereok.server.domain.auth.filter.JwtAuthenticationFilterTest#tokensOfMissingAccounts")
+		@DisplayName("인증 정보를 넣지 않고 ACCOUNT_MISMATCH 오류를 요청 속성에 남긴 채 다음 필터로 넘긴다")
+		void leavesAccountMismatchAndContinues(String description, String token, Long lookedUpId,
+			String lookedUpUsername) throws Exception {
+			// given
+			MockHttpServletRequest request = request(PROTECTED_PATH, "Bearer " + token);
+			MockHttpServletResponse response = new MockHttpServletResponse();
+			MockFilterChain chain = new MockFilterChain();
+
+			// when
+			filter.doFilter(request, response, chain);
+
+			// then
+			assertThat(SecurityContextHolder.getContext().getAuthentication()).isNull();
+			assertThat(request.getAttribute(JwtAuthenticationFilter.JWT_EXCEPTION_ATTRIBUTE))
+				.isInstanceOfSatisfying(JwtAuthenticationException.class, e -> {
+					assertThat(e.getErrorCode()).isEqualTo(JwtErrorCode.ACCOUNT_MISMATCH);
+					assertThat(e.getMessage()).isEqualTo("토큰이 가리키는 계정을 찾을 수 없습니다.");
+				});
+			if (lookedUpId != null) {
+				then(userRepository).should().existsByIdAndUsername(lookedUpId, lookedUpUsername);
+			}
+			assertThat(chain.getRequest()).isSameAs(request);
+			assertThat(response.isCommitted()).isFalse();
+		}
+	}
+
+	static Stream<Arguments> tokensOfMissingAccounts() {
+		return Stream.of(
+			// 탈퇴한 회원의 토큰. 같은 username 의 계정이 없다.
+			Arguments.of("탈퇴한 계정의 토큰",
+				signedByThisServer(claimsOfThisServer().subject("withdrawn").claim("userId", 7L)),
+				7L, "withdrawn"),
+			// 탈퇴한 뒤 같은 이메일로 다시 가입하면 username 은 같고 id 는 다르다. 탈퇴 전 토큰은 옛 id 를 들고 있다.
+			Arguments.of("탈퇴 뒤 같은 username 으로 다시 가입한 계정에 옛 id 로 온 토큰",
+				signedByThisServer(claimsOfThisServer().claim("userId", 99L)),
+				99L, "member"),
+			// 이 서버는 늘 userId 를 넣어 발급한다. 없으면 이 서버의 토큰으로 보지 않고 계정 확인 없이 거절한다.
+			Arguments.of("userId 클레임이 없는 토큰",
+				signedByThisServer(claimsOfThisServer().claim("userId", null)),
+				null, null),
+			Arguments.of("userId 가 숫자가 아닌 토큰",
+				signedByThisServer(claimsOfThisServer().claim("userId", String.valueOf(MEMBER_ID))),
+				null, null));
 	}
 
 	@Nested

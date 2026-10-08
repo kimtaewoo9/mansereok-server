@@ -1,6 +1,9 @@
 package com.mansereok.server.global.config;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.BDDMockito.given;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.request;
@@ -11,12 +14,14 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.mansereok.server.domain.auth.security.JwtAccessDeniedHandler;
 import com.mansereok.server.domain.auth.security.JwtAuthenticationEntryPoint;
 import com.mansereok.server.domain.auth.util.JwtUtil;
+import com.mansereok.server.domain.user.repository.UserRepository;
 import io.jsonwebtoken.Jwts;
 import jakarta.servlet.http.Cookie;
 import java.time.Instant;
 import java.util.Date;
 import java.util.Map;
 import javax.crypto.SecretKey;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -27,6 +32,7 @@ import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
 import org.springframework.test.web.servlet.request.RequestPostProcessor;
@@ -74,6 +80,15 @@ class SecurityRulesTest {
 	private JwtUtil jwtUtil;
 	@Autowired
 	private SecretKey jwtSecretKey;
+	// JwtAuthenticationFilter 가 토큰의 (userId, subject) 로 계정이 지금도 있는지 확인한다. 이 표는 경로 규칙만 보므로 모든 토큰의
+	// 계정이 있다고 답한다. 계정이 없거나 바뀐 토큰의 처리는 JwtAuthenticationFilterTest 와 JwtAccountMismatchMySqlTest 가 본다.
+	@MockitoBean
+	private UserRepository userRepository;
+
+	@BeforeEach
+	void everyTokenAccountExists() {
+		given(userRepository.existsByIdAndUsername(anyLong(), anyString())).willReturn(true);
+	}
 
 	@ParameterizedTest(name = "[{index}] {0} {1} ({2}, CSRF 토큰 {3}) → {4}")
 	@CsvSource(textBlock = """
@@ -247,10 +262,10 @@ class SecurityRulesTest {
 	}
 
 	/**
-	 * 로그인·재발급 때와 같은 방식으로 역할 클레임을 담은 액세스 토큰을 만든다.
+	 * 로그인·재발급 때와 같은 방식으로 역할과 회원 id 클레임을 담은 액세스 토큰을 만든다.
 	 */
 	private String tokenWithRole(String username, String role) {
-		return jwtUtil.generateAccessToken(username, Map.of("role", role));
+		return jwtUtil.generateAccessToken(username, Map.of("role", role, "userId", 1L));
 	}
 
 	/**
@@ -260,6 +275,7 @@ class SecurityRulesTest {
 		return Jwts.builder()
 			.subject(username)
 			.claim("role", role)
+			.claim("userId", 1L)
 			.issuer("www.namedsaju.com")
 			.issuedAt(Date.from(Instant.parse("2020-01-01T00:00:00Z")))
 			.expiration(Date.from(Instant.parse("2020-01-01T00:30:00Z")))
