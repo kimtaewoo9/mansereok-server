@@ -4,6 +4,7 @@ import com.mansereok.server.domain.order.dto.request.OrderCreateRequest;
 import com.mansereok.server.domain.order.dto.response.OrderCreateResponse;
 import com.mansereok.server.domain.order.dto.response.OrderResponse;
 import com.mansereok.server.domain.order.entity.Order;
+import com.mansereok.server.domain.order.service.OrderAbandonService;
 import com.mansereok.server.domain.payment.client.PortOneWebhookVerifier;
 import com.mansereok.server.domain.payment.dto.request.PaymentCancelRequest;
 import com.mansereok.server.domain.payment.dto.request.PaymentCompleteRequest;
@@ -39,6 +40,7 @@ public class PaymentController {
 	private final PaymentConfirmService paymentConfirmService;
 	private final PaymentQueryService paymentQueryService;
 	private final PaymentRefundService paymentRefundService;
+	private final OrderAbandonService orderAbandonService;
 	private final PortOneWebhookVerifier webhookVerifier;
 
 	/**
@@ -97,6 +99,16 @@ public class PaymentController {
 			long elapsedMillis = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startNanos);
 			log.info("웹훅 처리 종료: webhookId={}, {}ms", webhookId, elapsedMillis);
 		}
+	}
+
+	// 결제창에서 결제하지 않고 나왔을 때 프론트가 부른다. 쿠폰·할인 코드를 바로 돌려주고 주문은 EXPIRED 가 된다. 환불(/api/payment/cancel)과 다르다.
+	@PostMapping("/api/payment/orders/{orderId}/abandon")
+	public ResponseEntity<OrderResponse> abandonOrder(
+		@PathVariable Long orderId,
+		@AuthenticationPrincipal String username
+	) {
+		Order order = orderAbandonService.abandon(orderId, username);
+		return ResponseEntity.ok(OrderResponse.from(order));
 	}
 
 	@GetMapping("/api/payment/orders/{orderId}")
