@@ -110,7 +110,7 @@ class PaymentWebhookServiceTest {
 		lenient().when(transactionManager.getTransaction(any(TransactionDefinition.class)))
 			.thenAnswer(invocation -> new SimpleTransactionStatus(true));
 		PaidOrderFinalizer paidOrderFinalizer = new PaidOrderFinalizer(orderRepository,
-			paymentRepository, resultService, orderDiscountRestorer, eventPublisher);
+			paymentRepository, resultService, eventPublisher);
 		PaymentVerifier paymentVerifier = new PaymentVerifier(objectMapper); // customData 파싱·금액·상태 규칙을 실제로 검증한다
 		paymentWebhookService = new PaymentWebhookService(
 			objectMapper,
@@ -499,6 +499,54 @@ class PaymentWebhookServiceTest {
 	}
 
 	// ===== 이미 다른 결제로 확정된 주문에 결제가 또 옴 =====
+
+	@Nested
+	@DisplayName("만료(EXPIRED)된 주문에 결제의 Paid 웹훅이 늦게 오면")
+	class WhenLatePaymentWebhookArrivesForExpiredOrder {
+
+		private final Order order = createOrder(OrderStatus.EXPIRED, null, 7L);
+
+		@BeforeEach
+		void givenExpiredOrderAndPaidPayment() {
+			givenLockedOrder(order);
+			given(paymentRepository.findByImpUid(PAYMENT_ID)).willReturn(Optional.empty());
+			given(portOneClient.getPayment(PAYMENT_ID)).willReturn(portOneResponseWithCustomData("PAID", PRICE));
+		}
+
+		@Test
+		@DisplayName("할인을 다시 잡지 못하면 확정하지 않고 포트원에서 취소해 알림을 보낸 뒤, 포트원에 200 을 주도록 예외 없이 끝낸다")
+		void cancelsWhenDiscountCannotBeReclaimed() {
+			// given
+			given(orderDiscountRestorer.reclaim(order)).willReturn(false);
+
+			// when
+			assertThatCode(() -> paymentWebhookService.processWebhook(webhookBody("Paid")))
+				.doesNotThrowAnyException();
+
+			// then
+			verify(portOneClient, times(1)).cancelPayment(PAYMENT_ID, DuplicatePaymentCanceller.LATE_PAYMENT_CANCEL_REASON);
+			assertThat(capturedAnomalyEvent().details()).containsEntry("취소한 결제 ID", PAYMENT_ID);
+			assertThat(order.getStatus()).isEqualTo(OrderStatus.EXPIRED);
+			verify(paymentRepository, never()).save(any(Payment.class));
+			verifyNoInteractions(resultService);
+		}
+
+		@Test
+		@DisplayName("할인을 다시 잡으면 PAID 로 확정하고 취소하지 않는다")
+		void confirmsWhenDiscountReclaimed() {
+			// given
+			given(orderDiscountRestorer.reclaim(order)).willReturn(true);
+			givenOrderSaveReturnsArgument();
+			givenPaymentSaveAssignsId();
+
+			// when
+			paymentWebhookService.processWebhook(webhookBody("Paid"));
+
+			// then
+			assertThat(order.getStatus()).isEqualTo(OrderStatus.PAID);
+			verify(portOneClient, never()).cancelPayment(any(), any());
+		}
+	}
 
 	@Nested
 	@DisplayName("결제 pay_test_001 로 이미 PAID 가 된 주문에 다른 결제 pay_test_002 의 Paid 웹훅이 오면")

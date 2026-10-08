@@ -24,6 +24,7 @@ import com.mansereok.server.domain.user.entity.Gender;
 import com.mansereok.server.domain.user.entity.User;
 import com.mansereok.server.domain.user.repository.UserRepository;
 import com.mansereok.server.support.PaymentMySqlTest;
+import com.mansereok.server.global.exception.PaymentException;
 import com.mansereok.server.support.fixture.CouponFixture;
 import com.mansereok.server.support.fixture.DiscountCodeFixture;
 import com.mansereok.server.support.fixture.SubCategoryFixture;
@@ -45,7 +46,7 @@ import org.springframework.transaction.IllegalTransactionStateException;
  * 만료(EXPIRED)된 주문이 늦게 결제될 때 "결제 대기·결제 완료 주문의 할인은 사용된 상태" 가 지켜지는지 실제 MySQL 로 확인한다.
  *
  * <p>만료는 쿠폰을 미사용으로, 할인 코드 사용 횟수를 1 줄여 둔다. 그 뒤 결제가 확정되면 할인을 다시 사용 처리해야 하고, 그사이 같은
- * 쿠폰을 다른 주문이 가져갔으면 결제는 확정하되 운영 채널에 알린다. 늦게 결제된 주문을 환불할 때는 다른 주문이 쥔 쿠폰을 풀지 않는다.
+ * 쿠폰을 다른 주문이 가져갔거나 할인 코드가 선착순 횟수에 닿았으면 확정하지 않고 포트원에서 결제를 취소하며 운영 채널에 알린다.
  *
  * <p>주문 생성·만료·결제 완료·환불은 실제 서비스를 부르고, 포트원과 Discord 만 목으로 바꾼다. 만료는 스케줄러를 기다리지 않고
  * 만료 서비스를 직접 부른다. 쿠폰 사용 여부와 사용 횟수는 JPA 캐시를 거치지 않고 SQL 로 읽는다. 데이터는 실행마다 다른 키(runId)로
@@ -68,8 +69,6 @@ class LatePaidDiscountMySqlTest extends PaymentMySqlTest {
 	private OrderExpirationService orderExpirationService;
 	@Autowired
 	private PaymentConfirmService paymentConfirmService;
-	@Autowired
-	private PaymentRefundService paymentRefundService;
 	@Autowired
 	private DiscountCodeService discountCodeService;
 	@Autowired
@@ -152,39 +151,30 @@ class LatePaidDiscountMySqlTest extends PaymentMySqlTest {
 		}
 
 		@Test
-		@DisplayName("그사이 X 로 주문 B 를 만들었으면 A 의 늦은 결제는 확정하되 결제 이상 알림을 한 번 보내고, A 를 환불해도 X 는 B 가 쥔 채 사용 상태로 남는다")
-		void couponTakenByAnotherOrderStaysUsedAfterRefundOfLatePaidOrder() {
-			// given: X 로 주문 B 를 만들고, A 가 늦게 결제된다
+		@DisplayName("그사이 X 로 주문 B 를 만들었으면 A 의 늦은 결제는 확정하지 않고 포트원에서 취소하며 결제 이상 알림을 한 번 보낸다. A 는 EXPIRED, X 는 B 가 쥔 채 사용 상태다")
+		void latePaymentIsCancelledWhenCouponTakenByPendingOrder() {
+			// given: X 로 주문 B 를 만든 뒤 A 가 늦게 결제된다
 			OrderCreateResponse orderB = paymentOrderService.createOrder(username, orderRequestWithCoupon(couponId));
 			String paymentA = "pay_late_a_" + runId;
 			given(portOneClient.getPayment(paymentA))
 				.willReturn(paidResponse(paymentA, orderA.getMerchantUid(), PRICE_WITH_COUPON));
-			Order paid = paymentConfirmService.complete(username,
-				completeRequest(paymentA, orderA.getMerchantUid()));
-			assertThat(paid.getStatus()).as("결제는 되돌리지 않고 확정한다").isEqualTo(OrderStatus.PAID);
 
-			Map<String, String> expectedDetails = new LinkedHashMap<>();
-			expectedDetails.put("주문 번호", orderA.getMerchantUid());
-			expectedDetails.put("주문 ID", String.valueOf(orderA.getOrderId()));
-			expectedDetails.put("결제 ID", paymentA);
-			expectedDetails.put("쿠폰 ID", String.valueOf(couponId));
-			await().atMost(Duration.ofSeconds(5)).untilAsserted(() ->
-				then(discordNotificationService).should(times(1)).sendPaymentAnomalyNotification(
-					"만료 뒤 결제된 주문의 쿠폰을 다른 주문이 이미 쓰고 있습니다. 결제는 확정했습니다.", expectedDetails));
-
-			// when: 늦게 결제된 A 를 환불한다
-			paymentRefundService.cancel(username, paymentA, "단순 변심");
-
-			// then
-			assertThat(orderStatus(orderA.getMerchantUid())).isEqualTo("CANCELLED");
+			// when & then
+			assertThatThrownBy(() -> paymentConfirmService.complete(username,
+				completeRequest(paymentA, orderA.getMerchantUid())))
+				.isInstanceOf(PaymentException.class)
+				.hasMessage(PaymentConfirmService.LATE_PAYMENT_WITHOUT_DISCOUNT_MESSAGE);
+			assertThat(orderStatus(orderA.getMerchantUid())).isEqualTo("EXPIRED");
 			assertThat(orderStatus(orderB.getMerchantUid())).isEqualTo("PENDING");
 			assertThat(couponIsUsed(couponId)).as("B 가 쥔 쿠폰 X 사용 여부").isTrue();
+			then(portOneClient).should().cancelPayment(paymentA, DuplicatePaymentCanceller.LATE_PAYMENT_CANCEL_REASON);
+			assertCancelAlertSentOnce(orderA, paymentA);
 		}
 
 		@Test
-		@DisplayName("X 로 만든 주문 B 가 결제까지 마친 뒤 A 가 늦게 결제되어도, A 를 환불하면 X 는 결제 완료된 B 가 쥔 채 사용 상태로 남는다")
-		void couponHeldByPaidOrderStaysUsedAfterRefundOfLatePaidOrder() {
-			// given: X 로 만든 주문 B 가 결제를 마치고, 그 뒤 A 가 늦게 결제된다
+		@DisplayName("X 로 만든 주문 B 가 결제까지 마친 뒤 A 가 늦게 결제되면 A 는 확정하지 않고 취소한다. B 는 PAID, X 는 B 가 쥔 채 사용 상태다")
+		void latePaymentIsCancelledWhenCouponHeldByPaidOrder() {
+			// given: X 로 만든 주문 B 가 결제를 마친다
 			OrderCreateResponse orderB = paymentOrderService.createOrder(username, orderRequestWithCoupon(couponId));
 			String paymentB = "pay_late_b_" + runId;
 			given(portOneClient.getPayment(paymentB))
@@ -193,17 +183,15 @@ class LatePaidDiscountMySqlTest extends PaymentMySqlTest {
 			String paymentA = "pay_late_a_" + runId;
 			given(portOneClient.getPayment(paymentA))
 				.willReturn(paidResponse(paymentA, orderA.getMerchantUid(), PRICE_WITH_COUPON));
-			paymentConfirmService.complete(username, completeRequest(paymentA, orderA.getMerchantUid()));
-			assertThat(orderStatus(orderB.getMerchantUid())).as("준비 단계: B 결제 완료").isEqualTo("PAID");
-			assertThat(orderStatus(orderA.getMerchantUid())).as("준비 단계: A 늦은 결제 확정").isEqualTo("PAID");
 
-			// when: 늦게 결제된 A 를 환불한다
-			paymentRefundService.cancel(username, paymentA, "단순 변심");
-
-			// then
-			assertThat(orderStatus(orderA.getMerchantUid())).isEqualTo("CANCELLED");
+			// when & then
+			assertThatThrownBy(() -> paymentConfirmService.complete(username,
+				completeRequest(paymentA, orderA.getMerchantUid())))
+				.isInstanceOf(PaymentException.class);
+			assertThat(orderStatus(orderA.getMerchantUid())).isEqualTo("EXPIRED");
 			assertThat(orderStatus(orderB.getMerchantUid())).isEqualTo("PAID");
 			assertThat(couponIsUsed(couponId)).as("결제 완료된 B 가 쥔 쿠폰 X 사용 여부").isTrue();
+			then(portOneClient).should().cancelPayment(paymentA, DuplicatePaymentCanceller.LATE_PAYMENT_CANCEL_REASON);
 		}
 	}
 
@@ -230,8 +218,8 @@ class LatePaidDiscountMySqlTest extends PaymentMySqlTest {
 		}
 
 		@Test
-		@DisplayName("선착순 1명 코드의 자리를 그사이 주문 B 가 가져갔으면 A 의 늦은 결제는 확정하고, 사용 횟수는 최대를 넘긴 2 로 세며 결제 이상 알림을 한 번 보낸다")
-		void latePaymentPastLimitIsCountedAndReported() {
+		@DisplayName("선착순 1명 코드의 자리를 그사이 주문 B 가 가져갔으면 A 의 늦은 결제는 확정하지 않고 취소한다. 사용 횟수는 B 몫 1 그대로다")
+		void latePaymentPastLimitIsCancelled() {
 			// given
 			saveDiscountCode(1);
 			OrderCreateResponse orderA = createOrderWithCodeAndExpireIt();
@@ -240,23 +228,15 @@ class LatePaidDiscountMySqlTest extends PaymentMySqlTest {
 			given(portOneClient.getPayment(paymentA))
 				.willReturn(paidResponse(paymentA, orderA.getMerchantUid(), PRICE_WITH_CODE));
 
-			// when
-			Order paid = paymentConfirmService.complete(username,
-				completeRequest(paymentA, orderA.getMerchantUid()));
-
-			// then
-			assertThat(paid.getStatus()).as("결제는 되돌리지 않고 확정한다").isEqualTo(OrderStatus.PAID);
-			assertThat(currentUses()).as("할인 코드 사용 횟수").isEqualTo(2);
-			assertThat(pendingOrPaidOrdersUsingCode()).as("결제 대기·결제 완료 주문 수").isEqualTo(2);
-			Map<String, String> expectedDetails = new LinkedHashMap<>();
-			expectedDetails.put("주문 번호", orderA.getMerchantUid());
-			expectedDetails.put("주문 ID", String.valueOf(orderA.getOrderId()));
-			expectedDetails.put("결제 ID", paymentA);
-			expectedDetails.put("할인 코드", discountCode);
-			await().atMost(Duration.ofSeconds(5)).untilAsserted(() ->
-				then(discordNotificationService).should(times(1)).sendPaymentAnomalyNotification(
-					"만료 뒤 결제된 주문 때문에 할인 코드 사용 횟수가 최대 횟수를 넘었습니다. 결제는 확정했습니다.",
-					expectedDetails));
+			// when & then
+			assertThatThrownBy(() -> paymentConfirmService.complete(username,
+				completeRequest(paymentA, orderA.getMerchantUid())))
+				.isInstanceOf(PaymentException.class);
+			assertThat(orderStatus(orderA.getMerchantUid())).isEqualTo("EXPIRED");
+			assertThat(currentUses()).as("할인 코드 사용 횟수").isEqualTo(1);
+			assertThat(pendingOrPaidOrdersUsingCode()).as("결제 대기·결제 완료 주문 수").isEqualTo(1);
+			then(portOneClient).should().cancelPayment(paymentA, DuplicatePaymentCanceller.LATE_PAYMENT_CANCEL_REASON);
+			assertCancelAlertSentOnce(orderA, paymentA);
 		}
 
 		private OrderCreateResponse createOrderWithCodeAndExpireIt() {
@@ -293,13 +273,13 @@ class LatePaidDiscountMySqlTest extends PaymentMySqlTest {
 		}
 
 		@Test
-		@DisplayName("늦은 결제 몫의 할인 코드 사용 횟수 증가(reapplyUsage)는 IllegalTransactionStateException 으로 거절하고 횟수를 바꾸지 않는다")
-		void reapplyUsageIsRejected() {
+		@DisplayName("늦은 결제 몫의 할인 코드 사용 횟수 증가(claimForPaidOrder)는 IllegalTransactionStateException 으로 거절하고 횟수를 바꾸지 않는다")
+		void codeClaimForPaidOrderIsRejected() {
 			// given
 			saveDiscountCode(100);
 
 			// when & then
-			assertThatThrownBy(() -> discountCodeService.reapplyUsage(discountCode))
+			assertThatThrownBy(() -> discountCodeService.claimForPaidOrder(discountCode))
 				.isInstanceOf(IllegalTransactionStateException.class)
 				.hasMessage(NO_TRANSACTION_MESSAGE);
 			assertThat(currentUses()).isZero();
@@ -332,6 +312,16 @@ class LatePaidDiscountMySqlTest extends PaymentMySqlTest {
 				.hasMessage(NO_TRANSACTION_MESSAGE);
 			assertThat(couponIsUsed(couponId)).isTrue();
 		}
+	}
+
+	private void assertCancelAlertSentOnce(OrderCreateResponse order, String paymentId) {
+		Map<String, String> expectedDetails = new LinkedHashMap<>();
+		expectedDetails.put("주문 번호", order.getMerchantUid());
+		expectedDetails.put("주문 ID", String.valueOf(order.getOrderId()));
+		expectedDetails.put("취소한 결제 ID", paymentId);
+		await().atMost(Duration.ofSeconds(5)).untilAsserted(() ->
+			then(discordNotificationService).should(times(1)).sendPaymentAnomalyNotification(
+				"만료된 주문에 결제가 늦게 들어왔는데 할인이 그사이 다른 주문에 쓰여 결제를 자동으로 취소했습니다.", expectedDetails));
 	}
 
 	private DiscountCode saveDiscountCode(int maxUses) {

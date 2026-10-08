@@ -29,6 +29,19 @@ sealed interface ConfirmOutcome {
 	 * @param paidOrder          먼저 확정된 주문. 주문에 적힌 결제 ID 가 먼저 확정된 결제다.
 	 * @param duplicatePaymentId 한 번 더 승인된 결제의 ID. 취소할 대상이다.
 	 */
+	/**
+	 * 만료된 주문에 결제가 늦게 들어왔는데, 만료 때 풀어 준 쿠폰을 그사이 다른 주문이 썼거나 할인 코드가 선착순 횟수에 닿아 할인을 다시
+	 * 잡지 못했다. 주문은 EXPIRED 로 두고, 잠금과 트랜잭션을 놓은 뒤 {@link DuplicatePaymentCanceller} 가 이 결제를 취소한다.
+	 * 확정하면 쿠폰 한 장·선착순 한 자리의 할인이 두 결제에 들어간다.
+	 */
+	record LatePaymentWithoutDiscount(Order expiredOrder, String paymentId) implements ConfirmOutcome {
+
+		public LatePaymentWithoutDiscount {
+			Objects.requireNonNull(expiredOrder, "expiredOrder");
+			Objects.requireNonNull(paymentId, "paymentId");
+		}
+	}
+
 	record DuplicatePayment(Order paidOrder, String duplicatePaymentId) implements ConfirmOutcome {
 
 		public DuplicatePayment {

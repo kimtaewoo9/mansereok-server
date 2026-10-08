@@ -13,6 +13,7 @@ import com.mansereok.server.domain.payment.entity.PaymentStatus;
 import com.mansereok.server.domain.payment.repository.PaymentRepository;
 import com.mansereok.server.domain.payment.service.ConfirmOutcome.DuplicatePayment;
 import com.mansereok.server.domain.payment.service.ConfirmOutcome.Finished;
+import com.mansereok.server.domain.payment.service.ConfirmOutcome.LatePaymentWithoutDiscount;
 import com.mansereok.server.global.exception.PaymentException;
 import java.time.LocalDateTime;
 import java.util.Optional;
@@ -111,6 +112,7 @@ public class PaymentWebhookService {
 				// 잠금 안에서 할 일을 모두 마쳤다
 			}
 			case DuplicatePayment duplicate -> duplicatePaymentCanceller.cancel(duplicate);
+			case LatePaymentWithoutDiscount late -> duplicatePaymentCanceller.cancelLatePayment(late);
 		}
 	}
 
@@ -192,6 +194,9 @@ public class PaymentWebhookService {
 
 		return switch (paymentStatus.get()) {
 			case PAID -> {
+				if (order.getStatus() == OrderStatus.EXPIRED && !orderDiscountRestorer.reclaim(order)) {
+					yield new LatePaymentWithoutDiscount(order, paymentId);
+				}
 				// 주문 PAID 확정, Payment 저장, 연관관계 연결, 초기 Result 생성, 완료 이벤트 발행(알림은 커밋 뒤 리스너)
 				paidOrderFinalizer.finalizePaid(
 					order,

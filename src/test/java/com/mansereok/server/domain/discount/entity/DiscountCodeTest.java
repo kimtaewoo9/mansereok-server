@@ -164,37 +164,25 @@ class DiscountCodeTest {
 			assertThat(discountCode.getCurrentUses()).isEqualTo(5);
 		}
 
-		@Test
-		@DisplayName("결제가 끝난 주문 몫으로 올릴 때는 이미 최대 횟수여도 거절하지 않고 1 올린다")
-		void incrementsPastLimitForPaidOrder() {
-			// given
-			DiscountCode discountCode = DiscountCodeFixture.usableCode().maxUses(5).currentUses(5).build();
-
-			// when
-			discountCode.incrementUsageAllowingOverflow();
-
-			// then
-			assertThat(discountCode.getCurrentUses()).isEqualTo(6);
-		}
-
-		@ParameterizedTest(name = "[{index}] 최대 {0}번 중 {1}번 사용 → 넘음 {2}")
-		@DisplayName("사용 횟수가 최대 횟수보다 커야 넘은 것으로 본다")
+		@ParameterizedTest(name = "[{index}] 최대 {0}번 중 {1}번 사용 → 올림 {2}, 결과 {3}번")
+		@DisplayName("늦은 결제 몫으로 올릴 때는 최대 횟수 안일 때만 1 올리고, 닿았으면 그대로 두고 false 를 돌려준다")
 		@CsvSource(textBlock = """
-			# 최대 횟수, 사용 횟수, 넘었는가
-			5, 4, false
-			5, 5, false
-			5, 6, true
+			# 최대 횟수, 사용 횟수, 올렸는가, 올린 뒤 사용 횟수
+			5, 4, true,  5
+			5, 5, false, 5
 			""")
-		void exceedsMaxUsesOnlyAboveLimit(int maxUses, int currentUses, boolean expected) {
+		void incrementsForLatePaymentOnlyWithinLimit(int maxUses, int currentUses, boolean expectedClaimed,
+			int expectedUses) {
 			// given
 			DiscountCode discountCode = DiscountCodeFixture.usableCode().maxUses(maxUses).currentUses(currentUses)
 				.build();
 
 			// when
-			boolean exceeded = discountCode.exceedsMaxUses();
+			boolean claimed = discountCode.incrementUsageForLatePayment();
 
 			// then
-			assertThat(exceeded).isEqualTo(expected);
+			assertThat(claimed).isEqualTo(expectedClaimed);
+			assertThat(discountCode.getCurrentUses()).isEqualTo(expectedUses);
 		}
 
 		@Test

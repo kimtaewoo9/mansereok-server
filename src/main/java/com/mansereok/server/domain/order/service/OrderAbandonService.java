@@ -17,7 +17,8 @@ import org.springframework.stereotype.Service;
  * 결제창에서 결제하지 않고 나온 주문이 쥔 쿠폰·할인 코드를 만료 스케줄러를 기다리지 않고 바로 돌려준다.
  *
  * <p>만료와 같은 경로(OrderExpirationService)로 EXPIRED 로 바꾼다. 아직 PENDING 일 때만 바꾸므로 결제 확정과 겹쳐도 PAID 를
- * 덮어쓰지 않고, 이탈을 알린 뒤 결제가 늦게 확정되면 만료 뒤 결제와 같이 할인을 다시 사용 처리한다(PaidOrderFinalizer).
+ * 덮어쓰지 않는다. 이탈을 알린 뒤 결제가 늦게 들어오면 만료 뒤 결제와 같이 할인을 다시 잡아야 확정하고, 못 잡으면 결제를
+ * 취소한다(OrderDiscountRestorer.reclaim).
  * 브라우저가 꺼져 이탈 알림이 오지 않은 주문은 지금처럼 만료 스케줄러가 정리한다.
  */
 @Service

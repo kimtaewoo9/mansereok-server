@@ -2,6 +2,7 @@ package com.mansereok.server.domain.payment.service;
 
 import com.mansereok.server.domain.order.entity.Order;
 import com.mansereok.server.domain.order.entity.OrderStatus;
+import com.mansereok.server.domain.order.service.OrderDiscountRestorer;
 import com.mansereok.server.domain.order.repository.OrderRepository;
 import com.mansereok.server.domain.payment.client.PortOneClient;
 import com.mansereok.server.domain.payment.dto.request.PaymentCompleteRequest;
@@ -10,6 +11,7 @@ import com.mansereok.server.domain.payment.entity.PaymentStatus;
 import com.mansereok.server.domain.payment.repository.PaymentRepository;
 import com.mansereok.server.domain.payment.service.ConfirmOutcome.DuplicatePayment;
 import com.mansereok.server.domain.payment.service.ConfirmOutcome.Finished;
+import com.mansereok.server.domain.payment.service.ConfirmOutcome.LatePaymentWithoutDiscount;
 import com.mansereok.server.domain.user.entity.User;
 import com.mansereok.server.global.exception.PaymentException;
 import java.time.LocalDateTime;
@@ -50,6 +52,8 @@ public class PaymentConfirmService {
 
 	/** 이미 결제가 끝난 주문에 결제가 한 번 더 승인됐을 때 돌려주는 안내. 자동 취소에 실패해도 같은 문구를 쓴다(운영자가 손으로 취소한다). */
 	static final String DUPLICATE_PAYMENT_MESSAGE = "이미 결제가 끝난 주문입니다. 중복 결제는 자동으로 취소됩니다.";
+	static final String LATE_PAYMENT_WITHOUT_DISCOUNT_MESSAGE =
+		"주문이 만료된 사이 할인이 다른 주문에 쓰여 결제를 취소했습니다. 다시 주문해 주세요.";
 
 	private final PaymentUserLookup paymentUserLookup;
 	private final OrderRepository orderRepository;
@@ -57,6 +61,7 @@ public class PaymentConfirmService {
 	private final PortOneClient portOneClient;
 	private final PaymentVerifier paymentVerifier;
 	private final PaidOrderFinalizer paidOrderFinalizer;
+	private final OrderDiscountRestorer orderDiscountRestorer;
 	private final DuplicatePaymentCanceller duplicatePaymentCanceller;
 	private final TransactionTemplate transactionTemplate;
 
@@ -67,6 +72,7 @@ public class PaymentConfirmService {
 		PortOneClient portOneClient,
 		PaymentVerifier paymentVerifier,
 		PaidOrderFinalizer paidOrderFinalizer,
+		OrderDiscountRestorer orderDiscountRestorer,
 		DuplicatePaymentCanceller duplicatePaymentCanceller,
 		PlatformTransactionManager transactionManager
 	) {
@@ -76,6 +82,7 @@ public class PaymentConfirmService {
 		this.portOneClient = portOneClient;
 		this.paymentVerifier = paymentVerifier;
 		this.paidOrderFinalizer = paidOrderFinalizer;
+		this.orderDiscountRestorer = orderDiscountRestorer;
 		this.duplicatePaymentCanceller = duplicatePaymentCanceller;
 		this.transactionTemplate = new TransactionTemplate(transactionManager);
 	}
@@ -106,6 +113,10 @@ public class PaymentConfirmService {
 			case DuplicatePayment duplicate -> {
 				duplicatePaymentCanceller.cancel(duplicate);
 				throw new PaymentException(DUPLICATE_PAYMENT_MESSAGE);
+			}
+			case LatePaymentWithoutDiscount late -> {
+				duplicatePaymentCanceller.cancelLatePayment(late);
+				throw new PaymentException(LATE_PAYMENT_WITHOUT_DISCOUNT_MESSAGE);
 			}
 		};
 	}
@@ -150,6 +161,9 @@ public class PaymentConfirmService {
 		}
 
 		if (paymentStatus.get() == PaymentStatus.PAID) {
+			if (order.getStatus() == OrderStatus.EXPIRED && !orderDiscountRestorer.reclaim(order)) {
+				return new LatePaymentWithoutDiscount(order, paymentId);
+			}
 			// 주문 PAID 확정, Payment 저장, 연관관계 연결, 초기 Result 생성, 완료 이벤트 발행
 			paidOrderFinalizer.finalizePaid(
 				order,

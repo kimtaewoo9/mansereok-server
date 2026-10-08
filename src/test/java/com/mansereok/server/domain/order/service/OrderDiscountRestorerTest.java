@@ -1,5 +1,6 @@
 package com.mansereok.server.domain.order.service;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.never;
@@ -12,12 +13,9 @@ import com.mansereok.server.domain.order.entity.AppliedDiscount;
 import com.mansereok.server.domain.order.entity.Order;
 import com.mansereok.server.domain.order.entity.OrderStatus;
 import com.mansereok.server.domain.order.repository.OrderRepository;
-import com.mansereok.server.domain.payment.event.PaymentAnomalyEvent;
 import com.mansereok.server.support.fixture.TestOrders;
 import java.time.LocalDateTime;
 import java.util.EnumSet;
-import java.util.LinkedHashMap;
-import java.util.Map;
 import java.util.Set;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -29,7 +27,6 @@ import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.context.ApplicationEventPublisher;
 
 @ExtendWith(MockitoExtension.class)
 class OrderDiscountRestorerTest {
@@ -47,8 +44,6 @@ class OrderDiscountRestorerTest {
 	@Mock
 	private OrderRepository orderRepository;
 
-	@Mock
-	private ApplicationEventPublisher eventPublisher;
 
 	@InjectMocks
 	private OrderDiscountRestorer restorer;
@@ -64,10 +59,8 @@ class OrderDiscountRestorerTest {
 	}
 
 	/** 만료됐다가 결제 ID pay_{id} 로 확정된 주문. reapply 는 PaidOrderFinalizer 가 markPaid 뒤에 부른다. */
-	private Order paidAfterExpiry(Long id, String discountCode, Long couponId) {
-		Order order = orderWith(id, discountCode, couponId).inStatus(OrderStatus.EXPIRED);
-		order.markPaid("pay_" + id, LocalDateTime.of(2026, 9, 26, 12, 0));
-		return order;
+	private Order expiredOrder(Long id, String discountCode, Long couponId) {
+		return orderWith(id, discountCode, couponId).inStatus(OrderStatus.EXPIRED);
 	}
 
 	private void givenOtherOrderHoldingCoupon(Long couponId, Long orderId, boolean holding) {
@@ -160,104 +153,58 @@ class OrderDiscountRestorerTest {
 	}
 
 	@Nested
-	@DisplayName("만료 뒤 결제된 주문의 할인을 다시 쓸 때(reapply)")
-	class Reapply {
+	@DisplayName("만료된 주문의 늦은 결제를 확정하기 전에 할인을 다시 잡을 때(reclaim)")
+	class Reclaim {
 
-		@Test
-		@DisplayName("쿠폰을 다시 사용 처리했으면 알림 이벤트를 발행하지 않는다")
-		void claimedCoupon_publishesNothing() {
+		@ParameterizedTest(name = "[{index}] 쿠폰을 다시 잡았는가 {0}")
+		@ValueSource(booleans = {true, false})
+		@DisplayName("쿠폰이 있으면 쿠폰을 다시 잡은 결과를 그대로 돌려준다")
+		void coupon_returnsClaimResult(boolean claimed) {
 			// given
-			Order order = paidAfterExpiry(1L, null, 100L);
-			given(couponService.claimForPaidOrder(100L)).willReturn(true);
+			Order order = expiredOrder(1L, null, 100L);
+			given(couponService.claimForPaidOrder(100L)).willReturn(claimed);
 
-			// when
-			restorer.reapply(order);
-
-			// then
-			verifyNoInteractions(eventPublisher, discountCodeService);
-		}
-
-		@Test
-		@DisplayName("다른 주문이 이미 쓰고 있는 쿠폰이면 결제 이상 이벤트에 주문 번호·주문 ID·결제 ID·쿠폰 ID 를 실어 발행한다")
-		void couponUsedByAnotherOrder_publishesAnomaly() {
-			// given
-			Order order = paidAfterExpiry(1L, null, 100L);
-			given(couponService.claimForPaidOrder(100L)).willReturn(false);
-
-			// when
-			restorer.reapply(order);
-
-			// then
-			Map<String, String> details = new LinkedHashMap<>();
-			details.put("주문 번호", "merchant_1");
-			details.put("주문 ID", "1");
-			details.put("결제 ID", "pay_1");
-			details.put("쿠폰 ID", "100");
-			verify(eventPublisher).publishEvent(new PaymentAnomalyEvent(
-				"만료 뒤 결제된 주문의 쿠폰을 다른 주문이 이미 쓰고 있습니다. 결제는 확정했습니다.", details));
-		}
-
-		@Test
-		@DisplayName("쿠폰과 할인코드가 둘 다 있으면 쿠폰만 다시 쓴다")
-		void couponAndCode_reappliesCouponOnly() {
-			// given
-			Order order = paidAfterExpiry(2L, "SALE10", 100L);
-			given(couponService.claimForPaidOrder(100L)).willReturn(true);
-
-			// when
-			restorer.reapply(order);
-
-			// then
+			// when & then
+			assertThat(restorer.reclaim(order)).isEqualTo(claimed);
 			verifyNoInteractions(discountCodeService);
 		}
 
 		@Test
-		@DisplayName("할인코드 사용 횟수를 다시 올려도 최대 횟수 안이면 알림 이벤트를 발행하지 않는다")
-		void codeWithinLimit_publishesNothing() {
+		@DisplayName("쿠폰과 할인코드가 둘 다 있으면 쿠폰만 다시 잡는다")
+		void couponAndCode_claimsCouponOnly() {
 			// given
-			Order order = paidAfterExpiry(3L, "SALE10", null);
-			given(discountCodeService.reapplyUsage("SALE10")).willReturn(false);
+			Order order = expiredOrder(2L, "SALE10", 100L);
+			given(couponService.claimForPaidOrder(100L)).willReturn(true);
 
-			// when
-			restorer.reapply(order);
-
-			// then
-			verifyNoInteractions(eventPublisher, couponService);
+			// when & then
+			assertThat(restorer.reclaim(order)).isTrue();
+			verifyNoInteractions(discountCodeService);
 		}
 
-		@Test
-		@DisplayName("할인코드 사용 횟수가 최대 횟수를 넘으면 결제 이상 이벤트에 주문 번호·주문 ID·결제 ID·할인 코드를 실어 발행한다")
-		void codeOverLimit_publishesAnomaly() {
+		@ParameterizedTest(name = "[{index}] 할인 코드를 다시 잡았는가 {0}")
+		@ValueSource(booleans = {true, false})
+		@DisplayName("할인코드만 있으면 할인코드를 다시 잡은 결과를 그대로 돌려준다")
+		void code_returnsClaimResult(boolean claimed) {
 			// given
-			Order order = paidAfterExpiry(3L, "SALE10", null);
-			given(discountCodeService.reapplyUsage("SALE10")).willReturn(true);
+			Order order = expiredOrder(3L, "SALE10", null);
+			given(discountCodeService.claimForPaidOrder("SALE10")).willReturn(claimed);
 
-			// when
-			restorer.reapply(order);
-
-			// then
-			Map<String, String> details = new LinkedHashMap<>();
-			details.put("주문 번호", "merchant_3");
-			details.put("주문 ID", "3");
-			details.put("결제 ID", "pay_3");
-			details.put("할인 코드", "SALE10");
-			verify(eventPublisher).publishEvent(new PaymentAnomalyEvent(
-				"만료 뒤 결제된 주문 때문에 할인 코드 사용 횟수가 최대 횟수를 넘었습니다. 결제는 확정했습니다.", details));
+			// when & then
+			assertThat(restorer.reclaim(order)).isEqualTo(claimed);
+			verifyNoInteractions(couponService);
 		}
 
 		@ParameterizedTest(name = "[{index}] 할인 코드 \"{0}\"")
 		@NullAndEmptySource
 		@ValueSource(strings = {"   ", AppliedDiscount.EVENT_FREE_CODE})
-		@DisplayName("쿠폰이 없고 할인코드가 없거나 공백이거나 EVENT_FREE 면 아무것도 하지 않는다")
-		void noDiscountToReapply_doesNothing(String code) {
+		@DisplayName("쿠폰이 없고 할인코드가 없거나 공백이거나 EVENT_FREE 면 잡을 할인이 없으므로 true 를 돌려준다")
+		void noDiscount_returnsTrue(String code) {
 			// given
-			Order order = paidAfterExpiry(4L, code, null);
+			Order order = expiredOrder(4L, code, null);
 
-			// when
-			restorer.reapply(order);
-
-			// then
-			verifyNoInteractions(couponService, discountCodeService, eventPublisher);
+			// when & then
+			assertThat(restorer.reclaim(order)).isTrue();
+			verifyNoInteractions(couponService, discountCodeService);
 		}
 	}
 }
