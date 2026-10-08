@@ -1,10 +1,5 @@
 # CLAUDE.md
 
-AI 코딩 에이전트가 이 저장소에서 지킬 규칙. 앞부분은 Andrej Karpathy 의 LLM 코딩 실수 관찰을 정리한
-[andrej-karpathy-skills](https://github.com/multica-ai/andrej-karpathy-skills) 의 네 원칙이고, 뒷부분은 이 저장소에만 해당하는 내용이다.
-
-**전제:** 이 규칙은 속도보다 신중함을 택한다. 사소한 작업에서는 판단에 맡긴다.
-
 ## 1. 코딩 전에 생각한다
 
 **추측하지 않는다. 헷갈리는 것을 숨기지 않는다. 트레이드오프를 드러낸다.**
