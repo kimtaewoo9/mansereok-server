@@ -3,6 +3,7 @@ package com.mansereok.server.domain.payment.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.willThrow;
@@ -40,8 +41,8 @@ import com.mansereok.server.support.fixture.TestPayments;
 import java.sql.SQLIntegrityConstraintViolationException;
 import java.time.LocalDate;
 import java.util.Optional;
-import org.hibernate.exception.ConstraintViolationException;
 import org.hibernate.exception.ConstraintViolationException.ConstraintKind;
+import org.hibernate.exception.ConstraintViolationException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -980,7 +981,8 @@ class PaymentConfirmServiceTest {
 				.containsEntry("주문 번호", MERCHANT_UID)
 				.containsEntry("취소한 결제 ID", PAYMENT_ID);
 			assertThat(order.getStatus()).isEqualTo(OrderStatus.EXPIRED);
-			verify(paymentRepository, never()).save(any(Payment.class));
+			verify(paymentRepository).save(argThat(payment -> PAYMENT_ID.equals(payment.getImpUid())
+				&& payment.getStatus() == PaymentStatus.CANCEL_REQUESTED));
 			verifyNoInteractions(resultService);
 		}
 	}

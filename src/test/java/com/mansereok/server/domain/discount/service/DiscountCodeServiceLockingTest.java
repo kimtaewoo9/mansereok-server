@@ -1,14 +1,12 @@
 package com.mansereok.server.domain.discount.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.BDDMockito.given;
 
 import com.mansereok.server.domain.discount.entity.DiscountCode;
 import com.mansereok.server.domain.discount.repository.DiscountCodeRepository;
 import com.mansereok.server.domain.discount.service.DiscountCodeService.DiscountValidationResult;
 import com.mansereok.server.domain.product.repository.SubCategoryRepository;
-import com.mansereok.server.global.exception.PaymentException;
 import com.mansereok.server.support.fixture.DiscountCodeFixture;
 import java.time.LocalDateTime;
 import java.util.Optional;
@@ -131,15 +129,16 @@ class DiscountCodeServiceLockingTest {
 		}
 
 		@Test
-		@DisplayName("코드가 없으면 '존재하지 않는 할인 코드입니다.' 로 거절한다")
-		void rejectsMissingCode() {
+		@DisplayName("코드가 없으면 예외 없이 false 를 돌려줘 호출자가 결제를 취소하게 한다")
+		void missingCodeIsNotClaimed() {
 			// given
 			given(discountCodeRepository.findByCodeForUpdate(CODE)).willReturn(Optional.empty());
 
-			// when & then
-			assertThatThrownBy(() -> discountCodeService.claimForPaidOrder(CODE))
-				.isInstanceOf(PaymentException.class)
-				.hasMessage("존재하지 않는 할인 코드입니다.");
+			// when
+			boolean claimed = discountCodeService.claimForPaidOrder(CODE);
+
+			// then
+			assertThat(claimed).isFalse();
 		}
 	}
 }

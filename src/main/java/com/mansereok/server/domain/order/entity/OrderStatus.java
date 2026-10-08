@@ -25,8 +25,8 @@ public enum OrderStatus {
 	 * <ul>
 	 *   <li>PENDING, VIRTUAL_ACCOUNT_ISSUED → PAID, FAILED, EXPIRED</li>
 	 *   <li>EXPIRED → PAID (만료 직후 결제가 완료되는 경합과 늦은 입금을 위해 허용, 전이 시 warn 로그). 만료 때 쿠폰·할인 코드를
-	 *       되돌렸으므로, 이 전이는 PaidOrderFinalizer 가 같은 트랜잭션에서 그 할인을 다시 사용 처리한다(OrderDiscountRestorer.reapply).
-	 *       그사이 다른 주문이 쿠폰을 썼거나 할인 코드가 최대 횟수를 넘으면 결제는 확정하고 운영 채널에 알린다.</li>
+	 *       되돌렸으므로, 결제 확정은 이 전이 전에 같은 트랜잭션에서 그 할인을 다시 잡는다(OrderDiscountRestorer.reclaim).
+	 *       그사이 다른 주문이 쿠폰을 썼거나 할인 코드가 최대 횟수에 닿았으면 전이하지 않고 결제를 취소한다.</li>
 	 *   <li>PAID → CANCELLED</li>
 	 *   <li>CANCELLED, FAILED 는 종단 상태</li>
 	 * </ul>

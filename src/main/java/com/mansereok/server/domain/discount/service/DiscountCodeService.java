@@ -132,14 +132,15 @@ public class DiscountCodeService {
 	 * 클래스 설명). 트랜잭션 밖에서 부르면 이 전제가 깨지므로 {@link Propagation#MANDATORY} 로 진행 중인 트랜잭션이 없으면
 	 * IllegalTransactionStateException 을 던진다.
 	 *
-	 * @return 다시 올렸으면 true, 최대 횟수에 닿아 그대로 두었으면 false
-	 * @throws PaymentException 코드가 없을 때
+	 * <p>그사이 코드가 지워졌으면 다시 올릴 자리가 없으므로 false 다. 예외로 끝내면 결제는 승인된 채 취소도 알림도 없이 남는다.
+	 *
+	 * @return 다시 올렸으면 true, 최대 횟수에 닿았거나 코드가 없어 그대로 두었으면 false
 	 */
 	@Transactional(propagation = Propagation.MANDATORY)
 	public boolean claimForPaidOrder(String code) {
-		DiscountCode discountCode = discountCodeRepository.findByCodeForUpdate(code)
-			.orElseThrow(() -> new PaymentException("존재하지 않는 할인 코드입니다."));
-		return discountCode.incrementUsageForLatePayment();
+		return discountCodeRepository.findByCodeForUpdate(code)
+			.map(DiscountCode::incrementUsageForLatePayment)
+			.orElse(false);
 	}
 
 	/**

@@ -31,7 +31,8 @@ import org.springframework.transaction.support.TransactionTemplate;
  *   <li>트랜잭션 안: 잠금 조회 → 소유자 검사 → PAID 주문이면 같은 결제인지 가리기 → 결제 중복 검사 → customData 대조
  *       → 금액 검증 → 상태 매핑 → 확정({@link PaidOrderFinalizer#finalizePaid}).</li>
  *   <li>트랜잭션 밖: 이미 다른 결제로 확정된 주문에 결제가 한 번 더 승인됐으면 그 결제를 포트원에서 취소하고 알린 뒤
- *       PaymentException(400)을 던진다({@link DuplicatePaymentCanceller}).</li>
+ *       PaymentException(400)을 던진다({@link DuplicatePaymentCanceller}). 만료된 주문의 늦은 결제가 할인을 다시 잡지 못해
+ *       확정하지 않은 경우도 같은 방식으로 취소한다.</li>
  * </ol>
  *
  * <p>결제 ID 대조를 통과한 뒤에는 요청값이 아니라 포트원 응답의 결제 ID 로 중복을 검사하고 Payment.impUid 에 저장한다.
@@ -53,7 +54,7 @@ public class PaymentConfirmService {
 	/** 이미 결제가 끝난 주문에 결제가 한 번 더 승인됐을 때 돌려주는 안내. 자동 취소에 실패해도 같은 문구를 쓴다(운영자가 손으로 취소한다). */
 	static final String DUPLICATE_PAYMENT_MESSAGE = "이미 결제가 끝난 주문입니다. 중복 결제는 자동으로 취소됩니다.";
 	static final String LATE_PAYMENT_WITHOUT_DISCOUNT_MESSAGE =
-		"주문이 만료된 사이 할인이 다른 주문에 쓰여 결제를 취소했습니다. 다시 주문해 주세요.";
+		"주문이 만료된 사이 할인이 다른 주문에 쓰여 결제를 확정하지 못했습니다. 결제는 자동으로 취소됩니다. 다시 주문해 주세요.";
 
 	private final PaymentUserLookup paymentUserLookup;
 	private final OrderRepository orderRepository;
@@ -92,7 +93,8 @@ public class PaymentConfirmService {
 	 *
 	 * @throws AccessDeniedException 요청자가 주문 소유자가 아닐 때 (403)
 	 * @throws PaymentException      결제 ID 불일치 · 사용자 없음 · 주문 없음 · 결제 중복 · customData 없음 · 주문 번호 불일치
-	 *                               · 금액 불일치 · 이미 다른 결제로 확정된 주문에 한 번 더 승인된 결제(자동 취소 뒤) (400)
+	 *                               · 금액 불일치 · 이미 다른 결제로 확정된 주문에 한 번 더 승인된 결제(자동 취소 뒤)
+	 *                               · 만료된 주문의 늦은 결제가 할인을 다시 잡지 못함(자동 취소 뒤) (400)
 	 * @throws com.mansereok.server.global.exception.PortOneUnavailableException 포트원 일시 장애 (503, 트랜잭션 시작 전)
 	 */
 	public Order complete(String username, PaymentCompleteRequest request) {
@@ -162,7 +164,8 @@ public class PaymentConfirmService {
 
 		if (paymentStatus.get() == PaymentStatus.PAID) {
 			if (order.getStatus() == OrderStatus.EXPIRED && !orderDiscountRestorer.reclaim(order)) {
-				return new LatePaymentWithoutDiscount(order, paymentId);
+				return duplicatePaymentCanceller.rejectLatePayment(order, paymentId,
+					paymentResponse.getAmount().getTotal());
 			}
 			// 주문 PAID 확정, Payment 저장, 연관관계 연결, 초기 Result 생성, 완료 이벤트 발행
 			paidOrderFinalizer.finalizePaid(

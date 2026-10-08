@@ -36,7 +36,8 @@ import org.springframework.transaction.support.TransactionTemplate;
  * DB 장애(500)는 그대로 전파해 포트원이 재시도하게 둔다.
  *
  * <p>이미 다른 결제로 확정된 주문에 결제가 한 번 더 승인됐으면 트랜잭션이 끝난 뒤 그 결제를 포트원에서 취소하고 알린 다음 정상
- * 반환한다({@link DuplicatePaymentCanceller}). 재전송해도 결과가 같으므로 포트원에는 200 을 돌려준다.
+ * 반환한다({@link DuplicatePaymentCanceller}). 만료된 주문의 늦은 결제가 할인을 다시 잡지 못하면 확정하지 않고 같은 방식으로
+ * 취소한다. 어느 쪽이든 재전송해도 결과가 같으므로 포트원에는 200 을 돌려준다.
  *
  * <p>클래스 수준 {@code @Transactional} 을 쓰지 않고 {@link TransactionTemplate} 으로 경계를 명시한다. 포트원 조회와 중복 결제
  * 취소는 트랜잭션 밖에서, 주문 잠금부터 FAILED 저장·할인 복구·확정까지는 한 트랜잭션에서 한다.
@@ -195,7 +196,8 @@ public class PaymentWebhookService {
 		return switch (paymentStatus.get()) {
 			case PAID -> {
 				if (order.getStatus() == OrderStatus.EXPIRED && !orderDiscountRestorer.reclaim(order)) {
-					yield new LatePaymentWithoutDiscount(order, paymentId);
+					yield duplicatePaymentCanceller.rejectLatePayment(order, paymentId,
+						paymentResponse.getAmount().getTotal());
 				}
 				// 주문 PAID 확정, Payment 저장, 연관관계 연결, 초기 Result 생성, 완료 이벤트 발행(알림은 커밋 뒤 리스너)
 				paidOrderFinalizer.finalizePaid(

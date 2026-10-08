@@ -103,6 +103,30 @@ public class Payment {
 	}
 
 	/**
+	 * 만료된 주문에 늦게 들어왔지만 할인을 다시 잡지 못해 확정하지 않고 취소할 결제를 CANCEL_REQUESTED 로 기록한다. 포트원 취소보다
+	 * 먼저 커밋해, 취소를 기다리는 사이 같은 결제가 다시 와도 결제 중복 검사에 걸리게 하고, 취소가 끝나지 않으면 대사가 찾게 한다.
+	 *
+	 * @throws OrderStateException 주문이 EXPIRED 가 아닐 때
+	 */
+	public static Payment cancelRequestedForExpiredOrder(Order order, String paymentId, long amount) {
+		if (order.getStatus() != OrderStatus.EXPIRED) {
+			throw new OrderStateException(
+				String.format("만료(EXPIRED)된 주문의 늦은 결제만 취소 요청으로 기록할 수 있습니다. 주문 상태=%s, merchantUid=%s",
+					order.getStatus(), order.getMerchantUid()));
+		}
+		Payment payment = new Payment();
+		payment.impUid = paymentId;
+		payment.merchantUid = order.getMerchantUid();
+		payment.orderId = order.getId();
+		payment.userId = order.getUserId();
+		payment.subCategoryId = order.getSubCategoryId();
+		payment.amount = amount;
+		payment.status = PaymentStatus.CANCEL_REQUESTED;
+		payment.createdAt = LocalDateTime.now();
+		return payment;
+	}
+
+	/**
 	 * userId 의 사용자가 한 결제인지 본다. 탈퇴 처리로 결제의 userId 가 비었으면 누구의 결제도 아니므로, 결제 쪽이든 인자 쪽이든
 	 * null 이면 false 다.
 	 */

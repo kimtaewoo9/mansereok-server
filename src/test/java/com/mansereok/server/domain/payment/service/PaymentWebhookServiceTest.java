@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.willThrow;
 import static org.mockito.Mockito.inOrder;
@@ -527,7 +528,8 @@ class PaymentWebhookServiceTest {
 			verify(portOneClient, times(1)).cancelPayment(PAYMENT_ID, DuplicatePaymentCanceller.LATE_PAYMENT_CANCEL_REASON);
 			assertThat(capturedAnomalyEvent().details()).containsEntry("취소한 결제 ID", PAYMENT_ID);
 			assertThat(order.getStatus()).isEqualTo(OrderStatus.EXPIRED);
-			verify(paymentRepository, never()).save(any(Payment.class));
+			verify(paymentRepository).save(argThat(payment -> PAYMENT_ID.equals(payment.getImpUid())
+				&& payment.getStatus() == PaymentStatus.CANCEL_REQUESTED));
 			verifyNoInteractions(resultService);
 		}
 

@@ -6,6 +6,7 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
+import static org.mockito.Mockito.times;
 
 import com.mansereok.server.domain.order.dto.request.OrderCreateRequest;
 import com.mansereok.server.domain.order.dto.response.OrderCreateResponse;
@@ -149,6 +150,35 @@ class OrderAbandonMySqlTest extends PaymentMySqlTest {
 			orderB.getMerchantUid())).isEqualTo("PENDING");
 		assertThat(couponIsUsed()).as("B 가 쥔 쿠폰").isTrue();
 		then(portOneClient).should().cancelPayment(eq(paymentId), anyString());
+		assertThat(paymentStatus(paymentId)).isEqualTo("CANCELLED");
+	}
+
+	@Test
+	@DisplayName("늦은 결제를 거절한 뒤 B 를 이탈시켜 쿠폰을 다시 풀어도, 같은 결제로 A 를 다시 확정하지 못한다")
+	void rejectedLatePaymentCannotBeConfirmedAfterCouponIsReleasedAgain() {
+		// given: A 의 늦은 결제를 거절하고 취소한 뒤, B 를 이탈시켜 쿠폰을 다시 푼다
+		orderAbandonService.abandon(order.getOrderId(), buyer);
+		OrderCreateRequest requestB = new OrderCreateRequest();
+		requestB.setSubCategoryId(subCategoryId);
+		requestB.setCouponId(couponId);
+		OrderCreateResponse orderB = paymentOrderService.createOrder(buyer, requestB);
+		String paymentId = "pay_abandon_retry_" + runId;
+		given(portOneClient.getPayment(paymentId)).willReturn(paid(paymentId));
+		PaymentCompleteRequest request = new PaymentCompleteRequest();
+		request.setPaymentId(paymentId);
+		request.setMerchantUid(order.getMerchantUid());
+		assertThatThrownBy(() -> paymentConfirmService.complete(buyer, request))
+			.isInstanceOf(PaymentException.class);
+		orderAbandonService.abandon(orderB.getOrderId(), buyer);
+		assertThat(couponIsUsed()).as("준비 단계: B 이탈로 쿠폰이 다시 풀렸다").isFalse();
+
+		// when & then: 포트원 조회가 아직 PAID 를 돌려줘도 같은 결제로는 확정하지 않는다
+		assertThatThrownBy(() -> paymentConfirmService.complete(buyer, request))
+			.isInstanceOf(PaymentException.class)
+			.hasMessage("이미 처리된 결제입니다.");
+		assertThat(orderStatus()).isEqualTo("EXPIRED");
+		assertThat(couponIsUsed()).isFalse();
+		then(portOneClient).should(times(1)).cancelPayment(eq(paymentId), anyString());
 	}
 
 	@Test
@@ -187,6 +217,10 @@ class OrderAbandonMySqlTest extends PaymentMySqlTest {
 	private boolean couponIsUsed() {
 		return Boolean.TRUE.equals(
 			jdbcTemplate.queryForObject("SELECT is_used FROM coupons WHERE id = ?", Boolean.class, couponId));
+	}
+
+	private String paymentStatus(String paymentId) {
+		return jdbcTemplate.queryForObject("SELECT status FROM payments WHERE imp_uid = ?", String.class, paymentId);
 	}
 
 	private String orderStatus() {

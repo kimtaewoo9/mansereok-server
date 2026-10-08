@@ -22,7 +22,7 @@ import org.springframework.transaction.event.TransactionalEventListener;
 @ExtendWith(MockitoExtension.class)
 class PaymentAnomalyNotificationListenerTest {
 
-	private static final String SUMMARY = "만료 뒤 결제된 주문의 쿠폰을 다른 주문이 이미 쓰고 있습니다. 결제는 확정했습니다.";
+	private static final String SUMMARY = "만료된 주문에 결제가 늦게 들어왔는데 할인이 그사이 다른 주문에 쓰여 결제를 자동으로 취소했습니다.";
 
 	@InjectMocks
 	private PaymentAnomalyNotificationListener listener;

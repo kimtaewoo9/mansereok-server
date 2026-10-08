@@ -58,7 +58,7 @@ class OrderDiscountRestorerTest {
 		return orderWith(id, discountCode, couponId).pending();
 	}
 
-	/** 만료됐다가 결제 ID pay_{id} 로 확정된 주문. reapply 는 PaidOrderFinalizer 가 markPaid 뒤에 부른다. */
+	/** 만료된 주문. 늦은 결제를 확정하기 전에 reclaim 으로 할인을 다시 잡는다. */
 	private Order expiredOrder(Long id, String discountCode, Long couponId) {
 		return orderWith(id, discountCode, couponId).inStatus(OrderStatus.EXPIRED);
 	}
