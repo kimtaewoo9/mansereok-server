@@ -6,10 +6,12 @@ import static com.mansereok.server.support.fixture.AccessTokenFixture.claimsOfTh
 import static com.mansereok.server.support.fixture.AccessTokenFixture.signedByThisServer;
 import static com.mansereok.server.support.fixture.AccessTokenFixture.signedWithOtherKey;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mansereok.server.domain.auth.filter.JwtAuthenticationFilter;
+import com.mansereok.server.domain.user.repository.UserRepository;
 import com.mansereok.server.global.exception.JwtAuthenticationException;
 import com.mansereok.server.global.exception.JwtErrorCode;
 import com.mansereok.server.support.fixture.AccessTokenFixture;
@@ -75,7 +77,9 @@ class JwtAuthenticationEntryPointTest {
 	@DisplayName("JwtAuthenticationFilter 를 거친 요청이 로그인이 필요한 경로에 오면")
 	class AfterFilter {
 
-		private final JwtAuthenticationFilter filter = new JwtAuthenticationFilter(AccessTokenFixture.jwtUtil());
+		// 이 표의 토큰은 모두 파서에서 거절되거나 subject 가 없어 계정 확인까지 가지 않는다. 회원 저장소는 모양만 맞춘다.
+		private final JwtAuthenticationFilter filter = new JwtAuthenticationFilter(AccessTokenFixture.jwtUtil(),
+			mock(UserRepository.class));
 
 		@AfterEach
 		void clearSecurityContext() {
