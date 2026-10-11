@@ -9,7 +9,6 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 
 import com.mansereok.server.domain.order.entity.Order;
-import com.mansereok.server.domain.order.entity.OrderStatus;
 import com.mansereok.server.domain.payment.client.PortOneClient;
 import com.mansereok.server.domain.payment.dto.response.PortOnePaymentResponse;
 import com.mansereok.server.domain.payment.event.PaymentAnomalyEvent;
@@ -17,7 +16,7 @@ import com.mansereok.server.domain.payment.repository.PaymentRepository;
 import com.mansereok.server.domain.payment.service.ConfirmOutcome.DuplicatePayment;
 import com.mansereok.server.global.exception.PaymentException;
 import com.mansereok.server.global.exception.PortOneUnavailableException;
-import java.time.LocalDateTime;
+import com.mansereok.server.support.fixture.TestOrders;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -31,7 +30,6 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.converter.json.Jackson2ObjectMapperBuilder;
-import org.springframework.test.util.ReflectionTestUtils;
 
 /**
  * 중복 결제 취소가 실패했을 때 운영 채널에 알릴지 가리는 규칙을 검증한다.
@@ -193,10 +191,7 @@ class DuplicatePaymentCancellerTest {
 	}
 
 	private DuplicatePayment duplicateOfPaidOrder() {
-		Order order = Order.create(MERCHANT_UID, 1L, 1L, 10000, 10000, null, null, OrderStatus.PENDING,
-			"구매자", "buyer@example.com");
-		ReflectionTestUtils.setField(order, "id", ORDER_ID);
-		order.markPaid(RECORDED_PAYMENT_ID, LocalDateTime.of(2026, 9, 26, 12, 0));
+		Order order = TestOrders.order().id(ORDER_ID).merchantUid(MERCHANT_UID).paymentId(RECORDED_PAYMENT_ID).paid();
 		return new DuplicatePayment(order, DUPLICATE_PAYMENT_ID);
 	}
 

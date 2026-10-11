@@ -4,13 +4,13 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.BDDMockito.given;
 
 import com.mansereok.server.domain.payment.dto.response.PortOnePaymentResponse;
-import com.mansereok.server.domain.payment.entity.Payment;
 import com.mansereok.server.domain.payment.entity.PaymentStatus;
 import com.mansereok.server.domain.payment.reconciliation.entity.PaymentReconciliationRun;
 import com.mansereok.server.domain.payment.reconciliation.repository.PaymentReconciliationMismatchRepository;
 import com.mansereok.server.domain.payment.reconciliation.repository.PaymentReconciliationRunRepository;
 import com.mansereok.server.domain.payment.repository.PaymentRepository;
 import com.mansereok.server.support.PaymentMySqlTest;
+import com.mansereok.server.support.fixture.TestPayments;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.LocalDate;
@@ -74,8 +74,8 @@ class PaymentReconciliationRecheckMySqlTest extends PaymentMySqlTest {
 		paymentReconciliationService = new PaymentReconciliationService(portOneClient, paymentRepository,
 			runRepository, mismatchRepository, reconciler, discordNotificationService, clock,
 			transactionManager, WAIT_BEFORE_RECHECK);
-		paymentRepository.save(Payment.create(impUid, "order_recheck_" + runKey, PRICE,
-			PaymentStatus.CANCEL_REQUESTED, null, null, null));
+		paymentRepository.save(TestPayments.payment().paymentId(impUid).merchantUid("order_recheck_" + runKey)
+			.orderId(null).userId(null).subCategoryId(null).amount(PRICE).inStatus(PaymentStatus.CANCEL_REQUESTED));
 	}
 
 	@AfterEach

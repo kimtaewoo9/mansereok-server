@@ -84,11 +84,11 @@ public class PaymentVerifier {
 	}
 
 	/**
-	 * 포트원 결제 금액이 주문 금액과 같은지 비교한다.
+	 * 포트원 결제 금액이 주문 금액과 같은지 비교한다. 포트원 응답에 금액이 없으면 다르다고 본다.
 	 */
 	public boolean amountMatches(Order order, PortOnePaymentResponse paymentResponse) {
-		return Objects.equals(paymentResponse.getAmount().getTotal(),
-			order.getAmount().longValue());
+		Long paidAmount = paymentResponse.getAmount().getTotal();
+		return paidAmount != null && order.amountEquals(paidAmount);
 	}
 
 	/**

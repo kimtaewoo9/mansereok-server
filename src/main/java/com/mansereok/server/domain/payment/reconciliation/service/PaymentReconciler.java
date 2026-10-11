@@ -6,7 +6,6 @@ import com.mansereok.server.domain.payment.dto.response.WebhookCustomData;
 import com.mansereok.server.domain.payment.entity.Payment;
 import com.mansereok.server.domain.payment.entity.PaymentStatus;
 import com.mansereok.server.domain.payment.reconciliation.entity.PaymentReconciliationMismatch;
-import com.mansereok.server.domain.payment.service.MerchantUidGenerator;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -71,23 +70,19 @@ public class PaymentReconciler {
 	}
 
 	/**
-	 * 무료 결제는 포트원에 거래 자체가 없으므로 모든 비교에서 뺀다. 대사 서비스도 이 규칙으로 단건 조회 대상을
-	 * 고른다.
+	 * 무료 결제는 포트원에 거래 자체가 없으므로 모든 비교에서 뺀다. DB 결제는 {@link Payment#isFree()} 로 가리고, PG 목록의
+	 * 거래는 같은 규칙({@link Payment#isFreePayment})을 포트원 응답의 결제 번호와 금액에 적용한다. 대사 서비스도 Payment#isFree
+	 * 로 단건 조회 대상을 고른다.
 	 */
-	public static boolean isFreePayment(Payment payment) {
-		return isFreePayment(payment.getImpUid(), payment.getAmount());
-	}
-
-	private static boolean isFreePayment(String impUid, Long amount) {
-		return (impUid != null && impUid.startsWith(MerchantUidGenerator.FREE_PREFIX))
-			|| (amount != null && amount == 0L);
+	private static boolean isFreePgPayment(PortOnePaymentResponse pgPayment) {
+		return Payment.isFreePayment(pgPayment.getId(), amountOf(pgPayment));
 	}
 
 	private Map<String, PortOnePaymentResponse> indexPgPayments(
 		List<PortOnePaymentResponse> pgPayments) {
 		Map<String, PortOnePaymentResponse> indexed = new LinkedHashMap<>();
 		for (PortOnePaymentResponse pgPayment : pgPayments) {
-			if (isFreePayment(pgPayment.getId(), amountOf(pgPayment))) {
+			if (isFreePgPayment(pgPayment)) {
 				continue;
 			}
 			indexed.putIfAbsent(pgPayment.getId(), pgPayment);
@@ -112,7 +107,7 @@ public class PaymentReconciler {
 	}
 
 	private static void putUnlessFree(Map<String, Payment> indexed, Payment payment) {
-		if (isFreePayment(payment)) {
+		if (payment.isFree()) {
 			return;
 		}
 		indexed.putIfAbsent(payment.getImpUid(), payment);

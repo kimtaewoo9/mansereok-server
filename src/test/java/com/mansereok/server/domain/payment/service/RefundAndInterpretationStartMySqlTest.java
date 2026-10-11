@@ -15,16 +15,15 @@ import com.mansereok.server.domain.interpret.repository.CompatibilityResultRepos
 import com.mansereok.server.domain.interpret.repository.ResultRepository;
 import com.mansereok.server.domain.interpret.service.ResultService;
 import com.mansereok.server.domain.order.entity.Order;
-import com.mansereok.server.domain.order.entity.OrderStatus;
 import com.mansereok.server.domain.order.repository.OrderRepository;
 import com.mansereok.server.domain.payment.entity.Payment;
-import com.mansereok.server.domain.payment.entity.PaymentStatus;
 import com.mansereok.server.domain.payment.repository.PaymentRepository;
 import com.mansereok.server.domain.user.entity.Gender;
 import com.mansereok.server.domain.user.entity.User;
 import com.mansereok.server.domain.user.repository.UserRepository;
 import com.mansereok.server.global.exception.PaymentException;
 import com.mansereok.server.support.PaymentMySqlTest;
+import com.mansereok.server.support.fixture.TestOrders;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.EntityManagerFactory;
 import java.time.Duration;
@@ -348,10 +347,10 @@ class RefundAndInterpretationStartMySqlTest extends PaymentMySqlTest {
 	 * 요청자의 결제 완료 주문·결제와 정보 입력 전(INPUT_REQUIRED) 초기 결과를 만든다. 초기 결과는 상품에 맞는 표 한 곳에만 둔다.
 	 */
 	private void givenPaidPaymentWithInitialResult(ResultTable table) {
-		Long orderId = orderRepository.save(Order.create(merchantUid, userId, table.productId, PRICE, PRICE, null,
-			null, OrderStatus.PAID, "환불해석", username + "@example.com")).getId();
-		paymentPkId = paymentRepository.save(Payment.create(impUid, merchantUid, (long) PRICE, PaymentStatus.PAID,
-			orderId, userId, table.productId)).getId();
+		Order order = orderRepository.save(TestOrders.order().merchantUid(merchantUid).userId(userId)
+			.subCategoryId(table.productId).price(PRICE).buyer("환불해석", username + "@example.com").paymentId(impUid)
+			.paid());
+		paymentPkId = paymentRepository.save(Payment.paid(order, impUid, PRICE)).getId();
 		switch (table) {
 			case RESULTS -> resultRepository.save(Result.createInitial(userId, paymentPkId, "일반 사주 상품"));
 			case COMPATIBILITY_RESULTS -> compatibilityResultRepository.save(

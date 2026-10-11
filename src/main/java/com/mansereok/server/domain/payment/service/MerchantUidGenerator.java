@@ -1,5 +1,6 @@
 package com.mansereok.server.domain.payment.service;
 
+import com.mansereok.server.domain.payment.entity.Payment;
 import java.util.UUID;
 import org.springframework.stereotype.Component;
 
@@ -22,6 +23,15 @@ public class MerchantUidGenerator {
 
 	public String forFree() {
 		return generate(FREE_PREFIX);
+	}
+
+	/**
+	 * 무료 주문의 결제 번호(Payment.impUid, Order.paymentId)를 만든다. 포트원 거래가 없어 주문 번호 앞에 무료 결제 번호 접두사
+	 * ({@link Payment#FREE_PAYMENT_ID_PREFIX}, free_)를 붙인다. 무료 주문 번호가 이미 free_ 로 시작하므로 실제 값은
+	 * free_free_{epochMillis}_{UUID 앞 8자} 이다. 이미 저장된 무료 결제와 같은 형식을 지키려고 접두사를 겹쳐 둔다.
+	 */
+	public static String freePaymentIdFor(String freeMerchantUid) {
+		return Payment.FREE_PAYMENT_ID_PREFIX + freeMerchantUid;
 	}
 
 	private String generate(String prefix) {

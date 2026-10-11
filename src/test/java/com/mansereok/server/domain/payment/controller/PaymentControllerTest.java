@@ -16,13 +16,13 @@ import com.mansereok.server.domain.auth.filter.JwtAuthenticationFilter;
 import com.mansereok.server.domain.order.dto.request.OrderCreateRequest;
 import com.mansereok.server.domain.order.dto.response.OrderCreateResponse;
 import com.mansereok.server.domain.order.entity.Order;
-import com.mansereok.server.domain.order.entity.OrderStatus;
 import com.mansereok.server.domain.payment.client.PortOneWebhookVerifier;
 import com.mansereok.server.domain.payment.service.PaymentConfirmService;
 import com.mansereok.server.domain.payment.service.PaymentOrderService;
 import com.mansereok.server.domain.payment.service.PaymentQueryService;
 import com.mansereok.server.domain.payment.service.PaymentRefundService;
 import com.mansereok.server.domain.payment.service.PaymentWebhookService;
+import com.mansereok.server.support.fixture.TestOrders;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.Base64;
@@ -345,8 +345,7 @@ class PaymentControllerTest {
 		@DisplayName("결제 PK 로 주문을 조회하면 주소의 숫자를 결제 PK 로 넘겨 찾은 주문을 돌려준다")
 		void orderByPaymentPkId() throws Exception {
 			// given
-			Order order = Order.create("order_15", 1L, 19L, 10000, 10000, null, null, OrderStatus.PAID,
-				"구매자", "buyer@example.com");
+			Order order = TestOrders.order().merchantUid("order_15").subCategoryId(19L).paid();
 			given(paymentQueryService.getOwnedOrderByPaymentPkId(15L, USERNAME)).willReturn(order);
 
 			// when & then

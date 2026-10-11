@@ -6,7 +6,6 @@ import com.mansereok.server.domain.order.entity.OrderStatus;
 import com.mansereok.server.domain.order.repository.OrderRepository;
 import com.mansereok.server.domain.order.service.OrderDiscountRestorer;
 import com.mansereok.server.domain.payment.entity.Payment;
-import com.mansereok.server.domain.payment.entity.PaymentStatus;
 import com.mansereok.server.domain.payment.event.PaymentCompletedEvent;
 import com.mansereok.server.domain.payment.repository.PaymentRepository;
 import com.mansereok.server.global.exception.PaymentException;
@@ -65,7 +64,7 @@ public class PaidOrderFinalizer {
 	 * @return 저장된 Payment
 	 * @throws PaymentException 같은 paymentId 의 Payment 가 이미 있어 imp_uid UNIQUE 에 걸린 경우
 	 */
-	public Payment finalizePaid(Order order, String paymentId, Long amount, LocalDateTime paidAt) {
+	public Payment finalizePaid(Order order, String paymentId, long amount, LocalDateTime paidAt) {
 		// 1. 주문 상태 확정. 만료된 주문이었는지는 상태를 바꾸기 전에 기억해 둔다.
 		boolean paidAfterExpiry = order.getStatus() == OrderStatus.EXPIRED;
 		order.markPaid(paymentId, paidAt);
@@ -78,17 +77,7 @@ public class PaidOrderFinalizer {
 		}
 
 		// 2. Payment 생성 및 저장
-		Payment savedPayment = savePayment(
-			Payment.create(
-				paymentId,
-				order.getMerchantUid(),
-				amount,
-				PaymentStatus.PAID,
-				order.getId(),
-				order.getUserId(),
-				order.getSubCategoryId()
-			)
-		);
+		Payment savedPayment = savePayment(Payment.paid(order, paymentId, amount));
 
 		// 3. 연관관계 연결
 		order.linkPayment(savedPayment.getId());
@@ -97,9 +86,9 @@ public class PaidOrderFinalizer {
 		// 4. 초기 결과지 생성
 		resultService.createInitialResult(savedPayment, order);
 
-		// 5. 완료 이벤트 발행 (알림은 커밋 뒤 리스너가 담당. amount 0 이면 리스너가 보내지 않는다)
+		// 5. 완료 이벤트 발행 (알림은 커밋 뒤 리스너가 담당. 무료 결제면 리스너가 보내지 않는다)
 		eventPublisher.publishEvent(
-			new PaymentCompletedEvent(order.getId(), savedPayment.getId(), savedPayment.getAmount()));
+			new PaymentCompletedEvent(order.getId(), savedPayment.getId(), savedPayment.isFree()));
 
 		return savedPayment;
 	}

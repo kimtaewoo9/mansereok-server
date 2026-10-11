@@ -18,8 +18,8 @@ import org.springframework.stereotype.Component;
 /**
  * 주문에 적용된 할인(쿠폰 또는 할인코드)을 되돌리고 다시 쓰는 규칙의 단일 소유자.
  *
- * <p>규칙은 "쿠폰이 있으면 쿠폰, 아니면 할인코드, 아니면 없음" 이고, EVENT_FREE 같은 시스템 코드는
- * 대상이 아니다. 환불(PaymentRefundService)·만료(OrderExpirationService)·웹훅 실패 기록(PaymentWebhookService)이
+ * <p>규칙은 "쿠폰이 있으면 쿠폰, 아니면 할인코드, 아니면 없음" 이고, 무료 이벤트 표기 같은 시스템 표기
+ * ({@link Order#hasSystemDiscountCode()})는 대상이 아니다. 환불(PaymentRefundService)·만료(OrderExpirationService)·웹훅 실패 기록(PaymentWebhookService)이
  * 되돌리기를, 만료 뒤 결제 확정(PaidOrderFinalizer)이 다시 쓰기를 같은 규칙으로 부르도록 여기로 모았다.
  *
  * <p>지키려는 규칙은 "결제 대기·결제 완료 주문의 할인은 사용된 상태" 다. 트랜잭션은 호출자의 것에 참여한다. 여기서 건 잠금은
@@ -42,8 +42,6 @@ import org.springframework.stereotype.Component;
 @RequiredArgsConstructor
 @Slf4j
 public class OrderDiscountRestorer {
-
-	private static final String EVENT_FREE_CODE = "EVENT_FREE";
 
 	/**
 	 * 할인을 쥐고 있는 주문 상태. 이 상태의 다른 주문이 같은 쿠폰을 쓰고 있으면 그 쿠폰은 되돌리지 않는다.
@@ -139,10 +137,10 @@ public class OrderDiscountRestorer {
 		log.info("만료 뒤 결제된 주문의 할인코드 사용 횟수를 다시 올림: orderId={}, code={}", order.getId(), code);
 	}
 
-	/** 되돌리거나 다시 쓸 할인 코드. 없거나 공백이거나 시스템 코드(EVENT_FREE)면 null. */
+	/** 되돌리거나 다시 쓸 할인 코드. 없거나 공백이거나 시스템 표기(무료 이벤트)면 null. */
 	private static String discountCodeOf(Order order) {
 		String code = order.getAppliedDiscountCode();
-		if (code == null || code.isBlank() || EVENT_FREE_CODE.equals(code)) {
+		if (code == null || code.isBlank() || order.hasSystemDiscountCode()) {
 			return null;
 		}
 		return code;

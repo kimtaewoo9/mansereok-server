@@ -9,6 +9,7 @@ import com.mansereok.server.domain.payment.entity.Payment;
 import com.mansereok.server.domain.payment.entity.PaymentStatus;
 import com.mansereok.server.domain.payment.reconciliation.entity.MismatchType;
 import com.mansereok.server.domain.payment.reconciliation.entity.PaymentReconciliationMismatch;
+import com.mansereok.server.support.fixture.TestPayments;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
@@ -46,7 +47,7 @@ class PaymentReconcilerTest {
 	}
 
 	private Payment dbPayment(String impUid, PaymentStatus status, long amount) {
-		return Payment.create(impUid, "order_" + impUid, amount, status, 1L, 1L, 1L);
+		return TestPayments.payment().paymentId(impUid).merchantUid("order_" + impUid).amount(amount).inStatus(status);
 	}
 
 	private List<PaymentReconciliationMismatch> reconcile(List<PortOnePaymentResponse> pgPayments,

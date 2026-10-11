@@ -2,8 +2,10 @@ package com.mansereok.server.domain.order.dto.response;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.mansereok.server.domain.order.entity.AppliedDiscount;
 import com.mansereok.server.domain.order.entity.Order;
 import com.mansereok.server.domain.order.entity.OrderStatus;
+import com.mansereok.server.support.fixture.TestOrders;
 import java.lang.reflect.RecordComponent;
 import java.time.LocalDateTime;
 import java.util.Arrays;
@@ -19,9 +21,9 @@ class OrderResponseTest {
 		// given
 		LocalDateTime createdAt = LocalDateTime.of(2026, 9, 21, 10, 0);
 		LocalDateTime paidAt = LocalDateTime.of(2026, 9, 21, 10, 5);
-		Order order = Order.create("order_test_001", 7L, 2L, 19900, 9950, "VIP50", 3L,
-			OrderStatus.PENDING, "김태우", "taewoo@example.com");
-		ReflectionTestUtils.setField(order, "id", 12L);
+		Order order = TestOrders.order().id(12L).merchantUid("order_test_001").userId(7L).subCategoryId(2L)
+			.buyer("김태우", "taewoo@example.com").amounts(19900, 9950)
+			.discount(AppliedDiscount.coupon("VIP50", 3L)).pending();
 		ReflectionTestUtils.setField(order, "createdAt", createdAt);
 		order.linkPayment(9L);
 		order.markPaid("pay_test_001", paidAt);
@@ -66,8 +68,7 @@ class OrderResponseTest {
 	@DisplayName("from 은 비어 있는 선택 필드를 null 로 옮긴다")
 	void from_keepsNullOptionalFields() {
 		// given
-		Order order = Order.create("order_test_002", null, 2L, 10000, 10000, null, null,
-			OrderStatus.PENDING, "김태우", "taewoo@example.com");
+		Order order = TestOrders.order().merchantUid("order_test_002").userId(null).subCategoryId(2L).pending();
 
 		// when
 		OrderResponse response = OrderResponse.from(order);

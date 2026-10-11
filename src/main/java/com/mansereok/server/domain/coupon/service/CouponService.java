@@ -93,17 +93,14 @@ public class CouponService {
 			throw new PaymentException("본인의 쿠폰만 사용할 수 있습니다.");
 		}
 
-		// 유효성 검사 (만료일, 사용여부 등)는 use() 호출 시나 별도 validate()에서 수행
-		// 여기서는 금액 계산을 위해 미리 검증
+		// 이미 쓴 쿠폰은 금액을 계산하기 전에 거른다. 만료일은 같은 주문 생성 트랜잭션의 사용 확정(useCoupon → Coupon.use)이 본다.
 		if (coupon.isUsed()) {
 			throw new PaymentException("이미 사용한 쿠폰입니다.");
 		}
 
 		int finalAmount = coupon.applyDiscount(originalAmount);
 
-		// 결과 반환 (기존 DiscountValidationResult 재활용하거나 새로 만듦)
-		// 여기서는 편의상 Coupon 엔티티를 Object로 넘기거나 별도 DTO 사용 권장
-		// 기존 Result 클래스를 재사용하기 위해 약간의 수정이 필요할 수 있음
+		// 할인 코드 검증과 같은 결과 타입을 쓴다. 쿠폰은 할인 코드 엔티티가 없어 null 을 넣는다.
 		return new DiscountValidationResult(finalAmount, coupon.getName(), null);
 	}
 

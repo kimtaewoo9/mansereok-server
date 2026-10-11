@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.mansereok.server.domain.payment.dto.response.PortOnePaymentResponse;
 import com.mansereok.server.domain.payment.entity.Payment;
 import com.mansereok.server.domain.payment.entity.PaymentStatus;
+import com.mansereok.server.support.fixture.TestPayments;
 import java.time.LocalDateTime;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -35,7 +36,7 @@ class PaymentReconciliationMismatchTest {
 	}
 
 	private static Payment dbPayment(PaymentStatus status, long amount) {
-		return Payment.create(IMP_UID, MERCHANT_UID, amount, status, 1L, 1L, 1L);
+		return TestPayments.payment().paymentId(IMP_UID).merchantUid(MERCHANT_UID).amount(amount).inStatus(status);
 	}
 
 	@Nested

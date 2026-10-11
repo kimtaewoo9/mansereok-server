@@ -4,7 +4,6 @@ import com.mansereok.server.domain.payment.entity.Payment;
 import com.mansereok.server.domain.payment.entity.PaymentStatus;
 import com.mansereok.server.domain.payment.repository.PaymentRepository;
 import com.mansereok.server.domain.user.entity.User;
-import com.mansereok.server.domain.user.repository.UserRepository;
 import com.mansereok.server.global.exception.PaymentException;
 import java.util.Objects;
 import java.util.Optional;
@@ -22,7 +21,7 @@ import org.springframework.transaction.annotation.Transactional;
 @Slf4j
 public class PaymentEntitlementService {
 
-	private final UserRepository userRepository;
+	private final PaymentUserLookup paymentUserLookup;
 	private final PaymentRepository paymentRepository;
 
 	/**
@@ -49,8 +48,7 @@ public class PaymentEntitlementService {
 		Consumer<Long> markResultProcessing) {
 		Objects.requireNonNull(markResultProcessing, "markResultProcessing");
 
-		User user = userRepository.findByUsername(username)
-			.orElseThrow(() -> new PaymentException("사용자를 찾을 수 없습니다."));
+		User user = paymentUserLookup.getByUsername(username);
 
 		Payment payment = paymentPkId == null ? null
 			: paymentRepository.findByIdWithLock(paymentPkId).orElse(null);
@@ -76,7 +74,7 @@ public class PaymentEntitlementService {
 			return Optional.of("결제 없음");
 		}
 		// 탈퇴 처리로 결제의 userId 가 비었으면 누구의 결제도 아니다.
-		if (payment.getUserId() == null || !payment.getUserId().equals(userId)) {
+		if (!payment.isOwnedBy(userId)) {
 			return Optional.of("다른 사용자의 결제(결제 userId=" + payment.getUserId() + ")");
 		}
 		if (payment.getStatus() != PaymentStatus.PAID) {

@@ -15,11 +15,10 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 
 import com.mansereok.server.domain.notification.service.DiscordNotificationService;
+import com.mansereok.server.domain.order.entity.AppliedDiscount;
 import com.mansereok.server.domain.order.entity.Order;
-import com.mansereok.server.domain.order.entity.OrderStatus;
 import com.mansereok.server.domain.order.repository.OrderRepository;
 import com.mansereok.server.domain.payment.entity.Payment;
-import com.mansereok.server.domain.payment.entity.PaymentStatus;
 import com.mansereok.server.domain.payment.repository.PaymentRepository;
 import com.mansereok.server.domain.product.entity.SubCategory;
 import com.mansereok.server.domain.product.repository.SubCategoryRepository;
@@ -30,6 +29,7 @@ import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
+import com.mansereok.server.support.fixture.TestOrders;
 import java.lang.reflect.Method;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -78,13 +78,10 @@ class PaymentCompletedNotificationListenerTest {
 
 	@BeforeEach
 	void setUp() {
-		order = Order.create(MERCHANT_UID, USER_ID, SUB_CATEGORY_ID, 10000, (int) AMOUNT, "SALE10",
-			null, OrderStatus.PENDING, "김태우", "taewoo@example.com");
-		ReflectionTestUtils.setField(order, "id", ORDER_ID);
-		order.markPaid(PAYMENT_ID, PAID_AT);
-
-		payment = Payment.create(PAYMENT_ID, MERCHANT_UID, AMOUNT, PaymentStatus.PAID, ORDER_ID,
-			USER_ID, SUB_CATEGORY_ID);
+		order = TestOrders.order().id(ORDER_ID).merchantUid(MERCHANT_UID).userId(USER_ID).subCategoryId(SUB_CATEGORY_ID)
+			.amounts(10000, (int) AMOUNT).discount(AppliedDiscount.code("SALE10")).paymentId(PAYMENT_ID).paidAt(PAID_AT)
+			.paid();
+		payment = Payment.paid(order, PAYMENT_ID, AMOUNT);
 		ReflectionTestUtils.setField(payment, "id", PAYMENT_PK_ID);
 	}
 
@@ -107,8 +104,8 @@ class PaymentCompletedNotificationListenerTest {
 		given(paymentRepository.findById(PAYMENT_PK_ID)).willReturn(Optional.of(payment));
 	}
 
-	private static PaymentCompletedEvent event(long amount) {
-		return new PaymentCompletedEvent(ORDER_ID, PAYMENT_PK_ID, amount);
+	private static PaymentCompletedEvent paidEvent() {
+		return new PaymentCompletedEvent(ORDER_ID, PAYMENT_PK_ID, false);
 	}
 
 	@Test
@@ -122,7 +119,7 @@ class PaymentCompletedNotificationListenerTest {
 			Optional.of(subCategory));
 
 		// when
-		listener.on(event(AMOUNT));
+		listener.on(paidEvent());
 
 		// then
 		verify(discordNotificationService).sendPaymentCompletedNotification(
@@ -130,24 +127,14 @@ class PaymentCompletedNotificationListenerTest {
 	}
 
 	@Test
-	@DisplayName("amount 가 0 인 무료 결제 이벤트는 아무것도 조회하지 않고 알림도 보내지 않는다")
-	void on_zeroAmount_doesNothing() {
+	@DisplayName("무료 결제 이벤트는 아무것도 조회하지 않고 알림도 보내지 않는다")
+	void on_freePayment_doesNothing() {
 		// when
-		listener.on(event(0L));
+		listener.on(new PaymentCompletedEvent(ORDER_ID, PAYMENT_PK_ID, true));
 
 		// then
 		verifyNoInteractions(orderRepository, paymentRepository, userRepository,
 			subCategoryRepository, discordNotificationService);
-	}
-
-	@Test
-	@DisplayName("amount 가 null 이면 무료 결제로 보고 알림을 보내지 않는다")
-	void on_nullAmount_doesNothing() {
-		// when
-		listener.on(new PaymentCompletedEvent(ORDER_ID, PAYMENT_PK_ID, null));
-
-		// then
-		verifyNoInteractions(orderRepository, paymentRepository, discordNotificationService);
 	}
 
 	@Test
@@ -166,7 +153,7 @@ class PaymentCompletedNotificationListenerTest {
 
 		try {
 			// when & then
-			assertThatCode(() -> listener.on(event(AMOUNT))).doesNotThrowAnyException();
+			assertThatCode(() -> listener.on(paidEvent())).doesNotThrowAnyException();
 			verifyNoInteractions(discordNotificationService);
 			assertThat(appender.list).anySatisfy(logEvent -> {
 				assertThat(logEvent.getLevel()).isEqualTo(Level.WARN);
@@ -186,7 +173,7 @@ class PaymentCompletedNotificationListenerTest {
 		given(subCategoryRepository.findById(SUB_CATEGORY_ID)).willReturn(Optional.empty());
 
 		// when
-		listener.on(event(AMOUNT));
+		listener.on(paidEvent());
 
 		// then
 		verifyNoInteractions(discordNotificationService);
@@ -200,7 +187,7 @@ class PaymentCompletedNotificationListenerTest {
 		lenient().when(paymentRepository.findById(PAYMENT_PK_ID)).thenReturn(Optional.of(payment));
 
 		// when
-		listener.on(event(AMOUNT));
+		listener.on(paidEvent());
 
 		// then
 		verifyNoInteractions(userRepository, subCategoryRepository, discordNotificationService);
@@ -214,7 +201,7 @@ class PaymentCompletedNotificationListenerTest {
 		given(paymentRepository.findById(PAYMENT_PK_ID)).willReturn(Optional.empty());
 
 		// when
-		listener.on(event(AMOUNT));
+		listener.on(paidEvent());
 
 		// then
 		verifyNoInteractions(discordNotificationService);
@@ -231,7 +218,7 @@ class PaymentCompletedNotificationListenerTest {
 			Optional.of(subCategory));
 
 		// when
-		assertThatCode(() -> listener.on(event(AMOUNT))).doesNotThrowAnyException();
+		assertThatCode(() -> listener.on(paidEvent())).doesNotThrowAnyException();
 
 		// then
 		verify(userRepository, never()).findById(any());
@@ -252,7 +239,7 @@ class PaymentCompletedNotificationListenerTest {
 				any(), anyString(), anyInt());
 
 		// when & then
-		assertThatCode(() -> listener.on(event(AMOUNT))).doesNotThrowAnyException();
+		assertThatCode(() -> listener.on(paidEvent())).doesNotThrowAnyException();
 	}
 
 	@Test
@@ -262,7 +249,7 @@ class PaymentCompletedNotificationListenerTest {
 		given(orderRepository.findById(ORDER_ID)).willThrow(new RuntimeException("db down"));
 
 		// when & then
-		assertThatCode(() -> listener.on(event(AMOUNT))).doesNotThrowAnyException();
+		assertThatCode(() -> listener.on(paidEvent())).doesNotThrowAnyException();
 		verifyNoInteractions(discordNotificationService);
 	}
 

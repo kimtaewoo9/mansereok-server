@@ -3,9 +3,7 @@ package com.mansereok.server.domain.coupon.controller;
 import com.mansereok.server.domain.coupon.dto.CouponEventDto;
 import com.mansereok.server.domain.coupon.entity.Coupon;
 import com.mansereok.server.domain.coupon.service.CouponService;
-import com.mansereok.server.domain.user.entity.User;
-import com.mansereok.server.domain.user.repository.UserRepository;
-import com.mansereok.server.global.exception.PaymentException;
+import com.mansereok.server.domain.payment.service.PaymentUserLookup;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -21,13 +19,11 @@ public class CouponController {
 
 
 	private final CouponService couponService;
-	private final UserRepository userRepository;
+	private final PaymentUserLookup paymentUserLookup;
 
-	// 유저 조회 편의 메서드
+	// 사용자가 없으면 결제 API 와 같은 400 PAYMENT_ERROR 로 답한다(PaymentUserLookup).
 	private Long getUserId(String username) {
-		User user = userRepository.findByUsername(username)
-			.orElseThrow(() -> new PaymentException("사용자를 찾을 수 없습니다."));
-		return user.getId();
+		return paymentUserLookup.getByUsername(username).getId();
 	}
 
 	// 1. 쿠폰 이벤트 목록 조회 (발급 여부 포함)

@@ -11,12 +11,11 @@ import com.mansereok.server.domain.payment.dto.response.PaymentResponseDto;
 import com.mansereok.server.domain.payment.entity.Payment;
 import com.mansereok.server.domain.payment.repository.PaymentRepository;
 import com.mansereok.server.domain.user.entity.User;
-import com.mansereok.server.domain.user.repository.UserRepository;
+import com.mansereok.server.global.exception.PaymentException;
 import jakarta.persistence.EntityNotFoundException;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -27,9 +26,8 @@ import org.springframework.transaction.annotation.Transactional;
 /**
  * 결제·주문 조회 전용 서비스.
  *
- * <p>주문 단건 조회는 반드시 요청자 소유권을 검사한다. 같은 규칙(userId 가 null 인 주문 거부 + 요청자 id 대조)을
- * 결제 완료 경로의 {@code PaymentConfirmService.assertOrderOwnedBy} 도 쓰므로, 이 클래스의
- * {@link #assertOwnedBy(Order, User)} 판정을 바꿀 때는 두 곳을 함께 고친다.
+ * <p>주문 단건 조회는 반드시 요청자 소유권을 검사한다. 판정은 {@link Order#isOwnedBy(Long)} 한 곳에 있고 결제 완료 경로
+ * (PaymentConfirmService)도 같은 판정을 쓴다. 여기서는 조회에 맞는 예외(403)만 고른다.
  */
 @Slf4j
 @Service
@@ -38,7 +36,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class PaymentQueryService {
 
 	private final OrderRepository orderRepository;
-	private final UserRepository userRepository;
+	private final PaymentUserLookup paymentUserLookup;
 	private final PaymentRepository paymentRepository;
 	private final ResultRepository resultRepository;
 	private final CompatibilityResultRepository compatibilityResultRepository;
@@ -46,36 +44,38 @@ public class PaymentQueryService {
 	/**
 	 * 요청자 본인의 주문을 PK 로 조회한다.
 	 *
-	 * @throws EntityNotFoundException 주문 또는 사용자가 없을 때 (404)
+	 * @throws EntityNotFoundException 주문이 없을 때 (404)
+	 * @throws PaymentException        사용자가 없을 때 (400)
 	 * @throws AccessDeniedException   요청자가 주문 소유자가 아닐 때 (403)
 	 */
 	public Order getOwnedOrder(Long orderId, String username) {
 		Order order = orderRepository.findById(orderId)
 			.orElseThrow(() -> new EntityNotFoundException("주문을 찾을 수 없습니다."));
-		assertOwnedBy(order, findUser(username));
+		assertOwnedBy(order, paymentUserLookup.getByUsername(username));
 		return order;
 	}
 
 	/**
 	 * 요청자 본인의 주문을 Payment PK 로 조회한다.
 	 *
-	 * @throws EntityNotFoundException 주문 또는 사용자가 없을 때 (404)
+	 * @throws EntityNotFoundException 주문이 없을 때 (404)
+	 * @throws PaymentException        사용자가 없을 때 (400)
 	 * @throws AccessDeniedException   요청자가 주문 소유자가 아닐 때 (403)
 	 */
 	public Order getOwnedOrderByPaymentPkId(Long paymentPkId, String username) {
 		Order order = orderRepository.findByPaymentPkId(paymentPkId)
 			.orElseThrow(() -> new EntityNotFoundException("결제 ID에 해당하는 주문을 찾을 수 없습니다."));
-		assertOwnedBy(order, findUser(username));
+		assertOwnedBy(order, paymentUserLookup.getByUsername(username));
 		return order;
 	}
 
-	public Payment getPayment(Long paymentId) {
-		return paymentRepository.findById(paymentId).orElseThrow(EntityNotFoundException::new);
-	}
-
+	/**
+	 * 요청자의 결제 목록을 최근 것부터 돌려준다. 결제마다 결과 상태와 환불 가능 여부를 붙인다.
+	 *
+	 * @throws PaymentException 사용자가 없을 때 (400)
+	 */
 	public List<PaymentResponseDto> getPayments(String username) {
-		User user = userRepository.findByUsername(username)
-			.orElseThrow(() -> new IllegalArgumentException("사용자를 찾을 수 없습니다."));
+		User user = paymentUserLookup.getByUsername(username);
 
 		List<Payment> payments = paymentRepository.findAllByUserIdOrderByCreatedAtDesc(
 			user.getId());
@@ -100,16 +100,11 @@ public class PaymentQueryService {
 		}).collect(Collectors.toList());
 	}
 
-	private User findUser(String username) {
-		return userRepository.findByUsername(username)
-			.orElseThrow(() -> new EntityNotFoundException("사용자를 찾을 수 없습니다: " + username));
-	}
-
 	/**
 	 * 주문 소유자와 요청자를 대조한다. 탈퇴 처리로 userId 가 null 인 주문은 누구의 것도 아니므로 거부한다.
 	 */
 	private void assertOwnedBy(Order order, User user) {
-		if (order.getUserId() == null || !Objects.equals(order.getUserId(), user.getId())) {
+		if (!order.isOwnedBy(user.getId())) {
 			log.warn("권한 없는 주문 조회 시도: 요청자={}, 주문 소유자={}, orderId={}",
 				user.getId(), order.getUserId(), order.getId());
 			throw new AccessDeniedException("본인의 주문만 조회할 수 있습니다.");

@@ -13,6 +13,7 @@ import ch.qos.logback.core.read.ListAppender;
 import com.mansereok.server.domain.coupon.repository.CouponRepository;
 import com.mansereok.server.domain.coupon.repository.CouponTemplateRepository;
 import com.mansereok.server.domain.coupon.service.CouponService;
+import com.mansereok.server.domain.payment.service.PaymentUserLookup;
 import com.mansereok.server.domain.user.entity.Gender;
 import com.mansereok.server.domain.user.entity.User;
 import com.mansereok.server.domain.user.repository.UserRepository;
@@ -68,7 +69,7 @@ class CouponSoldOutResponseTest {
 	@BeforeEach
 	void setUp() {
 		CouponService couponService = new CouponService(couponRepository, couponTemplateRepository);
-		mockMvc = MockMvcBuilders.standaloneSetup(new CouponController(couponService, userRepository))
+		mockMvc = MockMvcBuilders.standaloneSetup(new CouponController(couponService, new PaymentUserLookup(userRepository)))
 			.setControllerAdvice(new GlobalExceptionHandler(), new RequestErrorExceptionHandler())
 			.setCustomArgumentResolvers(new AuthenticationPrincipalArgumentResolver())
 			.build();

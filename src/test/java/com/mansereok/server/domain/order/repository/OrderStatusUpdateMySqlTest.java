@@ -2,12 +2,12 @@ package com.mansereok.server.domain.order.repository;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.mansereok.server.domain.order.entity.Order;
 import com.mansereok.server.domain.order.entity.OrderStatus;
 import com.mansereok.server.domain.user.entity.Gender;
 import com.mansereok.server.domain.user.entity.User;
 import com.mansereok.server.domain.user.repository.UserRepository;
 import com.mansereok.server.support.PaymentMySqlTest;
+import com.mansereok.server.support.fixture.TestOrders;
 import java.time.LocalDate;
 import java.util.UUID;
 import org.junit.jupiter.api.AfterEach;
@@ -130,9 +130,16 @@ class OrderStatusUpdateMySqlTest extends PaymentMySqlTest {
 		return changedRows == null ? 0 : changedRows;
 	}
 
+	/**
+	 * 주문을 PENDING 으로 저장한 뒤 상태를 DB 에서 바꾼다. VIRTUAL_ACCOUNT_ISSUED 처럼 운영 코드의 전이로 갈 수 없는 상태도 DB 에는
+	 * 있을 수 있어 조건부 UPDATE 가 그 행을 건드리지 않는지 함께 본다.
+	 */
 	private Long saveOrder(OrderStatus status) {
-		return orderRepository.save(Order.create(merchantUid, userId, ANY_SUB_CATEGORY_ID, PRICE, PRICE, null,
-			null, status, "상태변경", username + "@example.com")).getId();
+		Long orderId = orderRepository.save(TestOrders.order().merchantUid(merchantUid).userId(userId)
+			.subCategoryId(ANY_SUB_CATEGORY_ID).price(PRICE).buyer("상태변경", username + "@example.com")
+			.pending()).getId();
+		jdbcTemplate.update("UPDATE orders SET status = ? WHERE id = ?", status.name(), orderId);
+		return orderId;
 	}
 
 	private String statusInDatabase() {

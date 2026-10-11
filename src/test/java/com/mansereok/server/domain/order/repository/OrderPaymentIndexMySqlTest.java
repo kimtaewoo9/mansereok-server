@@ -6,7 +6,6 @@ import static org.assertj.core.api.Assertions.catchThrowable;
 import com.mansereok.server.domain.order.entity.Order;
 import com.mansereok.server.domain.order.entity.OrderStatus;
 import com.mansereok.server.domain.payment.entity.Payment;
-import com.mansereok.server.domain.payment.entity.PaymentStatus;
 import com.mansereok.server.domain.payment.repository.PaymentRepository;
 import com.mansereok.server.domain.user.entity.Gender;
 import com.mansereok.server.domain.user.entity.User;
@@ -14,6 +13,8 @@ import com.mansereok.server.domain.user.repository.UserRepository;
 import com.mansereok.server.domain.user.service.UserService;
 import com.mansereok.server.global.exception.UniqueConstraintViolations;
 import com.mansereok.server.support.PaymentMySqlTest;
+import com.mansereok.server.support.fixture.TestOrders;
+import com.mansereok.server.support.fixture.TestPayments;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -152,10 +153,14 @@ class OrderPaymentIndexMySqlTest extends PaymentMySqlTest {
 			});
 		}
 
-		/** 주문을 저장한 뒤 created_at 을 옮긴다. 저장할 때는 @PrePersist 가 created_at 을 지금 시각으로 덮는다. */
+		/**
+		 * 주문을 저장한 뒤 상태와 created_at 을 DB 에서 옮긴다. 저장할 때는 @PrePersist 가 created_at 을 지금 시각으로 덮는다. 상태는
+		 * VIRTUAL_ACCOUNT_ISSUED 처럼 운영 코드의 전이로 갈 수 없는 상태도 넣으려고 DB 에서 바꾼다.
+		 */
 		private Long saveOrderCreatedAt(String name, OrderStatus status, LocalDateTime createdAt) {
-			Long id = orderRepository.saveAndFlush(order(name, status)).getId();
-			jdbcTemplate.update("UPDATE orders SET created_at = ? WHERE id = ?", createdAt, id);
+			Long id = orderRepository.saveAndFlush(order(name, OrderStatus.PENDING)).getId();
+			jdbcTemplate.update("UPDATE orders SET status = ?, created_at = ? WHERE id = ?", status.name(), createdAt,
+				id);
 			return id;
 		}
 
@@ -231,8 +236,9 @@ class OrderPaymentIndexMySqlTest extends PaymentMySqlTest {
 				.isEqualTo("YES");
 			Long userId = userRepository.save(User.create(username, "탈퇴", "password", username + "@example.com",
 				LocalDate.of(1990, 1, 1), Gender.MALE, true, true, false)).getId();
-			paymentRepository.saveAndFlush(Payment.create(impUid, merchantUidPrefix + "withdrawn", (long) PRICE,
-				PaymentStatus.PAID, 1L, userId, ANY_SUB_CATEGORY_ID));
+			paymentRepository.saveAndFlush(TestPayments.payment().paymentId(impUid)
+				.merchantUid(merchantUidPrefix + "withdrawn").orderId(1L).userId(userId).subCategoryId(ANY_SUB_CATEGORY_ID)
+				.amount(PRICE).paid());
 
 			// when
 			userService.deleteUser(username);
@@ -246,8 +252,8 @@ class OrderPaymentIndexMySqlTest extends PaymentMySqlTest {
 	}
 
 	private Order order(String name, OrderStatus status) {
-		return Order.create(merchantUidPrefix + name, null, ANY_SUB_CATEGORY_ID, PRICE, PRICE, null, null, status,
-			"구매자", "buyer@example.com");
+		return TestOrders.order().merchantUid(merchantUidPrefix + name).userId(null).subCategoryId(ANY_SUB_CATEGORY_ID)
+			.price(PRICE).inStatus(status);
 	}
 
 	private Order orderLinkedToPayment(String name) {

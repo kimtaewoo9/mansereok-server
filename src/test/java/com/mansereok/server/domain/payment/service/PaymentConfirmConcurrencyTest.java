@@ -23,6 +23,7 @@ import com.mansereok.server.support.ConcurrentCalls;
 import com.mansereok.server.support.ConcurrentCalls.CallResult;
 import com.mansereok.server.support.PaymentMySqlTest;
 import com.mansereok.server.support.fixture.SubCategoryFixture;
+import com.mansereok.server.support.fixture.TestOrders;
 import java.time.Duration;
 import java.time.LocalDate;
 import java.util.List;
@@ -81,8 +82,8 @@ class PaymentConfirmConcurrencyTest extends PaymentMySqlTest {
 			LocalDate.of(1990, 1, 1), Gender.MALE, true, true, false)).getId();
 		subCategoryId = subCategoryRepository.save(SubCategoryFixture.paidProduct().withoutId()
 			.title("결제 동시 확정 테스트 상품 " + runId).price(PRICE).build()).getId();
-		orderRepository.save(Order.create(merchantUid, userId, subCategoryId, PRICE, PRICE, null, null,
-			OrderStatus.PENDING, BUYER_NAME, email));
+		orderRepository.save(TestOrders.order().merchantUid(merchantUid).userId(userId).subCategoryId(subCategoryId)
+			.price(PRICE).buyer(BUYER_NAME, email).pending());
 	}
 
 	@AfterEach

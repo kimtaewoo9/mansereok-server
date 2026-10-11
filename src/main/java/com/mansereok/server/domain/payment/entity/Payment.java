@@ -1,5 +1,8 @@
 package com.mansereok.server.domain.payment.entity;
 
+import com.mansereok.server.domain.interpret.entity.ResultStatus;
+import com.mansereok.server.domain.order.entity.Order;
+import com.mansereok.server.domain.order.entity.OrderStatus;
 import com.mansereok.server.global.exception.OrderStateException;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -14,7 +17,6 @@ import java.time.LocalDateTime;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
-import org.springframework.data.annotation.CreatedDate;
 
 
 // 인덱스 이름을 고정해 엔티티로 만드는 로컬·테스트 DB 와 schema.sql 이 같은 이름을 쓰게 한다. 운영은 ddl-auto: validate 라 인덱스를
@@ -40,6 +42,12 @@ import org.springframework.data.annotation.CreatedDate;
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class Payment {
 
+	/**
+	 * 포트원 거래가 없는 무료 결제의 결제 번호 접두사. 무료 발급 경로가 {@code MerchantUidGenerator.freePaymentIdFor} 로 붙인다.
+	 * 무료 판정({@link #isFreePayment})이 이 접두사를 본다.
+	 */
+	public static final String FREE_PAYMENT_ID_PREFIX = "free_";
+
 	@Id
 	@GeneratedValue(strategy = GenerationType.IDENTITY)
 	private Long id;
@@ -61,24 +69,76 @@ public class Payment {
 
 	private Long subCategoryId;
 
-	private Long amount; // 검증을 위해 필수
+	private long amount; // 결제된 금액. payments.amount 는 NOT NULL 이라 기본 타입으로 둔다.
 	@Enumerated(EnumType.STRING)
 	private PaymentStatus status; // 결제 상태
-	@CreatedDate
+	// 스프링 데이터의 생성 시각 자동 채움(@CreatedDate)을 켜 두지 않았으므로 paid() 가 직접 넣는다.
 	private LocalDateTime createdAt;
 
-	public static Payment create(String paymentId, String merchantUid, Long amount,
-		PaymentStatus status, Long orderId, Long userId, Long subCategoryId) {
+	/**
+	 * 확정된 주문의 결제를 만든다. 상태는 PAID 로 고정하고, 환불은 전이 메서드(markCancelRequested, markCancelled)로만 간다.
+	 * 주문 번호와 주문·사용자·상품 id 는 주문에서 옮겨 적어, 같은 타입 id 의 순서가 뒤바뀔 자리를 두지 않는다.
+	 *
+	 * @param order     PAID 로 확정한 주문. 저장돼 id 가 있어야 한다.
+	 * @param paymentId 포트원 거래 번호. 포트원 거래가 없는 무료 결제는 free_ 로 시작하는 자체 번호
+	 * @param amount    결제된 금액
+	 * @throws OrderStateException 주문이 PAID 가 아닐 때. 결제 완료로 확정하지 않은 주문에 결제가 붙지 않게 한다
+	 */
+	public static Payment paid(Order order, String paymentId, long amount) {
+		if (order.getStatus() != OrderStatus.PAID) {
+			throw new OrderStateException(
+				String.format("결제 완료(PAID)로 확정한 주문으로만 결제를 만들 수 있습니다. 주문 상태=%s, merchantUid=%s",
+					order.getStatus(), order.getMerchantUid()));
+		}
 		Payment payment = new Payment();
 		payment.impUid = paymentId;
-		payment.merchantUid = merchantUid;
+		payment.merchantUid = order.getMerchantUid();
+		payment.orderId = order.getId();
+		payment.userId = order.getUserId();
+		payment.subCategoryId = order.getSubCategoryId();
 		payment.amount = amount;
-		payment.status = status;
+		payment.status = PaymentStatus.PAID;
 		payment.createdAt = LocalDateTime.now();
-		payment.orderId = orderId;
-		payment.userId = userId;
-		payment.subCategoryId = subCategoryId;
 		return payment;
+	}
+
+	/**
+	 * userId 의 사용자가 한 결제인지 본다. 탈퇴 처리로 결제의 userId 가 비었으면 누구의 결제도 아니므로, 결제 쪽이든 인자 쪽이든
+	 * null 이면 false 다.
+	 */
+	public boolean isOwnedBy(Long userId) {
+		return this.userId != null && this.userId.equals(userId);
+	}
+
+	/**
+	 * 포트원 거래가 없는 무료 결제인지 본다. 환불 거절, 대사 제외, 결제 목록의 환불 가능 표시, 결제 완료 알림 생략이 모두 이 판정을
+	 * 쓴다. 규칙은 {@link #isFreePayment} 한 곳에 있다.
+	 */
+	public boolean isFree() {
+		return isFreePayment(impUid, amount);
+	}
+
+	/**
+	 * 결제 번호와 금액으로 무료 결제인지 본다. 무료 발급 경로는 결제 번호를 free_ 로 시작하게 만들고 금액을 0원으로 두므로 둘 중
+	 * 하나라도 맞으면 무료다. DB 결제는 {@link #isFree()} 로, 대사가 받은 포트원 거래는 응답의 결제 번호와 금액으로 이 규칙을
+	 * 쓴다. 규칙을 바꿀 때는 이 메서드만 고친다.
+	 *
+	 * @param paymentId 결제 번호. null 이면 접두사로는 무료로 보지 않는다
+	 * @param amount    결제 금액. null 이면 금액으로는 무료로 보지 않는다
+	 */
+	public static boolean isFreePayment(String paymentId, Long amount) {
+		return (paymentId != null && paymentId.startsWith(FREE_PAYMENT_ID_PREFIX))
+			|| (amount != null && amount == 0L);
+	}
+
+	/**
+	 * 사용자가 직접 환불할 수 있는 결제인지 본다. 결제 완료(PAID) 상태이고, 해석에 쓸 정보를 아직 넣지 않았고(INPUT_REQUIRED),
+	 * 무료 결제가 아니어야 한다. 결제 목록의 환불 버튼과 환불 API 가 이 판정을 함께 쓴다.
+	 *
+	 * @param resultStatus 이 결제로 만든 결과(일반 사주 또는 궁합)의 상태. 결과가 없으면 null
+	 */
+	public boolean isRefundable(ResultStatus resultStatus) {
+		return status == PaymentStatus.PAID && resultStatus == ResultStatus.INPUT_REQUIRED && !isFree();
 	}
 
 	/**

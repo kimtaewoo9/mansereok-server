@@ -8,10 +8,13 @@ import static org.mockito.Mockito.verifyNoInteractions;
 
 import com.mansereok.server.domain.coupon.service.CouponService;
 import com.mansereok.server.domain.discount.service.DiscountCodeService;
+import com.mansereok.server.domain.order.entity.AppliedDiscount;
 import com.mansereok.server.domain.order.entity.Order;
 import com.mansereok.server.domain.order.entity.OrderStatus;
 import com.mansereok.server.domain.order.repository.OrderRepository;
 import com.mansereok.server.domain.payment.event.PaymentAnomalyEvent;
+import com.mansereok.server.support.fixture.TestOrders;
+import java.time.LocalDateTime;
 import java.util.EnumSet;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -27,7 +30,6 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.context.ApplicationEventPublisher;
-import org.springframework.test.util.ReflectionTestUtils;
 
 @ExtendWith(MockitoExtension.class)
 class OrderDiscountRestorerTest {
@@ -51,18 +53,20 @@ class OrderDiscountRestorerTest {
 	@InjectMocks
 	private OrderDiscountRestorer restorer;
 
+	/** 할인 표기와 쿠폰 id 를 저장된 값 그대로 담은 주문. 공백 코드처럼 팩터리로는 만들지 않는 값도 넣는다. */
+	private TestOrders orderWith(Long id, String discountCode, Long couponId) {
+		return TestOrders.order().id(id).merchantUid("merchant_" + id).amounts(10000, 5000)
+			.discount(new AppliedDiscount(discountCode, couponId));
+	}
+
 	private Order createOrder(Long id, String discountCode, Long couponId) {
-		Order order = Order.create("merchant_" + id, 1L, 1L, 10000, 5000, discountCode, couponId,
-			OrderStatus.PENDING, "테스트", "test@test.com");
-		ReflectionTestUtils.setField(order, "id", id);
-		return order;
+		return orderWith(id, discountCode, couponId).pending();
 	}
 
 	/** 만료됐다가 결제 ID pay_{id} 로 확정된 주문. reapply 는 PaidOrderFinalizer 가 markPaid 뒤에 부른다. */
 	private Order paidAfterExpiry(Long id, String discountCode, Long couponId) {
-		Order order = createOrder(id, discountCode, couponId);
-		ReflectionTestUtils.setField(order, "status", OrderStatus.PAID);
-		ReflectionTestUtils.setField(order, "paymentId", "pay_" + id);
+		Order order = orderWith(id, discountCode, couponId).inStatus(OrderStatus.EXPIRED);
+		order.markPaid("pay_" + id, LocalDateTime.of(2026, 9, 26, 12, 0));
 		return order;
 	}
 
@@ -125,9 +129,9 @@ class OrderDiscountRestorerTest {
 		}
 
 		@Test
-		@DisplayName("EVENT_FREE 코드는 복구하지 않는다")
+		@DisplayName("무료 이벤트 표기(EVENT_FREE)는 복구하지 않는다")
 		void restore_eventFreeCode_doesNothing() {
-			Order order = createOrder(4L, "EVENT_FREE", null);
+			Order order = orderWith(4L, null, null).discount(AppliedDiscount.eventFree()).pending();
 
 			restorer.restore(order);
 
@@ -243,7 +247,7 @@ class OrderDiscountRestorerTest {
 
 		@ParameterizedTest(name = "[{index}] 할인 코드 \"{0}\"")
 		@NullAndEmptySource
-		@ValueSource(strings = {"   ", "EVENT_FREE"})
+		@ValueSource(strings = {"   ", AppliedDiscount.EVENT_FREE_CODE})
 		@DisplayName("쿠폰이 없고 할인코드가 없거나 공백이거나 EVENT_FREE 면 아무것도 하지 않는다")
 		void noDiscountToReapply_doesNothing(String code) {
 			// given

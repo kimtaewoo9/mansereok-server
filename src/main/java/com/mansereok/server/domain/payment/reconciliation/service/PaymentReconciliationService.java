@@ -208,7 +208,7 @@ public class PaymentReconciliationService {
 		for (Payment payment : candidates) {
 			String impUid = payment.getImpUid();
 			if (pgImpUids.contains(impUid) || pgLookups.containsKey(impUid)
-				|| PaymentReconciler.isFreePayment(payment)) {
+				|| payment.isFree()) {
 				continue;
 			}
 			pgLookups.put(impUid, lookUp(impUid));
