@@ -1,5 +1,6 @@
 package com.mansereok.server.domain.coupon.entity;
 
+import com.mansereok.server.domain.discount.entity.DiscountPolicy;
 import com.mansereok.server.domain.discount.entity.DiscountType;
 import com.mansereok.server.global.exception.PaymentException;
 import jakarta.persistence.Column;
@@ -46,9 +47,10 @@ public class Coupon {
 
 	private int discountValue;
 
-	private int minPurchaseAmount; // 최소 주문 금액 .. 1000
+	private int minPurchaseAmount; // 최소 주문 금액
 
-	private LocalDateTime expiresAt; // 만료 일시
+	// 만료 일시. 이 시각까지 쓸 수 있다. null 이면 기간 없는 쿠폰이다(템플릿에 유효 기간이 없을 때). 해석은 isExpired 한 곳에서 한다.
+	private LocalDateTime expiresAt;
 
 	private boolean isUsed; // 사용 여부
 	private LocalDateTime usedAt; // 사용 일시
@@ -56,8 +58,11 @@ public class Coupon {
 	@Column(name = "template_id")
 	private Long templateId;
 
-	// 생성자 (쿠폰 발급용)
-	public static Coupon createFromTemplate(CouponTemplate template, Long userId) {
+	/**
+	 * 템플릿으로 사용자 몫의 쿠폰을 만든다. 만료 시각은 받은 시각(issuedAt)을 기준으로 템플릿이 정한다
+	 * ({@link CouponTemplate#couponExpiresAt(LocalDateTime)}).
+	 */
+	public static Coupon createFromTemplate(CouponTemplate template, Long userId, LocalDateTime issuedAt) {
 		Coupon coupon = new Coupon();
 		coupon.userId = userId;
 		coupon.templateId = template.getId(); // 원본 연결
@@ -65,67 +70,63 @@ public class Coupon {
 		coupon.discountType = template.getDiscountType();
 		coupon.discountValue = template.getDiscountValue();
 		coupon.minPurchaseAmount = template.getMinPurchaseAmount();
-
-		// 만료일 계산 로직 (D+30일 방식 vs 고정 날짜 방식)
-		if (template.getValidDaysAfterIssue() != null) {
-			coupon.expiresAt = LocalDateTime.now().plusDays(template.getValidDaysAfterIssue());
-		} else {
-			coupon.expiresAt = template.getValidUntil();
-		}
-
+		coupon.expiresAt = template.couponExpiresAt(issuedAt);
 		coupon.isUsed = false;
 		return coupon;
 	}
 
-	// 할인 금액 계산 (DiscountCode 로직과 동일하게 구현)
+	/**
+	 * 원래 금액에 이 쿠폰의 할인을 적용한 결제 금액. 계산 규칙은 할인 코드와 같고({@link DiscountPolicy}), 100% 정률 쿠폰도 다른
+	 * 할인처럼 최소 결제 금액(1,000원)을 받는다. 그래서 1,000원 이하 상품에는 어떤 쿠폰도 쓸 수 없다.
+	 *
+	 * @throws PaymentException 원래 금액이 최소 주문 금액보다 적을 때, 할인을 적용해도 결제 금액이 원래 금액보다 싸지 않을 때
+	 */
 	public int applyDiscount(int originalAmount) {
-		if (originalAmount < this.minPurchaseAmount) {
-			throw new PaymentException("최소 주문 금액(" + this.minPurchaseAmount + "원)을 충족하지 못했습니다.");
-		}
-
-		int discountedAmount;
-		if (this.discountType == DiscountType.FIXED_AMOUNT) {
-			discountedAmount = originalAmount - this.discountValue;
-		} else if (this.discountType == DiscountType.PERCENTAGE) {
-			int discount = (int) Math.floor(originalAmount * (this.discountValue / 100.0));
-			discountedAmount = originalAmount - discount;
-		} else {
-			discountedAmount = originalAmount;
-		}
-
-		// 10원 단위 절삭
-		discountedAmount = (discountedAmount / 10) * 10;
-
-		// 최소 결제 금액 1000원 방지
-		return Math.max(1000, discountedAmount);
+		return DiscountPolicy.FULL_PERCENTAGE_PAYS_MINIMUM.discountedAmount(originalAmount, this.discountType,
+			this.discountValue, this.minPurchaseAmount);
 	}
 
-	// 쿠폰 검증 및 사용 처리
-	public void use() {
+	/**
+	 * 지금(now) 만료된 쿠폰이면 true. 만료 시각 그 순간까지는 쓸 수 있고, 만료 시각이 없는(null) 쿠폰은 만료되지 않는다.
+	 *
+	 * <p>쿠폰 사용({@link #use(LocalDateTime)}), 결제 전 쿠폰 확인, 내 쿠폰함 조회(CouponRepository.findAllAvailableByUserId)가
+	 * 이 판정을 따른다.
+	 */
+	public boolean isExpired(LocalDateTime now) {
+		return this.expiresAt != null && now.isAfter(this.expiresAt);
+	}
+
+	/**
+	 * 주문을 만들며 쿠폰을 사용 처리한다.
+	 *
+	 * @throws PaymentException 이미 사용했거나 지금(now) 만료된 쿠폰일 때
+	 */
+	public void use(LocalDateTime now) {
 		if (this.isUsed) {
 			throw new PaymentException("이미 사용된 쿠폰입니다.");
 		}
-		if (this.expiresAt.isBefore(LocalDateTime.now())) {
+		if (isExpired(now)) {
 			throw new PaymentException("기간이 만료된 쿠폰입니다.");
 		}
 		this.isUsed = true;
-		this.usedAt = LocalDateTime.now();
+		this.usedAt = now;
 	}
 
 	/**
 	 * 이미 결제가 끝난 주문 몫으로 쿠폰을 사용 처리한다. 만료 뒤 늦게 결제된 주문이 만료 때 돌려놓은 쿠폰을 다시 쓸 때 부른다.
 	 *
-	 * <p>{@link #use()} 와 달리 쿠폰 기간은 보지 않는다. 주문을 만들 때 기간을 확인했고 결제도 이미 그 쿠폰 할인가로 끝났으므로,
-	 * 그사이 기간이 지났다고 사용 처리를 빼면 쿠폰이 미사용으로 남는다.
+	 * <p>{@link #use(LocalDateTime)} 와 달리 쿠폰 기간은 보지 않는다. 주문을 만들 때 기간을 확인했고 결제도 이미 그 쿠폰 할인가로
+	 * 끝났으므로, 그사이 기간이 지났다고 사용 처리를 빼면 쿠폰이 미사용으로 남는다.
 	 *
+	 * @param now 사용 시각으로 남길 지금 시각
 	 * @throws IllegalStateException 이미 사용된 쿠폰일 때. 호출자가 먼저 {@link #isUsed()} 로 확인해야 한다.
 	 */
-	public void useForPaidOrder() {
+	public void useForPaidOrder(LocalDateTime now) {
 		if (this.isUsed) {
 			throw new IllegalStateException("이미 사용된 쿠폰입니다. couponId=" + this.id);
 		}
 		this.isUsed = true;
-		this.usedAt = LocalDateTime.now();
+		this.usedAt = now;
 	}
 
 	public void restore() {

@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.catchThrowable;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
 import static org.mockito.Mockito.never;
@@ -11,11 +12,13 @@ import static org.mockito.Mockito.never;
 import com.mansereok.server.domain.coupon.dto.CouponEventDto;
 import com.mansereok.server.domain.coupon.entity.Coupon;
 import com.mansereok.server.domain.coupon.entity.CouponTemplate;
+import com.mansereok.server.domain.coupon.repository.CouponEventRow;
 import com.mansereok.server.domain.coupon.repository.CouponRepository;
 import com.mansereok.server.domain.coupon.repository.CouponTemplateRepository;
 import com.mansereok.server.global.exception.PaymentException;
 import com.mansereok.server.support.fixture.CouponTemplateFixture;
 import java.sql.SQLIntegrityConstraintViolationException;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 import org.hibernate.exception.ConstraintViolationException;
@@ -142,8 +145,9 @@ class CouponDownloadTest {
 			// given
 			CouponTemplate template = CouponTemplateFixture.issuableNow().id(TEMPLATE_ID)
 				.maxIssueCount(maxIssueCount).currentIssueCount(currentIssueCount).build();
-			List<Object[]> rows = List.<Object[]>of(new Object[] {template, false});
-			given(couponTemplateRepository.findAllWithIssueStatus(USER_ID)).willReturn(rows);
+			// 발급 기간 조회에 넘기는 지금 시각은 마감 표시와 상관이 없다
+			given(couponTemplateRepository.findAllWithIssueStatus(eq(USER_ID), any(LocalDateTime.class)))
+				.willReturn(List.of(new CouponEventRow(template, false)));
 
 			// when
 			List<CouponEventDto> events = couponService.getCouponEvents(USER_ID);

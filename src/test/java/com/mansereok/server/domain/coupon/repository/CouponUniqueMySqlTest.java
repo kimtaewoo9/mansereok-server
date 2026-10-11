@@ -8,6 +8,7 @@ import com.mansereok.server.domain.coupon.entity.CouponTemplate;
 import com.mansereok.server.global.exception.UniqueConstraintViolations;
 import com.mansereok.server.support.PaymentMySqlTest;
 import com.mansereok.server.support.fixture.CouponTemplateFixture;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -35,6 +36,7 @@ class CouponUniqueMySqlTest extends PaymentMySqlTest {
 
 	// information_schema.STATISTICS.NON_UNIQUE 값. 0 이면 UNIQUE 다.
 	private static final int UNIQUE = 0;
+	private static final LocalDateTime ISSUED_AT = LocalDateTime.of(2026, 9, 1, 10, 0);
 
 	@Autowired
 	private CouponRepository couponRepository;
@@ -88,11 +90,11 @@ class CouponUniqueMySqlTest extends PaymentMySqlTest {
 	@DisplayName("같은 사용자·템플릿 쿠폰을 두 번 저장하면 두 번째가 uk_coupons_user_template 에 걸려 UNIQUE 위반으로 판별되고 행은 하나만 남는다")
 	void secondCouponForSameUserAndTemplateIsRejected() {
 		// given
-		couponRepository.saveAndFlush(Coupon.createFromTemplate(template, userId));
+		couponRepository.saveAndFlush(Coupon.createFromTemplate(template, userId, ISSUED_AT));
 
 		// when
 		Throwable thrown = catchThrowable(
-			() -> couponRepository.saveAndFlush(Coupon.createFromTemplate(template, userId)));
+			() -> couponRepository.saveAndFlush(Coupon.createFromTemplate(template, userId, ISSUED_AT)));
 
 		// then
 		assertThat(thrown).isInstanceOfSatisfying(DataIntegrityViolationException.class, e -> {
@@ -110,7 +112,7 @@ class CouponUniqueMySqlTest extends PaymentMySqlTest {
 	@DisplayName("템플릿 잠금을 쥔 채 이미 받았는지 확인하는 조회는 표 전체를 훑지 않고 uk_coupons_user_template 로 한 행을 찾는다")
 	void alreadyIssuedLookupUsesUniqueKey() {
 		// given: 찾는 행이 없으면 MySQL 이 "no matching row in const table" 로 끝내 key 가 비므로 찾을 행을 먼저 저장한다
-		couponRepository.saveAndFlush(Coupon.createFromTemplate(template, userId));
+		couponRepository.saveAndFlush(Coupon.createFromTemplate(template, userId, ISSUED_AT));
 
 		// when: existsByUserIdAndTemplateId 가 만드는 조건과 같은 SQL
 		Map<String, Object> plan = jdbcTemplate.queryForMap(

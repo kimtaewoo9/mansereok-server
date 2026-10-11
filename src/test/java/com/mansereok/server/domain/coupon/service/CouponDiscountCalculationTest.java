@@ -8,11 +8,14 @@ import com.mansereok.server.domain.coupon.entity.CouponTemplate;
 import com.mansereok.server.domain.discount.entity.DiscountType;
 import com.mansereok.server.global.exception.PaymentException;
 import java.lang.reflect.Constructor;
+import java.time.LocalDateTime;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
 
 class CouponDiscountCalculationTest {
+
+	private static final LocalDateTime ISSUED_AT = LocalDateTime.of(2026, 9, 1, 10, 0);
 
 	@Test
 	@DisplayName("정률 할인(10%) 계산이 정확해야 한다 (10원 단위 절삭 포함)")
@@ -22,7 +25,7 @@ class CouponDiscountCalculationTest {
 		CouponTemplate template = createDummyTemplate(DiscountType.PERCENTAGE, 10, 10000);
 
 		// 2. 정적 팩토리 메서드로 쿠폰 생성 (Coupon.issue 테스트)
-		Coupon coupon = Coupon.createFromTemplate(template, 1L);
+		Coupon coupon = Coupon.createFromTemplate(template, 1L, ISSUED_AT);
 
 		// when
 		int finalAmount = coupon.applyDiscount(20000); // 20,000원 -> 10% 할인 -> 18,000원
@@ -39,7 +42,7 @@ class CouponDiscountCalculationTest {
 		CouponTemplate template = createDummyTemplate(DiscountType.FIXED_AMOUNT, 1000, 30000);
 
 		// 2. 쿠폰 생성
-		Coupon coupon = Coupon.createFromTemplate(template, 1L);
+		Coupon coupon = Coupon.createFromTemplate(template, 1L, ISSUED_AT);
 
 		// when & then
 		assertThatThrownBy(() -> coupon.applyDiscount(20000))

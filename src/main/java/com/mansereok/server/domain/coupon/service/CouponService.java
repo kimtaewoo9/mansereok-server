@@ -3,30 +3,51 @@ package com.mansereok.server.domain.coupon.service;
 import com.mansereok.server.domain.coupon.dto.CouponEventDto;
 import com.mansereok.server.domain.coupon.entity.Coupon;
 import com.mansereok.server.domain.coupon.entity.CouponTemplate;
+import com.mansereok.server.domain.coupon.repository.CouponEventRow;
 import com.mansereok.server.domain.coupon.repository.CouponRepository;
 import com.mansereok.server.domain.coupon.repository.CouponTemplateRepository;
 import com.mansereok.server.domain.discount.service.DiscountCodeService.DiscountValidationResult;
 import com.mansereok.server.global.exception.PaymentException;
 import com.mansereok.server.global.exception.UniqueConstraintViolations;
-import java.time.LocalDate;
+import java.time.Clock;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
-import java.util.stream.Collectors;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
-@RequiredArgsConstructor
 @Slf4j
 public class CouponService {
 
+	// 이벤트 목록의 유효 기간 문구에 쓰는 날짜 모양(예: 2026.12.31)
+	private static final DateTimeFormatter VALID_PERIOD_DATE_FORMAT = DateTimeFormatter.ofPattern("yyyy.MM.dd");
+
 	private final CouponRepository couponRepository;
 	private final CouponTemplateRepository couponTemplateRepository;
+	private final Clock clock;
+
+	/**
+	 * 발급 기간, 만료, 사용 시각을 판정할 "지금" 을 clock 으로 정한다. 스프링은 이 생성자로 ClockConfig 의 Clock 빈을 넣는다.
+	 */
+	@Autowired
+	public CouponService(CouponRepository couponRepository, CouponTemplateRepository couponTemplateRepository,
+		Clock clock) {
+		this.couponRepository = couponRepository;
+		this.couponTemplateRepository = couponTemplateRepository;
+		this.clock = clock;
+	}
+
+	/**
+	 * 시스템 기본 시간대의 시계로 "지금" 을 정한다. 시각을 고정할 필요가 없는 곳(리포지토리를 목으로 바꾼 테스트 등)에서 쓴다.
+	 */
+	public CouponService(CouponRepository couponRepository, CouponTemplateRepository couponTemplateRepository) {
+		this(couponRepository, couponTemplateRepository, Clock.systemDefaultZone());
+	}
 
 	@Transactional
 	public void downloadCoupon(Long userId, Long templateId) {
@@ -35,7 +56,7 @@ public class CouponService {
 			.orElseThrow(() -> new PaymentException("존재하지 않는 쿠폰 이벤트입니다."));
 
 		// 2. 이벤트 기간 검증
-		LocalDateTime now = LocalDateTime.now();
+		LocalDateTime now = LocalDateTime.now(clock);
 		if (now.isBefore(template.getIssueStartDate()) || now.isAfter(template.getIssueEndDate())) {
 			throw new PaymentException("발급 기간이 아닙니다.");
 		}
@@ -49,7 +70,7 @@ public class CouponService {
 		template.incrementIssueCount();
 
 		// 5. 실제 쿠폰 생성 및 저장
-		Coupon coupon = Coupon.createFromTemplate(template, userId);
+		Coupon coupon = Coupon.createFromTemplate(template, userId, now);
 		saveIssuedCoupon(coupon);
 	}
 
@@ -76,10 +97,12 @@ public class CouponService {
 		}
 	}
 
-	// 내 쿠폰함 조회
+	/**
+	 * 내 쿠폰함. 아직 쓰지 않았고 지금 만료되지 않은 쿠폰이다. 기간 없는 쿠폰도 들어간다({@link Coupon#isExpired}).
+	 */
 	@Transactional(readOnly = true)
 	public List<Coupon> getMyCoupons(Long userId) {
-		return couponRepository.findAllAvailableByUserId(userId);
+		return couponRepository.findAllAvailableByUserId(userId, LocalDateTime.now(clock));
 	}
 
 	// 결제 시 쿠폰 적용 및 검증
@@ -93,9 +116,12 @@ public class CouponService {
 			throw new PaymentException("본인의 쿠폰만 사용할 수 있습니다.");
 		}
 
-		// 이미 쓴 쿠폰은 금액을 계산하기 전에 거른다. 만료일은 같은 주문 생성 트랜잭션의 사용 확정(useCoupon → Coupon.use)이 본다.
+		// 이미 쓴 쿠폰과 만료된 쿠폰은 금액을 계산하기 전에, 주문을 저장하기 전에 거른다.
 		if (coupon.isUsed()) {
 			throw new PaymentException("이미 사용한 쿠폰입니다.");
+		}
+		if (coupon.isExpired(LocalDateTime.now(clock))) {
+			throw new PaymentException("기간이 만료된 쿠폰입니다.");
 		}
 
 		int finalAmount = coupon.applyDiscount(originalAmount);
@@ -115,7 +141,7 @@ public class CouponService {
 	public void useCoupon(Long couponId) {
 		Coupon coupon = couponRepository.findByIdWithLock(couponId)
 			.orElseThrow(() -> new PaymentException("쿠폰 없음"));
-		coupon.use();
+		coupon.use(LocalDateTime.now(clock));
 	}
 
 	/**
@@ -123,7 +149,7 @@ public class CouponService {
 	 *
 	 * <p>쿠폰 행을 잠가 읽은 뒤 미사용이면 사용 처리한다. 그사이 다른 주문이 이 쿠폰을 이미 썼다면 아무것도 바꾸지 않고 false 를
 	 * 돌려준다. 결제는 이미 끝났으므로 예외로 확정을 되돌리지 않고, 호출자가 운영 알림을 보낸다. 쿠폰 기간은 보지 않는다
-	 * ({@link Coupon#useForPaidOrder()}).
+	 * ({@link Coupon#useForPaidOrder(LocalDateTime)}).
 	 *
 	 * <p>호출자(결제 확정)가 주문 행을 잠근 트랜잭션 안에서 부른다. 그래서 이 경로는 주문 행 → 쿠폰 행 순서로 잠그고, 쿠폰 행 → 주문
 	 * INSERT 순서인 주문 생성과 반대다. orders.merchant_uid 인덱스가 없으면 둘이 교착될 수 있다(OrderDiscountRestorer 클래스 설명).
@@ -140,51 +166,45 @@ public class CouponService {
 		if (coupon.isUsed()) {
 			return false;
 		}
-		coupon.useForPaidOrder();
+		coupon.useForPaidOrder(LocalDateTime.now(clock));
 		return true;
 	}
 
+	/**
+	 * 지금 발급 기간인 쿠폰 이벤트 목록. 이벤트마다 이 사용자가 이미 받았는지, 선착순 마감인지, 지금 받으면 언제까지 쓸 수 있는지를
+	 * 담는다.
+	 */
 	@Transactional(readOnly = true)
 	public List<CouponEventDto> getCouponEvents(Long userId) {
-		List<Object[]> results = couponTemplateRepository.findAllWithIssueStatus(userId);
+		LocalDateTime now = LocalDateTime.now(clock);
+		return couponTemplateRepository.findAllWithIssueStatus(userId, now).stream()
+			.map(row -> toEventDto(row, now))
+			.toList();
+	}
 
-		// 날짜 포맷터 (예: 2024.12.31)
-		DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy.MM.dd");
+	private CouponEventDto toEventDto(CouponEventRow row, LocalDateTime now) {
+		CouponTemplate template = row.template();
+		return new CouponEventDto(
+			template.getId(),
+			template.getName(),
+			template.getDiscountType().toString(),
+			template.getDiscountValue(),
+			validPeriodText(template, now),
+			row.issued(),
+			template.isSoldOut()
+		);
+	}
 
-		return results.stream()
-			.map(row -> {
-				CouponTemplate t = (CouponTemplate) row[0];
-				boolean isIssued = (boolean) row[1];
-				boolean isSoldOut = t.isSoldOut();
-
-				// [수정됨] 유효 기간 텍스트 계산 로직
-				String validPeriod;
-
-				if (t.getValidUntil() != null) {
-					// 1. 고정 날짜 방식 (예: 2026.12.31 까지)
-					validPeriod = t.getValidUntil().format(formatter) + " 까지";
-
-				} else if (t.getValidDaysAfterIssue() != null) {
-					// 2. '발급 후 30일' 방식 -> 오늘 받으면 언제까지인지 날짜로 계산해서 보여줌
-					// 예: 오늘(1/5) + 30일 = "2024.02.04 까지"
-					LocalDate expiredDate = LocalDate.now().plusDays(t.getValidDaysAfterIssue());
-					validPeriod = expiredDate.format(formatter) + " 까지";
-
-				} else {
-					validPeriod = "기간 제한 없음";
-				}
-
-				return new CouponEventDto(
-					t.getId(),
-					t.getName(),
-					t.getDiscountType().toString(),
-					t.getDiscountValue(),
-					validPeriod, // 계산된 날짜 문자열 전달
-					isIssued,
-					isSoldOut
-				);
-			})
-			.collect(Collectors.toList());
+	/**
+	 * 지금(now) 받으면 언제까지 쓸 수 있는지 보여 줄 문구. 받을 쿠폰의 만료 시각과 같은 계산({@link CouponTemplate#couponExpiresAt})
+	 * 으로 정한다. 예: "2026.12.31 까지". 기간 없는 쿠폰이면 "기간 제한 없음".
+	 */
+	private static String validPeriodText(CouponTemplate template, LocalDateTime now) {
+		LocalDateTime expiresAt = template.couponExpiresAt(now);
+		if (expiresAt == null) {
+			return "기간 제한 없음";
+		}
+		return expiresAt.format(VALID_PERIOD_DATE_FORMAT) + " 까지";
 	}
 
 	/**

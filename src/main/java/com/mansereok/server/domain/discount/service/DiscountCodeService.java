@@ -8,19 +8,40 @@ import com.mansereok.server.domain.product.entity.SubCategory;
 import com.mansereok.server.domain.product.repository.SubCategoryRepository;
 import com.mansereok.server.global.exception.PaymentException;
 import jakarta.persistence.EntityNotFoundException;
+import java.time.Clock;
 import java.time.LocalDateTime;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
-@RequiredArgsConstructor
 public class DiscountCodeService {
 
 	private final DiscountCodeRepository discountCodeRepository;
 	private final SubCategoryRepository subCategoryRepository;
+	private final Clock clock;
+
+	/**
+	 * 코드 만료를 판정할 "지금" 을 clock 으로 정한다. 스프링은 이 생성자로 ClockConfig 의 Clock 빈을 넣는다.
+	 */
+	@Autowired
+	public DiscountCodeService(DiscountCodeRepository discountCodeRepository,
+		SubCategoryRepository subCategoryRepository, Clock clock) {
+		this.discountCodeRepository = discountCodeRepository;
+		this.subCategoryRepository = subCategoryRepository;
+		this.clock = clock;
+	}
+
+	/**
+	 * 시스템 기본 시간대의 시계로 "지금" 을 정한다. 시각을 고정할 필요가 없는 곳(리포지토리를 목으로 바꾼 테스트 등)에서 쓴다.
+	 */
+	public DiscountCodeService(DiscountCodeRepository discountCodeRepository,
+		SubCategoryRepository subCategoryRepository) {
+		this(discountCodeRepository, subCategoryRepository, Clock.systemDefaultZone());
+	}
 
 	@Transactional(readOnly = true)
 	public DiscountCheckResponse checkDiscount(DiscountCheckRequest request) {
@@ -39,7 +60,7 @@ public class DiscountCodeService {
 				request.getDiscountCode())
 			.orElseThrow(() -> new PaymentException("유효하지 않은 코드입니다."));
 
-		discountCode.validate();
+		discountCode.validate(LocalDateTime.now(clock));
 
 		// 특정 상품에만 사용할 수 있는지 검증하는 로직
 		validateSubCategory(discountCode, request.getSubCategoryId());
@@ -71,7 +92,7 @@ public class DiscountCodeService {
 			.orElseThrow(() -> new PaymentException("유효하지 않은 코드입니다."));
 
 		// 3. 최종 검증 (락이 걸린 상태에서)
-		discountCode.validate();
+		discountCode.validate(LocalDateTime.now(clock));
 
 		// 3_1. 특정 상품에만 쓸 수 있는 코드인지 여기서도 검증 .
 		validateSubCategory(discountCode, subCategoryId);
@@ -122,25 +143,6 @@ public class DiscountCodeService {
 			.orElseThrow(() -> new PaymentException("존재하지 않는 할인 코드입니다."));
 		discountCode.incrementUsageAllowingOverflow();
 		return discountCode.exceedsMaxUses();
-	}
-
-	@Transactional
-	public DiscountCode createReviewRewardCode(Long userId, int discountAmount) {
-		// 1. 고유 코드 생성 (유일성 보장)
-		String uniqueCode = "리뷰감사쿠폰" + System.currentTimeMillis();
-
-		// 2. 만료일 설정 (30일 후)
-		LocalDateTime expiresAt = LocalDateTime.now().plusDays(30);
-
-		// 3. DiscountCode 엔티티의 정적 팩토리 메서드를 사용하여 객체 생성 및 초기화
-		DiscountCode rewardCode = DiscountCode.createReviewReward(
-			uniqueCode,
-			discountAmount,
-			expiresAt
-		);
-
-		// 4. 저장
-		return discountCodeRepository.save(rewardCode);
 	}
 
 	/**

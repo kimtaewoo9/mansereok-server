@@ -30,27 +30,32 @@ public class DiscountCode {
 	@Enumerated(EnumType.STRING)
 	private DiscountType discountType;
 
-	private int discountValue; // 할인 값 .
+	private int discountValue; // 정액이면 원, 정률이면 %
 
 	private LocalDateTime expiresAt; // 만료 일시
 
-	private int maxUses; //
-	private int currentUses; // 현재 사용 횟수 .
+	private int maxUses; // 최대 사용 횟수(선착순)
+	private int currentUses; // 현재 사용 횟수
 
-	private int minPurchaseAmount; // 최소 주문 금액.
-	private boolean isActive; // 현재 활성화 중인가.
+	private int minPurchaseAmount; // 최소 주문 금액
+	private boolean isActive; // 현재 활성화 중인가
 
 	@Column(name = "sub_category_id")
-	private Long subCategoryId; // 특정 상품(subCategory) ID. // null 이면 모든 상품 가능 .
+	private Long subCategoryId; // 특정 상품(subCategory) ID. null 이면 모든 상품 가능.
 
 	@Column(name = "category_id")
 	private Long categoryId; // 특정 카테고리 ID. null이면 모든 카테고리 가능.
 
-	public void validate() {
+	/**
+	 * 지금(now) 쓸 수 있는 코드인지 확인한다.
+	 *
+	 * @throws PaymentException 비활성이거나 만료 시각이 지났거나 사용 횟수가 최대 횟수에 닿았을 때
+	 */
+	public void validate(LocalDateTime now) {
 		if (!this.isActive) {
 			throw new PaymentException("비활성화된 코드입니다.");
 		}
-		if (this.expiresAt.isBefore(LocalDateTime.now())) {
+		if (this.expiresAt.isBefore(now)) {
 			throw new PaymentException("기간이 만료된 코드입니다.");
 		}
 		if (this.currentUses >= this.maxUses) {
@@ -58,34 +63,18 @@ public class DiscountCode {
 		}
 	}
 
+	/**
+	 * 원래 금액에 이 코드의 할인을 적용한 결제 금액. 계산 규칙은 쿠폰과 같고({@link DiscountPolicy}), 100% 정률 할인만 0원(무료)이
+	 * 된다.
+	 *
+	 * @throws PaymentException 원래 금액이 최소 주문 금액보다 적을 때, 할인을 적용해도 결제 금액이 원래 금액보다 싸지 않을 때
+	 */
 	public int applyDiscount(int originalAmount) {
-		if (originalAmount < this.minPurchaseAmount) {
-			throw new PaymentException("최소 주문 금액(" + this.minPurchaseAmount + "원)을 충족하지 못했습니다.");
-		} // 최소 주문 금액인 1000원이 넘어야함 . 애초에 설계를 1000원 미만으로 할인 못하게 해야함 .
-
-		int discountedAmount;
-		if (this.discountType == DiscountType.FIXED_AMOUNT) {
-			discountedAmount = originalAmount - this.discountValue;
-		} else if (this.discountType == DiscountType.PERCENTAGE) {
-			// 정률 계산 시 소수점 버림 (혹은 반올림 - 정책에 따라)
-			int discount = (int) Math.floor(originalAmount * (this.discountValue / 100.0));
-			discountedAmount = originalAmount - discount;
-		} else {
-			discountedAmount = originalAmount;
-		}
-
-		// 10원 단위로 가격 내림 .. (1의 자리 제거)
-		discountedAmount = (discountedAmount / 10) * 10;
-
-		// PERCENTAGE 100% 할인만 0원 허용 (무료 쿠폰)
-		if (this.discountType == DiscountType.PERCENTAGE && this.discountValue == 100) {
-			return 0;
-		}
-		// 그 외 할인은 최소 1000원 유지
-		return Math.max(1000, discountedAmount);
+		return DiscountPolicy.FULL_PERCENTAGE_IS_FREE.discountedAmount(originalAmount, this.discountType,
+			this.discountValue, this.minPurchaseAmount);
 	}
 
-	// 선착순 할인 . 할인 횟수 증가 !
+	// 주문을 만들 때 사용 횟수를 1 올린다. 호출자가 행을 잠근 채 validate 로 남은 횟수를 확인한 뒤 부른다.
 	public void incrementUsage() {
 		if (this.currentUses < this.maxUses) {
 			this.currentUses++;
@@ -109,22 +98,6 @@ public class DiscountCode {
 	/** 사용 횟수가 최대 횟수를 넘었으면 true. 최대 횟수와 같으면 넘은 것이 아니다. */
 	public boolean exceedsMaxUses() {
 		return this.currentUses > this.maxUses;
-	}
-
-	public static DiscountCode createReviewReward(String code, int discountAmount,
-		LocalDateTime expiresAt) {
-
-		DiscountCode discountCode = new DiscountCode();
-		discountCode.code = code;
-		discountCode.discountType = DiscountType.FIXED_AMOUNT;
-		discountCode.discountValue = discountAmount;
-		discountCode.expiresAt = expiresAt;
-		discountCode.maxUses = 1;
-		discountCode.currentUses = 0;
-		discountCode.minPurchaseAmount = 0;
-		discountCode.isActive = true;
-		discountCode.subCategoryId = null;
-		return discountCode;
 	}
 
 	public void decreaseUsage() {
