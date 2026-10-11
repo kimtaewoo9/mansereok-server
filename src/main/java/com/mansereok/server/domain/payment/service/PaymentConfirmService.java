@@ -124,8 +124,6 @@ public class PaymentConfirmService {
 		}
 
 		if (paymentStatus.get() == PaymentStatus.PAID) {
-			log.info("검증 완료. 주문 상태를 PAID로 변경합니다.");
-
 			// 주문 PAID 확정, Payment 저장, 연관관계 연결, 초기 Result 생성, 완료 이벤트 발행
 			paidOrderFinalizer.finalizePaid(
 				order,
@@ -134,8 +132,8 @@ public class PaymentConfirmService {
 				LocalDateTime.now()
 			);
 
-			log.info("completePayment에서 결제 처리 완료: orderId={}, paymentId={}",
-				order.getId(), paymentId);
+			log.info("결제 완료 API 로 결제 확정: orderId={}, paymentId={}, status={}",
+				order.getId(), paymentId, order.getStatus());
 
 			return order;  // 이제 PAID 상태로 반환
 		}

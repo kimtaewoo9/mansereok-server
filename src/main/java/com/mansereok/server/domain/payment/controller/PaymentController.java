@@ -4,6 +4,7 @@ import com.mansereok.server.domain.order.dto.request.OrderCreateRequest;
 import com.mansereok.server.domain.order.dto.response.OrderCreateResponse;
 import com.mansereok.server.domain.order.dto.response.OrderResponse;
 import com.mansereok.server.domain.order.entity.Order;
+import com.mansereok.server.domain.payment.client.PortOneWebhookVerifier;
 import com.mansereok.server.domain.payment.dto.request.PaymentCancelRequest;
 import com.mansereok.server.domain.payment.dto.request.PaymentCompleteRequest;
 import com.mansereok.server.domain.payment.dto.response.PaymentResponseDto;
@@ -12,12 +13,10 @@ import com.mansereok.server.domain.payment.service.PaymentQueryService;
 import com.mansereok.server.domain.payment.service.PaymentRefundService;
 import com.mansereok.server.domain.payment.service.PaymentService;
 import io.portone.sdk.server.errors.WebhookVerificationException;
-import io.portone.sdk.server.webhook.WebhookVerifier;
 import jakarta.validation.Valid;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -36,9 +35,7 @@ public class PaymentController {
 	private final PaymentConfirmService paymentConfirmService;
 	private final PaymentQueryService paymentQueryService;
 	private final PaymentRefundService paymentRefundService;
-
-	@Value("${portone.webhook.secret}")
-	private String webhookSecret;
+	private final PortOneWebhookVerifier webhookVerifier;
 
 	/**
 	 * 주문 생성 API (결제 전)
@@ -85,22 +82,16 @@ public class PaymentController {
 		long startTime = System.currentTimeMillis();
 
 		try {
-			log.info("웹훅 수신: webhookId={}", webhookId);
-
-			WebhookVerifier verifier = new WebhookVerifier(webhookSecret);
-			verifier.verify(body, webhookId, webhookSignature, webhookTimestamp);
-
-			log.info("웹훅 서명 검증 성공: webhookId={}", webhookId);
+			// 본문·서명·타임스탬프는 로그에 남기지 않는다 (본문에 구매자 정보가 실린다). 검증 실패는 핸들러가 warn 으로 남긴다.
+			webhookVerifier.verify(body, webhookId, webhookSignature, webhookTimestamp);
 
 			paymentService.processWebhook(body);
 
 			return ResponseEntity.ok().build();
 
 		} finally {
-			// 2. 종료 시간 기록 및 로그 출력
-			long endTime = System.currentTimeMillis();
-			long duration = endTime - startTime;
-			log.info("=== 웹훅 API 총 응답 시간: {}ms (ID: {}) ===", duration, webhookId); // 3. 결과 로그
+			long duration = System.currentTimeMillis() - startTime;
+			log.info("웹훅 처리 종료: webhookId={}, {}ms", webhookId, duration);
 		}
 	}
 

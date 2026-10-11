@@ -178,21 +178,9 @@ portone:
 
 # 결제 관련 설정
 payment:
-  webhook:
-    url: ${PAYMENT_WEBHOOK_URL:https://namedsaju.com/api/payment/webhook}  # 포트원 웹훅 URL
-  test-mode: ${PAYMENT_TEST_MODE:true}  # 테스트 모드 여부
   free-event:
     # 가격이 0원이 아니지만 이벤트로 무료 제공하는 SubCategory id 목록 (쉼표 구분). 비우면 가격 0원 상품만 무료.
     sub-category-ids: ${PAYMENT_FREE_EVENT_SUB_CATEGORY_IDS:}
-
-# 상품 가격 설정 (원화)
-product:
-  prices:
-    saju-basic: 10000      # 기본 사주 해석
-    saju-detail: 30000     # 상세 사주 해석
-    compatibility: 20000   # 궁합 분석
-    monthly-pass: 50000    # 월간 이용권
-    yearly-pass: 300000    # 연간 이용권
 
 # Slack
 slack:
