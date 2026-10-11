@@ -5,13 +5,16 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.Index;
 import jakarta.persistence.Table;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.ToString;
 
-@Table(name = "subcategories")
+// 상품 목록(findAllByCategoryId)이 쓰는 인덱스. 운영은 ddl-auto: validate 라 schema.sql 과 같은 이름으로 손으로 적용한다.
+@Table(name = "subcategories",
+	indexes = @Index(name = "idx_subcategories_category_id", columnList = "category_id"))
 @Entity
 @Getter
 @ToString
