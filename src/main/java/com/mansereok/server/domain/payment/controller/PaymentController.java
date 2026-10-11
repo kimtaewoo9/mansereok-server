@@ -68,7 +68,6 @@ public class PaymentController {
 		@Valid @RequestBody OrderCreateRequest request,
 		@AuthenticationPrincipal String username
 	) {
-		log.info("0원 결제 요청: username={}", username);
 		OrderCreateResponse response = paymentOrderService.redeemFreeProduct(username, request);
 		return ResponseEntity.ok(response);
 	}
@@ -124,7 +123,7 @@ public class PaymentController {
 		@PathVariable("paymentId") Long paymentPkId,
 		@AuthenticationPrincipal String username
 	) {
-		log.info("결제 PK 로 주문 조회 요청: username={}, paymentPkId={}", username, paymentPkId);
+		log.info("결제 PK 로 주문 조회 요청: paymentPkId={}", paymentPkId);
 		Order order = paymentQueryService.getOwnedOrderByPaymentPkId(paymentPkId, username);
 		return ResponseEntity.ok(OrderResponse.from(order));
 	}

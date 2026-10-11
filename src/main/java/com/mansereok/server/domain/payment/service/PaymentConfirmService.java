@@ -89,8 +89,7 @@ public class PaymentConfirmService {
 	 * @throws com.mansereok.server.global.exception.PortOneUnavailableException 포트원 일시 장애 (503, 트랜잭션 시작 전)
 	 */
 	public Order complete(String username, PaymentCompleteRequest request) {
-		log.info("결제 완료 요청 및 검증: username={}, paymentId={}, merchantUid={}",
-			username, request.getPaymentId(), request.getMerchantUid());
+		log.info("결제 완료 요청 및 검증: paymentId={}, merchantUid={}", request.getPaymentId(), request.getMerchantUid());
 
 		// 1. 트랜잭션 밖: 포트원 API 조회를 통한 2차 검증 자료. 요청과 다른 결제를 받아 왔으면 잠그기 전에 거부한다.
 		PortOnePaymentResponse paymentResponse = portOneClient.getPayment(request.getPaymentId());

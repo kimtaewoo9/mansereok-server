@@ -103,11 +103,11 @@ public class PaymentRefundService {
 			transactionTemplate.executeWithoutResult(status -> finalizeCancelled(impUid));
 		} catch (RuntimeException e) {
 			log.error("포트원 취소는 성공했지만 DB 확정에 실패해 CANCEL_REQUESTED 로 남습니다. 수동 확인 필요: "
-				+ "username={}, impUid={}, paymentPkId={}", username, impUid, paymentPkId, e);
+				+ "impUid={}, paymentPkId={}", impUid, paymentPkId, e);
 			throw e;
 		}
 
-		log.info("사용자 환불 완료: username={}, impUid={}, reason={}", username, impUid, reason);
+		log.info("사용자 환불 완료: impUid={}, paymentPkId={}, reason={}", impUid, paymentPkId, reason);
 	}
 
 	/**
@@ -171,7 +171,7 @@ public class PaymentRefundService {
 
 		// 9. 취소 요청 기록 (PAID 에서만 허용)
 		payment.markCancelRequested();
-		log.info("환불 취소 요청 기록: username={}, impUid={}, paymentPkId={}", username, impUid,
+		log.info("환불 취소 요청 기록: userId={}, impUid={}, paymentPkId={}", user.getId(), impUid,
 			payment.getId());
 		return payment.getId();
 	}

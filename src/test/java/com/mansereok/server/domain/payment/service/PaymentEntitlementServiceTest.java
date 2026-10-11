@@ -26,6 +26,8 @@ import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.test.util.ReflectionTestUtils;
 
 /**
@@ -38,7 +40,7 @@ import org.springframework.test.util.ReflectionTestUtils;
  * <p>사용자 id 는 Long 캐시(-128~127) 밖의 값을 쓴다. 운영 사용자 id 도 대부분 그렇다. Long.valueOf(자동 박싱)는 캐시 밖 값이면
  * 부를 때마다 새 객체를 만들어, 소유자 비교를 equals 대신 참조 비교로 바꾸면 본인 결제도 거부되어 테스트가 실패한다.
  */
-@ExtendWith(MockitoExtension.class)
+@ExtendWith({MockitoExtension.class, OutputCaptureExtension.class})
 class PaymentEntitlementServiceTest {
 
 	private static final String USERNAME = "testUser";
@@ -151,6 +153,21 @@ class PaymentEntitlementServiceTest {
 		void rejectsNullPaymentId() {
 			// when & then
 			assertRejectedWithoutStarting(null, PAID_PRODUCT_ID);
+		}
+
+		@Test
+		@DisplayName("거부 로그에는 요청자의 username 대신 회원 번호를 남긴다(이메일 가입자는 username 이 이메일이다)")
+		void rejectionLogHasUserIdInsteadOfUsername(CapturedOutput output) {
+			// given
+			givenLockedPayment(payment(PaymentStatus.PAID, 2000L, PAID_PRODUCT_ID));
+
+			// when
+			assertRejectedWithoutStarting(PAYMENT_PK_ID, PAID_PRODUCT_ID);
+
+			// then
+			assertThat(output.getAll())
+				.contains("유효하지 않은 결제로 해석 요청: userId=" + USER_ID)
+				.doesNotContain(USERNAME);
 		}
 
 		private void assertRejectedWithoutStarting(Long paymentPkId, Long subCategoryId) {
