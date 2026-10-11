@@ -8,6 +8,7 @@ import com.mansereok.server.domain.payment.dto.request.PaymentCancelRequest;
 import com.mansereok.server.domain.payment.dto.request.PaymentCompleteRequest;
 import com.mansereok.server.domain.payment.dto.response.PaymentResponseDto;
 import com.mansereok.server.domain.payment.service.PaymentQueryService;
+import com.mansereok.server.domain.payment.service.PaymentRefundService;
 import com.mansereok.server.domain.payment.service.PaymentService;
 import io.portone.sdk.server.errors.WebhookVerificationException;
 import io.portone.sdk.server.webhook.WebhookVerifier;
@@ -32,6 +33,7 @@ public class PaymentController {
 
 	private final PaymentService paymentService;
 	private final PaymentQueryService paymentQueryService;
+	private final PaymentRefundService paymentRefundService;
 
 	@Value("${portone.webhook.secret}")
 	private String webhookSecret;
@@ -132,7 +134,7 @@ public class PaymentController {
 		@Valid @RequestBody PaymentCancelRequest request,
 		@AuthenticationPrincipal String username
 	) {
-		paymentService.cancelPayment(username, request.getPaymentId(), request.getReason());
+		paymentRefundService.cancel(username, request.getPaymentId(), request.getReason());
 		return ResponseEntity.ok("환불이 정상적으로 처리되었습니다.");
 	}
 }

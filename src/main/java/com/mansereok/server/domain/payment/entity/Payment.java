@@ -61,14 +61,39 @@ public class Payment {
 	}
 
 	/**
-	 * 결제를 취소 상태로 표시한다. PAID 에서만 허용되고, 아니면 OrderStateException 을 던진다.
+	 * 환불 진행 중임을 기록한다. 포트원 취소 API 를 부르기 전에 커밋해 두는 흔적이다. PAID 에서만 허용된다.
 	 */
-	public void markCancelled() {
+	public void markCancelRequested() {
 		if (this.status != PaymentStatus.PAID) {
 			throw new OrderStateException(
-				String.format("결제 상태가 PAID 가 아니라 취소할 수 없습니다. 현재 상태=%s, impUid=%s",
+				String.format("결제 상태가 PAID 가 아니라 취소 요청할 수 없습니다. 현재 상태=%s, impUid=%s",
+					this.status, this.impUid));
+		}
+		this.status = PaymentStatus.CANCEL_REQUESTED;
+	}
+
+	/**
+	 * 결제를 취소 상태로 표시한다. CANCEL_REQUESTED(정상 환불 흐름) 또는 PAID 에서만 허용되고, 아니면
+	 * OrderStateException 을 던진다.
+	 */
+	public void markCancelled() {
+		if (this.status != PaymentStatus.PAID && this.status != PaymentStatus.CANCEL_REQUESTED) {
+			throw new OrderStateException(
+				String.format("결제 상태가 PAID 또는 CANCEL_REQUESTED 가 아니라 취소할 수 없습니다. 현재 상태=%s, impUid=%s",
 					this.status, this.impUid));
 		}
 		this.status = PaymentStatus.CANCELLED;
+	}
+
+	/**
+	 * 포트원 취소가 실패했을 때 취소 요청을 되돌린다. CANCEL_REQUESTED 에서만 PAID 로 돌아간다.
+	 */
+	public void revertCancelRequest() {
+		if (this.status != PaymentStatus.CANCEL_REQUESTED) {
+			throw new OrderStateException(
+				String.format("결제 상태가 CANCEL_REQUESTED 가 아니라 취소 요청을 되돌릴 수 없습니다. 현재 상태=%s, impUid=%s",
+					this.status, this.impUid));
+		}
+		this.status = PaymentStatus.PAID;
 	}
 }

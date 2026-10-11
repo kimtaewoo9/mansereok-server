@@ -11,6 +11,7 @@ import com.mansereok.server.domain.product.entity.SubCategory;
 import com.mansereok.server.domain.product.repository.SubCategoryRepository;
 import com.mansereok.server.global.exception.PaymentException;
 import jakarta.persistence.EntityNotFoundException;
+import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -70,6 +71,60 @@ public class ResultService {
 			} else {
 				log.warn("이미 paymentId(PK) {}에 해당하는 Result가 존재하여 생성을 건너 뜁니다.", paymentPkId);
 			}
+		}
+	}
+
+	/**
+	 * 결제에 딸린 결과의 상태를 돌려준다. 일반 사주(Result)를 먼저 보고, 없으면 궁합(CompatibilityResult)을 본다.
+	 * 둘 다 없으면 빈 Optional 이다.
+	 */
+	@Transactional(readOnly = true)
+	public Optional<ResultStatus> findStatusByPaymentId(Long paymentPkId) {
+		Optional<ResultStatus> status = resultRepository.findByPaymentId(paymentPkId)
+			.map(Result::getStatus);
+		if (status.isPresent()) {
+			return status;
+		}
+		return compatibilityResultRepository.findByPaymentId(paymentPkId)
+			.map(CompatibilityResult::getStatus);
+	}
+
+	/**
+	 * 환불 확정 시 정보 입력 전(INPUT_REQUIRED)의 초기 결과를 지운다. 일반 사주(Result)와 궁합(CompatibilityResult)
+	 * 중 존재하는 쪽을 삭제한다.
+	 *
+	 * @throws IllegalStateException 결과가 INPUT_REQUIRED 가 아니거나(해석이 이미 진행됨) 둘 다 없을 때
+	 */
+	public void deleteInitialResult(Long paymentPkId) {
+		Optional<Result> result = resultRepository.findByPaymentId(paymentPkId);
+		if (result.isPresent()) {
+			assertInputRequired(result.get().getStatus(), paymentPkId, "Result");
+			resultRepository.delete(result.get());
+			log.info("초기 Result 삭제: paymentId(PK)={}, resultId={}", paymentPkId,
+				result.get().getId());
+			return;
+		}
+
+		Optional<CompatibilityResult> compatibilityResult =
+			compatibilityResultRepository.findByPaymentId(paymentPkId);
+		if (compatibilityResult.isPresent()) {
+			assertInputRequired(compatibilityResult.get().getStatus(), paymentPkId,
+				"CompatibilityResult");
+			compatibilityResultRepository.delete(compatibilityResult.get());
+			log.info("초기 CompatibilityResult 삭제: paymentId(PK)={}, resultId={}", paymentPkId,
+				compatibilityResult.get().getId());
+			return;
+		}
+
+		throw new IllegalStateException(
+			"삭제할 초기 결과가 없습니다. paymentId(PK)=" + paymentPkId);
+	}
+
+	private static void assertInputRequired(ResultStatus status, Long paymentPkId, String kind) {
+		if (status != ResultStatus.INPUT_REQUIRED) {
+			throw new IllegalStateException(String.format(
+				"정보 입력 전(INPUT_REQUIRED)의 %s 만 삭제할 수 있습니다. paymentId(PK)=%s, status=%s",
+				kind, paymentPkId, status));
 		}
 	}
 

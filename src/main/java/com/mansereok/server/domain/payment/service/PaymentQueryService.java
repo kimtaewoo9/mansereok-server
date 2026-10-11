@@ -1,7 +1,9 @@
 package com.mansereok.server.domain.payment.service;
 
+import com.mansereok.server.domain.interpret.entity.CompatibilityResult;
 import com.mansereok.server.domain.interpret.entity.Result;
 import com.mansereok.server.domain.interpret.entity.ResultStatus;
+import com.mansereok.server.domain.interpret.repository.CompatibilityResultRepository;
 import com.mansereok.server.domain.interpret.repository.ResultRepository;
 import com.mansereok.server.domain.order.entity.Order;
 import com.mansereok.server.domain.order.repository.OrderRepository;
@@ -11,6 +13,7 @@ import com.mansereok.server.domain.payment.repository.PaymentRepository;
 import com.mansereok.server.domain.user.entity.User;
 import com.mansereok.server.domain.user.repository.UserRepository;
 import jakarta.persistence.EntityNotFoundException;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -38,6 +41,7 @@ public class PaymentQueryService {
 	private final UserRepository userRepository;
 	private final PaymentRepository paymentRepository;
 	private final ResultRepository resultRepository;
+	private final CompatibilityResultRepository compatibilityResultRepository;
 
 	/**
 	 * 요청자 본인의 주문을 PK 로 조회한다.
@@ -79,14 +83,17 @@ public class PaymentQueryService {
 		// 1. 조회된 결제들의 ID 목록 추출
 		List<Long> paymentIds = payments.stream().map(Payment::getId).toList();
 
-		// 2. Result 를 한 번에 조회
-		List<Result> results = resultRepository.findByPaymentIdIn(paymentIds);
+		// 2. 일반 사주(Result)와 궁합(CompatibilityResult)의 상태를 한 번씩 조회해 합친다 (paymentId -> ResultStatus).
+		//    같은 결제에 둘 다 있을 일은 없지만, 있다면 ResultService.findStatusByPaymentId 와 같이 Result 가 우선한다.
+		Map<Long, ResultStatus> statusMap = new HashMap<>();
+		for (Result result : resultRepository.findByPaymentIdIn(paymentIds)) {
+			statusMap.put(result.getPaymentId(), result.getStatus());
+		}
+		for (CompatibilityResult result : compatibilityResultRepository.findByPaymentIdIn(paymentIds)) {
+			statusMap.putIfAbsent(result.getPaymentId(), result.getStatus());
+		}
 
-		// 3. 매핑 편의를 위해 Map 으로 변환 (paymentId -> ResultStatus)
-		Map<Long, ResultStatus> statusMap = results.stream()
-			.collect(Collectors.toMap(Result::getPaymentId, Result::getStatus));
-
-		// 4. 조립
+		// 3. 조립
 		return payments.stream().map(payment -> {
 			ResultStatus status = statusMap.get(payment.getId());
 			return PaymentResponseDto.create(payment, status);
