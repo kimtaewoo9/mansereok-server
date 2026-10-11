@@ -38,7 +38,7 @@ public record WebhookCustomData(String merchantUid) {
 		} catch (JsonProcessingException e) {
 			// customData 는 프론트가 임의 필드를 실을 수 있는 자유 형식이라 원문 대신 길이만 남긴다
 			log.error("customData 문자열 JSON 파싱 실패! length={}", customData.length(), e);
-			throw new PaymentException("결제 API 응답의 customData 파싱 중 오류 발생");
+			throw new PaymentException("결제 API 응답의 customData 파싱 중 오류 발생", e);
 		}
 
 		JsonNode merchantUidNode = json.get(MERCHANT_UID_FIELD);

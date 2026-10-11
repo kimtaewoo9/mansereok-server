@@ -24,10 +24,13 @@ import org.springframework.transaction.support.TransactionTemplate;
  * 결제 완료 API 의 확정 절차. 포트원 조회를 트랜잭션(주문 행 락) 밖으로 빼고, 잠금 구간에는 DB 작업만 남긴다.
  *
  * <ol>
- *   <li>트랜잭션 밖: 포트원 결제 조회. 타임아웃 없는 외부 호출이 행 락과 DB 커넥션 점유 시간이 되지 않게 한다.</li>
+ *   <li>트랜잭션 밖: 포트원 결제 조회 → 결제 ID 대조. 타임아웃 없는 외부 호출이 행 락과 DB 커넥션 점유 시간이 되지 않게 하고,
+ *       요청과 다른 결제를 받아 왔으면 주문을 잠그기 전에 거부한다.</li>
  *   <li>트랜잭션 안: 잠금 조회 → 소유자 검사 → PAID 멱등 반환 → 결제 중복 검사 → customData 대조 → 금액 검증
  *       → 상태 매핑 → 확정({@link PaidOrderFinalizer#finalizePaid}).</li>
  * </ol>
+ *
+ * <p>결제 ID 대조를 통과한 뒤에는 요청값이 아니라 포트원 응답의 결제 ID 로 중복을 검사하고 Payment.impUid 에 저장한다.
  *
  * <p>클래스 수준 {@code @Transactional} 을 쓰지 않고 {@link TransactionTemplate} 으로 경계를 명시한다. Discord 알림은
  * finalizePaid 가 발행한 이벤트를 커밋 뒤 비동기 리스너가 받아 보낸다.
@@ -69,15 +72,17 @@ public class PaymentConfirmService {
 	 * 결제 완료 검증·확정. 클라이언트가 보낸 paymentId 와 merchantUid 를 그대로 믿지 않는다.
 	 *
 	 * @throws AccessDeniedException 요청자가 주문 소유자가 아닐 때 (403)
-	 * @throws PaymentException      사용자 없음 · 주문 없음 · 결제 중복 · 주문 번호 불일치 · 금액 불일치 (400)
+	 * @throws PaymentException      결제 ID 불일치 · 사용자 없음 · 주문 없음 · 결제 중복 · customData 없음 · 주문 번호 불일치
+	 *                               · 금액 불일치 (400)
 	 * @throws com.mansereok.server.global.exception.PortOneUnavailableException 포트원 일시 장애 (503, 트랜잭션 시작 전)
 	 */
 	public Order complete(String username, PaymentCompleteRequest request) {
 		log.info("결제 완료 요청 및 검증: username={}, paymentId={}, merchantUid={}",
 			username, request.getPaymentId(), request.getMerchantUid());
 
-		// 1. 트랜잭션 밖: 포트원 API 조회를 통한 2차 검증 자료
+		// 1. 트랜잭션 밖: 포트원 API 조회를 통한 2차 검증 자료. 요청과 다른 결제를 받아 왔으면 잠그기 전에 거부한다.
 		PortOnePaymentResponse paymentResponse = portOneClient.getPayment(request.getPaymentId());
+		paymentVerifier.assertPaymentIdMatches(request.getPaymentId(), paymentResponse);
 
 		// 2. 트랜잭션 안: 잠금·검증·확정
 		return transactionTemplate.execute(status -> confirm(username, request, paymentResponse));
@@ -85,7 +90,8 @@ public class PaymentConfirmService {
 
 	private Order confirm(String username, PaymentCompleteRequest request,
 		PortOnePaymentResponse paymentResponse) {
-		String paymentId = request.getPaymentId();
+		// complete 에서 요청값과 대조를 마친 포트원 결제 ID. 중복 검사와 Payment.impUid 저장에 쓴다.
+		String paymentId = paymentResponse.getId();
 
 		User user = userRepository.findByUsername(username)
 			.orElseThrow(() -> new PaymentException("사용자를 찾을 수 없습니다."));

@@ -136,25 +136,29 @@ class PaymentConfirmServiceTest {
 		return order;
 	}
 
+	/** 이 주문(MERCHANT_UID)을 customData 에 담은 결제 PAYMENT_ID 의 포트원 응답. */
 	private PortOnePaymentResponse portOneResponse(String status, long total) {
+		return portOneResponse(PAYMENT_ID, status, total);
+	}
+
+	private PortOnePaymentResponse portOneResponse(String paymentId, String status, long total) {
 		PortOnePaymentResponse response = new PortOnePaymentResponse();
-		response.setId(PAYMENT_ID);
+		response.setId(paymentId);
 		response.setStatus(status);
 		PortOnePaymentResponse.Amount amount = new PortOnePaymentResponse.Amount();
 		amount.setTotal(total);
 		response.setAmount(amount);
-		return response;
-	}
-
-	private PortOnePaymentResponse portOneResponseWithCustomData(String status, long total) {
-		PortOnePaymentResponse response = portOneResponse(status, total);
 		response.setCustomData(CUSTOM_DATA);
 		return response;
 	}
 
 	private static PaymentCompleteRequest completeRequest() {
+		return completeRequest(PAYMENT_ID);
+	}
+
+	private static PaymentCompleteRequest completeRequest(String paymentId) {
 		PaymentCompleteRequest request = new PaymentCompleteRequest();
-		request.setPaymentId(PAYMENT_ID);
+		request.setPaymentId(paymentId);
 		request.setMerchantUid(MERCHANT_UID);
 		return request;
 	}
@@ -582,7 +586,7 @@ class PaymentConfirmServiceTest {
 		Order order = createOrder(OrderStatus.PENDING);
 		givenLockedOrder(order);
 		givenNoDuplicatePayment();
-		givenPortOneReturns(portOneResponseWithCustomData("PAID", PRICE));
+		givenPortOneReturns(portOneResponse("PAID", PRICE));
 		givenOrderSaveReturnsArgument();
 		givenPaymentSaveAssignsId();
 
@@ -599,9 +603,9 @@ class PaymentConfirmServiceTest {
 	@ParameterizedTest(name = "customData={0}")
 	@NullSource
 	@ValueSource(strings = {"", "   "})
-	@DisplayName("포트원 customData 가 비어 있으면 주문 번호 대조를 건너뛰고(하위 호환) 정상적으로 PAID 처리된다")
-	void complete_blankCustomData_skipsMerchantUidCheck(String customData) {
-		// given
+	@DisplayName("포트원 customData 가 비어 있으면 주문 번호 대조를 건너뛰지 않고 '결제 정보에 주문 번호가 없습니다.' PaymentException 으로 거부하며 주문·Payment 는 바뀌지 않는다")
+	void complete_blankCustomData_throwsAndSavesNothing(String customData) {
+		// given: customData 는 결제를 만드는 브라우저가 정하는 값이라, 비워 두면 주문 번호 대조를 피할 수 있었다
 		givenRequester();
 		Order order = createOrder(OrderStatus.PENDING);
 		givenLockedOrder(order);
@@ -609,17 +613,34 @@ class PaymentConfirmServiceTest {
 		PortOnePaymentResponse response = portOneResponse("PAID", PRICE);
 		response.setCustomData(customData);
 		givenPortOneReturns(response);
-		givenOrderSaveReturnsArgument();
-		givenPaymentSaveAssignsId();
 
-		// when
-		Order result = paymentConfirmService.complete(USERNAME, completeRequest());
+		// when & then
+		assertThatThrownBy(() -> paymentConfirmService.complete(USERNAME, completeRequest()))
+			.isInstanceOf(PaymentException.class)
+			.hasMessage("결제 정보에 주문 번호가 없습니다.");
 
-		// then
-		assertThat(result.getStatus()).isEqualTo(OrderStatus.PAID);
-		assertThat(result.getPaymentId()).isEqualTo(PAYMENT_ID);
-		verify(paymentRepository).save(any(Payment.class));
-		verify(resultService).createInitialResult(any(Payment.class), eq(order));
+		assertThat(order.getStatus()).isEqualTo(OrderStatus.PENDING);
+		assertThat(order.getPaymentId()).isNull();
+		verify(paymentRepository, never()).save(any(Payment.class));
+		verify(orderRepository, never()).save(any(Order.class));
+		verifyNoInteractions(resultService, eventPublisher);
+	}
+
+	// ===== 결제 ID 대조 =====
+
+	@Test
+	@DisplayName("'pay_A#1' 로 요청했는데 포트원이 결제 pay_A 를 돌려주면 '결제 정보의 결제 ID가 일치하지 않습니다.' 로 거부하고 주문을 잠그거나 확정하지 않는다")
+	void complete_responsePaymentIdDiffersFromRequest_throwsBeforeLockingOrder() {
+		// given: 조회 주소에서 '#' 뒤가 잘려 포트원이 다른 결제(pay_A)를 돌려준 상황. 금액·customData 는 모두 맞다.
+		given(portOneClient.getPayment("pay_A#1")).willReturn(portOneResponse("pay_A", "PAID", PRICE));
+
+		// when & then
+		assertThatThrownBy(() -> paymentConfirmService.complete(USERNAME, completeRequest("pay_A#1")))
+			.isInstanceOf(PaymentException.class)
+			.hasMessage("결제 정보의 결제 ID가 일치하지 않습니다.");
+
+		verifyNoInteractions(transactionManager, userRepository, orderRepository, paymentRepository,
+			resultService, eventPublisher);
 	}
 
 	@Test
