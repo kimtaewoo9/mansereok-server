@@ -49,6 +49,10 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 @ContextConfiguration(initializers = LocalMySqlTest.ConfiguredDatabaseCheck.class)
 public abstract class LocalMySqlTest {
 
+	private static final String LOCK_WAITS_IN_THIS_SCHEMA = "SELECT COUNT(*) FROM performance_schema.data_lock_waits w "
+		+ "JOIN performance_schema.data_locks l ON l.ENGINE_LOCK_ID = w.REQUESTING_ENGINE_LOCK_ID "
+		+ "WHERE l.OBJECT_SCHEMA = DATABASE()";
+
 	@MockitoBean
 	protected DiscordNotificationService discordNotificationService;
 
@@ -73,6 +77,23 @@ public abstract class LocalMySqlTest {
 			(ConnectionCallback<String>) connection -> connection.getMetaData().getURL());
 		String schemaName = jdbcTemplate.queryForObject("SELECT DATABASE()", String.class);
 		LocalDatabaseGuard.check(jdbcUrl, schemaName);
+	}
+
+	/**
+	 * 이 스키마의 표 table 에서 행 잠금을 기다리는 요청 수. 요청이 그 표의 행 잠금을 기다리기 시작했는지 볼 때 쓴다.
+	 */
+	protected final int lockWaitsOn(String table) {
+		Integer waits = jdbcTemplate.queryForObject(LOCK_WAITS_IN_THIS_SCHEMA + " AND l.OBJECT_NAME = ?", Integer.class,
+			table);
+		return waits == null ? 0 : waits;
+	}
+
+	/**
+	 * 이 스키마의 모든 표에서 행 잠금을 기다리는 요청 수. 어느 표에서 기다리는지 가리지 않을 때만 쓴다.
+	 */
+	protected final int lockWaitsInThisSchema() {
+		Integer waits = jdbcTemplate.queryForObject(LOCK_WAITS_IN_THIS_SCHEMA, Integer.class);
+		return waits == null ? 0 : waits;
 	}
 
 	/**
