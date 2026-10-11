@@ -22,7 +22,6 @@ import com.mansereok.server.domain.order.repository.OrderRepository;
 import com.mansereok.server.domain.order.service.OrderDiscountRestorer;
 import com.mansereok.server.domain.payment.client.PortOneClient;
 import com.mansereok.server.domain.payment.dto.request.PaymentCompleteRequest;
-import com.mansereok.server.domain.payment.dto.response.PaymentResponseDto;
 import com.mansereok.server.domain.payment.dto.response.PortOnePaymentResponse;
 import com.mansereok.server.domain.payment.dto.response.PortoneWebhookDto;
 import com.mansereok.server.domain.payment.entity.Payment;
@@ -35,11 +34,8 @@ import com.mansereok.server.domain.user.repository.UserRepository;
 import com.mansereok.server.global.exception.PaymentException;
 import jakarta.persistence.EntityNotFoundException;
 import java.time.LocalDateTime;
-import java.util.List;
-import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
-import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -482,36 +478,6 @@ public class PaymentService {
 			log.error("웹훅 처리 중 에러", e);
 			throw new PaymentException("웹훅 처리 실패: " + e.getMessage());
 		}
-	}
-
-	@Transactional(readOnly = true)
-	public Payment getPayment(Long paymentId) {
-		return paymentRepository.findById(paymentId).orElseThrow(EntityNotFoundException::new);
-	}
-
-	@Transactional(readOnly = true)
-	public List<PaymentResponseDto> getPayments(String username) {
-		User user = userRepository.findByUsername(username)
-			.orElseThrow(() -> new IllegalArgumentException("사용자를 찾을 수 없습니다."));
-
-		List<Payment> payments = paymentRepository.findAllByUserIdOrderByCreatedAtDesc(
-			user.getId());
-
-		// 1. 조회된 결제들의 ID 목록 추출
-		List<Long> paymentIds = payments.stream().map(Payment::getId).toList();
-
-		// 2. ResultRepository에 findByPaymentIdIn(List<Long> ids) 메서드를 만들어 한 번에 조회
-		List<Result> results = resultRepository.findByPaymentIdIn(paymentIds);
-
-		// 3. 매핑 편의를 위해 Map으로 변환 (paymentId -> ResultStatus)
-		Map<Long, ResultStatus> statusMap = results.stream()
-			.collect(Collectors.toMap(Result::getPaymentId, Result::getStatus));
-
-		// 4. 조립
-		return payments.stream().map(payment -> {
-			ResultStatus status = statusMap.get(payment.getId());
-			return PaymentResponseDto.create(payment, status);
-		}).collect(Collectors.toList());
 	}
 
 	// ... 기존 메서드들 ...
