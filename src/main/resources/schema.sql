@@ -209,6 +209,69 @@ CREATE TABLE `subcategories` (
                                  PRIMARY KEY (`id`)
 );
 
+-- 아래 세 표(coupon_templates, coupons, discount_codes)는 운영 SHOW CREATE TABLE 결과가 아니다. 로컬 MySQL 8.0 에서 ddl-auto 로
+-- 만든 표를 엔티티 필드 순서로 옮겨 적고, 운영에 손으로 적용하는 DDL(uk_coupons_user_template, current_issue_count 의 NOT NULL
+-- DEFAULT 0)을 더한 것이다. discount_codes.code 의 UNIQUE 이름은 운영마다 다를 수 있어 컬럼 끝의 UNIQUE 로만 적는다.
+-- 컬럼과 제약 이름이 엔티티와 맞는지는 PaymentSchemaSqlTest 가 본다.
+
+-- coupon_templates 테이블 (선착순 쿠폰 이벤트)
+CREATE TABLE `coupon_templates` (
+                                    `id` BIGINT NOT NULL AUTO_INCREMENT,
+                                    `name` VARCHAR(255),
+                                    `description` VARCHAR(255),
+                                    `discount_type` ENUM('FIXED_AMOUNT', 'PERCENTAGE'),
+                                    `discount_value` INT NOT NULL,
+                                    `min_purchase_amount` INT NOT NULL,
+                                    `issue_start_date` DATETIME(6),
+                                    `issue_end_date` DATETIME(6),
+                                    `valid_days_after_issue` INT,
+                                    `valid_until` DATETIME(6),
+    -- 선착순 상한. NULL 이면 무제한이다.
+                                    `max_issue_count` INT,
+    -- 지금까지 발급한 수. 템플릿을 SQL 로 넣을 때 비워 두면 0 이 된다. NULL 이면 이벤트 목록 전체가 실패하므로 NULL 을 허용하지 않는다.
+                                    `current_issue_count` INT NOT NULL DEFAULT 0,
+                                    `max_count_per_user` INT NOT NULL,
+
+                                    PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- coupons 테이블 (사용자에게 발급한 쿠폰)
+CREATE TABLE `coupons` (
+                           `id` BIGINT NOT NULL AUTO_INCREMENT,
+                           `user_id` BIGINT NOT NULL,
+                           `name` VARCHAR(255),
+                           `discount_type` ENUM('FIXED_AMOUNT', 'PERCENTAGE'),
+                           `discount_value` INT NOT NULL,
+                           `min_purchase_amount` INT NOT NULL,
+                           `expires_at` DATETIME(6),
+                           `is_used` BIT(1) NOT NULL,
+                           `used_at` DATETIME(6),
+                           `template_id` BIGINT,
+
+                           PRIMARY KEY (`id`),
+    -- 한 사용자는 한 템플릿의 쿠폰을 한 장만 갖는다. 템플릿 행 잠금을 거치지 않은 발급도 DB 가 마지막으로 막는다.
+    -- user_id 를 앞에 두어 user_id 로만 거르는 내 쿠폰함 조회도 이 인덱스를 쓴다.
+                           UNIQUE KEY `uk_coupons_user_template` (`user_id`, `template_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- discount_codes 테이블 (할인 코드)
+CREATE TABLE `discount_codes` (
+                                  `id` BIGINT NOT NULL AUTO_INCREMENT,
+                                  `code` VARCHAR(255) NOT NULL UNIQUE,
+                                  `discount_type` ENUM('FIXED_AMOUNT', 'PERCENTAGE'),
+                                  `discount_value` INT NOT NULL,
+                                  `expires_at` DATETIME(6),
+                                  `max_uses` INT NOT NULL,
+                                  `current_uses` INT NOT NULL,
+                                  `min_purchase_amount` INT NOT NULL,
+                                  `is_active` BIT(1) NOT NULL,
+    -- 특정 상품·카테고리 전용 코드. NULL 이면 제한 없음.
+                                  `sub_category_id` BIGINT,
+                                  `category_id` BIGINT,
+
+                                  PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 
 -- 인덱스 생성 (검색 성능 최적화)
 CREATE INDEX idx_manses_solar_date ON manses(solar_date);

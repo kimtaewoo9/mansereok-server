@@ -7,18 +7,22 @@ import com.mansereok.server.domain.coupon.repository.CouponRepository;
 import com.mansereok.server.domain.coupon.repository.CouponTemplateRepository;
 import com.mansereok.server.domain.discount.service.DiscountCodeService.DiscountValidationResult;
 import com.mansereok.server.global.exception.PaymentException;
+import com.mansereok.server.global.exception.UniqueConstraintViolations;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class CouponService {
 
 	private final CouponRepository couponRepository;
@@ -41,12 +45,35 @@ public class CouponService {
 			throw new PaymentException("이미 발급받은 쿠폰입니다.");
 		}
 
-		// 4. 선착순 재고 증가 및 검증 (Template 엔티티 내부 로직)
+		// 4. 선착순 재고 증가 및 검증 (Template 엔티티 내부 로직). 상한에 닿았으면 CouponSoldOutException(400)
 		template.incrementIssueCount();
 
 		// 5. 실제 쿠폰 생성 및 저장
 		Coupon coupon = Coupon.createFromTemplate(template, userId);
-		couponRepository.save(coupon);
+		saveIssuedCoupon(coupon);
+	}
+
+	/**
+	 * 발급한 쿠폰을 저장한다. 3번 확인과 이 INSERT 사이에 템플릿 잠금을 거치지 않은 경로로 같은 사용자·템플릿 쿠폰이 먼저 들어가
+	 * 있으면 uk_coupons_user_template 에 걸린다. 그 UNIQUE 위반은 3번 확인과 같은 PaymentException("이미 발급받은
+	 * 쿠폰입니다.")(400)으로 바꿔 던진다. NOT NULL·길이 초과 같은 다른 무결성 위반은 "이미 받았다" 는 안내가 틀리므로 그대로
+	 * 던진다(500). 어느 쪽이든 예외를 다시 던지므로 올린 발급 수와 함께 트랜잭션이 롤백된다.
+	 *
+	 * <p>Coupon 의 id 는 IDENTITY 라 save 도 곧바로 INSERT 하지만, 그 전제에 기대지 않고 위반을 이 자리에서 받으려고
+	 * saveAndFlush 로 바로 보낸다. INSERT 가 커밋 때로 미뤄지면 트랜잭션을 끝내는 쪽에서 예외가 나서 여기서 바꿀 수 없다.
+	 */
+	private void saveIssuedCoupon(Coupon coupon) {
+		try {
+			couponRepository.saveAndFlush(coupon);
+		} catch (DataIntegrityViolationException e) {
+			if (!UniqueConstraintViolations.isUniqueViolation(e)) {
+				throw e;
+			}
+			// 템플릿 잠금 아래에서는 일어나지 않아야 하는 일이라, 잠금을 거치지 않은 경로를 찾을 수 있게 남긴다.
+			log.warn("이미 같은 템플릿의 쿠폰이 있어 저장하지 못했습니다(UNIQUE 위반): userId={}, templateId={}",
+				coupon.getUserId(), coupon.getTemplateId());
+			throw new PaymentException("이미 발급받은 쿠폰입니다.", e);
+		}
 	}
 
 	// 내 쿠폰함 조회
@@ -131,8 +158,7 @@ public class CouponService {
 			.map(row -> {
 				CouponTemplate t = (CouponTemplate) row[0];
 				boolean isIssued = (boolean) row[1];
-				boolean isSoldOut = t.getMaxIssueCount() != null &&
-					t.getCurrentIssueCount() >= t.getMaxIssueCount();
+				boolean isSoldOut = t.isSoldOut();
 
 				// [수정됨] 유효 기간 텍스트 계산 로직
 				String validPeriod;
