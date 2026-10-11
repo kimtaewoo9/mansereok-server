@@ -2,6 +2,7 @@ package com.mansereok.server.support;
 
 import static java.util.concurrent.TimeUnit.NANOSECONDS;
 import static java.util.concurrent.TimeUnit.SECONDS;
+import static java.util.stream.Collectors.joining;
 
 import java.time.Duration;
 import java.util.ArrayList;
@@ -145,12 +146,27 @@ public final class ConcurrentCalls {
 	}
 
 	/**
+	 * 실패 메시지에 넣을 요청별 결과를 요청 순서대로 한 줄로 만든다.
+	 * 예: "요청별 결과 [성공, CouponSoldOutException(선착순 마감되었습니다.), ...]"
+	 */
+	public static String describe(List<? extends CallResult<?>> results) {
+		return results.stream()
+			.map(CallResult::describe)
+			.collect(joining(", ", "요청별 결과 [", "]"));
+	}
+
+	/**
 	 * 요청 하나의 결과. 작업이 값을 돌려주면 error 가 null 이고, 예외를 던지면 그 예외가 error 에 담긴다.
 	 */
 	public record CallResult<T>(T value, Throwable error) {
 
 		public boolean succeeded() {
 			return error == null;
+		}
+
+		/** 실패 메시지에 넣을 이 요청의 결과. 성공이면 "성공", 실패면 "예외 클래스 이름(예외 메시지)". */
+		public String describe() {
+			return succeeded() ? "성공" : error.getClass().getSimpleName() + "(" + error.getMessage() + ")";
 		}
 	}
 }

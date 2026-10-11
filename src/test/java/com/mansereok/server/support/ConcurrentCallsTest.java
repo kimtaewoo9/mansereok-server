@@ -149,6 +149,27 @@ class ConcurrentCallsTest {
 		}
 	}
 
+	@Nested
+	@DisplayName("실패 메시지에 넣을 요청별 결과")
+	class DescribingResults {
+
+		@Test
+		@DisplayName("성공은 '성공', 실패는 '예외 클래스 이름(예외 메시지)' 로 적어 요청 순서대로 한 줄에 묶는다")
+		void describesEachResultInRequestOrder() {
+			// given: 값이 없는 성공(Void 작업)도 성공으로 적는다
+			List<CallResult<String>> results = List.of(
+				new CallResult<>("요청 0", null),
+				new CallResult<>(null, new IllegalStateException("요청 1 실패")),
+				new CallResult<>(null, null));
+
+			// when
+			String description = ConcurrentCalls.describe(results);
+
+			// then
+			assertThat(description).isEqualTo("요청별 결과 [성공, IllegalStateException(요청 1 실패), 성공]");
+		}
+	}
+
 	@Test
 	@DisplayName("동시 요청 수가 1보다 작으면 스레드를 만들지 않고 거절한다")
 	void rejectsCountBelowOne() {
