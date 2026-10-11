@@ -6,6 +6,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.willThrow;
 import static org.mockito.Mockito.atLeastOnce;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -29,6 +30,7 @@ import com.mansereok.server.domain.order.dto.response.OrderCreateResponse;
 import com.mansereok.server.domain.order.entity.Order;
 import com.mansereok.server.domain.order.entity.OrderStatus;
 import com.mansereok.server.domain.order.repository.OrderRepository;
+import com.mansereok.server.domain.order.service.OrderDiscountRestorer;
 import com.mansereok.server.domain.payment.client.PortOneClient;
 import com.mansereok.server.domain.payment.dto.request.PaymentCompleteRequest;
 import com.mansereok.server.domain.payment.dto.response.PortOnePaymentResponse;
@@ -49,6 +51,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
+import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -93,6 +96,8 @@ class PaymentServiceTest {
 	private CouponService couponService;
 	@Mock
 	private PortOneClient portOneClient;
+	@Mock
+	private OrderDiscountRestorer orderDiscountRestorer;
 
 	@BeforeEach
 	void setUp() {
@@ -113,7 +118,8 @@ class PaymentServiceTest {
 			resultService,
 			couponService,
 			portOneClient,
-			paidOrderFinalizer
+			paidOrderFinalizer,
+			orderDiscountRestorer
 		);
 	}
 
@@ -604,9 +610,32 @@ class PaymentServiceTest {
 		assertThat(order.getStatus()).isEqualTo(OrderStatus.CANCELLED);
 		verify(resultRepository).delete(result);
 
-		// 쿠폰/할인 코드를 쓰지 않은 주문이므로 복구 로직은 호출되지 않는다
-		verify(couponService, never()).restoreCoupon(any());
-		verify(discountCodeService, never()).restoreDiscountUsage(any());
+		// 복구 규칙은 OrderDiscountRestorer 가 소유하므로 PaymentService 는 restore(order) 만 위임한다
+		verify(orderDiscountRestorer).restore(order);
+		verifyNoInteractions(couponService, discountCodeService);
+	}
+
+	@Test
+	@DisplayName("쿠폰을 쓴 주문을 환불하면 포트원 취소 뒤 OrderDiscountRestorer 로 복구를 위임한다")
+	void cancelPayment_couponOrder_restoresThroughRestorer() {
+		// given
+		given(userRepository.findByUsername(USERNAME)).willReturn(Optional.of(createUser()));
+		Payment payment = createPaidPayment();
+		given(paymentRepository.findByImpUid(PAYMENT_ID)).willReturn(Optional.of(payment));
+		Result result = Result.createInitial(USER_ID, PAYMENT_PK_ID, "인생 총운");
+		given(resultRepository.findByPaymentId(PAYMENT_PK_ID)).willReturn(Optional.of(result));
+		Order order = createOrder(OrderStatus.PAID, null, 100L);
+		given(orderRepository.findById(ORDER_ID)).willReturn(Optional.of(order));
+
+		// when
+		paymentService.cancelPayment(USERNAME, PAYMENT_ID, "단순 변심");
+
+		// then
+		InOrder inOrder = inOrder(portOneClient, orderDiscountRestorer);
+		inOrder.verify(portOneClient).cancelPayment(PAYMENT_ID, "단순 변심");
+		inOrder.verify(orderDiscountRestorer).restore(order);
+		assertThat(order.getStatus()).isEqualTo(OrderStatus.CANCELLED);
+		verifyNoInteractions(couponService, discountCodeService);
 	}
 
 	@Test
@@ -633,7 +662,7 @@ class PaymentServiceTest {
 		assertThat(order.getStatus()).isEqualTo(OrderStatus.PAID);
 		assertThat(result.getStatus()).isEqualTo(ResultStatus.INPUT_REQUIRED);
 		verify(resultRepository, never()).delete(any(Result.class));
-		verifyNoInteractions(couponService, discountCodeService);
+		verifyNoInteractions(couponService, discountCodeService, orderDiscountRestorer);
 	}
 
 	@Test
