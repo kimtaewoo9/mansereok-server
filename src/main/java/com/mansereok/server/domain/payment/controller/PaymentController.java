@@ -14,8 +14,10 @@ import com.mansereok.server.domain.payment.service.PaymentRefundService;
 import com.mansereok.server.domain.payment.service.PaymentOrderService;
 import com.mansereok.server.domain.payment.service.PaymentWebhookService;
 import io.portone.sdk.server.errors.WebhookVerificationException;
+import io.swagger.v3.oas.annotations.Parameter;
 import jakarta.validation.Valid;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
@@ -43,7 +45,7 @@ public class PaymentController {
 	 * 주문 생성 API (결제 전)
 	 */
 	@PostMapping("/api/payment/orders")
-	public ResponseEntity<?> createOrder(
+	public ResponseEntity<OrderCreateResponse> createOrder(
 		@Valid @RequestBody OrderCreateRequest request,
 		@AuthenticationPrincipal String username
 	) {
@@ -62,7 +64,7 @@ public class PaymentController {
 	}
 
 	@PostMapping("/api/payment/redeem-free")
-	public ResponseEntity<?> redeemFreeProduct(
+	public ResponseEntity<OrderCreateResponse> redeemFreeProduct(
 		@Valid @RequestBody OrderCreateRequest request,
 		@AuthenticationPrincipal String username
 	) {
@@ -81,7 +83,8 @@ public class PaymentController {
 		@RequestHeader("webhook-timestamp") String webhookTimestamp,
 		@RequestHeader("webhook-signature") String webhookSignature
 	) throws WebhookVerificationException {
-		long startTime = System.currentTimeMillis();
+		// 경과 시간은 벽시계(currentTimeMillis)가 아니라 nanoTime 으로 잰다. 벽시계는 NTP 보정으로 앞뒤로 움직여 음수가 찍힐 수 있다.
+		long startNanos = System.nanoTime();
 
 		try {
 			// 본문·서명·타임스탬프는 로그에 남기지 않는다 (본문에 구매자 정보가 실린다). 검증 실패는 핸들러가 warn 으로 남긴다.
@@ -92,8 +95,8 @@ public class PaymentController {
 			return ResponseEntity.ok().build();
 
 		} finally {
-			long duration = System.currentTimeMillis() - startTime;
-			log.info("웹훅 처리 종료: webhookId={}, {}ms", webhookId, duration);
+			long elapsedMillis = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startNanos);
+			log.info("웹훅 처리 종료: webhookId={}, {}ms", webhookId, elapsedMillis);
 		}
 	}
 
@@ -114,18 +117,21 @@ public class PaymentController {
 		return ResponseEntity.ok(responses);
 	}
 
+	// 주소의 {paymentId} 는 포트원 결제 ID(문자열)가 아니라 결제 테이블의 PK(payments.id)다. 주소는 프론트 계약이라 두고 인자 이름만 밝힌다.
 	@GetMapping("/api/orders/by-payment/{paymentId}")
 	public ResponseEntity<OrderResponse> getOrderByPaymentId(
-		@PathVariable Long paymentId,
+		@Parameter(description = "결제 테이블의 PK(payments.id). 포트원 결제 ID(pay_... 문자열)가 아니다.", example = "15")
+		@PathVariable("paymentId") Long paymentPkId,
 		@AuthenticationPrincipal String username
 	) {
-		log.info("Payment ID로 Order 조회 요청: username={}, paymentId={}", username, paymentId);
-		Order order = paymentQueryService.getOwnedOrderByPaymentPkId(paymentId, username);
+		log.info("결제 PK 로 주문 조회 요청: username={}, paymentPkId={}", username, paymentPkId);
+		Order order = paymentQueryService.getOwnedOrderByPaymentPkId(paymentPkId, username);
 		return ResponseEntity.ok(OrderResponse.from(order));
 	}
 
+	// 성공 응답은 JSON 이 아니라 평문(text/plain) 안내 문구다. 형식을 JSON 으로 바꾸려면 프론트와 함께 바꾼다.
 	@PostMapping("/api/payment/cancel")
-	public ResponseEntity<?> cancelPayment(
+	public ResponseEntity<String> cancelPayment(
 		@Valid @RequestBody PaymentCancelRequest request,
 		@AuthenticationPrincipal String username
 	) {

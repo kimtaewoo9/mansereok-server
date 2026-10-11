@@ -32,9 +32,9 @@ class PortOneWebhookVerifierTest {
 	@Test
 	@DisplayName("설정의 webhook.secret 으로 서명한 요청은 예외 없이 통과한다")
 	void verify_acceptsValidSignature() throws Exception {
-		// 포트원 SDK 가 역직렬화할 수 있는 형식(type/timestamp/data) 의 본문
-		String body = "{\"type\":\"Transaction.Paid\",\"timestamp\":\"2025-01-01T00:00:00Z\","
-			+ "\"data\":{\"paymentId\":\"pay_1\",\"storeId\":\"store_1\",\"transactionId\":\"tx_1\"}}";
+		// 서명은 본문 형식과 관계없이 받은 원문 그대로 검증한다.
+		// 본문은 PaymentWebhookService 가 읽는 형식(tx_id, payment_id, status)을 쓴다.
+		String body = "{\"tx_id\":\"tx_1\",\"payment_id\":\"pay_1\",\"status\":\"Paid\"}";
 		String id = "msg_1";
 		String ts = String.valueOf(System.currentTimeMillis() / 1000);
 
