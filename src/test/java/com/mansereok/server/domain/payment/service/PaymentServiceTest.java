@@ -40,6 +40,7 @@ import com.mansereok.server.domain.product.repository.SubCategoryRepository;
 import com.mansereok.server.domain.user.entity.Gender;
 import com.mansereok.server.domain.user.entity.User;
 import com.mansereok.server.domain.user.repository.UserRepository;
+import com.mansereok.server.global.exception.OrderStateException;
 import com.mansereok.server.global.exception.PaymentException;
 import java.time.LocalDate;
 import java.util.Optional;
@@ -408,6 +409,31 @@ class PaymentServiceTest {
 		verifyNoInteractions(portOneClient, paymentRepository, resultService);
 	}
 
+	@Test
+	@DisplayName("CANCELLED 주문에 결제 완료 요청이 오면 OrderStateException 이 나고 Payment 는 저장되지 않는다")
+	void completePayment_cancelledOrder_throwsOrderStateException() {
+		// given: 멱등 검사(PAID 조기 반환)는 통과하고 포트원 조회까지 간 뒤 markPaid 가드에서 걸린다
+		Order order = createOrder(OrderStatus.CANCELLED, null, null);
+		given(orderRepository.findByMerchantUidWithLock(MERCHANT_UID)).willReturn(
+			Optional.of(order));
+		given(paymentRepository.findByImpUid(PAYMENT_ID)).willReturn(Optional.empty());
+		given(portOneClient.getPayment(PAYMENT_ID)).willReturn(portOneResponse("PAID", PRICE));
+
+		PaymentCompleteRequest request = new PaymentCompleteRequest();
+		request.setPaymentId(PAYMENT_ID);
+		request.setMerchantUid(MERCHANT_UID);
+
+		// when & then
+		assertThatThrownBy(() -> paymentService.completePayment(request))
+			.isInstanceOf(OrderStateException.class)
+			.hasMessageContaining("CANCELLED 에서 PAID 로");
+
+		assertThat(order.getStatus()).isEqualTo(OrderStatus.CANCELLED);
+		assertThat(order.getPaymentId()).isNull();
+		verify(paymentRepository, never()).save(any(Payment.class));
+		verifyNoInteractions(resultService, discordNotificationService);
+	}
+
 	// ===== redeemFreeProduct =====
 
 	@Test
@@ -592,6 +618,8 @@ class PaymentServiceTest {
 		given(paymentRepository.findByImpUid(PAYMENT_ID)).willReturn(Optional.of(payment));
 		Result result = Result.createInitial(USER_ID, PAYMENT_PK_ID, "인생 총운");
 		given(resultRepository.findByPaymentId(PAYMENT_PK_ID)).willReturn(Optional.of(result));
+		Order order = createOrder(OrderStatus.PAID, null, null);
+		given(orderRepository.findById(ORDER_ID)).willReturn(Optional.of(order));
 
 		willThrow(new PaymentException("결제 취소 연동 중 오류가 발생했습니다: 400 Bad Request"))
 			.given(portOneClient).cancelPayment(PAYMENT_ID, "단순 변심");
@@ -602,9 +630,55 @@ class PaymentServiceTest {
 			.hasMessageStartingWith("결제 취소 연동 중 오류가 발생했습니다: ");
 
 		assertThat(payment.getStatus()).isEqualTo(PaymentStatus.PAID);
+		assertThat(order.getStatus()).isEqualTo(OrderStatus.PAID);
 		assertThat(result.getStatus()).isEqualTo(ResultStatus.INPUT_REQUIRED);
-		verify(orderRepository, never()).findById(any());
 		verify(resultRepository, never()).delete(any(Result.class));
 		verifyNoInteractions(couponService, discountCodeService);
+	}
+
+	@Test
+	@DisplayName("Payment 가 PAID 가 아니면 포트원 취소를 호출하기 전에 PaymentException 이 난다")
+	void cancelPayment_paymentNotPaid_throwsBeforeCallingPortOne() {
+		// given
+		given(userRepository.findByUsername(USERNAME)).willReturn(Optional.of(createUser()));
+		Payment payment = Payment.create(PAYMENT_ID, MERCHANT_UID, (long) PRICE,
+			PaymentStatus.READY, ORDER_ID, USER_ID, SUB_CATEGORY_ID);
+		ReflectionTestUtils.setField(payment, "id", PAYMENT_PK_ID);
+		given(paymentRepository.findByImpUid(PAYMENT_ID)).willReturn(Optional.of(payment));
+		Result result = Result.createInitial(USER_ID, PAYMENT_PK_ID, "인생 총운");
+		given(resultRepository.findByPaymentId(PAYMENT_PK_ID)).willReturn(Optional.of(result));
+
+		// when & then
+		assertThatThrownBy(() -> paymentService.cancelPayment(USERNAME, PAYMENT_ID, "단순 변심"))
+			.isInstanceOf(PaymentException.class)
+			.hasMessage("결제 완료 상태가 아니라 취소할 수 없습니다.");
+
+		assertThat(payment.getStatus()).isEqualTo(PaymentStatus.READY);
+		verify(portOneClient, never()).cancelPayment(any(), any());
+		verify(orderRepository, never()).findById(any());
+		verify(resultRepository, never()).delete(any(Result.class));
+	}
+
+	@Test
+	@DisplayName("주문이 CANCELLED 로 갈 수 없는 상태면 포트원 취소를 호출하기 전에 PaymentException 이 난다")
+	void cancelPayment_orderNotCancellable_throwsBeforeCallingPortOne() {
+		// given
+		given(userRepository.findByUsername(USERNAME)).willReturn(Optional.of(createUser()));
+		Payment payment = createPaidPayment();
+		given(paymentRepository.findByImpUid(PAYMENT_ID)).willReturn(Optional.of(payment));
+		Result result = Result.createInitial(USER_ID, PAYMENT_PK_ID, "인생 총운");
+		given(resultRepository.findByPaymentId(PAYMENT_PK_ID)).willReturn(Optional.of(result));
+		Order order = createOrder(OrderStatus.PENDING, null, null);
+		given(orderRepository.findById(ORDER_ID)).willReturn(Optional.of(order));
+
+		// when & then
+		assertThatThrownBy(() -> paymentService.cancelPayment(USERNAME, PAYMENT_ID, "단순 변심"))
+			.isInstanceOf(PaymentException.class)
+			.hasMessage("취소할 수 없는 주문 상태입니다.");
+
+		assertThat(payment.getStatus()).isEqualTo(PaymentStatus.PAID);
+		assertThat(order.getStatus()).isEqualTo(OrderStatus.PENDING);
+		verify(portOneClient, never()).cancelPayment(any(), any());
+		verify(resultRepository, never()).delete(any(Result.class));
 	}
 }

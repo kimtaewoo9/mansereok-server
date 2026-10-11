@@ -427,8 +427,11 @@ public class PaymentService {
 				order.getAmount().longValue())) {
 				log.error("웹훅 금액 불일치: expected={}, actual={}",
 					order.getAmount(), paymentResponse.getAmount().getTotal());
-				order.setStatus(OrderStatus.FAILED);
-				orderRepository.save(order);
+				// FAILED 로 갈 수 없는 상태(EXPIRED 등)면 상태는 두고 원래 예외만 던진다
+				if (order.getStatus().canTransitionTo(OrderStatus.FAILED)) {
+					order.markFailed();
+					orderRepository.save(order);
+				}
 				throw new PaymentException("결제 금액이 일치하지 않습니다.");
 			}
 
@@ -465,8 +468,11 @@ public class PaymentService {
 				processOrder(order);
 			} else {
 				log.error("웹훅 결제 실패: paymentId={}, status={}", paymentId, paymentStatus);
-				order.setStatus(OrderStatus.FAILED);
-				orderRepository.save(order);
+				// FAILED 로 갈 수 없는 상태(EXPIRED 등)면 상태는 두고 원래 예외만 던진다
+				if (order.getStatus().canTransitionTo(OrderStatus.FAILED)) {
+					order.markFailed();
+					orderRepository.save(order);
+				}
 				throw new PaymentException("결제 실패 상태입니다.");
 			}
 		} catch (Exception e) {
@@ -543,20 +549,28 @@ public class PaymentService {
 			throw new PaymentException("이미 사주 해석이 진행되었거나 완료된 건은 환불할 수 없습니다.");
 		}
 
-		// 6. 포트원 API로 결제 취소 요청
-		portOneClient.cancelPayment(payment.getImpUid(), reason);
-
-		// 7. DB 상태 업데이트
-		// 7-1. Payment 상태 변경
-		// Payment 엔티티에 setStatus가 없다면 추가하거나 updateStatus 메서드 필요
-		payment.updateStatus(PaymentStatus.CANCELLED);
-
-		// 7-2. Order 상태 변경
+		// 6. 상태 전이 사전 검사. 포트원 환불은 되돌릴 수 없으므로 markCancelled 가 던질 상황이면
+		//    외부 호출 전에 먼저 거른다.
+		if (payment.getStatus() != PaymentStatus.PAID) {
+			throw new PaymentException("결제 완료 상태가 아니라 취소할 수 없습니다.");
+		}
 		Order order = orderRepository.findById(payment.getOrderId())
 			.orElseThrow(() -> new PaymentException("주문 정보를 찾을 수 없습니다."));
-		order.setStatus(OrderStatus.CANCELLED);
+		if (!order.getStatus().canTransitionTo(OrderStatus.CANCELLED)) {
+			throw new PaymentException("취소할 수 없는 주문 상태입니다.");
+		}
 
-		// 7-3. Result 삭제 (정보 입력 전이므로 삭제)
+		// 7. 포트원 API로 결제 취소 요청
+		portOneClient.cancelPayment(payment.getImpUid(), reason);
+
+		// 8. DB 상태 업데이트
+		// 8-1. Payment 상태 변경 (PAID 에서만 허용)
+		payment.markCancelled();
+
+		// 8-2. Order 상태 변경
+		order.markCancelled();
+
+		// 8-3. Result 삭제 (정보 입력 전이므로 삭제)
 		resultRepository.delete(result);
 
 		if (order.getCouponId() != null) {
