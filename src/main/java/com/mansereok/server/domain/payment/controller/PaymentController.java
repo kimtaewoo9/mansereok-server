@@ -48,12 +48,13 @@ public class PaymentController {
 		return ResponseEntity.ok(response);
 	}
 
-	// 결제 완료 API (결제 후 검증)
+	// 결제 완료 API (결제 후 검증). 요청자가 주문 소유자인지는 서비스가 확인한다(아니면 403).
 	@PostMapping("/api/payment/complete")
 	public ResponseEntity<OrderResponse> completePayment(
-		@Valid @RequestBody PaymentCompleteRequest request
+		@Valid @RequestBody PaymentCompleteRequest request,
+		@AuthenticationPrincipal String username
 	) {
-		Order order = paymentService.completePayment(request);
+		Order order = paymentService.completePayment(username, request);
 		return ResponseEntity.ok(OrderResponse.from(order));
 	}
 
