@@ -78,7 +78,8 @@ class PaymentConfirmServiceTest {
 	private static final String BUYER_EMAIL = "taewoo@example.com";
 	private static final Long USER_ID = 1L;
 	private static final Long OTHER_USER_ID = 2L;
-	private static final Long SUB_CATEGORY_ID = 1L;
+	// USER_ID 와 다른 값으로 둔다. 같으면 코드가 사용자 id 자리에 상품 id 를 넘기거나 읽어도 테스트가 알아채지 못한다.
+	private static final Long SUB_CATEGORY_ID = 3L;
 	private static final Long ORDER_ID = 10L;
 	private static final Long PAYMENT_PK_ID = 100L;
 	private static final String MERCHANT_UID = "order_test_001";
@@ -86,7 +87,7 @@ class PaymentConfirmServiceTest {
 	private static final String SECOND_PAYMENT_ID = "pay_test_002";
 	private static final int PRICE = 10000;
 	private static final String CUSTOM_DATA = "{\"merchantUid\":\"" + MERCHANT_UID
-		+ "\",\"subCategoryId\":1}";
+		+ "\",\"subCategoryId\":" + SUB_CATEGORY_ID + "}";
 
 	// customData 파싱을 실제로 검증하도록 mock 이 아닌 진짜 ObjectMapper 를 쓴다.
 	private final ObjectMapper objectMapper = Jackson2ObjectMapperBuilder.json().build();
@@ -307,6 +308,7 @@ class PaymentConfirmServiceTest {
 		assertThat(savedPayment.getStatus()).isEqualTo(PaymentStatus.PAID);
 		assertThat(savedPayment.getOrderId()).isEqualTo(ORDER_ID);
 		assertThat(savedPayment.getUserId()).isEqualTo(USER_ID);
+		assertThat(savedPayment.getSubCategoryId()).isEqualTo(SUB_CATEGORY_ID);
 
 		verify(resultService).createInitialResult(savedPayment, order);
 	}
