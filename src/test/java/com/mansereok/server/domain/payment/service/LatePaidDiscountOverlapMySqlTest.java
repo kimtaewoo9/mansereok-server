@@ -422,15 +422,16 @@ class LatePaidDiscountOverlapMySqlTest extends PaymentMySqlTest {
 	}
 
 	/**
-	 * 결제 paymentId 의 환불을 시작하되, 환불의 DB 확정(PaymentRefundService 의 트랜잭션 B)이 결제·주문 행을 잠근 뒤 초기 결과 행을
-	 * 지우려는 곳에서 멈추게 한다. 환불은 자기 트랜잭션을 따로 열므로, 그 결제의 초기 결과 행을 테스트가 연 트랜잭션에서 먼저 잠가 두는
-	 * 방식으로 멈춰 세운다. {@link #releaseFirst} 가 열리면 테스트 트랜잭션이 커밋해 잠금을 풀고, 환불은 이어서 끝난다.
+	 * 결제 paymentId 의 환불을 시작하되, 환불의 검증 단계(PaymentRefundService 의 트랜잭션 A)가 결제·주문 행을 잠근 뒤 초기 결과 행을
+	 * 잠가 읽으려는 곳에서, 즉 포트원 취소를 부르기 전에 멈추게 한다. 환불은 자기 트랜잭션을 따로 열므로, 그 결제의 초기 결과 행을 테스트가
+	 * 연 트랜잭션에서 먼저 잠가 두는 방식으로 멈춰 세운다. {@link #releaseFirst} 가 열리면 테스트 트랜잭션이 커밋해 잠금을 풀고, 환불은
+	 * 이어서 끝난다.
 	 */
 	private Future<Boolean> startRefundPausedWhileHoldingOrderRow(String paymentId) throws InterruptedException {
 		Long paymentPkId = jdbcTemplate.queryForObject("SELECT id FROM payments WHERE imp_uid = ?", Long.class,
 			paymentId);
 		executor.submit(() -> new TransactionTemplate(transactionManager).executeWithoutResult(status -> {
-			// 상품에 따라 초기 결과는 results 와 compatibility_results 중 한 곳에만 있다. 둘 다 잠가 어느 쪽이든 삭제가 멈추게 한다.
+			// 상품에 따라 초기 결과는 results 와 compatibility_results 중 한 곳에만 있다. 둘 다 잠가 어느 쪽이든 환불이 멈추게 한다.
 			jdbcTemplate.queryForList("SELECT id FROM results WHERE payment_id = ? FOR UPDATE", paymentPkId);
 			jdbcTemplate.queryForList("SELECT id FROM compatibility_results WHERE payment_id = ? FOR UPDATE",
 				paymentPkId);
