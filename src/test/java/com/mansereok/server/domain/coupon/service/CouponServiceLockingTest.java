@@ -117,15 +117,16 @@ class CouponServiceLockingTest {
 		}
 
 		@Test
-		@DisplayName("쿠폰이 없으면 '쿠폰 정보를 찾을 수 없습니다.' 로 거절한다")
-		void rejectsMissingCoupon() {
+		@DisplayName("쿠폰이 없으면 예외 없이 false 를 돌려줘 호출자가 결제를 취소하게 한다")
+		void missingCouponIsNotClaimed() {
 			// given
 			given(couponRepository.findByIdWithLock(COUPON_ID)).willReturn(Optional.empty());
 
-			// when & then
-			assertThatThrownBy(() -> couponService.claimForPaidOrder(COUPON_ID))
-				.isInstanceOf(PaymentException.class)
-				.hasMessage("쿠폰 정보를 찾을 수 없습니다.");
+			// when
+			boolean claimed = couponService.claimForPaidOrder(COUPON_ID);
+
+			// then
+			assertThat(claimed).isFalse();
 		}
 	}
 

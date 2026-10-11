@@ -16,6 +16,8 @@ import com.mansereok.server.domain.auth.filter.JwtAuthenticationFilter;
 import com.mansereok.server.domain.order.dto.request.OrderCreateRequest;
 import com.mansereok.server.domain.order.dto.response.OrderCreateResponse;
 import com.mansereok.server.domain.order.entity.Order;
+import com.mansereok.server.domain.order.entity.OrderStatus;
+import com.mansereok.server.domain.order.service.OrderAbandonService;
 import com.mansereok.server.domain.payment.client.PortOneWebhookVerifier;
 import com.mansereok.server.domain.payment.service.PaymentConfirmService;
 import com.mansereok.server.domain.payment.service.PaymentOrderService;
@@ -107,6 +109,8 @@ class PaymentControllerTest {
 	private PaymentQueryService paymentQueryService;
 	@MockitoBean
 	private PaymentRefundService paymentRefundService;
+	@MockitoBean
+	private OrderAbandonService orderAbandonService;
 
 	@BeforeEach
 	void signIn() {
@@ -339,6 +343,20 @@ class PaymentControllerTest {
 
 			// then: 포트원 취소로 이어지는 환불 명령을 받은 값 그대로 한 번 부른다
 			then(paymentRefundService).should().cancel(USERNAME, "pay_1", "단순 변심");
+		}
+
+		@Test
+		@DisplayName("결제창 이탈은 주소의 주문 번호와 요청자를 넘기고, EXPIRED 가 된 주문을 주문 조회와 같은 JSON 으로 돌려준다")
+		void abandonReturnsExpiredOrder() throws Exception {
+			// given
+			Order expired = TestOrders.order().id(7L).merchantUid("order_7").inStatus(OrderStatus.EXPIRED);
+			given(orderAbandonService.abandon(7L, USERNAME)).willReturn(expired);
+
+			// when & then
+			mockMvc.perform(post("/api/payment/orders/7/abandon"))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.merchantUid").value("order_7"))
+				.andExpect(jsonPath("$.status").value("EXPIRED"));
 		}
 
 		@Test

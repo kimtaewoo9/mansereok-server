@@ -113,7 +113,7 @@ public class PaymentReconciliationMismatch {
 		return create(runId, MismatchType.CANCEL_REQUESTED_STALE, dbPayment.getImpUid(),
 			dbPayment.getMerchantUid(), pgStatus, amountOf(pgPayment), dbPayment.getStatus(),
 			dbPayment.getAmount(),
-			"환불 도중 CANCEL_REQUESTED 로 멈춰 있습니다. PG 상태=%s"
+			"환불·자동 취소 도중 CANCEL_REQUESTED 로 멈춰 있습니다. PG 상태=%s"
 				.formatted(pgStatus == null ? UNKNOWN_PG_STATUS : pgStatus),
 			detectedAt);
 	}

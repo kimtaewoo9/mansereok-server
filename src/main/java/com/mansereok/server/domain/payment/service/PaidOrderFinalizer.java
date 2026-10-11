@@ -2,7 +2,6 @@ package com.mansereok.server.domain.payment.service;
 
 import com.mansereok.server.domain.interpret.service.ResultService;
 import com.mansereok.server.domain.order.entity.Order;
-import com.mansereok.server.domain.order.entity.OrderStatus;
 import com.mansereok.server.domain.order.repository.OrderRepository;
 import com.mansereok.server.domain.order.service.OrderDiscountRestorer;
 import com.mansereok.server.domain.payment.entity.Payment;
@@ -33,11 +32,8 @@ import org.springframework.transaction.annotation.Transactional;
  * <p>마지막에 {@link PaymentCompletedEvent} 를 발행한다. Discord 알림 리스너가 커밋 뒤(AFTER_COMMIT) 비동기로 받으므로
  * 롤백된 결제에는 알림이 가지 않고, 알림 지연이 락 구간과 응답 시간에 영향을 주지 않는다.
  *
- * <p>만료(EXPIRED)된 주문을 확정할 때는 만료 때 되돌린 쿠폰·할인 코드를 같은 트랜잭션에서 다시 사용 처리한다
- * ({@link OrderDiscountRestorer#reapply}). 확정과 다시 쓰기를 한 트랜잭션에 두어, 확정이 롤백되면 다시 쓰기도 함께 롤백되고
- * "결제 완료 주문의 할인은 사용된 상태" 라는 규칙이 중간에 깨진 채 남지 않는다. 이 다시 쓰기는 호출자가 잠근 주문 행을 쥔 채
- * 쿠폰·할인 코드 행을 잠가, 할인 행을 먼저 잠그고 주문을 INSERT 하는 주문 생성과 반대 순서다. orders.merchant_uid 인덱스가 없으면
- * 둘이 교착될 수 있다(OrderDiscountRestorer 클래스 설명).
+ * <p>만료(EXPIRED)된 주문은 호출자가 같은 트랜잭션에서 만료 때 되돌린 쿠폰·할인 코드를 먼저 다시 잡은 뒤에만 넘긴다
+ * ({@link OrderDiscountRestorer#reclaim}). 잡지 못하면 확정하지 않고 결제를 취소한다.
  */
 @Component
 @RequiredArgsConstructor
@@ -48,7 +44,6 @@ public class PaidOrderFinalizer {
 	private final OrderRepository orderRepository;
 	private final PaymentRepository paymentRepository;
 	private final ResultService resultService;
-	private final OrderDiscountRestorer orderDiscountRestorer;
 	private final ApplicationEventPublisher eventPublisher;
 
 	/**
@@ -65,16 +60,9 @@ public class PaidOrderFinalizer {
 	 * @throws PaymentException 같은 paymentId 의 Payment 가 이미 있어 imp_uid UNIQUE 에 걸린 경우
 	 */
 	public Payment finalizePaid(Order order, String paymentId, long amount, LocalDateTime paidAt) {
-		// 1. 주문 상태 확정. 만료된 주문이었는지는 상태를 바꾸기 전에 기억해 둔다.
-		boolean paidAfterExpiry = order.getStatus() == OrderStatus.EXPIRED;
+		// 1. 주문 상태 확정
 		order.markPaid(paymentId, paidAt);
 		orderRepository.save(order);
-
-		// 1-1. 만료 뒤 결제면 만료 때 되돌린 할인을 다시 사용 처리한다. 다시 쓸 수 없으면 확정은 두고 운영에 알린다.
-		//      주문 행을 쥔 채 할인 행을 잠근다(주문 생성과 반대 순서, orders.merchant_uid 인덱스 전제).
-		if (paidAfterExpiry) {
-			orderDiscountRestorer.reapply(order);
-		}
 
 		// 2. Payment 생성 및 저장
 		Payment savedPayment = savePayment(Payment.paid(order, paymentId, amount));

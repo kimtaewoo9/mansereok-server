@@ -249,7 +249,7 @@ class PaymentReconciliationMismatchTest {
 					PaymentReconciliationMismatch::getPgAmount, PaymentReconciliationMismatch::getDbStatus,
 					PaymentReconciliationMismatch::getDetail)
 				.containsExactly(MismatchType.CANCEL_REQUESTED_STALE, "PAID", 10000L,
-					PaymentStatus.CANCEL_REQUESTED, "환불 도중 CANCEL_REQUESTED 로 멈춰 있습니다. PG 상태=PAID");
+					PaymentStatus.CANCEL_REQUESTED, "환불·자동 취소 도중 CANCEL_REQUESTED 로 멈춰 있습니다. PG 상태=PAID");
 		}
 
 		@Test
@@ -263,7 +263,7 @@ class PaymentReconciliationMismatchTest {
 			assertThat(mismatch)
 				.extracting(PaymentReconciliationMismatch::getPgStatus, PaymentReconciliationMismatch::getPgAmount,
 					PaymentReconciliationMismatch::getDetail)
-				.containsExactly(null, null, "환불 도중 CANCEL_REQUESTED 로 멈춰 있습니다. PG 상태=조회되지 않음");
+				.containsExactly(null, null, "환불·자동 취소 도중 CANCEL_REQUESTED 로 멈춰 있습니다. PG 상태=조회되지 않음");
 		}
 	}
 }

@@ -13,6 +13,7 @@ import java.time.Clock;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
+import java.util.Optional;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -147,25 +148,24 @@ public class CouponService {
 	/**
 	 * 만료 뒤 늦게 결제된 주문 몫으로, 만료 때 돌려놓은 쿠폰을 다시 사용 처리한다.
 	 *
-	 * <p>쿠폰 행을 잠가 읽은 뒤 미사용이면 사용 처리한다. 그사이 다른 주문이 이 쿠폰을 이미 썼다면 아무것도 바꾸지 않고 false 를
-	 * 돌려준다. 결제는 이미 끝났으므로 예외로 확정을 되돌리지 않고, 호출자가 운영 알림을 보낸다. 쿠폰 기간은 보지 않는다
-	 * ({@link Coupon#useForPaidOrder(LocalDateTime)}).
+	 * <p>쿠폰 행을 잠가 읽은 뒤 미사용이면 사용 처리한다. 그사이 다른 주문이 이 쿠폰을 이미 썼거나 쿠폰이 지워졌으면 아무것도
+	 * 바꾸지 않고 false 를 돌려준다. 호출자는 그 결제를 확정하지 않고 취소한다. 예외로 끝내면 결제는 승인된 채 취소도 알림도 없이
+	 * 남는다. 쿠폰 기간은 보지 않는다({@link Coupon#useForPaidOrder(LocalDateTime)}).
 	 *
 	 * <p>호출자(결제 확정)가 주문 행을 잠근 트랜잭션 안에서 부른다. 그래서 이 경로는 주문 행 → 쿠폰 행 순서로 잠그고, 쿠폰 행 → 주문
 	 * INSERT 순서인 주문 생성과 반대다. orders.merchant_uid 인덱스가 없으면 둘이 교착될 수 있다(OrderDiscountRestorer 클래스 설명).
 	 * 잠금은 호출자의 트랜잭션이 끝날 때 풀린다. 트랜잭션 밖에서 부르면 이 전제가 깨지므로 {@link Propagation#MANDATORY} 로 진행 중인
 	 * 트랜잭션이 없으면 IllegalTransactionStateException 을 던진다.
 	 *
-	 * @return 이 호출로 사용 처리했으면 true, 다른 주문이 이미 쓰고 있어 그대로 두었으면 false
-	 * @throws PaymentException 쿠폰이 없을 때
+	 * @return 이 호출로 사용 처리했으면 true, 다른 주문이 이미 쓰고 있거나 쿠폰이 없어 그대로 두었으면 false
 	 */
 	@Transactional(propagation = Propagation.MANDATORY)
 	public boolean claimForPaidOrder(Long couponId) {
-		Coupon coupon = couponRepository.findByIdWithLock(couponId)
-			.orElseThrow(() -> new PaymentException("쿠폰 정보를 찾을 수 없습니다."));
-		if (coupon.isUsed()) {
+		Optional<Coupon> found = couponRepository.findByIdWithLock(couponId);
+		if (found.isEmpty() || found.get().isUsed()) {
 			return false;
 		}
+		Coupon coupon = found.get();
 		coupon.useForPaidOrder(LocalDateTime.now(clock));
 		return true;
 	}

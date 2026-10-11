@@ -124,25 +124,23 @@ public class DiscountCodeService {
 	}
 
 	/**
-	 * 만료 뒤 늦게 결제된 주문 몫으로, 만료 때 돌려놓은 사용 횟수를 다시 1 올린다.
-	 *
-	 * <p>행을 잠가 읽은 뒤 최대 횟수에 닿았어도 올린다. 결제는 이미 이 코드의 할인가로 끝났으므로 거절하지 않고, 넘었는지를
-	 * 돌려줘 호출자가 운영 알림을 보내게 한다. 코드가 비활성이거나 기간이 지났어도 올린다.
+	 * 만료 뒤 늦게 결제된 주문 몫으로, 만료 때 돌려놓은 사용 횟수를 다시 올린다. 그사이 다른 주문이 자리를 가져가 최대 횟수에 닿았으면
+	 * 올리지 않고 false 를 돌려준다. 호출자는 그 결제를 확정하지 않고 취소한다.
 	 *
 	 * <p>호출자(결제 확정)가 주문 행을 잠근 트랜잭션 안에서 부른다. 그래서 이 경로는 주문 행 → 할인 코드 행 순서로 잠그고, 할인 코드
 	 * 행 → 주문 INSERT 순서인 주문 생성과 반대다. orders.merchant_uid 인덱스가 없으면 둘이 교착될 수 있다(OrderDiscountRestorer
-	 * 클래스 설명). 잠금은 호출자의 트랜잭션이 끝날 때 풀린다. 트랜잭션 밖에서 부르면 이 전제가 깨지므로
-	 * {@link Propagation#MANDATORY} 로 진행 중인 트랜잭션이 없으면 IllegalTransactionStateException 을 던진다.
+	 * 클래스 설명). 트랜잭션 밖에서 부르면 이 전제가 깨지므로 {@link Propagation#MANDATORY} 로 진행 중인 트랜잭션이 없으면
+	 * IllegalTransactionStateException 을 던진다.
 	 *
-	 * @return 올린 뒤 사용 횟수가 최대 횟수를 넘었으면 true
-	 * @throws PaymentException 코드가 없을 때
+	 * <p>그사이 코드가 지워졌으면 다시 올릴 자리가 없으므로 false 다. 예외로 끝내면 결제는 승인된 채 취소도 알림도 없이 남는다.
+	 *
+	 * @return 다시 올렸으면 true, 최대 횟수에 닿았거나 코드가 없어 그대로 두었으면 false
 	 */
 	@Transactional(propagation = Propagation.MANDATORY)
-	public boolean reapplyUsage(String code) {
-		DiscountCode discountCode = discountCodeRepository.findByCodeForUpdate(code)
-			.orElseThrow(() -> new PaymentException("존재하지 않는 할인 코드입니다."));
-		discountCode.incrementUsageAllowingOverflow();
-		return discountCode.exceedsMaxUses();
+	public boolean claimForPaidOrder(String code) {
+		return discountCodeRepository.findByCodeForUpdate(code)
+			.map(DiscountCode::incrementUsageForLatePayment)
+			.orElse(false);
 	}
 
 	/**

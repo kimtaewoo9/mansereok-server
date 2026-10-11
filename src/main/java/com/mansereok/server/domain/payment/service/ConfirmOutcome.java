@@ -36,4 +36,17 @@ sealed interface ConfirmOutcome {
 			Objects.requireNonNull(duplicatePaymentId, "duplicatePaymentId");
 		}
 	}
+
+	/**
+	 * 만료된 주문에 결제가 늦게 들어왔는데, 만료 때 풀어 준 쿠폰을 그사이 다른 주문이 썼거나 할인 코드가 선착순 횟수에 닿아 할인을 다시
+	 * 잡지 못했다. 확정하면 쿠폰 한 장·선착순 한 자리의 할인이 두 결제에 들어간다. 주문은 EXPIRED 로 두고 결제는 CANCEL_REQUESTED 로
+	 * 기록했다({@link DuplicatePaymentCanceller#rejectLatePayment}). 잠금과 트랜잭션을 놓은 뒤 같은 클래스가 이 결제를 취소한다.
+	 */
+	record LatePaymentWithoutDiscount(Order expiredOrder, String paymentId) implements ConfirmOutcome {
+
+		public LatePaymentWithoutDiscount {
+			Objects.requireNonNull(expiredOrder, "expiredOrder");
+			Objects.requireNonNull(paymentId, "paymentId");
+		}
+	}
 }

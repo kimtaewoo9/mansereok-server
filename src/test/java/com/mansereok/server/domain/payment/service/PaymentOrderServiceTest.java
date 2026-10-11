@@ -102,7 +102,7 @@ class PaymentOrderServiceTest {
 	@BeforeEach
 	void setUp() {
 		PaidOrderFinalizer paidOrderFinalizer = new PaidOrderFinalizer(orderRepository,
-			paymentRepository, resultService, orderDiscountRestorer, eventPublisher);
+			paymentRepository, resultService, eventPublisher);
 		paymentOrderService = new PaymentOrderService(
 			new PaymentUserLookup(userRepository),
 			subCategoryRepository,
