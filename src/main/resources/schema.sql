@@ -164,34 +164,66 @@ CREATE TABLE compatibility_results
     INDEX idx_compatibility_results_user_id (user_id)
 );
 
+-- 아래 두 표(payments, orders)는 운영 SHOW CREATE TABLE 결과가 아니다. 원래 있던 정의에 엔티티가 매핑하는데 빠져 있던 컬럼을
+-- 채우고, 운영에 손으로 적용하는 DDL(UNIQUE·인덱스, payments.user_id 의 NULL 허용)을 더한 것이다. 이름 붙인 UNIQUE·인덱스의 이름과
+-- 컬럼 순서는 엔티티 @Table 선언과 같고, 컬럼과 이름이 엔티티와 맞는지는 PaymentSchemaSqlTest 가 본다.
+-- payments 의 idx_order_id 와 imp_uid UNIQUE 는 원래 정의에 있던 것으로 엔티티 @Table 선언 밖이다. 그래서 엔티티로 만드는 로컬·테스트
+-- DB 에는 idx_order_id 가 없고, imp_uid UNIQUE 는 Payment.impUid 의 @Column(unique = true) 로 Hibernate 가 지은 이름(UK 로 시작)으로
+-- 생긴다. 운영에 같은 컬럼·같은 순서의 인덱스가 다른 이름으로 이미 있으면 새로 만들지 않고 그 인덱스를 쓴다.
+
 -- payments 테이블
 CREATE TABLE payments (
                           id BIGINT AUTO_INCREMENT PRIMARY KEY,
                           imp_uid VARCHAR(255) NOT NULL UNIQUE,
                           merchant_uid VARCHAR(255) NOT NULL,
                           order_id BIGINT NOT NULL,
-                          user_id BIGINT NOT NULL,
+    -- 탈퇴하면 결제 이력은 남기고 사용자 연결만 끊으려고 NULL 로 바꾼다(PaymentRepository.detachUser). 그래서 NULL 을 허용한다.
+                          user_id BIGINT NULL,
+                          sub_category_id BIGINT,
                           amount BIGINT NOT NULL,
                           status VARCHAR(255),
                           created_at DATETIME(6),
+    -- 원래 정의에 있던 인덱스다. 지금 order_id 로 찾는 조회는 없다.
                           INDEX idx_order_id (order_id),
-                          INDEX idx_user_id (user_id)
+    -- 대사의 하루치 결제 조회(created_at 범위)
+                          INDEX idx_payments_created_at (created_at),
+    -- 대사의 CANCEL_REQUESTED 결제 조회
+                          INDEX idx_payments_status (status),
+    -- 내 결제 목록(user_id 로 거르고 created_at 내림차순)과 탈퇴의 사용자 연결 끊기. 예전 idx_user_id (user_id) 를 대신한다.
+                          INDEX idx_payments_user_id_created_at (user_id, created_at)
 );
 
 -- orders 테이블
 CREATE TABLE `orders` (
                           `id` BIGINT NOT NULL AUTO_INCREMENT,
-                          `merchant_uid` VARCHAR(255) NOT NULL UNIQUE,
+                          `merchant_uid` VARCHAR(255) NOT NULL,
                           `payment_id` VARCHAR(255),
+    -- 결제 확정 때 붙인 payments.id. 결제가 붙기 전에는 NULL 이다.
+                          `payment_pk_id` BIGINT,
                           `user_id` BIGINT,
                           `sub_category_id` BIGINT NOT NULL,
+                          `buyer_name` VARCHAR(255),
+                          `buyer_email` VARCHAR(255),
                           `amount` INT NOT NULL,
-                          `status` ENUM('PENDING', 'PAID', 'FAILED', 'CANCELLED') NOT NULL DEFAULT 'PENDING',
+    -- OrderStatus 의 값을 모두 적는다. 원래 있던 네 값 뒤에 나중에 생긴 두 값을 붙인다(ENUM 끝에 값을 붙이는 변경은 표를 다시 만들지
+    -- 않는다).
+                          `status` ENUM('PENDING', 'PAID', 'FAILED', 'CANCELLED', 'VIRTUAL_ACCOUNT_ISSUED', 'EXPIRED') NOT NULL DEFAULT 'PENDING',
                           `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
                           `paid_at` TIMESTAMP NULL DEFAULT NULL,
+                          `original_amount` INT,
+                          `applied_discount_code` VARCHAR(255),
+                          `coupon_id` BIGINT,
 
                           PRIMARY KEY (`id`),
-                          INDEX `idx_orders_merchant_uid` (`merchant_uid`),
+    -- 결제 확정·웹훅·환불이 merchant_uid 로 주문 행을 잠근다. 인덱스가 없으면 훑은 모든 행과 틈이 잠긴다.
+    -- 같은 컬럼에 두던 일반 인덱스 idx_orders_merchant_uid 는 이 UNIQUE 와 겹쳐 쓰기 비용만 늘리므로 두지 않는다.
+                          UNIQUE KEY `uk_orders_merchant_uid` (`merchant_uid`),
+    -- 결제 한 건은 주문 한 건에만 붙는다. 결제 PK 로 주문 찾기도 이 인덱스를 쓴다. NULL 은 여러 개 들어갈 수 있다.
+                          UNIQUE KEY `uk_orders_payment_pk_id` (`payment_pk_id`),
+    -- 30분 만료 스캔(status 같다 조건, created_at 범위 조건)
+                          INDEX `idx_orders_status_created_at` (`status`, `created_at`),
+    -- 할인 복구가 같은 쿠폰을 쥔 다른 주문을 찾는다
+                          INDEX `idx_orders_coupon_id` (`coupon_id`),
                           INDEX `idx_orders_user_id` (`user_id`),
                           FOREIGN KEY (`user_id`) REFERENCES `users`(`id`) ON DELETE SET NULL
 );

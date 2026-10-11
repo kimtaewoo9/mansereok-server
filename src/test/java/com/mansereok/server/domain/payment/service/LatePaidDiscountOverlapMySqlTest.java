@@ -65,13 +65,11 @@ import org.springframework.transaction.support.TransactionTemplate;
  * 작업을 풀어 준다.
  *
  * <p>orders.merchant_uid 에 인덱스가 있어야 이 겹침이 운영 DB 에서처럼 일어난다. 인덱스가 없으면 결제 확정의 주문 잠금 조회가 orders 를
- * 전부 잠가 두 작업이 차례로 선다. 엔티티에 인덱스 선언이 없어 ddl-auto 로 만든 테스트 DB 에는 인덱스가 없으므로, 없을 때는 테스트마다
- * 운영 DB(schema.sql)처럼 UNIQUE 인덱스를 만들고 테스트가 끝나면 지운다. 테스트가 도중에 죽어 인덱스가 남으면
- * {@value #MERCHANT_UID_INDEX_FOR_THIS_TEST} 를 손으로 지운다.
+ * 전부 잠가 두 작업이 차례로 선다. Order 엔티티가 uk_orders_merchant_uid 를 선언하므로 ddl-auto 로 만든 테스트 DB 에도 이 인덱스가
+ * 있다(OrderPaymentIndexMySqlTest 가 확인한다).
  */
 class LatePaidDiscountOverlapMySqlTest extends PaymentMySqlTest {
 
-	private static final String MERCHANT_UID_INDEX_FOR_THIS_TEST = "uk_orders_merchant_uid_overlap_test";
 	private static final int PRICE = 10000;
 	private static final int COUPON_DISCOUNT = 3000;
 	private static final int PRICE_WITH_COUPON = 7000;
@@ -115,7 +113,6 @@ class LatePaidDiscountOverlapMySqlTest extends PaymentMySqlTest {
 
 	private Long userId;
 	private Long subCategoryId;
-	private boolean createdMerchantUidIndex;
 
 	@BeforeEach
 	void createBuyerAndProduct() {
@@ -123,17 +120,6 @@ class LatePaidDiscountOverlapMySqlTest extends PaymentMySqlTest {
 			LocalDate.of(1990, 1, 1), Gender.MALE, true, true, false)).getId();
 		subCategoryId = subCategoryRepository.save(SubCategoryFixture.paidProduct().withoutId()
 			.title("늦은 결제 겹침 테스트 상품 " + runId).price(PRICE).build()).getId();
-	}
-
-	@BeforeEach
-	void indexMerchantUidLikeProduction() {
-		Integer merchantUidIndexes = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM information_schema.statistics "
-			+ "WHERE table_schema = DATABASE() AND table_name = 'orders' AND column_name = 'merchant_uid' "
-			+ "AND seq_in_index = 1", Integer.class);
-		if (merchantUidIndexes != null && merchantUidIndexes == 0) {
-			jdbcTemplate.execute("CREATE UNIQUE INDEX " + MERCHANT_UID_INDEX_FOR_THIS_TEST + " ON orders (merchant_uid)");
-			createdMerchantUidIndex = true;
-		}
 	}
 
 	@AfterEach
@@ -153,9 +139,6 @@ class LatePaidDiscountOverlapMySqlTest extends PaymentMySqlTest {
 		jdbcTemplate.update("DELETE FROM discount_codes WHERE code = ?", discountCode);
 		subCategoryRepository.deleteById(subCategoryId);
 		userRepository.deleteById(userId);
-		if (createdMerchantUidIndex) {
-			jdbcTemplate.execute("DROP INDEX " + MERCHANT_UID_INDEX_FOR_THIS_TEST + " ON orders");
-		}
 	}
 
 	@Nested

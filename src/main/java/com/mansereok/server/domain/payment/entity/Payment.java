@@ -8,6 +8,7 @@ import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.Index;
 import jakarta.persistence.Table;
 import java.time.LocalDateTime;
 import lombok.AccessLevel;
@@ -16,8 +17,25 @@ import lombok.NoArgsConstructor;
 import org.springframework.data.annotation.CreatedDate;
 
 
+// 인덱스 이름을 고정해 엔티티로 만드는 로컬·테스트 DB 와 schema.sql 이 같은 이름을 쓰게 한다. 운영은 ddl-auto: validate 라 인덱스를
+// 검사하지도 만들지도 않는다. 여기 선언한 세 인덱스는 로컬·테스트 DB 에도 운영과 같은 컬럼으로 생긴다. 운영은 배포 전 DDL 로 이 이름대로
+// 만들되, 같은 컬럼·같은 순서의 인덱스가 다른 이름으로 이미 있으면 새로 만들지 않고 그 이름을 그대로 쓴다. 바꿀 때는 운영 DDL 과
+// schema.sql 을 함께 고친다. schema.sql 의 idx_order_id 는 쓰는 조회가 없어 여기 두지 않았고, imp_uid UNIQUE 는 impUid 의
+// @Column(unique = true) 로 선언해 로컬·테스트 DB 에서는 Hibernate 가 지은 이름으로 생긴다.
 @Entity
-@Table(name = "payments")
+@Table(
+	name = "payments",
+	indexes = {
+		// 대사가 하루치 결제를 created_at 범위로 읽는다(PaymentRepository.findAllByCreatedAtGreaterThanEqualAndCreatedAtLessThan).
+		@Index(name = "idx_payments_created_at", columnList = "created_at"),
+		// 대사가 환불 도중 멈춘 CANCEL_REQUESTED 결제를 찾는다(PaymentRepository.findAllByStatus). 상태 종류는 적지만 찾는 상태가
+		// 드물어 그 값의 범위만 읽는다.
+		@Index(name = "idx_payments_status", columnList = "status"),
+		// 내 결제 목록(PaymentRepository.findAllByUserIdOrderByCreatedAtDesc)이 user_id 로 거르고 created_at 순서로 읽어 따로
+		// 정렬하지 않는다. 탈퇴의 사용자 연결 끊기(PaymentRepository.detachUser)는 앞 컬럼 user_id 만으로 이 인덱스를 쓴다.
+		@Index(name = "idx_payments_user_id_created_at", columnList = "user_id, created_at")
+	}
+)
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class Payment {
@@ -34,7 +52,12 @@ public class Payment {
 
 	private String merchantUid;
 	private Long orderId;
-	private Long userId; // user는 여러 결제 정보를 가질 수 있음 .
+	/**
+	 * 결제한 사용자. 한 사용자는 결제를 여러 건 가질 수 있다. 탈퇴하면 결제 이력은 남기고 이 값만 NULL 로 바꾸므로
+	 * (PaymentRepository.detachUser) NULL 을 허용한다.
+	 */
+	@Column(nullable = true)
+	private Long userId;
 
 	private Long subCategoryId;
 

@@ -64,7 +64,7 @@ public class OrderDiscountRestorer {
 	 * 그사이 다른 주문에 넘어간 쿠폰을 기록상 들고 있을 수 있는데, 이 주문을 환불하면서 쿠폰을 풀면 다른 주문이 쓰는 쿠폰이 다시
 	 * 쓸 수 있게 되기 때문이다.
 	 *
-	 * <p>다른 주문이 쥐고 있는지는 잠그지 않고 읽는다. 잠금 읽기로 판단하면 orders.coupon_id 인덱스가 없는 지금 orders 를 모두
+	 * <p>다른 주문이 쥐고 있는지는 잠그지 않고 읽는다. 잠금 읽기로 판단하면 orders.coupon_id 인덱스가 없는 DB 에서는 orders 를 모두
 	 * 잠그며 훑어, 늦은 결제와 상관없이 쿠폰이 서로 다른 주문의 환불·만료끼리도 교착이 난다. 쿠폰 행은 잠가 읽는다
 	 * (CouponService#restoreCoupon).
 	 *
