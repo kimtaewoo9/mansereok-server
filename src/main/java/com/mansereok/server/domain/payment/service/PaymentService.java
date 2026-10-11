@@ -69,6 +69,8 @@ public class PaymentService {
 
 	private final PortOneClient portOneClient;
 
+	private final PaidOrderFinalizer paidOrderFinalizer;
+
 	// 1단계: 주문 생성 (결제 전)
 	public OrderCreateResponse createOrder(String username, OrderCreateRequest request) {
 		User user = userRepository.findByUsername(username)
@@ -203,56 +205,21 @@ public class PaymentService {
 		if (paymentStatus == PaymentStatus.PAID) {
 			log.info("검증 완료. 주문 상태를 PAID로 변경합니다.");
 
-			// 1. 주문 상태 업데이트
-			order.setStatus(OrderStatus.PAID);
-			order.setPaymentId(request.getPaymentId());
-			order.setPaidAt(LocalDateTime.now());
-			Order savedOrder = orderRepository.save(order);
-
-			// 2. Payment 엔티티 생성 및 저장
-			Payment payment = Payment.create(
+			// 1. 주문 PAID 확정, Payment 저장, 연관관계 연결, 초기 Result 생성
+			Payment savedPayment = paidOrderFinalizer.finalizePaid(
+				order,
 				request.getPaymentId(),
-				request.getMerchantUid(),
 				paymentResponse.getAmount().getTotal(),
-				paymentStatus,
-				savedOrder.getId(),
-				savedOrder.getUserId(),
-				savedOrder.getSubCategoryId()
+				LocalDateTime.now()
 			);
-			Payment savedPayment = paymentRepository.save(payment);
 
-			// 3. 연관관계 설정
-			savedOrder.setPaymentPkId(savedPayment.getId());
-			orderRepository.save(savedOrder);
-
-			// 4. 결과지 생성
-			resultService.createInitialResult(savedPayment, savedOrder);
-
-			// 5. Discord 알림 (선택사항)
-			try {
-				User user = userRepository.findById(savedOrder.getUserId()).orElse(null);
-				SubCategory subCategory = subCategoryRepository.findById(
-					savedOrder.getSubCategoryId()).orElse(null);
-
-				if (user != null && subCategory != null) {
-					discordNotificationService.sendPaymentCompletedNotification(
-						user.getName(),
-						user.getEmail(),
-						savedPayment.getAmount(),
-						subCategory.getTitle(),
-						savedOrder.getPaidAt(),
-						savedOrder.getAppliedDiscountCode(),
-						savedOrder.getOriginalAmount()
-					);
-				}
-			} catch (Exception e) {
-				log.error("Discord 알림 전송 중 오류 (무시됨)", e);
-			}
+			// 2. Discord 알림 (선택사항)
+			notifyPaymentCompleted(order, savedPayment);
 
 			log.info("completePayment에서 결제 처리 완료: orderId={}, paymentId={}",
-				savedOrder.getId(), request.getPaymentId());
+				order.getId(), request.getPaymentId());
 
-			return savedOrder;  // 이제 PAID 상태로 반환
+			return order;  // 이제 PAID 상태로 반환
 		}
 
 		// PAID가 아닌 경우
@@ -301,44 +268,27 @@ public class PaymentService {
 			0, // finalAmount = 0
 			request.getDiscountCode(),
 			null,
-			OrderStatus.PAID,
+			OrderStatus.PENDING, // PAID 전이는 finalizePaid 의 markPaid 가 담당한다
 			user.getName(),
 			user.getEmail()
 		);
-		order.setPaidAt(LocalDateTime.now());
-		Order savedOrder = orderRepository.save(order);
 
-		// 5-2. Payment 생성 (상태: PAID)
-		String paymentId = "free_" + merchantUid; // paymentId 가 없으니까 그냥 merchantId 넣어줌 .
-		Payment payment = Payment.create(
-			paymentId,
-			merchantUid,
-			0L, // amount = 0
-			PaymentStatus.PAID,
-			savedOrder.getId(),
-			user.getId(),
-			subCategory.getId()
-		);
-		Payment savedPayment = paymentRepository.save(payment);
+		// 5-2. 주문 PAID 확정, 0원 Payment 저장, 연관관계 연결, 초기 Result 생성
+		String paymentId = "free_" + merchantUid; // 포트원 paymentId 가 없으니 merchantUid 로 대신한다.
+		Payment savedPayment = paidOrderFinalizer.finalizePaid(order, paymentId, 0L,
+			LocalDateTime.now());
 
-		// 5-3. Order에 Payment PK 연결
-		savedOrder.setPaymentPkId(savedPayment.getId());
-		orderRepository.save(savedOrder);
-
-		// 5-4. 분리된 ResultCreationService 호출
-		resultService.createInitialResult(savedPayment, savedOrder);
-
-		// 5-5. 할인 코드 사용 횟수 증가
+		// 5-3. 할인 코드 사용 횟수 증가
 		discountCodeService.incrementUsage(validationResult.getDiscountCodeEntity());
 
 		log.info("0원 결제(무료 제공) 처리 완료: paymentId(PK)={}, orderId={}", savedPayment.getId(),
-			savedOrder.getId());
+			order.getId());
 
 		// 6. 응답 반환
 		return new OrderCreateResponse(
-			savedOrder.getId(),
-			savedOrder.getMerchantUid(),
-			savedOrder.getAmount(),
+			order.getId(),
+			order.getMerchantUid(),
+			order.getAmount(),
 			subCategory.getTitle()
 		);
 	}
@@ -355,7 +305,7 @@ public class PaymentService {
 			"free_" + System.currentTimeMillis() + "_" + UUID.randomUUID().toString()
 				.substring(0, 8);
 
-		// 1. Order 생성 (PAID 상태)
+		// 1. Order 생성 (finalizePaid 에서 PAID 로 전이)
 		Order order = Order.create(
 			merchantUid,
 			user.getId(),
@@ -364,31 +314,17 @@ public class PaymentService {
 			0,  // 결제 금액 0원
 			"EVENT_FREE", // 무료 이벤트 표기,
 			null,
-			OrderStatus.PAID,
+			OrderStatus.PENDING, // PAID 전이는 finalizePaid 의 markPaid 가 담당한다
 			user.getName(),
 			user.getEmail()
 		);
-		order.setPaidAt(LocalDateTime.now());
-		Order savedOrder = orderRepository.save(order);
 
-		// 2. Payment 생성 (PAID 상태)
+		// 2. 주문 PAID 확정, 0원 Payment 저장, 연관관계 연결, 초기 Result 생성
 		String paymentId = "pay_free_" + merchantUid;
-		Payment payment = Payment.create(
-			paymentId,
-			merchantUid,
-			0L,
-			PaymentStatus.PAID,
-			savedOrder.getId(),
-			user.getId(),
-			subCategory.getId()
-		);
-		Payment savedPayment = paymentRepository.save(payment);
+		Payment savedPayment = paidOrderFinalizer.finalizePaid(order, paymentId, 0L,
+			LocalDateTime.now());
 
-		// 3. 관계 연결 및 초기 Result 생성
-		savedOrder.setPaymentPkId(savedPayment.getId());
-		resultService.createInitialResult(savedPayment, savedOrder);
-
-		log.info("무료 사주 주문 생성 완료: orderId={}, paymentId={}", savedOrder.getId(),
+		log.info("무료 사주 주문 생성 완료: orderId={}, paymentId={}", order.getId(),
 			savedPayment.getId());
 		return savedPayment;
 	}
@@ -500,72 +436,33 @@ public class PaymentService {
 				paymentResponse.getStatus());
 
 			if (paymentStatus == PaymentStatus.PAID) {
-				order.setStatus(OrderStatus.PAID);
-				order.setPaymentId(paymentId);
-				order.setPaidAt(LocalDateTime.now());
-
-				Order savedOrder = orderRepository.save(order);
+				// 주문 PAID 확정, Payment 저장, 연관관계 연결, 초기 Result 생성
+				Payment savedPayment = paidOrderFinalizer.finalizePaid(
+					order,
+					paymentId,
+					paymentResponse.getAmount().getTotal(),
+					LocalDateTime.now()
+				);
 				log.info("웹훅으로 결제 완료 처리: orderId={}, paymentId={}",
-					savedOrder.getId(), paymentId);
+					order.getId(), paymentId);
 
 				// 할인 코드 써서 결제했다면, 로그 남기기.
-				if (savedOrder.getAppliedDiscountCode() != null &&
-					!savedOrder.getAppliedDiscountCode().isEmpty()) {
+				if (order.getAppliedDiscountCode() != null &&
+					!order.getAppliedDiscountCode().isEmpty()) {
 
-					int discountAmount = savedOrder.getOriginalAmount() - savedOrder.getAmount();
+					int discountAmount = order.getOriginalAmount() - order.getAmount();
 					double discountRate =
-						(discountAmount / (double) savedOrder.getOriginalAmount()) * 100;
+						(discountAmount / (double) order.getOriginalAmount()) * 100;
 
-					log.info("주문 ID: {}", savedOrder.getId());
-					log.info("사용한 할인 코드: {}", savedOrder.getAppliedDiscountCode());
+					log.info("주문 ID: {}", order.getId());
+					log.info("사용한 할인 코드: {}", order.getAppliedDiscountCode());
 					log.info("할인액: {}원 ({}% 할인)", discountAmount,
 						String.format("%.1f", discountRate));
 				}
 
-				// payment 저장
-				Payment savedPayment = paymentRepository.save(
-					Payment.create(
-						paymentId,
-						merchantUidFromCustomData,
-						paymentResponse.getAmount().getTotal(),
-						paymentStatus,
-						savedOrder.getId(),
-						savedOrder.getUserId(),
-						savedOrder.getSubCategoryId()
-					)
-				);
+				notifyPaymentCompleted(order, savedPayment);
 
-				order.setPaymentPkId(savedPayment.getId());
-
-				resultService.createInitialResult(savedPayment, savedOrder);
-
-				try {
-					User user = userRepository.findById(savedOrder.getUserId())
-						.orElse(null);
-					SubCategory subCategory = subCategoryRepository.findById(
-						savedOrder.getSubCategoryId()).orElse(null);
-
-					if (user != null && subCategory != null) {
-						discordNotificationService.sendPaymentCompletedNotification(
-							user.getName(),
-							user.getEmail(),
-							savedPayment.getAmount(),
-							subCategory.getTitle(),
-							savedOrder.getPaidAt(),
-							savedOrder.getAppliedDiscountCode(),
-							savedOrder.getOriginalAmount()
-						);
-					} else {
-						log.warn(
-							"Discord 결제 알림 및 사주 결과 생성 완료 이메일 전송 실패: 사용자(ID:{}) 또는 상품(ID:{}) 정보를 찾을 수 없습니다.",
-							savedOrder.getUserId(), savedOrder.getSubCategoryId());
-					}
-				} catch (Exception e) {
-					// 알림 실패가 웹훅 처리에 영향을 주지 않도록 try-catch로 감쌉니다.
-					log.error("Discord 결제 알림 전송 중 오류 발생", e);
-				}
-
-				processOrder(savedOrder);
+				processOrder(order);
 			} else {
 				log.error("웹훅 결제 실패: paymentId={}, status={}", paymentId, paymentStatus);
 				order.setStatus(OrderStatus.FAILED);
@@ -674,6 +571,36 @@ public class PaymentService {
 		}
 
 		log.info("사용자 환불 완료: username={}, paymentId={}, reason={}", username, paymentId, reason);
+	}
+
+	/**
+	 * 결제 완료 Discord 알림. 알림 실패가 결제 처리에 영향을 주지 않도록 예외를 삼킨다.
+	 */
+	private void notifyPaymentCompleted(Order order, Payment payment) {
+		try {
+			User user = userRepository.findById(order.getUserId()).orElse(null);
+			SubCategory subCategory = subCategoryRepository.findById(order.getSubCategoryId())
+				.orElse(null);
+
+			if (user != null && subCategory != null) {
+				discordNotificationService.sendPaymentCompletedNotification(
+					user.getName(),
+					user.getEmail(),
+					payment.getAmount(),
+					subCategory.getTitle(),
+					order.getPaidAt(),
+					order.getAppliedDiscountCode(),
+					order.getOriginalAmount()
+				);
+			} else {
+				log.warn(
+					"Discord 결제 알림 및 사주 결과 생성 완료 이메일 전송 실패: 사용자(ID:{}) 또는 상품(ID:{}) 정보를 찾을 수 없습니다.",
+					order.getUserId(), order.getSubCategoryId());
+			}
+		} catch (Exception e) {
+			// 알림 실패가 결제 처리에 영향을 주지 않도록 try-catch로 감쌉니다.
+			log.error("Discord 결제 알림 전송 중 오류 (무시됨)", e);
+		}
 	}
 
 	private void processOrder(Order order) {

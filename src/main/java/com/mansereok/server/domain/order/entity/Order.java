@@ -76,4 +76,23 @@ public class Order {
 		return order;
 	}
 
+	/**
+	 * 주문을 결제 완료 상태로 표시한다. 상태 전이 가드는 두지 않는다(호출자가 검증한다).
+	 *
+	 * @param paymentId 결제 식별자(Payment.impUid 와 같은 값)
+	 * @param paidAt    결제 시각
+	 */
+	public void markPaid(String paymentId, LocalDateTime paidAt) {
+		this.status = OrderStatus.PAID;
+		this.paymentId = paymentId;
+		this.paidAt = paidAt;
+	}
+
+	/**
+	 * 저장된 Payment 의 PK 를 주문에 연결한다.
+	 */
+	public void linkPayment(Long paymentPkId) {
+		this.paymentPkId = paymentPkId;
+	}
+
 }
