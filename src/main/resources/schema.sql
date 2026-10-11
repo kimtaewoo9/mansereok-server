@@ -219,3 +219,57 @@ CREATE INDEX idx_solar_leap ON manses(solar_date, leap_month);
 -- 외래 키가 있는 테이블에는 인덱스 생성
 CREATE INDEX idx_personal_info_user_id ON personal_info(user_id);
 CREATE INDEX idx_refresh_tokens_user_id ON refresh_tokens(user_id);
+
+-- payment_reconciliation_runs 테이블 (일 배치 결제 대사 실행 이력)
+CREATE TABLE payment_reconciliation_runs
+(
+    id                BIGINT AUTO_INCREMENT PRIMARY KEY,
+
+    -- 대사 대상 영업일(KST)과 실제로 조회한 창
+    target_date       DATE        NOT NULL,
+    window_from       DATETIME(6) NOT NULL,
+    window_until      DATETIME(6) NOT NULL,
+
+    -- ReconciliationStatus enum ('RUNNING', 'COMPLETED', 'FAILED')
+    status            VARCHAR(255) NOT NULL,
+
+    -- 대조한 건수
+    pg_payment_count  INT         NOT NULL DEFAULT 0,
+    db_payment_count  INT         NOT NULL DEFAULT 0,
+    mismatch_count    INT         NOT NULL DEFAULT 0,
+
+    started_at        DATETIME(6) NOT NULL,
+    finished_at       DATETIME(6) NULL,
+    error_message     VARCHAR(1000) NULL,
+
+    -- 인덱스
+    INDEX idx_payment_reconciliation_runs_target_date (target_date)
+);
+
+-- payment_reconciliation_mismatches 테이블 (대사에서 찾은 불일치)
+CREATE TABLE payment_reconciliation_mismatches
+(
+    id            BIGINT AUTO_INCREMENT PRIMARY KEY,
+    run_id        BIGINT       NOT NULL,
+
+    -- MismatchType enum ('MISSING_IN_DB', 'MISSING_IN_PG', 'AMOUNT_MISMATCH', 'STATUS_MISMATCH', 'CANCEL_REQUESTED_STALE', 'PG_LOOKUP_FAILED')
+    type          VARCHAR(255) NOT NULL,
+
+    imp_uid       VARCHAR(255) NOT NULL,
+    merchant_uid  VARCHAR(255) NULL,
+
+    -- PG 쪽 값 (DB 에만 있는 건은 비어 있다)
+    pg_status     VARCHAR(255) NULL,
+    pg_amount     BIGINT       NULL,
+
+    -- DB 쪽 값 (PG 에만 있는 건은 비어 있다)
+    db_status     VARCHAR(255) NULL,
+    db_amount     BIGINT       NULL,
+
+    detail        VARCHAR(500) NULL,
+    detected_at   DATETIME(6)  NOT NULL,
+
+    -- 인덱스
+    INDEX idx_payment_reconciliation_mismatches_run_id (run_id),
+    INDEX idx_payment_reconciliation_mismatches_imp_uid (imp_uid)
+);

@@ -1,9 +1,13 @@
 package com.mansereok.server.domain.notification.service;
 
+import com.mansereok.server.domain.payment.reconciliation.entity.PaymentReconciliationMismatch;
+import com.mansereok.server.domain.payment.reconciliation.entity.PaymentReconciliationRun;
+import com.mansereok.server.domain.payment.reconciliation.entity.ReconciliationStatus;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -34,6 +38,9 @@ public class DiscordNotificationService {
 
 	private static final DateTimeFormatter dateTimeFormatter =
 		DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+
+	/** 대사 보고에 한 줄씩 적을 불일치 최대 건수. */
+	private static final int DISCORD_MAX_LINES = 10;
 
 	/**
 	 * 연결 3초·읽기 5초 타임아웃을 둔 RestTemplate 을 만든다. 예전의 {@code new RestTemplate()} 은 타임아웃이
@@ -272,5 +279,88 @@ public class DiscordNotificationService {
 		} catch (Exception e) {
 			log.error("Discord 회원 탈퇴 알림 전송 실패", e);
 		}
+	}
+
+	/**
+	 * 일 배치 결제 대사 결과 보고. 불일치가 있거나 대사가 실패했을 때만 호출된다.
+	 *
+	 * <p>불일치 목록이 길어도 채널이 읽기 어려워지지 않도록 {@value #DISCORD_MAX_LINES} 건까지만 적고 나머지는
+	 * 건수로 줄인다. 자세한 내용은 payment_reconciliation_mismatches 테이블에 남는다. 고객 개인정보는 담지 않는다.
+	 */
+	public void sendPaymentReconciliationReport(PaymentReconciliationRun run,
+		List<PaymentReconciliationMismatch> mismatches) {
+		try {
+			Map<String, Object> embed = new HashMap<>();
+			embed.put("title", reconciliationTitle(run));
+			embed.put("color", needsAttention(run) ? 15158332 : 9807270); // 빨간색 / 회색
+			embed.put("description", reconciliationDescription(run, mismatches));
+
+			Map<String, Object> footer = new HashMap<>();
+			footer.put("text", "만세력 서비스");
+			embed.put("footer", footer);
+
+			Map<String, Object> message = new HashMap<>();
+			message.put("username", "결제 대사 Bot");
+			message.put("embeds", new Object[]{embed});
+
+			HttpHeaders headers = new HttpHeaders();
+			headers.setContentType(MediaType.APPLICATION_JSON);
+
+			HttpEntity<Map<String, Object>> request = new HttpEntity<>(message, headers);
+
+			restTemplate.postForEntity(paymentWebhookUrl, request, String.class);
+
+			log.info("Discord 결제 대사 알림 전송 완료: targetDate={}, status={}, mismatchCount={}",
+				run.getTargetDate(), run.getStatus(), mismatches.size());
+
+		} catch (Exception e) {
+			log.error("Discord 결제 대사 알림 전송 실패", e);
+		}
+	}
+
+	private boolean needsAttention(PaymentReconciliationRun run) {
+		return run.getStatus() == ReconciliationStatus.FAILED || run.getMismatchCount() > 0;
+	}
+
+	private String reconciliationTitle(PaymentReconciliationRun run) {
+		if (run.getStatus() == ReconciliationStatus.FAILED) {
+			return String.format("🚨 결제 대사 실패 (%s)", run.getTargetDate());
+		}
+		return String.format("🧾 결제 대사 결과 (%s)", run.getTargetDate());
+	}
+
+	private String reconciliationDescription(PaymentReconciliationRun run,
+		List<PaymentReconciliationMismatch> mismatches) {
+		if (run.getStatus() == ReconciliationStatus.FAILED) {
+			return String.format("**오류:** %s", run.getErrorMessage());
+		}
+
+		StringBuilder description = new StringBuilder(String.format(
+			"**PG 건수:** %d건\n**DB 건수:** %d건\n**불일치:** %d건",
+			run.getPgPaymentCount(), run.getDbPaymentCount(), run.getMismatchCount()
+		));
+
+		if (!mismatches.isEmpty()) {
+			description.append("\n");
+		}
+		int lines = Math.min(mismatches.size(), DISCORD_MAX_LINES);
+		for (int i = 0; i < lines; i++) {
+			description.append("\n").append(mismatchLine(mismatches.get(i)));
+		}
+		if (mismatches.size() > DISCORD_MAX_LINES) {
+			description.append(String.format("\n외 %d건", mismatches.size() - DISCORD_MAX_LINES));
+		}
+		return description.toString();
+	}
+
+	private String mismatchLine(PaymentReconciliationMismatch mismatch) {
+		return String.format("`%s` %s pg=%s/%s db=%s/%s",
+			mismatch.getType(), mismatch.getImpUid(),
+			orDash(mismatch.getPgStatus()), orDash(mismatch.getPgAmount()),
+			orDash(mismatch.getDbStatus()), orDash(mismatch.getDbAmount()));
+	}
+
+	private String orDash(Object value) {
+		return value == null ? "-" : value.toString();
 	}
 }
