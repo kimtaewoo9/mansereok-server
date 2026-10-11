@@ -16,6 +16,7 @@ import com.mansereok.server.domain.order.entity.OrderStatus;
 import com.mansereok.server.domain.order.repository.OrderRepository;
 import com.mansereok.server.domain.payment.entity.Payment;
 import com.mansereok.server.domain.payment.entity.PaymentStatus;
+import com.mansereok.server.domain.payment.event.PaymentCompletedEvent;
 import com.mansereok.server.domain.payment.repository.PaymentRepository;
 import com.mansereok.server.global.exception.PaymentException;
 import java.sql.SQLIntegrityConstraintViolationException;
@@ -33,6 +34,7 @@ import org.mockito.InOrder;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.test.util.ReflectionTestUtils;
 
@@ -57,6 +59,8 @@ class PaidOrderFinalizerTest {
 	private PaymentRepository paymentRepository;
 	@Mock
 	private ResultService resultService;
+	@Mock
+	private ApplicationEventPublisher eventPublisher;
 
 	private Order order;
 
@@ -153,7 +157,7 @@ class PaidOrderFinalizerTest {
 	}
 
 	@Test
-	@DisplayName("호출 순서는 주문 저장 → Payment 저장 → 주문 저장 → Result 생성이다")
+	@DisplayName("호출 순서는 주문 저장 → Payment 저장 → 주문 저장 → Result 생성 → 완료 이벤트 발행이다")
 	void finalizePaid_callsInOrder() {
 		// given
 		givenPaymentSaveAssignsId();
@@ -162,12 +166,40 @@ class PaidOrderFinalizerTest {
 		Payment savedPayment = paidOrderFinalizer.finalizePaid(order, PAYMENT_ID, AMOUNT, PAID_AT);
 
 		// then
-		InOrder inOrder = inOrder(orderRepository, paymentRepository, resultService);
+		InOrder inOrder = inOrder(orderRepository, paymentRepository, resultService, eventPublisher);
 		inOrder.verify(orderRepository).save(order);
 		inOrder.verify(paymentRepository).save(any(Payment.class));
 		inOrder.verify(orderRepository).save(order);
 		inOrder.verify(resultService).createInitialResult(savedPayment, order);
+		inOrder.verify(eventPublisher).publishEvent(any(PaymentCompletedEvent.class));
 		inOrder.verifyNoMoreInteractions();
+	}
+
+	@Test
+	@DisplayName("확정이 끝나면 orderId, 저장된 Payment 의 PK, 결제 금액을 실은 PaymentCompletedEvent 를 한 번 발행한다")
+	void finalizePaid_publishesPaymentCompletedEvent() {
+		// given
+		givenPaymentSaveAssignsId();
+
+		// when
+		paidOrderFinalizer.finalizePaid(order, PAYMENT_ID, AMOUNT, PAID_AT);
+
+		// then
+		verify(eventPublisher, times(1)).publishEvent(
+			new PaymentCompletedEvent(ORDER_ID, PAYMENT_PK_ID, AMOUNT));
+	}
+
+	@Test
+	@DisplayName("무료 결제(0원)도 amount 0 을 실은 이벤트를 발행한다 (보낼지 말지는 리스너가 amount 로 정한다)")
+	void finalizePaid_zeroAmount_publishesEventWithZeroAmount() {
+		// given
+		givenPaymentSaveAssignsId();
+
+		// when
+		paidOrderFinalizer.finalizePaid(order, "free_" + MERCHANT_UID, 0L, PAID_AT);
+
+		// then
+		verify(eventPublisher).publishEvent(new PaymentCompletedEvent(ORDER_ID, PAYMENT_PK_ID, 0L));
 	}
 
 	@Test
@@ -184,10 +216,10 @@ class PaidOrderFinalizerTest {
 			.hasMessage("이미 처리된 결제입니다.")
 			.hasCause(uniqueViolation);
 
-		// 주문 PAID 저장(1회)까지는 진행됐지만 연관관계 연결 저장과 Result 생성은 없다
+		// 주문 PAID 저장(1회)까지는 진행됐지만 연관관계 연결 저장과 Result 생성, 이벤트 발행은 없다
 		verify(orderRepository, times(1)).save(order);
 		assertThat(order.getPaymentPkId()).isNull();
-		verifyNoInteractions(resultService);
+		verifyNoInteractions(resultService, eventPublisher);
 	}
 
 	@Test
