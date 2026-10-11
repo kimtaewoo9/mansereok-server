@@ -19,6 +19,7 @@ import com.mansereok.server.domain.order.dto.response.OrderCreateResponse;
 import com.mansereok.server.domain.order.entity.Order;
 import com.mansereok.server.domain.order.entity.OrderStatus;
 import com.mansereok.server.domain.order.repository.OrderRepository;
+import com.mansereok.server.domain.payment.client.PortOneClient;
 import com.mansereok.server.domain.payment.dto.request.PaymentCompleteRequest;
 import com.mansereok.server.domain.payment.dto.response.PaymentResponseDto;
 import com.mansereok.server.domain.payment.dto.response.PortOnePaymentResponse;
@@ -40,12 +41,8 @@ import java.util.UUID;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.http.HttpHeaders;
-import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.client.RestClient;
 
 @Service
 @RequiredArgsConstructor
@@ -70,10 +67,7 @@ public class PaymentService {
 
 	private final CouponService couponService;
 
-	private final RestClient restClient = RestClient.create();
-
-	@Value("${portone.api.secret}")
-	private String portOneApiSecret;
+	private final PortOneClient portOneClient;
 
 	// 1단계: 주문 생성 (결제 전)
 	public OrderCreateResponse createOrder(String username, OrderCreateRequest request) {
@@ -194,7 +188,7 @@ public class PaymentService {
 		}
 
 		// 포트원 API 조회를 통한 2차 검증 ..
-		PortOnePaymentResponse paymentResponse = fetchPaymentDataFromPortOne(
+		PortOnePaymentResponse paymentResponse = portOneClient.getPayment(
 			request.getPaymentId());
 
 		// 금액 검증
@@ -428,7 +422,7 @@ public class PaymentService {
 			log.info("포트원 API 호출 시작: paymentId={}", paymentId);
 
 			// 포트원에 결제 됐는지 재확인함
-			PortOnePaymentResponse paymentResponse = fetchPaymentDataFromPortOne(paymentId);
+			PortOnePaymentResponse paymentResponse = portOneClient.getPayment(paymentId);
 
 			log.info("포트원 API 호출 완료");
 			log.info("PortOnePaymentResponse: " + paymentResponse);
@@ -653,7 +647,7 @@ public class PaymentService {
 		}
 
 		// 6. 포트원 API로 결제 취소 요청
-		cancelPortOnePayment(payment.getImpUid(), reason);
+		portOneClient.cancelPayment(payment.getImpUid(), reason);
 
 		// 7. DB 상태 업데이트
 		// 7-1. Payment 상태 변경
@@ -681,68 +675,6 @@ public class PaymentService {
 
 		log.info("사용자 환불 완료: username={}, paymentId={}, reason={}", username, paymentId, reason);
 	}
-
-	// 포트원 결제 취소 API 호출 (V2)
-	private void cancelPortOnePayment(String paymentId, String reason) {
-		try {
-			String url = "https://api.portone.io/payments/" + paymentId + "/cancel";
-
-			String requestBody = objectMapper.writeValueAsString(Map.of("reason", reason));
-
-			restClient.post()
-				.uri(url)
-				.header(HttpHeaders.AUTHORIZATION, "PortOne " + portOneApiSecret)
-				.contentType(MediaType.APPLICATION_JSON)
-				.body(requestBody)
-				.retrieve()
-				.toBodilessEntity();
-
-		} catch (Exception e) {
-			log.error("포트원 결제 취소 API 호출 실패: paymentId={}", paymentId, e);
-			throw new PaymentException("결제 취소 연동 중 오류가 발생했습니다: " + e.getMessage());
-		}
-	}
-
-	private PortOnePaymentResponse fetchPaymentDataFromPortOne(String paymentId) {
-		String rawJsonResponse = null; // 원시 JSON 저장 변수
-		try {
-			String url = "https://api.portone.io/payments/" + paymentId;
-
-			// API 호출하여 원시 JSON 문자열 받기
-			rawJsonResponse = restClient.get()
-				.uri(url)
-				.header(HttpHeaders.AUTHORIZATION, "PortOne " + portOneApiSecret)
-				.accept(MediaType.APPLICATION_JSON)
-				.retrieve()
-				.body(String.class);
-
-			log.info("PortOne API 원시 응답 (paymentId: {}): {}", paymentId, rawJsonResponse);
-
-			if (rawJsonResponse == null || rawJsonResponse.isBlank()) {
-				log.error("PortOne API로부터 비어있는 응답을 받았습니다. paymentId={}", paymentId);
-				throw new PaymentException("PortOne API로부터 비어있는 응답을 받았습니다.");
-			}
-
-			PortOnePaymentResponse response = objectMapper.readValue(rawJsonResponse,
-				PortOnePaymentResponse.class);
-
-			if (response == null) {
-				log.error("PortOne API 응답 JSON 파싱 실패. 원시 응답: {}", rawJsonResponse);
-				throw new PaymentException("PortOne API 응답 파싱에 실패했습니다.");
-			}
-
-			return response;
-
-		} catch (JsonProcessingException e) {
-			log.error("PortOne API 응답 JSON 파싱 중 오류 발생. paymentId={}, 원시 응답: {}", paymentId,
-				rawJsonResponse, e);
-			throw new PaymentException("결제 정보 응답 처리 중 오류 발생 (JSON 파싱 실패)");
-		} catch (Exception e) {
-			log.error("PortOne API 호출 실패: paymentId={}", paymentId, e);
-			throw new PaymentException("결제 정보를 조회하는 중 오류가 발생했습니다.");
-		}
-	}
-
 
 	private void processOrder(Order order) {
 		// TODO: 실제 비즈니스 로직 구현
