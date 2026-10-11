@@ -189,8 +189,11 @@ class OpenInViewOffMySqlTest extends LocalMySqlTest {
 		}
 	}
 
+	/**
+	 * 로그인이 넣는 것과 같이 역할과 회원 id 를 담은 토큰. JwtAuthenticationFilter 가 (userId, subject) 로 계정이 지금도 있는지 확인한다.
+	 */
 	private String bearer() {
-		return "Bearer " + jwtUtil.generateAccessToken(email, Map.of("role", "ROLE_USER"));
+		return "Bearer " + jwtUtil.generateAccessToken(email, Map.of("role", "ROLE_USER", "userId", member.getId()));
 	}
 
 	/**

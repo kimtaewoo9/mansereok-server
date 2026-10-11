@@ -24,6 +24,9 @@ public enum JwtErrorCode {
 	// 서명이 틀린 토큰과, 서명은 맞지만 이 서버가 발급하지 않은(발급자가 다른) 토큰을 함께 뜻한다.
 	SIGNATURE_INVALID(HttpStatus.UNAUTHORIZED, "JWT_SIGNATURE_INVALID",
 		"토큰이 변조되었거나 유효하지 않습니다. 새로 로그인해주세요."),
+	// 서명·발급자·만료는 맞지만, 토큰이 가리키는 계정이 없거나(탈퇴) 같은 username 의 다른 계정으로 바뀐(탈퇴 뒤 재가입) 토큰이다.
+	ACCOUNT_MISMATCH(HttpStatus.UNAUTHORIZED, "JWT_ACCOUNT_MISMATCH",
+		"토큰의 계정이 더 이상 유효하지 않습니다. 새로 로그인해주세요."),
 	INTERNAL_ERROR(HttpStatus.INTERNAL_SERVER_ERROR, "JWT_INTERNAL_ERROR",
 		"서버에서 토큰을 처리하는 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.");
 

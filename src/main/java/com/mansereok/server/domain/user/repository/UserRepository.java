@@ -33,6 +33,11 @@ public interface UserRepository extends JpaRepository<User, Long> {
 	boolean existsByEmail(String email);
 
 	/**
+	 * 토큰이 가리키는 (id, username) 조합의 계정이 지금도 있는지. JwtAuthenticationFilter 가 인증된 요청마다 기본 키로 한 번 읽는다.
+	 */
+	boolean existsByIdAndUsername(Long id, String username);
+
+	/**
 	 * 사용자 행을 SELECT ... FOR UPDATE 로 읽어 트랜잭션이 끝날 때까지 잠근다. 같은 사용자의 비밀번호 재설정 요청을 한 줄로 세우고,
 	 * 재설정 확인과 탈퇴는 재설정 토큰을 쓰거나 지우기 전에 이 잠금을 먼저 잡아 잠그는 순서를 맞춘다(UserService 클래스 설명).
 	 *
