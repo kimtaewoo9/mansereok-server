@@ -10,6 +10,10 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mansereok.server.domain.notification.service.DiscordNotificationService;
 import com.mansereok.server.domain.payment.client.PortOneClient;
 import com.mansereok.server.domain.payment.dto.response.PortOnePaymentResponse;
@@ -24,6 +28,7 @@ import com.mansereok.server.domain.payment.reconciliation.repository.PaymentReco
 import com.mansereok.server.domain.payment.repository.PaymentRepository;
 import com.mansereok.server.global.exception.PortOneUnavailableException;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -33,12 +38,14 @@ import java.util.Optional;
 import java.util.Set;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Captor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.slf4j.LoggerFactory;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
@@ -50,6 +57,9 @@ import org.springframework.transaction.support.SimpleTransactionStatus;
  *
  * <p>Clock 은 KST 가 아닌 UTC 로 고정한다. DB 창이 KST 로 굳어 있지 않고 JVM 시간대(clock.getZone())를
  * 따르는지 보기 위해서다.
+ *
+ * <p>재확인 전에 기다리는 시간은 0 으로 둔다. 실제로 기다린 뒤 다시 읽는지는 {@link PaymentReconciliationRecheckMySqlTest} 가
+ * 실제 MySQL 에서 본다.
  */
 @ExtendWith(MockitoExtension.class)
 class PaymentReconciliationServiceTest {
@@ -97,9 +107,13 @@ class PaymentReconciliationServiceTest {
 				return run;
 			});
 
-		paymentReconciliationService = new PaymentReconciliationService(portOneClient,
-			paymentRepository, runRepository, mismatchRepository, new PaymentReconciler(),
-			discordNotificationService, FIXED_CLOCK, transactionManager);
+		paymentReconciliationService = serviceWaitingBeforeRecheck(Duration.ZERO);
+	}
+
+	private PaymentReconciliationService serviceWaitingBeforeRecheck(Duration refundSettleWait) {
+		return new PaymentReconciliationService(portOneClient, paymentRepository, runRepository,
+			mismatchRepository, new PaymentReconciler(new ObjectMapper()), discordNotificationService,
+			FIXED_CLOCK, transactionManager, refundSettleWait);
 	}
 
 	// ===== 픽스처 =====
@@ -133,6 +147,20 @@ class PaymentReconciliationServiceTest {
 	private List<PaymentReconciliationMismatch> savedMismatches() {
 		verify(mismatchRepository).saveAll(mismatchesCaptor.capture());
 		return mismatchesCaptor.getValue();
+	}
+
+	/** 대상일을 대사하는 동안 대사 서비스가 남긴 로그 문장을 모은다. */
+	private List<String> logsWhileReconciling() {
+		Logger logger = (Logger) LoggerFactory.getLogger(PaymentReconciliationService.class);
+		ListAppender<ILoggingEvent> appender = new ListAppender<>();
+		appender.start();
+		logger.addAppender(appender);
+		try {
+			paymentReconciliationService.reconcile(TARGET_DATE);
+		} finally {
+			logger.detachAppender(appender);
+		}
+		return appender.list.stream().map(ILoggingEvent::getFormattedMessage).toList();
 	}
 
 	// ===== 창 계산과 창 밖 결제 =====
@@ -256,5 +284,178 @@ class PaymentReconciliationServiceTest {
 		assertThat(run.getFinishedAt()).isEqualTo(NOW);
 		verify(discordNotificationService).sendPaymentReconciliationReport(run, List.of());
 		verifyNoInteractions(mismatchRepository);
+	}
+
+	// ===== 환불 도중에만 보이는 불일치의 저장 직전 재확인 =====
+
+	@Nested
+	@DisplayName("첫 읽기에서 CANCEL_REQUESTED 로 보인 결제는 저장 직전에 DB 를 다시 읽어")
+	class WhenCancelRequestedOnFirstRead {
+
+		@BeforeEach
+		void givenCancelRequestedPaymentOutsidePgList() {
+			givenPgPayments();
+			given(paymentRepository.findAllByCreatedAtGreaterThanEqualAndCreatedAtLessThan(
+				DB_WINDOW_FROM, DB_WINDOW_UNTIL)).willReturn(List.of());
+			given(paymentRepository.findAllByStatus(PaymentStatus.CANCEL_REQUESTED))
+				.willReturn(List.of(dbPayment(IMP_UID, PaymentStatus.CANCEL_REQUESTED, PRICE)));
+			given(portOneClient.findPayment(IMP_UID))
+				.willReturn(Optional.of(pgPayment(IMP_UID, "CANCELLED", PRICE)));
+		}
+
+		@Test
+		@DisplayName("그 사이 환불이 끝나 CANCELLED 면 CANCEL_REQUESTED_STALE 을 기록하지 않고 Discord 로도 알리지 않는다")
+		void refundFinishedBeforeSave_isNotRecorded() {
+			// given
+			given(paymentRepository.findAllByImpUidIn(Set.of(IMP_UID)))
+				.willReturn(List.of(dbPayment(IMP_UID, PaymentStatus.CANCELLED, PRICE)));
+
+			// when
+			PaymentReconciliationRun run = paymentReconciliationService.reconcile(TARGET_DATE);
+
+			// then
+			assertThat(savedMismatches()).isEmpty();
+			assertThat(run.getMismatchCount()).isZero();
+			verifyNoInteractions(discordNotificationService);
+		}
+
+		@Test
+		@DisplayName("다시 읽어도 CANCEL_REQUESTED 면 CANCEL_REQUESTED_STALE 한 건을 기록하고 알린다")
+		void stillCancelRequested_isRecorded() {
+			// given
+			given(paymentRepository.findAllByImpUidIn(Set.of(IMP_UID)))
+				.willReturn(List.of(dbPayment(IMP_UID, PaymentStatus.CANCEL_REQUESTED, PRICE)));
+
+			// when
+			PaymentReconciliationRun run = paymentReconciliationService.reconcile(TARGET_DATE);
+
+			// then
+			List<PaymentReconciliationMismatch> mismatches = savedMismatches();
+			assertThat(mismatches).extracting(PaymentReconciliationMismatch::getType)
+				.containsExactly(MismatchType.CANCEL_REQUESTED_STALE);
+			assertThat(run.getMismatchCount()).isEqualTo(1);
+			verify(discordNotificationService).sendPaymentReconciliationReport(run, mismatches);
+		}
+
+		@Test
+		@DisplayName("그 사이 환불이 끝나 뺀 불일치는 impUid·타입과 두 번 읽은 PG·DB 상태를 로그로 남긴다")
+		void droppedMismatch_isLoggedWithBothReads() {
+			// given
+			given(paymentRepository.findAllByImpUidIn(Set.of(IMP_UID)))
+				.willReturn(List.of(dbPayment(IMP_UID, PaymentStatus.CANCELLED, PRICE)));
+
+			// when
+			List<String> logs = logsWhileReconciling();
+
+			// then
+			assertThat(logs).contains("재확인으로 뺀 불일치: impUid=pay_test_001, type=CANCEL_REQUESTED_STALE, "
+				+ "첫 읽기 PG=CANCELLED, DB=CANCEL_REQUESTED, 다시 읽은 PG=다시 조회하지 않음, DB=CANCELLED");
+		}
+
+		@Test
+		@DisplayName("환불이 끝나기를 기다리는 동안 중단되면 불일치를 저장하지 않고 run 을 FAILED 로 알린 뒤 인터럽트 표시를 되살려 던진다")
+		void interruptedWhileWaiting_marksRunFailed() {
+			// given: 스레드가 이미 중단 표시를 달고 있으면 기다리기 시작하자마자 InterruptedException 이 난다
+			PaymentReconciliationService waitingService =
+				serviceWaitingBeforeRecheck(Duration.ofSeconds(30));
+			Thread.currentThread().interrupt();
+
+			try {
+				// when & then
+				assertThatThrownBy(() -> waitingService.reconcile(TARGET_DATE))
+					.isInstanceOf(IllegalStateException.class)
+					.hasMessage("진행 중인 환불이 끝나기를 기다리는 동안 대사가 중단되었습니다.");
+				assertThat(Thread.currentThread().isInterrupted()).as("인터럽트 표시를 되살렸다").isTrue();
+			} finally {
+				Thread.interrupted();
+			}
+
+			ArgumentCaptor<PaymentReconciliationRun> runCaptor =
+				ArgumentCaptor.forClass(PaymentReconciliationRun.class);
+			verify(runRepository, times(2)).save(runCaptor.capture());
+			PaymentReconciliationRun run = runCaptor.getValue();
+			assertThat(run.getStatus()).isEqualTo(ReconciliationStatus.FAILED);
+			verify(discordNotificationService).sendPaymentReconciliationReport(run, List.of());
+			verifyNoInteractions(mismatchRepository);
+		}
+	}
+
+	@Nested
+	@DisplayName("첫 읽기에서 PG=PAID, DB=CANCELLED 로 어긋나 보인 결제는 저장 직전에 DB 와 PG 를 다시 읽어")
+	class WhenStatusMismatchOnFirstRead {
+
+		@BeforeEach
+		void givenPgPaidAndDbCancelled() {
+			givenPgPayments(pgPayment(IMP_UID, "PAID", PRICE));
+			givenDbPayments();
+			// 첫 읽기(PG 목록의 impUid 로 찾기)와 재확인 모두 CANCELLED 를 읽는다
+			given(paymentRepository.findAllByImpUidIn(Set.of(IMP_UID)))
+				.willReturn(List.of(dbPayment(IMP_UID, PaymentStatus.CANCELLED, PRICE)));
+		}
+
+		@Test
+		@DisplayName("그 사이 PG 도 CANCELLED 가 됐으면 STATUS_MISMATCH 를 기록하지 않고 Discord 로도 알리지 않는다")
+		void pgCaughtUpBeforeSave_isNotRecorded() {
+			// given
+			given(portOneClient.findPayment(IMP_UID))
+				.willReturn(Optional.of(pgPayment(IMP_UID, "CANCELLED", PRICE)));
+
+			// when
+			PaymentReconciliationRun run = paymentReconciliationService.reconcile(TARGET_DATE);
+
+			// then
+			assertThat(savedMismatches()).isEmpty();
+			assertThat(run.getMismatchCount()).isZero();
+			verifyNoInteractions(discordNotificationService);
+		}
+
+		@Test
+		@DisplayName("그 사이 PG 가 CANCELLED 가 돼 뺀 불일치는 impUid·타입과 두 번 읽은 PG·DB 상태를 로그로 남긴다")
+		void droppedMismatch_isLoggedWithBothReads() {
+			// given
+			given(portOneClient.findPayment(IMP_UID))
+				.willReturn(Optional.of(pgPayment(IMP_UID, "CANCELLED", PRICE)));
+
+			// when
+			List<String> logs = logsWhileReconciling();
+
+			// then
+			assertThat(logs).contains("재확인으로 뺀 불일치: impUid=pay_test_001, type=STATUS_MISMATCH, "
+				+ "첫 읽기 PG=PAID, DB=CANCELLED, 다시 읽은 PG=CANCELLED, DB=CANCELLED");
+		}
+
+		@Test
+		@DisplayName("다시 조회해도 PG 가 PAID 면 STATUS_MISMATCH 한 건을 기록하고 알린다")
+		void stillDifferent_isRecorded() {
+			// given
+			given(portOneClient.findPayment(IMP_UID))
+				.willReturn(Optional.of(pgPayment(IMP_UID, "PAID", PRICE)));
+
+			// when
+			PaymentReconciliationRun run = paymentReconciliationService.reconcile(TARGET_DATE);
+
+			// then
+			List<PaymentReconciliationMismatch> mismatches = savedMismatches();
+			assertThat(mismatches).extracting(PaymentReconciliationMismatch::getType)
+				.containsExactly(MismatchType.STATUS_MISMATCH);
+			assertThat(mismatches.get(0).getPgStatus()).isEqualTo("PAID");
+			verify(discordNotificationService).sendPaymentReconciliationReport(run, mismatches);
+		}
+
+		@Test
+		@DisplayName("PG 재조회가 일시 장애로 실패하면 사라졌다고 확인하지 못했으므로 첫 판단대로 STATUS_MISMATCH 를 기록한다")
+		void secondLookupFailure_keepsFirstJudgement() {
+			// given
+			willThrow(new PortOneUnavailableException("결제 정보를 조회하는 중 일시적인 오류가 발생했습니다."))
+				.given(portOneClient).findPayment(IMP_UID);
+
+			// when
+			PaymentReconciliationRun run = paymentReconciliationService.reconcile(TARGET_DATE);
+
+			// then
+			assertThat(savedMismatches()).extracting(PaymentReconciliationMismatch::getType)
+				.containsExactly(MismatchType.STATUS_MISMATCH);
+			assertThat(run.getStatus()).isEqualTo(ReconciliationStatus.COMPLETED);
+		}
 	}
 }

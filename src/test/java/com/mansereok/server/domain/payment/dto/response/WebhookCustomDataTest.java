@@ -6,7 +6,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mansereok.server.global.exception.PaymentException;
+import java.util.Optional;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.NullAndEmptySource;
@@ -58,5 +60,42 @@ class WebhookCustomDataTest {
 		assertThatThrownBy(() -> WebhookCustomData.from(customData, objectMapper))
 			.isInstanceOf(PaymentException.class)
 			.hasMessage("결제 API 응답의 customData에서 유효한 주문 번호(merchantUid)를 추출할 수 없습니다.");
+	}
+
+	@Nested
+	@DisplayName("tryParse 는 from 과 같은 규칙으로 읽되")
+	class TryParse {
+
+		@Test
+		@DisplayName("정상 customData 면 merchantUid 를 담은 Optional 을 돌려준다")
+		void validJson_returnsMerchantUid() {
+			// when
+			Optional<WebhookCustomData> parsed = WebhookCustomData.tryParse(
+				"{\"merchantUid\":\"order_123_abcd\",\"subCategoryId\":1}", objectMapper);
+
+			// then
+			assertThat(parsed).map(WebhookCustomData::merchantUid).contains("order_123_abcd");
+		}
+
+		@ParameterizedTest(name = "[{index}] customData={0}")
+		@NullAndEmptySource
+		@ValueSource(strings = {
+			"   ",
+			"not-json",
+			"{}",
+			"{\"merchant_uid\":\"order_1\"}",
+			"{\"merchantUid\":\"\"}",
+			"{\"merchantUid\":\"   \"}",
+			"{\"merchantUid\":null}",
+			"\"just a string\""
+		})
+		@DisplayName("from 이 예외를 던지는 customData 에는 예외 대신 빈 Optional 을 돌려준다")
+		void unreadableCustomData_returnsEmpty(String customData) {
+			// when
+			Optional<WebhookCustomData> parsed = WebhookCustomData.tryParse(customData, objectMapper);
+
+			// then
+			assertThat(parsed).isEmpty();
+		}
 	}
 }

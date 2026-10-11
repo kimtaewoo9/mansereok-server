@@ -1,7 +1,9 @@
 package com.mansereok.server.domain.payment.reconciliation.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.tuple;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mansereok.server.domain.payment.dto.response.PortOnePaymentResponse;
 import com.mansereok.server.domain.payment.entity.Payment;
 import com.mansereok.server.domain.payment.entity.PaymentStatus;
@@ -11,7 +13,12 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.NullSource;
+import org.junit.jupiter.params.provider.ValueSource;
 
 /**
  * 대사 규칙 검증. 조회가 없는 순수 클래스라 입력을 그대로 만들어 넣는다.
@@ -23,7 +30,8 @@ class PaymentReconcilerTest {
 	private static final String IMP_UID = "pay_test_001";
 	private static final long PRICE = 10000L;
 
-	private final PaymentReconciler reconciler = new PaymentReconciler();
+	// customData 파싱을 실제로 거치도록 진짜 ObjectMapper 를 쓴다.
+	private final PaymentReconciler reconciler = new PaymentReconciler(new ObjectMapper());
 
 	// ===== 픽스처 =====
 
@@ -205,5 +213,240 @@ class PaymentReconcilerTest {
 		assertThat(mismatches).extracting(PaymentReconciliationMismatch::getType)
 			.containsExactly(MismatchType.AMOUNT_MISMATCH);
 		assertThat(mismatches.get(0).getPgStatus()).isEqualTo("SOMETHING_NEW");
+	}
+
+	// ===== PG 단건 조회가 돌려준 결제 ID 대조 =====
+
+	@Nested
+	@DisplayName("단건 조회가 돌려준 PG 결제 ID 를 DB 결제 ID 와 대조할 때")
+	class WhenComparingLookedUpPaymentId {
+
+		private static final String VARIANT_IMP_UID = "pay_A#1";
+
+		@Test
+		@DisplayName("'pay_A#1' 조회에 pay_A 가 돌아오면 금액과 상태가 같아도 PG_ID_MISMATCH 한 건을 DB 결제 ID 로 기록한다")
+		void recordsPgIdMismatchEvenWhenAmountAndStatusMatch() {
+			// given
+			Payment variantPayment = dbPayment(VARIANT_IMP_UID, PaymentStatus.PAID, PRICE);
+			Map<String, PgLookup> lookups =
+				Map.of(VARIANT_IMP_UID, PgLookup.found(pgPayment("pay_A", "PAID", PRICE)));
+
+			// when
+			List<PaymentReconciliationMismatch> mismatches =
+				reconcile(List.of(), List.of(variantPayment), List.of(), lookups);
+
+			// then
+			assertThat(mismatches)
+				.extracting(PaymentReconciliationMismatch::getType, PaymentReconciliationMismatch::getImpUid)
+				.containsExactly(tuple(MismatchType.PG_ID_MISMATCH, VARIANT_IMP_UID));
+		}
+
+		@Test
+		@DisplayName("다른 ID 의 결제가 돌아오면 그 결제의 금액·상태와 비교하지 않아 AMOUNT_MISMATCH·STATUS_MISMATCH 를 만들지 않는다")
+		void skipsAmountAndStatusComparison() {
+			// given
+			Payment variantPayment = dbPayment(VARIANT_IMP_UID, PaymentStatus.PAID, 9000L);
+			Map<String, PgLookup> lookups =
+				Map.of(VARIANT_IMP_UID, PgLookup.found(pgPayment("pay_A", "CANCELLED", PRICE)));
+
+			// when
+			List<PaymentReconciliationMismatch> mismatches =
+				reconcile(List.of(), List.of(variantPayment), List.of(), lookups);
+
+			// then
+			assertThat(mismatches).extracting(PaymentReconciliationMismatch::getType)
+				.containsExactly(MismatchType.PG_ID_MISMATCH);
+		}
+
+		@Test
+		@DisplayName("PG 목록의 pay_A 에 DB 결제 pay_A 와 pay_A#1 이 함께 붙으면 ID 가 다른 pay_A#1 만 한 건 기록한다")
+		void twoDbPaymentsOnOnePgPayment_recordsTheExtraOne() {
+			// given
+			PortOnePaymentResponse pgPaymentA = pgPayment("pay_A", "PAID", PRICE);
+			List<Payment> dbPayments = List.of(dbPayment("pay_A", PaymentStatus.PAID, PRICE),
+				dbPayment(VARIANT_IMP_UID, PaymentStatus.PAID, PRICE));
+			Map<String, PgLookup> lookups = Map.of(VARIANT_IMP_UID, PgLookup.found(pgPaymentA));
+
+			// when
+			List<PaymentReconciliationMismatch> mismatches =
+				reconcile(List.of(pgPaymentA), dbPayments, List.of(), lookups);
+
+			// then
+			assertThat(mismatches)
+				.extracting(PaymentReconciliationMismatch::getType, PaymentReconciliationMismatch::getImpUid)
+				.containsExactly(tuple(MismatchType.PG_ID_MISMATCH, VARIANT_IMP_UID));
+		}
+
+		@ParameterizedTest(name = "[{index}] 돌아온 결제 ID={0}")
+		@NullSource
+		@ValueSource(strings = {"pay_A", "PAY_A#1", "pay_A#1 "})
+		@DisplayName("돌아온 결제 ID 가 없거나 글자 하나라도 다르면 다른 결제로 본다")
+		void anyDifferenceInReturnedId_isPgIdMismatch(String returnedId) {
+			// given
+			Payment variantPayment = dbPayment(VARIANT_IMP_UID, PaymentStatus.PAID, PRICE);
+			Map<String, PgLookup> lookups =
+				Map.of(VARIANT_IMP_UID, PgLookup.found(pgPayment(returnedId, "PAID", PRICE)));
+
+			// when
+			List<PaymentReconciliationMismatch> mismatches =
+				reconcile(List.of(), List.of(variantPayment), List.of(), lookups);
+
+			// then
+			assertThat(mismatches).extracting(PaymentReconciliationMismatch::getType)
+				.containsExactly(MismatchType.PG_ID_MISMATCH);
+		}
+
+		@Test
+		@DisplayName("돌아온 결제 ID 가 DB 결제 ID 와 같고 금액·상태도 같으면 불일치가 없다")
+		void sameIdAmountAndStatus_hasNoMismatch() {
+			// given
+			Payment payment = dbPayment(VARIANT_IMP_UID, PaymentStatus.PAID, PRICE);
+			Map<String, PgLookup> lookups =
+				Map.of(VARIANT_IMP_UID, PgLookup.found(pgPayment(VARIANT_IMP_UID, "PAID", PRICE)));
+
+			// when
+			List<PaymentReconciliationMismatch> mismatches =
+				reconcile(List.of(), List.of(payment), List.of(), lookups);
+
+			// then
+			assertThat(mismatches).isEmpty();
+		}
+	}
+
+	// ===== PG 에만 있는 거래의 주문 번호 =====
+
+	@Nested
+	@DisplayName("PG 에만 있는 거래를 MISSING_IN_DB 로 기록할 때")
+	class WhenRecordingMissingInDb {
+
+		@Test
+		@DisplayName("주문 번호를 PG 결제의 customData 에서 꺼내 채운다")
+		void takesMerchantUidFromCustomData() {
+			// given
+			PortOnePaymentResponse pgOnly = pgPayment(IMP_UID, "PAID", PRICE);
+			pgOnly.setCustomData("{\"merchantUid\":\"order_1\",\"subCategoryId\":3}");
+
+			// when
+			List<PaymentReconciliationMismatch> mismatches = reconcile(List.of(pgOnly), List.of());
+
+			// then
+			assertThat(mismatches).extracting(PaymentReconciliationMismatch::getType,
+					PaymentReconciliationMismatch::getMerchantUid)
+				.containsExactly(tuple(MismatchType.MISSING_IN_DB, "order_1"));
+		}
+
+		@ParameterizedTest(name = "[{index}] customData={0}")
+		@NullSource
+		@ValueSource(strings = {"not-json", "{}", "{\"merchant_uid\":\"order_1\"}", "{\"merchantUid\":\" \"}"})
+		@DisplayName("customData 가 없거나 형식이 어긋나면 주문 번호를 비우고 그 사실을 detail 에 적는다")
+		void unreadableCustomData_leavesMerchantUidEmptyWithReason(String customData) {
+			// given
+			PortOnePaymentResponse pgOnly = pgPayment(IMP_UID, "PAID", PRICE);
+			pgOnly.setCustomData(customData);
+
+			// when
+			List<PaymentReconciliationMismatch> mismatches = reconcile(List.of(pgOnly), List.of());
+
+			// then
+			assertThat(mismatches).singleElement().satisfies(mismatch -> {
+				assertThat(mismatch.getType()).isEqualTo(MismatchType.MISSING_IN_DB);
+				assertThat(mismatch.getMerchantUid()).isNull();
+				assertThat(mismatch.getDetail()).endsWith("customData 에서 주문 번호를 읽지 못했습니다.");
+			});
+		}
+	}
+
+	// ===== 저장 직전 재확인 =====
+
+	@Nested
+	@DisplayName("다시 읽은 값으로 첫 대조의 불일치를 확인하면")
+	class WhenRecheckingWithFreshValues {
+
+		@ParameterizedTest(name = "[{index}] 다시 읽은 PG={0}, DB={1} → 남는 건수={2}")
+		@CsvSource(textBlock = """
+			# 양쪽이 같아졌을 때만 뺀다
+			CANCELLED,        CANCELLED,        0
+			CANCELLED,        PAID,             1
+			# 첫 읽기 뒤에 시작한 환불은 먼저 본 PG=CANCELLED 를 설명하지 못하므로 남긴다
+			CANCELLED,        CANCEL_REQUESTED, 1
+			# 우리가 모르는 PG 상태는 같아졌다고 확인하지 못한 것이다
+			SOMETHING_NEW,    CANCELLED,        1
+			""")
+		@DisplayName("STATUS_MISMATCH 는 다시 조회한 PG 상태와 다시 읽은 DB 상태가 같아졌을 때만 빼고, DB 가 CANCEL_REQUESTED 가 됐어도 남긴다")
+		void statusMismatch_isDroppedOnlyWhenBothSidesAgree(String freshPgStatus,
+			PaymentStatus freshDbStatus, int keptCount) {
+			// given: 첫 읽기는 PG=CANCELLED, DB=PAID
+			List<PaymentReconciliationMismatch> firstRead = reconcile(
+				List.of(pgPayment(IMP_UID, "CANCELLED", PRICE)),
+				List.of(dbPayment(IMP_UID, PaymentStatus.PAID, PRICE)));
+			assertThat(firstRead).as("첫 대조 결과").extracting(PaymentReconciliationMismatch::getType)
+				.containsExactly(MismatchType.STATUS_MISMATCH);
+			Map<String, Payment> freshDb = Map.of(IMP_UID, dbPayment(IMP_UID, freshDbStatus, PRICE));
+			Map<String, PgLookup> freshPg =
+				Map.of(IMP_UID, PgLookup.found(pgPayment(IMP_UID, freshPgStatus, PRICE)));
+
+			// when
+			List<PaymentReconciliationMismatch> keptMismatches =
+				reconciler.keepStillMismatched(firstRead, freshDb, freshPg);
+
+			// then
+			assertThat(keptMismatches).hasSize(keptCount);
+		}
+
+		@Test
+		@DisplayName("STATUS_MISMATCH 인데 다시 조회한 PG 결제 ID 가 다르면 확인하지 못한 것이라 첫 판단대로 남긴다")
+		void statusMismatchWithAnotherIdOnSecondLookup_isKept() {
+			// given
+			List<PaymentReconciliationMismatch> firstRead = reconcile(
+				List.of(pgPayment(IMP_UID, "CANCELLED", PRICE)),
+				List.of(dbPayment(IMP_UID, PaymentStatus.PAID, PRICE)));
+			Map<String, Payment> freshDb =
+				Map.of(IMP_UID, dbPayment(IMP_UID, PaymentStatus.PAID, PRICE));
+			Map<String, PgLookup> freshPg =
+				Map.of(IMP_UID, PgLookup.found(pgPayment("pay_other", "PAID", PRICE)));
+
+			// when
+			List<PaymentReconciliationMismatch> kept =
+				reconciler.keepStillMismatched(firstRead, freshDb, freshPg);
+
+			// then
+			assertThat(kept).isEqualTo(firstRead);
+		}
+
+		@Test
+		@DisplayName("다시 읽은 DB 결제가 없으면 확인하지 못한 것이라 첫 판단대로 남긴다")
+		void missingFreshDbPayment_isKept() {
+			// given
+			List<PaymentReconciliationMismatch> firstRead = reconcile(List.of(), List.of(),
+				List.of(dbPayment(IMP_UID, PaymentStatus.CANCEL_REQUESTED, PRICE)),
+				Map.of(IMP_UID, PgLookup.found(pgPayment(IMP_UID, "PAID", PRICE))));
+
+			// when
+			List<PaymentReconciliationMismatch> kept =
+				reconciler.keepStillMismatched(firstRead, Map.of(), Map.of());
+
+			// then
+			assertThat(kept).extracting(PaymentReconciliationMismatch::getType)
+				.containsExactly(MismatchType.CANCEL_REQUESTED_STALE);
+		}
+
+		@Test
+		@DisplayName("환불이 끝나도 사라지지 않는 타입(MISSING_IN_PG)은 다시 읽은 값과 상관없이 그대로 둔다")
+		void otherTypes_areKeptAsIs() {
+			// given
+			List<PaymentReconciliationMismatch> firstRead = reconcile(List.of(),
+				List.of(dbPayment(IMP_UID, PaymentStatus.PAID, PRICE)), List.of(),
+				Map.of(IMP_UID, PgLookup.notFound()));
+			Map<String, Payment> freshDb =
+				Map.of(IMP_UID, dbPayment(IMP_UID, PaymentStatus.CANCELLED, PRICE));
+
+			// when
+			List<PaymentReconciliationMismatch> kept =
+				reconciler.keepStillMismatched(firstRead, freshDb, Map.of());
+
+			// then
+			assertThat(kept).extracting(PaymentReconciliationMismatch::getType)
+				.containsExactly(MismatchType.MISSING_IN_PG);
+		}
 	}
 }
