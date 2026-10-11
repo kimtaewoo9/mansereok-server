@@ -13,7 +13,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 /**
- * 포트원 조회 응답과 주문을 대조하는 공통 검증. 결제 완료 API(PaymentConfirmService)와 웹훅(PaymentService)이 같은
+ * 포트원 조회 응답과 주문을 대조하는 공통 검증. 결제 완료 API(PaymentConfirmService)와 웹훅(PaymentWebhookService)이 같은
  * 규칙을 두 곳에 복사하지 않도록 여기에 모은다.
  *
  * <p>검증 실패를 어떻게 다룰지는 호출자가 정한다. 완료 API 는 금액 불일치를 400 으로 던지고, 웹훅은 예외 없이

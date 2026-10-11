@@ -9,7 +9,8 @@ import com.mansereok.server.domain.interpret.service.ManseCalculationService;
 import com.mansereok.server.domain.interpret.service.ManseInterpretationService;
 import com.mansereok.server.domain.interpret.service.ResultService;
 import com.mansereok.server.domain.payment.entity.Payment;
-import com.mansereok.server.domain.payment.service.PaymentService;
+import com.mansereok.server.domain.payment.service.PaymentEntitlementService;
+import com.mansereok.server.domain.payment.service.PaymentOrderService;
 import jakarta.validation.Valid;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
@@ -29,7 +30,8 @@ public class ManseryeokController {
 	private final ManseCalculationService manseCalculationService;
 	private final ManseInterpretationService manseInterpretationService;
 
-	private final PaymentService paymentService;
+	private final PaymentEntitlementService paymentEntitlementService;
+	private final PaymentOrderService paymentOrderService;
 	private final ResultService resultService;
 
 	@PostMapping("/api/v1/manseryeok/calculate")
@@ -55,7 +57,7 @@ public class ManseryeokController {
 		// 0. 결제 검증: 본인의 결제 완료 건만 해석에 쓸 수 있다
 		// TODO: paymentId 의 상품(subCategoryId)이 경로의 subcategoryId 와 일치하는지도 검사해야 하지만,
 		//       프론트 흐름 확인이 필요해 이번에는 소유권·결제 상태만 본다.
-		paymentService.verifyPaidOwnership(request.getPaymentId(), username);
+		paymentEntitlementService.verifyPaidOwnership(request.getPaymentId(), username);
 
 		// 1. 상태 변경 (공통)
 		resultService.updateStatusToProcessing(request.getPaymentId());
@@ -111,7 +113,7 @@ public class ManseryeokController {
 		// 결제 검증: 본인의 결제 완료 건만 해석에 쓸 수 있다
 		// TODO: paymentId 의 상품(subCategoryId)이 경로의 subcategoryId 와 일치하는지도 검사해야 하지만,
 		//       프론트 흐름 확인이 필요해 이번에는 소유권·결제 상태만 본다.
-		paymentService.verifyPaidOwnership(request.getPaymentId(), username);
+		paymentEntitlementService.verifyPaidOwnership(request.getPaymentId(), username);
 
 		resultService.updateCompatibilityStatusToProcessing(request.getPaymentId());
 
@@ -163,8 +165,8 @@ public class ManseryeokController {
 	) {
 		log.info("🆓 무료 해석 요청 진입: user={}, category={}", username, subcategoryId);
 
-		// 1. [동기] 0원 주문/결제 생성 (PaymentService.createFreeOrder 사용)
-		Payment payment = paymentService.createFreeOrder(username, subcategoryId);
+		// 1. [동기] 0원 주문/결제 생성 (PaymentOrderService.createFreeOrder 사용)
+		Payment payment = paymentOrderService.createFreeOrder(username, subcategoryId);
 
 		// 2. 만세력 계산
 		ManseryeokCalculationResponse manse = manseCalculationService.calculate(
@@ -205,7 +207,7 @@ public class ManseryeokController {
 		log.info("🆓 무료 궁합/재회운 요청 진입: user={}, category={}", username, subcategoryId);
 
 		// 1. [동기] 0원 주문/결제 생성
-		Payment payment = paymentService.createFreeOrder(username, subcategoryId);
+		Payment payment = paymentOrderService.createFreeOrder(username, subcategoryId);
 
 		// 2. 두 사람 만세력 계산
 		ManseryeokCalculationResponse p1Manse = manseCalculationService.calculate(
