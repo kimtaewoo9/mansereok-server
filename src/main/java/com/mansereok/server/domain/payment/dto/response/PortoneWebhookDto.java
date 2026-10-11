@@ -21,4 +21,8 @@ public class PortoneWebhookDto {
 
 	@JsonProperty("merchant_uid")
 	private String merchantUid;
+
+	// 신형 웹훅 본문(2024-04-25 버전)의 이벤트 종류. 예: "Transaction.Paid". 이 형식에는 status 가 없다.
+	// 서비스는 이 형식을 처리하지 않고, status 없이 type 만 오면 warn 으로 남긴다.
+	private String type;
 }
