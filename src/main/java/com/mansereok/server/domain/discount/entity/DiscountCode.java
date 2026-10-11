@@ -96,6 +96,21 @@ public class DiscountCode {
 		}
 	}
 
+	/**
+	 * 이미 결제가 끝난 주문 몫으로 사용 횟수를 1 올린다. 최대 횟수에 닿았어도 올린다.
+	 *
+	 * <p>만료 뒤 늦게 결제된 주문이 만료 때 돌려놓은 사용 횟수를 다시 셀 때 부른다. 결제는 이미 이 코드의 할인가로 끝났으므로 거절할
+	 * 수 없고, 사용 횟수는 실제로 쓰인 수와 맞아야 한다. 넘었는지는 {@link #exceedsMaxUses()} 로 확인해 운영에 알린다.
+	 */
+	public void incrementUsageAllowingOverflow() {
+		this.currentUses++;
+	}
+
+	/** 사용 횟수가 최대 횟수를 넘었으면 true. 최대 횟수와 같으면 넘은 것이 아니다. */
+	public boolean exceedsMaxUses() {
+		return this.currentUses > this.maxUses;
+	}
+
 	public static DiscountCode createReviewReward(String code, int discountAmount,
 		LocalDateTime expiresAt) {
 

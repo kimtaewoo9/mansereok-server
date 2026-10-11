@@ -101,6 +101,22 @@ public class Coupon {
 		this.usedAt = LocalDateTime.now();
 	}
 
+	/**
+	 * 이미 결제가 끝난 주문 몫으로 쿠폰을 사용 처리한다. 만료 뒤 늦게 결제된 주문이 만료 때 돌려놓은 쿠폰을 다시 쓸 때 부른다.
+	 *
+	 * <p>{@link #use()} 와 달리 쿠폰 기간은 보지 않는다. 주문을 만들 때 기간을 확인했고 결제도 이미 그 쿠폰 할인가로 끝났으므로,
+	 * 그사이 기간이 지났다고 사용 처리를 빼면 쿠폰이 미사용으로 남는다.
+	 *
+	 * @throws IllegalStateException 이미 사용된 쿠폰일 때. 호출자가 먼저 {@link #isUsed()} 로 확인해야 한다.
+	 */
+	public void useForPaidOrder() {
+		if (this.isUsed) {
+			throw new IllegalStateException("이미 사용된 쿠폰입니다. couponId=" + this.id);
+		}
+		this.isUsed = true;
+		this.usedAt = LocalDateTime.now();
+	}
+
 	public void restore() {
 		this.isUsed = false;
 		this.usedAt = null;

@@ -22,6 +22,7 @@ import com.mansereok.server.domain.order.dto.response.OrderCreateResponse;
 import com.mansereok.server.domain.order.entity.Order;
 import com.mansereok.server.domain.order.entity.OrderStatus;
 import com.mansereok.server.domain.order.repository.OrderRepository;
+import com.mansereok.server.domain.order.service.OrderDiscountRestorer;
 import com.mansereok.server.domain.payment.entity.Payment;
 import com.mansereok.server.domain.payment.entity.PaymentStatus;
 import com.mansereok.server.domain.payment.event.PaymentCompletedEvent;
@@ -83,11 +84,13 @@ class PaymentOrderServiceTest {
 	private FreeProductPolicy freeProductPolicy;
 	@Mock
 	private ApplicationEventPublisher eventPublisher;
+	@Mock
+	private OrderDiscountRestorer orderDiscountRestorer;
 
 	@BeforeEach
 	void setUp() {
 		PaidOrderFinalizer paidOrderFinalizer = new PaidOrderFinalizer(orderRepository,
-			paymentRepository, resultService, eventPublisher);
+			paymentRepository, resultService, orderDiscountRestorer, eventPublisher);
 		paymentOrderService = new PaymentOrderService(
 			userRepository,
 			subCategoryRepository,

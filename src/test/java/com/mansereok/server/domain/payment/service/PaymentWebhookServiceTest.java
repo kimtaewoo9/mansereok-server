@@ -83,7 +83,7 @@ class PaymentWebhookServiceTest {
 	@BeforeEach
 	void setUp() {
 		PaidOrderFinalizer paidOrderFinalizer = new PaidOrderFinalizer(orderRepository,
-			paymentRepository, resultService, eventPublisher);
+			paymentRepository, resultService, orderDiscountRestorer, eventPublisher);
 		paymentWebhookService = new PaymentWebhookService(
 			objectMapper,
 			portOneClient,

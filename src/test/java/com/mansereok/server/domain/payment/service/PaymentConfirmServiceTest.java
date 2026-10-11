@@ -19,6 +19,7 @@ import com.mansereok.server.domain.interpret.service.ResultService;
 import com.mansereok.server.domain.order.entity.Order;
 import com.mansereok.server.domain.order.entity.OrderStatus;
 import com.mansereok.server.domain.order.repository.OrderRepository;
+import com.mansereok.server.domain.order.service.OrderDiscountRestorer;
 import com.mansereok.server.domain.payment.client.PortOneClient;
 import com.mansereok.server.domain.payment.dto.request.PaymentCompleteRequest;
 import com.mansereok.server.domain.payment.dto.response.PortOnePaymentResponse;
@@ -99,6 +100,8 @@ class PaymentConfirmServiceTest {
 	private ApplicationEventPublisher eventPublisher;
 	@Mock
 	private PlatformTransactionManager transactionManager;
+	@Mock
+	private OrderDiscountRestorer orderDiscountRestorer;
 
 	private PaymentConfirmService paymentConfirmService;
 
@@ -108,7 +111,7 @@ class PaymentConfirmServiceTest {
 		lenient().when(transactionManager.getTransaction(any(TransactionDefinition.class)))
 			.thenAnswer(invocation -> new SimpleTransactionStatus(true));
 		PaidOrderFinalizer paidOrderFinalizer = new PaidOrderFinalizer(orderRepository,
-			paymentRepository, resultService, eventPublisher);
+			paymentRepository, resultService, orderDiscountRestorer, eventPublisher);
 		paymentConfirmService = new PaymentConfirmService(
 			userRepository,
 			orderRepository,
